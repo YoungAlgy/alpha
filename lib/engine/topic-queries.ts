@@ -26,20 +26,10 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "best newsletter platforms 2026",
     "B2B PMF growth loops",
   ],
-  "ai-for-work": [
-    "AI productivity tools this week",
-    "Cursor Granola v0 best AI for work",
-    "AI workflow automation 2026",
-  ],
-  "solo-side-income": [
-    "solopreneur income this week",
-    "indie hacker side hustle 2026",
-    "productized service one-person business",
-  ],
   "personal-finance": [
-    "personal finance news this week",
-    "high yield savings rates 2026",
-    "401k investing strategy",
+    "personal finance investing news this week",
+    "high yield savings 401k strategy 2026",
+    "solopreneur side hustle indie hacker income 2026",
   ],
   "real-estate": [
     "real estate market this week",
@@ -107,9 +97,9 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "Aimé Leon Dore The Row Buck Mason",
   ],
   "ai-news": [
-    "AI model release this week",
-    "Anthropic OpenAI Mistral 2026",
-    "AI research paper week",
+    "AI model release Anthropic OpenAI Mistral this week",
+    "best AI tools for work Cursor Granola v0 Notion 2026",
+    "AI workflow automation productivity 2026",
   ],
   "web3-updates": [
     "web3 protocol news this week",

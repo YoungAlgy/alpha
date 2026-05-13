@@ -79,25 +79,34 @@ POSTS:
     topicId: "ai-news",
     weekOf: WEEK_OF,
     context: `
-This week in AI news (week of May 17, 2026):
+This week in AI — news, releases & tools for work (week of May 17, 2026):
 
-NEWS:
+NEWS / RELEASES:
 - Anthropic released a new Claude model variant with extended context. (https://www.anthropic.com/news)
 - OpenAI shipped GPT-5.5 with a new background "agentic mode." (https://openai.com/blog)
 - Mistral announced an EU-sovereign cloud offering with European data residency by default. (https://mistral.ai/news)
 - Cursor (the IDE) crossed $300M ARR per The Information. (https://www.cursor.com)
 - HuggingFace launched a new evaluation harness focused on tool-use quality. (https://huggingface.co/blog)
+- a16z's "Big Ideas in Tech 2026" — half the list is AI-for-work. (https://a16z.com)
 
-APPS TO TRY:
+APPS TO TRY (frontier + for-work):
 - Claude (Anthropic) — https://claude.ai
-- Cursor — the AI-first IDE. (https://www.cursor.com)
-- v0 by Vercel — AI UI generation. (https://v0.dev)
-- Granola — AI meeting notes. (https://www.granola.ai)
+- Cursor — AI-first IDE, crossed $300M ARR. (https://www.cursor.com)
+- Granola — AI meeting notes that show up next to your transcript. (https://www.granola.ai)
+- v0 by Vercel — generate React UIs from prompts. (https://v0.dev)
+- Perplexity — AI search with citations. (https://www.perplexity.ai)
+- Notion AI — embedded inside docs, finally good. (https://www.notion.so)
 
 READ:
 - Latent Space newsletter for AI engineering. (https://www.latent.space)
 - TLDR AI daily digest. (https://tldr.tech/ai)
 - Simon Willison's blog — pragmatic AI commentary. (https://simonwillison.net)
+- Ethan Mollick's One Useful Thing on agent workflows. (https://www.oneusefulthing.org)
+- Anthropic's Claude best-practices guide for engineering. (https://www.anthropic.com/news)
+
+LISTEN:
+- Latent Space podcast on tool-use evaluation. (https://www.latent.space)
+- AI Daily Brief — short morning digest. (https://www.nlw.media)
 
 POSTS:
 - Sam Altman's GPT-5.5 release thread. (https://x.com/sama)
@@ -338,80 +347,41 @@ POSTS:
 `,
   },
   {
-    topicId: "ai-for-work",
-    weekOf: WEEK_OF,
-    context: `
-This week in AI for work (week of May 17, 2026):
-
-APPS TO TRY:
-- Cursor — AI-first IDE, crossed $300M ARR. (https://www.cursor.com)
-- Granola — AI meeting notes that show up next to your transcript. (https://www.granola.ai)
-- v0 by Vercel — generate React UIs from prompts. (https://v0.dev)
-- Perplexity — AI search with citations. (https://www.perplexity.ai)
-- Notion AI — embedded inside docs, finally good. (https://www.notion.so)
-
-WORTH READING:
-- Ethan Mollick's One Useful Thing on agent workflows. (https://www.oneusefulthing.org)
-- Simon Willison's blog on practical prompts. (https://simonwillison.net)
-- Anthropic's Claude best-practices guide for engineering. (https://www.anthropic.com/news)
-- a16z's "Big Ideas in Tech 2026" — half the list is AI-for-work. (https://a16z.com)
-
-LISTEN:
-- Latent Space podcast on tool-use evaluation. (https://www.latent.space)
-- AI Daily Brief — short morning digest. (https://www.nlw.media)
-`,
-  },
-  {
-    topicId: "solo-side-income",
-    weekOf: WEEK_OF,
-    context: `
-This week in solo & side income (week of May 17, 2026):
-
-LISTEN:
-- My First Million on $1-3M solo businesses being systematically undervalued. (https://www.mfmpod.com)
-- The Solopreneur Hour with Michael O'Neal. (https://solohour.com)
-
-WORTH READING:
-- Justin Welsh's weekly LinkedIn OS edition. (https://www.justinwelsh.me)
-- Codie Sanchez on buying small businesses as side income. (https://contrarianthinking.co)
-- Pieter Levels (Nomad List founder) tweet thread on indie hacker stack 2026. (https://x.com/levelsio)
-
-APPS TO TRY:
-- Gumroad — sell digital products in 5 minutes. (https://gumroad.com)
-- Stan Store — bio-link plus mini storefront. (https://www.stan.store)
-- Beehiiv — newsletter monetization. (https://www.beehiiv.com)
-- Whop — sell digital subscriptions. (https://whop.com)
-- Cal.com — paid consultations. (https://cal.com)
-
-POSTS:
-- Pieter Levels income transparency tweet. (https://x.com/levelsio)
-- Justin Welsh's solo-business teardown. (https://x.com/thejustinwelsh)
-`,
-  },
-  {
     topicId: "personal-finance",
     weekOf: WEEK_OF,
     context: `
-This week in personal finance (week of May 17, 2026):
+This week in personal finance, investing & side income (week of May 17, 2026):
 
 WORTH READING:
 - The Money Guy Show's 2026 Financial Order of Operations update. (https://moneyguy.com)
 - Ramit Sethi on negotiating salary in a flat market. (https://www.iwillteachyoutoberich.com)
 - Nick Maggiulli's Of Dollars and Data weekly on rebalancing in choppy markets. (https://ofdollarsanddata.com)
 - NerdWallet 2026 best high-yield savings accounts ranking. (https://www.nerdwallet.com)
+- Justin Welsh's weekly LinkedIn OS edition on building a one-person operation. (https://www.justinwelsh.me)
+- Codie Sanchez on buying small businesses as side income. (https://contrarianthinking.co)
+- Pieter Levels (Nomad List founder) tweet thread on indie hacker stack 2026. (https://x.com/levelsio)
 
-APPS TO TRY:
+APPS TO TRY (manage money + earn on the side):
 - Monarch Money — replaces Mint, fast-growing budgeting app. (https://www.monarchmoney.com)
 - Copilot — best-designed budgeting app for iOS. (https://www.copilot.money)
 - Empower (formerly Personal Capital) — net worth tracker. (https://www.empower.com)
 - Wealthfront — robo-advisor with cash management. (https://www.wealthfront.com)
+- Gumroad — sell digital products in 5 minutes. (https://gumroad.com)
+- Stan Store — bio-link plus mini storefront. (https://www.stan.store)
+- Beehiiv — newsletter monetization. (https://www.beehiiv.com)
+- Whop — sell digital subscriptions. (https://whop.com)
+- Cal.com — paid consultations. (https://cal.com)
 
 LISTEN:
 - The Money Guy Show. (https://moneyguy.com)
 - ChooseFI on financial independence. (https://www.choosefi.com)
+- My First Million on $1-3M solo businesses being systematically undervalued. (https://www.mfmpod.com)
+- The Solopreneur Hour with Michael O'Neal. (https://solohour.com)
 
 POSTS:
 - Ramit's negotiation thread. (https://x.com/ramit)
+- Pieter Levels income transparency tweet. (https://x.com/levelsio)
+- Justin Welsh's solo-business teardown. (https://x.com/thejustinwelsh)
 `,
   },
   {

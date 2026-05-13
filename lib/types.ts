@@ -15,8 +15,6 @@ export type TopicId =
   | "sales-persuasion"
   | "founder-operator"
   | "marketing-growth"
-  | "ai-for-work"
-  | "solo-side-income"
   | "personal-finance"
   | "real-estate"
   | "macro-markets"
