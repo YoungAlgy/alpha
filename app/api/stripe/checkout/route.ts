@@ -28,7 +28,11 @@ export async function POST(req: Request) {
     // Empty body is fine
   }
 
-  const origin = new URL(req.url).origin;
+  // Prefer the public app URL (youngalgy.com) over the request origin —
+  // when the request comes in through the youngalgy.com Vercel rewrite,
+  // req.url's origin is the raw alpha-chi-five.vercel.app host, which would
+  // send users back to the unrouted Vercel URL after Stripe success.
+  const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || new URL(req.url).origin;
   const basePath = "/alpha";
 
   try {

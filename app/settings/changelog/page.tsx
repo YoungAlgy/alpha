@@ -20,6 +20,13 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-05-13",
+    title: "Signed in automatically after checkout",
+    body:
+      "Subscribing now lands you on your inbox already signed in, on the clean youngalgy.com URL. Previously you'd bounce back to /welcome with no session and have to sign in again from the email.",
+    tag: "fixed",
+  },
+  {
+    date: "2026-05-13",
     title: "Theme picks first — and applies to the whole app",
     body:
       "Pick your look as step 2 of onboarding, before name and topics. The chosen theme now paints every page — onboarding, inbox, settings — not just the letter itself. Change it anytime from settings and the app re-paints instantly.",

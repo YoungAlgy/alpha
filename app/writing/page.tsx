@@ -83,15 +83,24 @@ export default function WritingPage() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((data: { issue: Issue }) => {
+      .then((data: { issue: Issue; magicLink?: string | null }) => {
         clearInterval(stepTimer);
         setCurrentStep(steps.length - 1);
         localStorage.setItem(STORAGE_KEY_ISSUE, JSON.stringify(data.issue));
-        // Mark inbox to play the arrival fanfare exactly once
         localStorage.setItem("alpha-just-generated", "1");
         setDone(true);
         fanfare();
-        setTimeout(() => router.push("/inbox" as never), 1200);
+        // Auto sign-in after checkout: the generate API returned a single-use
+        // magic link tied to this email. Hitting it sets the Supabase session
+        // cookie and bounces to /inbox via /auth/callback. Without this the
+        // user lands on /inbox unauthenticated and gets sent back to /welcome.
+        setTimeout(() => {
+          if (data.magicLink) {
+            window.location.href = data.magicLink;
+          } else {
+            router.push("/inbox" as never);
+          }
+        }, 1200);
       })
       .catch((e) => {
         clearInterval(stepTimer);
