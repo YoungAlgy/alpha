@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
@@ -24,10 +25,37 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { state, update } = useOnboarding();
 
-  function subscribe() {
-    // Stripe wiring lands later. For V0 we mark as paid + jump to the writing screen.
-    update({ paid: true, completedAt: new Date().toISOString() });
-    router.push("/writing" as never);
+  const [subscribing, setSubscribing] = useState(false);
+  const [stripeErr, setStripeErr] = useState<string | null>(null);
+
+  async function subscribe() {
+    setSubscribing(true);
+    setStripeErr(null);
+    try {
+      const res = await fetch("/alpha/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: state.email,
+          firstName: state.firstName,
+          city: state.city,
+        }),
+      });
+      const data = await res.json();
+      if (res.status === 503) {
+        // Stripe env not set — fall back to V0 stub flow
+        update({ paid: true, completedAt: new Date().toISOString() });
+        router.push("/writing" as never);
+        return;
+      }
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      window.location.href = data.url;
+    } catch (e) {
+      setSubscribing(false);
+      setStripeErr(e instanceof Error ? e.message : "Checkout failed.");
+    }
   }
 
   const firstName = state.firstName || "you";
@@ -152,10 +180,20 @@ export default function CheckoutPage() {
           <button
             type="button"
             onClick={subscribe}
+            disabled={subscribing}
             className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
+            style={{ opacity: subscribing ? 0.6 : 1 }}
           >
-            Subscribe &amp; write my first letter →
+            {subscribing ? "Taking you to checkout…" : "Subscribe & write my first letter →"}
           </button>
+          {stripeErr && (
+            <p
+              className="alpha-ui text-xs text-center"
+              style={{ color: "var(--accent-ink)" }}
+            >
+              {stripeErr} — try again, or email youngalgy@gmail.com.
+            </p>
+          )}
           <p
             className="alpha-ui text-xs text-center"
             style={{ color: "var(--ink-soft)" }}
