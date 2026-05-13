@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 // Stripe webhooks need the raw body for signature verification.
 // Next.js route handlers expose this via req.text(); do NOT parse JSON first.
 export async function POST(req: Request) {
-  const secret = process.env.STRIPE_SECRET_KEY;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const secret = process.env.STRIPE_SECRET_KEY?.trim();
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
   if (!secret || !webhookSecret) {
     return NextResponse.json(
       { error: "Stripe webhook not configured (STRIPE_WEBHOOK_SECRET missing)" },

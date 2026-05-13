@@ -11,7 +11,9 @@ interface CheckoutPayload {
 }
 
 export async function POST(req: Request) {
-  const secret = process.env.STRIPE_SECRET_KEY;
+  // Trim — env var paste from clipboards can include trailing \r or whitespace,
+  // which Node's HTTP layer rejects when setting the Authorization header.
+  const secret = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secret) {
     return NextResponse.json(
       { error: "Stripe not configured. Set STRIPE_SECRET_KEY in .env.local." },
@@ -30,16 +32,10 @@ export async function POST(req: Request) {
   const basePath = "/alpha";
 
   try {
-    const httpClient = Stripe.createNodeHttpClient();
     const stripe = new Stripe(secret, {
       apiVersion: "2026-04-22.dahlia",
-      httpClient,
-      maxNetworkRetries: 0,
-      timeout: 15000,
+      httpClient: Stripe.createNodeHttpClient(),
     });
-
-    // Debug: log the resolved http client class name
-    console.log("[stripe/checkout] httpClient:", httpClient?.constructor?.name, "getClientName:", httpClient?.getClientName?.());
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -59,24 +55,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: session.url });
   } catch (e) {
-    const err = e as { message?: string; type?: string; code?: string; statusCode?: number; cause?: unknown; detail?: unknown; stack?: string };
-    const detailStr = err.detail ? String(err.detail) : null;
-    const detailObj = err.detail as { code?: string; message?: string; errno?: string; syscall?: string; hostname?: string } | undefined;
-    return NextResponse.json(
-      {
-        error: err.message || "Stripe error",
-        _debug: {
-          type: err.type,
-          code: err.code,
-          status: err.statusCode,
-          detailStr,
-          detailCode: detailObj?.code,
-          detailErrno: detailObj?.errno,
-          detailSyscall: detailObj?.syscall,
-          detailHostname: detailObj?.hostname,
-        },
-      },
-      { status: 500 }
-    );
+    const message = e instanceof Error ? e.message : "Stripe error";
+    console.error("[stripe/checkout] failed:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 // Creates a Stripe Billing Portal session for the authed user. They can
 // update card, cancel, switch plans, see invoices — all hosted by Stripe.
 export async function POST(req: Request) {
-  const secret = process.env.STRIPE_SECRET_KEY;
+  const secret = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secret) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
