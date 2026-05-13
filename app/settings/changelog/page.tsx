@@ -20,6 +20,13 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-05-13",
+    title: "Magic-link sign-in handles both flow types",
+    body:
+      "The auth callback now recognizes both PKCE (?code=…) and implicit-flow (#access_token=…) magic links, so clicking the link in any letter — or returning from checkout — lands you signed in instead of dropping you on a sign-in error page.",
+    tag: "fixed",
+  },
+  {
+    date: "2026-05-13",
     title: "Signed in automatically after checkout",
     body:
       "Subscribing now lands you on your inbox already signed in, on the clean youngalgy.com URL. Previously you'd bounce back to /welcome with no session and have to sign in again from the email.",

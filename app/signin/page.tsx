@@ -38,6 +38,29 @@ export default function SigninPage() {
     }
   }, []);
 
+  // If a Supabase session is already active (e.g., implicit-flow magic link
+  // tokens landed in the URL hash and the client picked them up), skip the
+  // sign-in form and go straight to /inbox.
+  useEffect(() => {
+    if (!supabaseConfigured()) return;
+    (async () => {
+      try {
+        const sb = supabaseClient();
+        // Tiny delay so the client's auto-detectSessionInUrl has a chance to run.
+        await new Promise((r) => setTimeout(r, 80));
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) {
+          if (typeof window !== "undefined" && window.location.hash) {
+            window.history.replaceState(null, "", window.location.pathname);
+          }
+          router.replace("/inbox" as never);
+        }
+      } catch {
+        // ignore — stay on signin form
+      }
+    })();
+  }, [router]);
+
   // Auto-focus the code input when we land on step 2
   useEffect(() => {
     if (step === "code") codeInputRef.current?.focus();
