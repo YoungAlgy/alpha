@@ -119,14 +119,25 @@ export default function InboxPage() {
   }
 
   if (!issue) {
+    // Letter-shaped skeleton matches the final layout so the page doesn't jump
     return (
-      <main className="min-h-screen flex items-center justify-center px-6">
-        <p
-          className="alpha-display text-xl"
-          style={{ color: "var(--ink-soft)" }}
-        >
-          Loading…
-        </p>
+      <main className="max-w-2xl mx-auto px-6 py-20 md:py-28">
+        <div className="space-y-8 animate-pulse">
+          <div className="h-3 w-32 mx-auto rounded" style={{ background: "var(--rule)" }} />
+          <div className="h-12 w-48 rounded" style={{ background: "var(--rule)" }} />
+          <div className="space-y-2">
+            <div className="h-4 w-full rounded" style={{ background: "var(--rule)" }} />
+            <div className="h-4 w-11/12 rounded" style={{ background: "var(--rule)" }} />
+            <div className="h-4 w-3/4 rounded" style={{ background: "var(--rule)" }} />
+          </div>
+          <div className="border-t mt-12" style={{ borderColor: "var(--rule)" }} />
+          <div className="h-10 w-64 rounded" style={{ background: "var(--rule)" }} />
+          <div className="space-y-2">
+            <div className="h-5 w-5/6 rounded" style={{ background: "var(--rule)" }} />
+            <div className="h-4 w-full rounded" style={{ background: "var(--rule)" }} />
+            <div className="h-4 w-11/12 rounded" style={{ background: "var(--rule)" }} />
+          </div>
+        </div>
       </main>
     );
   }

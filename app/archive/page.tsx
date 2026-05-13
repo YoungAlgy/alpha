@@ -8,11 +8,18 @@ import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
 
+interface ArchiveItem {
+  id: string; // /inbox/<id> destination
+  weekOf: string;
+  firstLine: string;
+  recipientFirstName: string;
+}
+
 export default function ArchivePage() {
-  const [issues, setIssues] = useState<Issue[]>([]);
+  const [items, setItems] = useState<ArchiveItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    // Try authenticated read from Supabase first; fall back to localStorage.
     (async () => {
       if (supabaseConfigured()) {
         try {
@@ -21,33 +28,45 @@ export default function ArchivePage() {
           if (session) {
             const { data, error } = await sb
               .from("issues")
-              .select("week_of, volume, number, editor_intro, sections")
+              .select("id, week_of, editor_intro")
               .order("week_of", { ascending: false });
+            const { data: userRow } = await sb
+              .from("users")
+              .select("first_name")
+              .eq("id", session.user.id)
+              .maybeSingle();
             if (!error && data && data.length > 0) {
-              const mapped: Issue[] = data.map((row, i) => ({
-                id: `${session.user.id}-${row.week_of}-${i}`,
-                volume: row.volume,
-                number: row.number,
-                weekOf: row.week_of,
-                recipientFirstName: session.user.user_metadata?.first_name || "you",
-                recipientCity: "",
-                editorIntro: row.editor_intro,
-                sections: row.sections,
-              }));
-              setIssues(mapped);
+              setItems(
+                data.map((row) => ({
+                  id: row.id,
+                  weekOf: row.week_of,
+                  firstLine: row.editor_intro,
+                  recipientFirstName: userRow?.first_name || "you",
+                }))
+              );
+              setLoaded(true);
               return;
             }
           }
         } catch {
-          // fall through to localStorage
+          // fall through
         }
       }
       try {
         const raw = localStorage.getItem(STORAGE_KEY_ISSUE);
-        if (raw) setIssues([JSON.parse(raw) as Issue]);
+        if (raw) {
+          const issue = JSON.parse(raw) as Issue;
+          setItems([{
+            id: "inbox", // localStorage issue lives at /inbox (not /inbox/[id])
+            weekOf: issue.weekOf,
+            firstLine: issue.editorIntro,
+            recipientFirstName: issue.recipientFirstName,
+          }]);
+        }
       } catch {
-        setIssues([]);
+        // ignore
       }
+      setLoaded(true);
     })();
   }, []);
 
@@ -75,32 +94,37 @@ export default function ArchivePage() {
           Archive
         </h1>
 
-        {issues.length === 0 ? (
-          <p
-            className="alpha-display text-lg"
-            style={{ color: "var(--ink-soft)" }}
-          >
+        {!loaded ? (
+          <ul className="space-y-6 animate-pulse">
+            {[0, 1].map((i) => (
+              <li key={i} className="border-b pb-6" style={{ borderColor: "var(--rule)" }}>
+                <div className="h-3 w-24 mb-3 rounded" style={{ background: "var(--rule)" }} />
+                <div className="h-5 w-full mb-2 rounded" style={{ background: "var(--rule)" }} />
+                <div className="h-5 w-3/4 rounded" style={{ background: "var(--rule)" }} />
+              </li>
+            ))}
+          </ul>
+        ) : items.length === 0 ? (
+          <p className="alpha-display text-lg" style={{ color: "var(--ink-soft)" }}>
             No letters yet. Your first one ships after subscribing.
           </p>
         ) : (
           <ul className="space-y-6">
-            {issues.map((issue) => (
+            {items.map((item) => (
               <li
-                key={issue.id}
+                key={item.id}
                 className="border-b pb-6"
                 style={{ borderColor: "var(--rule)" }}
               >
-                <Link href="/inbox" className="block group">
-                  <div
-                    className="alpha-mono mb-1"
-                    style={{ color: "var(--ink-soft)" }}
-                  >
-                    {issue.weekOf.toUpperCase()}
+                <Link
+                  href={item.id === "inbox" ? "/inbox" : `/inbox/${item.id}`}
+                  className="block group"
+                >
+                  <div className="alpha-mono mb-1" style={{ color: "var(--ink-soft)" }}>
+                    {item.weekOf.toUpperCase()}
                   </div>
-                  <p
-                    className="alpha-display text-lg md:text-xl font-semibold group-hover:opacity-70"
-                  >
-                    Hi {issue.recipientFirstName}, — {truncate(issue.editorIntro, 110)}
+                  <p className="alpha-display text-lg md:text-xl font-semibold group-hover:opacity-70">
+                    Hi {item.recipientFirstName}, — {truncate(item.firstLine, 110)}
                   </p>
                 </Link>
               </li>
