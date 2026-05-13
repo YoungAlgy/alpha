@@ -36,8 +36,9 @@ export default function ArchivePage() {
               .eq("id", session.user.id)
               .maybeSingle();
             if (!error && data && data.length > 0) {
+              const rows = data as Array<{ id: string; week_of: string; editor_intro: string }>;
               setItems(
-                data.map((row) => ({
+                rows.map((row) => ({
                   id: row.id,
                   weekOf: row.week_of,
                   firstLine: row.editor_intro,

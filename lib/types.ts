@@ -59,7 +59,7 @@ export interface DigestItem {
   body: string;
   primaryRef?: Reference;
   supplementaryRefs?: Reference[];
-  // Legacy field kept for backward-compat with sample-issue.ts
+  // Legacy field kept for backward-compat with older renderer outputs
   source?: string;
   sourceUrl?: string;
 }

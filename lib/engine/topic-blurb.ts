@@ -1,7 +1,12 @@
 import { anthropicClient, MODEL } from "./client";
 import { TOPIC_BY_ID } from "@/lib/topics";
 import type { TopicId } from "@/lib/types";
-import type { TopicBlurb, TopicSignal } from "./types";
+import type { TopicBlurb, TopicSignal, BlurbItemKind } from "./types";
+
+const VALID_KINDS: BlurbItemKind[] = ["read", "watch", "listen", "try", "post", "book", "event", "note"];
+function narrowKind(k: string | undefined): BlurbItemKind {
+  return VALID_KINDS.includes(k as BlurbItemKind) ? (k as BlurbItemKind) : "note";
+}
 
 const SYSTEM_PROMPT = `You are the editor of Alpha — a personal weekly letter that helps a curious, intelligent reader learn and stay sharp on the topics they care about.
 
@@ -95,7 +100,7 @@ Three items exactly. VARY the kinds across them. Include URLs only from the sign
     weekOf,
     intro: parsed.intro,
     items: parsed.items.map((it) => ({
-      kind: it.kind || "note",
+      kind: narrowKind(it.kind),
       headline: it.headline,
       body: it.body,
       primaryRef: it.primaryRef || undefined,

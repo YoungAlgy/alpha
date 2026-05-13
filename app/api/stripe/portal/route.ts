@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const stripe = new Stripe(secret, { apiVersion: "2025-09-30.clover" });
+    const stripe = new Stripe(secret, { apiVersion: "2026-04-22.dahlia" });
     const origin = new URL(req.url).origin;
     const session = await stripe.billingPortal.sessions.create({
       customer: row.stripe_customer_id,

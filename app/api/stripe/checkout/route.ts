@@ -31,7 +31,7 @@ export async function POST(req: Request) {
 
   try {
     const stripe = new Stripe(secret, {
-      apiVersion: "2025-09-30.clover",
+      apiVersion: "2026-04-22.dahlia",
     });
 
     const session = await stripe.checkout.sessions.create({
