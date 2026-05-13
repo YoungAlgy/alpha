@@ -96,6 +96,11 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "Highsnobiety BoF 2026",
     "Aimé Leon Dore The Row Buck Mason",
   ],
+  "sports-betting": [
+    "sports betting edges sharp action this week",
+    "DraftKings FanDuel line movement closing line value 2026",
+    "NFL NBA MLB news this week",
+  ],
   "ai-news": [
     "AI model release Anthropic OpenAI Mistral this week",
     "best AI tools for work Cursor Granola v0 Notion 2026",

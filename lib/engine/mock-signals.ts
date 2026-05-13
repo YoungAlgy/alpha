@@ -321,6 +321,43 @@ APPS / TOOLS:
 `,
   },
   {
+    topicId: "sports-betting",
+    weekOf: WEEK_OF,
+    context: `
+This week in sports & betting markets (week of May 17, 2026):
+
+EDGES / SHARP ACTION:
+- Unabated.com weekly sharp report: NBA totals showing systematic under-bias at books that haven't adjusted to slower pace post-rules change. (https://unabated.com)
+- Action Network's PRO line-shop tool now covers 12 books with real-time CLV tracking. (https://www.actionnetwork.com)
+- Closing line value still the only public-bettor stat that correlates with long-run ROI per Wharton Sports Analytics. (https://wsb.wharton.upenn.edu)
+- Pinnacle (Bovada cash-out alternative) re-listed for serious bettors — sharpest book on the market by closing odds. (https://www.pinnacle.com)
+
+NEWS / GAMES:
+- NBA Conference Finals matchups set; Vegas opened Boston -3.5 vs Indiana, dropped to -2 on heavy public Indiana money. (https://www.espn.com)
+- NFL Schedule release Thursday; Vegas posted O/U season win totals — Chiefs 11.5 highest, Patriots 5.5 lowest. (https://www.nfl.com)
+- MLB midseason: Dodgers +180 World Series favorites, Yankees +500, sharps reportedly hammering Tigers +2500. (https://www.mlb.com)
+- New jurisdictions: Missouri and Minnesota mobile sports betting bills cleared committee this week. (https://www.legalsportsreport.com)
+
+APPS / TOOLS TO TRY:
+- Unabated — line shopping + alert system for value plays. (https://unabated.com)
+- OddsJam — odds screen + arb finder. (https://oddsjam.com)
+- Action Network PRO — sharp-money signals + CLV tracker. (https://www.actionnetwork.com)
+- BetStamp — bet tracking with auto-grading. (https://betstamp.app)
+- DraftKings + FanDuel for promos; Pinnacle + Circa Sports for serious wagering.
+
+READ / LISTEN:
+- Ed Miller's "Logic of Sports Betting" — still the canonical primer. (https://www.amazon.com)
+- The Action Network podcast on injuries that move lines. (https://www.actionnetwork.com)
+- Wharton Sports Analytics journal on CLV as the only metric that matters. (https://wsb.wharton.upenn.edu)
+- The Ringer NBA Show + Bill Simmons Podcast for narrative + numbers. (https://www.theringer.com)
+
+POSTS:
+- Spanky's threads on sharp behavior. (https://x.com/Spanky)
+- Captain Jack Andrews on bet sizing. (https://x.com/capjack2018)
+- Rufus Peabody on model-vs-market gaps. (https://x.com/rufuspeabody)
+`,
+  },
+  {
     topicId: "marketing-growth",
     weekOf: WEEK_OF,
     context: `

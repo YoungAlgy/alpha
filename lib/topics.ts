@@ -42,6 +42,7 @@ export const TOPICS: TopicMeta[] = [
   { id: "movies-tv", label: "Movies & TV", bucket: "Culture", tier: "A", blurb: "What's worth watching, who's making it, where it's going.", emoji: "🎬" },
   { id: "music", label: "Music", bucket: "Culture", tier: "A", blurb: "Releases that matter, industry shifts, who to know.", emoji: "🎵" },
   { id: "style-fashion", label: "Style & fashion", bucket: "Culture", tier: "A", blurb: "What's good, what's coming, what the cool kids actually wear.", emoji: "👔" },
+  { id: "sports-betting", label: "Sports & betting markets", bucket: "Culture", tier: "A", blurb: "Edges, line movement, model-vs-market gaps — plus the games and stories shaping the week.", emoji: "🏈" },
   // Tech
   { id: "ai-news", label: "AI — news, releases & tools for work", bucket: "Tech", tier: "A", blurb: "Model releases, frontier moves, plus the tools and workflows actually shipping productivity wins.", emoji: "🤖" },
   { id: "web3-updates", label: "Web3 updates", bucket: "Tech", tier: "A", blurb: "Protocol moves, on-chain data, institutional flows. No shilling." , emoji: "⛓️" },

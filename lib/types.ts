@@ -29,6 +29,7 @@ export type TopicId =
   | "movies-tv"
   | "music"
   | "style-fashion"
+  | "sports-betting"
   | "ai-news"
   | "web3-updates"
   | "fl-gardening"
