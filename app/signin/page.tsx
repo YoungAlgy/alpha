@@ -1,16 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { Footer } from "@/components/Footer";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { confirm as audioConfirm } from "@/lib/audio";
+
+const REMEMBERED_EMAIL_KEY = "alpha-signin-email";
 
 export default function SigninPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Pre-fill remembered email + onboarding email
+  useEffect(() => {
+    try {
+      const remembered = localStorage.getItem(REMEMBERED_EMAIL_KEY);
+      if (remembered) {
+        setEmail(remembered);
+        return;
+      }
+      const onboarding = localStorage.getItem("alpha-onboarding");
+      if (onboarding) {
+        const parsed = JSON.parse(onboarding) as { email?: string };
+        if (parsed.email) setEmail(parsed.email);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -42,6 +62,11 @@ export default function SigninPage() {
       });
       if (error) throw error;
       audioConfirm();
+      try {
+        localStorage.setItem(REMEMBERED_EMAIL_KEY, addr);
+      } catch {
+        // ignore
+      }
       setSent(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn't send the link. Try again?");

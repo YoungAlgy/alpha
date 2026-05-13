@@ -81,9 +81,34 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Billing">
-          <p className="alpha-display text-base">Alpha · $5 / month</p>
-          <p className="alpha-ui text-sm mt-1" style={{ color: "var(--ink-soft)" }}>
-            Billing dashboard arrives with Stripe wiring.
+          <p className="alpha-display text-base mb-3">Alpha · $5 / month</p>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch("/alpha/api/stripe/portal", { method: "POST" });
+                const data = await res.json();
+                if (res.status === 401) {
+                  alert("Sign in first to manage billing.");
+                  return;
+                }
+                if (res.status === 400) {
+                  alert(data.error || "Subscribe first.");
+                  return;
+                }
+                if (!res.ok || !data.url) throw new Error(data.error || `HTTP ${res.status}`);
+                window.location.href = data.url;
+              } catch (e) {
+                alert(e instanceof Error ? e.message : "Couldn't open billing.");
+              }
+            }}
+            className="alpha-ui text-sm underline underline-offset-4"
+            style={{ color: "var(--accent-ink)" }}
+          >
+            Manage subscription →
+          </button>
+          <p className="alpha-ui text-xs mt-2" style={{ color: "var(--ink-soft)" }}>
+            Update card, cancel, see invoices — all in Stripe.
           </p>
         </Section>
 
