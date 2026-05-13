@@ -8,6 +8,7 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { AudioToggle } from "@/components/AudioToggle";
 import { ReadingProgress } from "@/components/ReadingProgress";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { FirstLetterCelebration } from "@/components/FirstLetterCelebration";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { fanfare } from "@/lib/audio";
 import type { Issue } from "@/lib/types";
@@ -19,6 +20,7 @@ export default function InboxPage() {
   const { state, loaded } = useOnboarding();
   const [issue, setIssue] = useState<Issue | null>(null);
   const [missing, setMissing] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
 
   useEffect(() => {
     if (!loaded) return;
@@ -37,6 +39,7 @@ export default function InboxPage() {
       // Celebrate first arrival
       if (localStorage.getItem("alpha-just-generated") === "1") {
         localStorage.removeItem("alpha-just-generated");
+        setCelebrate(true);
         setTimeout(() => fanfare(), 300);
       }
     } catch {
@@ -129,6 +132,7 @@ export default function InboxPage() {
       </div>
       <Digest issue={issue} />
       <InstallPrompt />
+      <FirstLetterCelebration active={celebrate} />
     </main>
   );
 }

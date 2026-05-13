@@ -95,19 +95,49 @@ export default function WritingPage() {
     return () => clearInterval(stepTimer);
   }, [loaded, state, router]);
 
+  const pct = Math.min(100, Math.round(((currentStep + (done ? 1 : 0)) / steps.length) * 100));
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6">
-      <div className="w-full max-w-md text-center space-y-12">
+    <main className="min-h-screen flex flex-col items-center justify-center px-6 relative overflow-hidden">
+      <div
+        aria-hidden
+        className="absolute pointer-events-none"
+        style={{
+          width: "min(70vmin, 480px)",
+          height: "min(70vmin, 480px)",
+          background:
+            "radial-gradient(circle at center, var(--accent) 0%, transparent 60%)",
+          opacity: done ? 0.18 : 0.1,
+          filter: "blur(40px)",
+          transition: "opacity 600ms ease",
+        }}
+      />
+      <div className="w-full max-w-md text-center space-y-12 relative z-10">
         <div className="flex justify-center">
           <span
             className="alpha-display text-7xl md:text-8xl font-bold inline-block"
             style={{
               color: "var(--accent-ink)",
-              animation: done ? "none" : "alpha-breathe 2400ms ease-in-out infinite",
+              animation: done
+                ? "alpha-writing-settle 700ms ease-out forwards"
+                : "alpha-writing-breathe 3200ms ease-in-out infinite",
+              display: "inline-block",
             }}
           >
             α
           </span>
+        </div>
+        <div
+          className="w-48 mx-auto h-[3px] rounded-full overflow-hidden"
+          style={{ background: "var(--rule)" }}
+        >
+          <div
+            style={{
+              width: `${pct}%`,
+              height: "100%",
+              background: "var(--accent)",
+              transition: "width 600ms ease",
+            }}
+          />
         </div>
         <div>
           <p
@@ -180,9 +210,14 @@ export default function WritingPage() {
         )}
       </div>
       <style>{`
-        @keyframes alpha-breathe {
-          0%, 100% { transform: scale(1); opacity: 0.85; }
-          50% { transform: scale(1.06); opacity: 1; }
+        @keyframes alpha-writing-breathe {
+          0%, 100% { transform: scale(1) rotate(-1deg); opacity: 0.78; }
+          50% { transform: scale(1.08) rotate(1deg); opacity: 1; }
+        }
+        @keyframes alpha-writing-settle {
+          0%   { transform: scale(1.08); opacity: 1; }
+          60%  { transform: scale(1.18); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
         }
       `}</style>
     </main>

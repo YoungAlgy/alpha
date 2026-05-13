@@ -1,4 +1,5 @@
 import type { Issue, DigestItem, ItemKind } from "@/lib/types";
+import { ScrollFadeIn } from "./ScrollFadeIn";
 
 interface DigestProps {
   issue: Issue;
@@ -46,7 +47,8 @@ export function Digest({ issue }: DigestProps) {
       </p>
 
       {issue.sections.map((section) => (
-        <section key={section.topicId} className="mb-16">
+        <ScrollFadeIn key={section.topicId} className="mb-16">
+        <section>
           <div
             className="border-t mb-10"
             style={{ borderColor: "var(--rule)" }}
@@ -68,6 +70,7 @@ export function Digest({ issue }: DigestProps) {
             ))}
           </div>
         </section>
+        </ScrollFadeIn>
       ))}
 
       <div
