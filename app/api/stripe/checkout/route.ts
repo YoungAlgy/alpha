@@ -42,6 +42,13 @@ export async function POST(req: Request) {
       payment_method_types: ["card"],
       line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
       customer_email: body.email,
+      // Session-level metadata so the webhook can read it from the Session
+      // event directly. (subscription_data.metadata also gets set on the
+      // resulting Subscription for downstream sub events.)
+      metadata: {
+        alpha_first_name: body.firstName ?? "",
+        alpha_city: body.city ?? "",
+      },
       subscription_data: {
         metadata: {
           alpha_first_name: body.firstName ?? "",

@@ -59,15 +59,9 @@ export async function POST(req: Request) {
           if (linkErr || !linkData?.user) {
             console.warn("[stripe-webhook] generateLink failed:", linkErr?.message);
           } else {
-            const meta = session.metadata || session.subscription_data?.metadata || {};
-            const firstName =
-              (meta as Record<string, string>).alpha_first_name ||
-              (meta as Record<string, string>).first_name ||
-              "friend";
-            const city =
-              (meta as Record<string, string>).alpha_city ||
-              (meta as Record<string, string>).city ||
-              null;
+            const meta = (session.metadata || {}) as Record<string, string>;
+            const firstName = meta.alpha_first_name || meta.first_name || "friend";
+            const city = meta.alpha_city || meta.city || null;
             await sb.from("users").upsert(
               {
                 id: linkData.user.id,
