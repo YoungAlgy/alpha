@@ -1,17 +1,18 @@
 import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
-import { getSignal } from "./mock-signals";
+import { resolveTopicSignal } from "./source-resolver";
 import type { Issue, UserProfile } from "@/lib/types";
 
 export async function generateIssue(
   user: UserProfile,
   weekOf: string,
 ): Promise<Issue> {
-  // Step 1 — fetch (or generate) a shared topic blurb for each of the user's 5 topics.
-  // Today these come from MOCK_SIGNALS; in production these are cached weekly per topic
-  // so generation cost amortizes across all subscribers to that topic.
+  // Step 1 — for each topic, resolve signal (live via Brave Search if configured,
+  // otherwise hand-written mock). Then synthesize a blurb via Claude.
+  // V2 will cache (topic, week_of) → blurb in Supabase so the API costs amortize
+  // across all subscribers to that topic.
   const blurbPromises = user.topics.map(async (topicId) => {
-    const signal = getSignal(topicId, weekOf) || getSignal(topicId);
+    const signal = await resolveTopicSignal(topicId, weekOf);
     if (!signal) {
       throw new Error(`No signal available for topic: ${topicId}`);
     }
