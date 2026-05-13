@@ -5,7 +5,7 @@ import { QuestionStep } from "@/components/onboarding/QuestionStep";
 
 export default function RolePage() {
   return (
-    <StepShell stepIndex={4} prevPath="city">
+    <StepShell stepIndex={5} prevPath="city">
       <QuestionStep
         field="jobBlurb"
         currentPath="role"

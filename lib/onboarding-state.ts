@@ -66,12 +66,12 @@ export function useOnboarding() {
 
 export const ONBOARDING_STEPS = [
   { path: "welcome", label: "Welcome" },
+  { path: "theme", label: "Theme" },
   { path: "name", label: "Name" },
   { path: "city", label: "City" },
   { path: "role", label: "Role" },
   { path: "focus", label: "Focus" },
   { path: "topics", label: "Topics" },
-  { path: "theme", label: "Theme" },
   { path: "fun", label: "Fun" },
   { path: "email", label: "Email" },
   { path: "checkout", label: "Subscribe" },

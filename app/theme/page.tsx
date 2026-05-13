@@ -51,6 +51,12 @@ export default function ThemePage() {
   function pickTheme(id: ThemeId) {
     setPicked(id);
     chime();
+    // Broadcast so ThemeApplier re-paints the page immediately.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("alpha-theme-change", { detail: { theme: id } })
+      );
+    }
   }
 
   function hoverTheme() {
@@ -76,13 +82,13 @@ export default function ThemePage() {
       router.push("/settings" as never);
       return;
     }
-    router.push("/fun" as never);
+    router.push("/name" as never);
   }
 
-  const firstName = state.firstName || "Ally";
+  const firstName = state.firstName || "friend";
 
   return (
-    <StepShell stepIndex={7} prevPath="topics">
+    <StepShell stepIndex={2} prevPath="welcome">
       <div className="space-y-8">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">

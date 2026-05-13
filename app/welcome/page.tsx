@@ -45,7 +45,7 @@ export default function WelcomePage() {
             A personal letter on what matters to you, every Sunday.
           </p>
           <div className="pt-4">
-            <Link href="/name" className="alpha-button text-base">
+            <Link href="/theme" className="alpha-button text-base">
               Let&apos;s get to know you →
             </Link>
           </div>

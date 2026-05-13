@@ -5,7 +5,7 @@ import { QuestionStep } from "@/components/onboarding/QuestionStep";
 
 export default function FocusPage() {
   return (
-    <StepShell stepIndex={5} prevPath="role">
+    <StepShell stepIndex={6} prevPath="role">
       <QuestionStep
         field="projectBlurb"
         currentPath="focus"

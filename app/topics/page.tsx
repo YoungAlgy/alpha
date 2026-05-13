@@ -64,13 +64,13 @@ export default function TopicsPage() {
       router.push("/settings" as never);
       return;
     }
-    router.push("/theme" as never);
+    router.push("/fun" as never);
   }
 
   const remaining = TARGET - picked.length;
 
   return (
-    <StepShell stepIndex={6} prevPath="focus">
+    <StepShell stepIndex={7} prevPath="focus">
       <div className="space-y-8">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">

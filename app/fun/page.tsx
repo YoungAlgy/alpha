@@ -5,7 +5,7 @@ import { QuestionStep } from "@/components/onboarding/QuestionStep";
 
 export default function FunPage() {
   return (
-    <StepShell stepIndex={8} prevPath="theme">
+    <StepShell stepIndex={8} prevPath="topics">
       <QuestionStep
         field="funBlurb"
         currentPath="fun"

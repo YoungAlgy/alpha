@@ -8,6 +8,7 @@ import {
   Pixelify_Sans,
 } from "next/font/google";
 import "./globals.css";
+import { ThemeApplier } from "@/components/ThemeApplier";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -80,7 +81,10 @@ export default function RootLayout({
         "h-full antialiased",
       ].join(" ")}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ThemeApplier />
+        {children}
+      </body>
     </html>
   );
 }

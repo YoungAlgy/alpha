@@ -5,7 +5,7 @@ import { QuestionStep } from "@/components/onboarding/QuestionStep";
 
 export default function CityPage() {
   return (
-    <StepShell stepIndex={3} prevPath="name">
+    <StepShell stepIndex={4} prevPath="name">
       <QuestionStep
         field="city"
         currentPath="city"
