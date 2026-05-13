@@ -84,10 +84,11 @@ export function QuestionStep({
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
           rows={4}
-          className="w-full alpha-display text-2xl md:text-3xl bg-transparent border-b py-3 focus:outline-none focus:border-current placeholder:opacity-40 resize-none"
+          className="w-full alpha-display text-2xl md:text-3xl bg-transparent border-b pt-3 pb-5 focus:outline-none focus:border-current placeholder:opacity-40 resize-none"
           style={{
             color: "var(--ink)",
             borderColor: "var(--rule)",
+            lineHeight: 1.35,
           }}
         />
       ) : (
@@ -97,10 +98,11 @@ export function QuestionStep({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
-          className="w-full alpha-display text-3xl md:text-4xl bg-transparent border-b py-3 focus:outline-none focus:border-current placeholder:opacity-40"
+          className="w-full alpha-display text-3xl md:text-4xl bg-transparent border-b pt-3 pb-5 focus:outline-none focus:border-current placeholder:opacity-40"
           style={{
             color: "var(--ink)",
             borderColor: "var(--rule)",
+            lineHeight: 1.35,
           }}
         />
       )}

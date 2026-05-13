@@ -74,7 +74,7 @@ export default function CheckoutPage() {
             className="alpha-display text-lg md:text-xl leading-relaxed"
             style={{ color: "var(--ink-soft)" }}
           >
-            Your first letter is ready to write. Subscribe to publish it.
+            Your first letter is ready. Subscribe to receive it.
           </p>
         </div>
 
@@ -184,7 +184,7 @@ export default function CheckoutPage() {
             className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
             style={{ opacity: subscribing ? 0.6 : 1 }}
           >
-            {subscribing ? "Taking you to checkout…" : "Subscribe & write my first letter →"}
+            {subscribing ? "Taking you to checkout…" : "Subscribe & get my first letter →"}
           </button>
           {stripeErr && (
             <p
