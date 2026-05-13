@@ -3,6 +3,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useOnboarding, nextStep, type OnboardingState } from "@/lib/onboarding-state";
+import { confirm as audioConfirm, tap } from "@/lib/audio";
 
 interface QuestionStepProps {
   field: keyof OnboardingState;
@@ -39,11 +40,13 @@ export function QuestionStep({
   function submit(e?: FormEvent) {
     e?.preventDefault();
     if (!canContinue) return;
+    audioConfirm();
     update({ [field]: trimmed || undefined } as Partial<OnboardingState>);
     router.push(`/${nextStep(currentPath)}` as never);
   }
 
   function skip() {
+    tap();
     update({ [field]: undefined } as Partial<OnboardingState>);
     router.push(`/${nextStep(currentPath)}` as never);
   }

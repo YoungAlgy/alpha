@@ -214,6 +214,7 @@
 html {
   background: var(--paper);
   color: var(--ink);
+  transition: background-color 280ms ease, color 280ms ease;
 }
 
 body {
@@ -223,6 +224,14 @@ body {
   font-feature-settings: "ss01", "ss02";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 280ms ease, color 280ms ease;
+}
+
+* {
+  /* Theme variable transitions for borders, accents, callouts */
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 240ms;
+  transition-timing-function: ease;
 }
 
 ::selection {

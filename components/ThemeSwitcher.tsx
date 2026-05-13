@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { THEMES } from "@/lib/themes";
+import { chime, tap } from "@/lib/audio";
 import type { ThemeId } from "@/lib/types";
 
 const STORAGE_KEY = "alpha-theme";
@@ -23,13 +24,19 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
     document.documentElement.setAttribute("data-theme", id);
     localStorage.setItem(STORAGE_KEY, id);
     setOpen(false);
+    chime();
+  }
+
+  function toggleOpen() {
+    setOpen((v) => !v);
+    tap();
   }
 
   return (
     <div className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className="alpha-ui text-sm font-medium px-3 py-1.5 rounded-full border"
         style={{ borderColor: "var(--rule)", color: "var(--ink-soft)" }}
         aria-haspopup="true"

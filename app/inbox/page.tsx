@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Digest } from "@/components/Digest";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { AudioToggle } from "@/components/AudioToggle";
+import { ReadingProgress } from "@/components/ReadingProgress";
 import { useOnboarding } from "@/lib/onboarding-state";
+import { fanfare } from "@/lib/audio";
 import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
@@ -29,6 +32,11 @@ export default function InboxPage() {
       // Apply user's chosen theme to the document
       if (state.theme) {
         document.documentElement.setAttribute("data-theme", state.theme);
+      }
+      // Celebrate first arrival
+      if (localStorage.getItem("alpha-just-generated") === "1") {
+        localStorage.removeItem("alpha-just-generated");
+        setTimeout(() => fanfare(), 300);
       }
     } catch {
       setMissing(true);
@@ -63,8 +71,13 @@ export default function InboxPage() {
     );
   }
 
+  // Word count → read time estimate (~225 wpm for editorial reading)
+  const wordCount = computeWordCount(issue);
+  const minutes = Math.max(1, Math.round(wordCount / 225));
+
   return (
     <main className="flex-1">
+      <ReadingProgress />
       <div
         className="w-full sticky top-0 z-40 border-b"
         style={{ background: "var(--paper)", borderColor: "var(--rule)" }}
@@ -77,7 +90,8 @@ export default function InboxPage() {
           >
             alpha<span style={{ color: "var(--accent)" }}>.</span>
           </Link>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <AudioToggle />
             <ThemeSwitcher />
             <button
               type="button"
@@ -94,10 +108,22 @@ export default function InboxPage() {
           className="max-w-5xl mx-auto px-6 pb-3 alpha-mono text-center"
           style={{ color: "var(--accent-ink)" }}
         >
-          YOUR FIRST LETTER · NEXT ONE SHIPS SUNDAY
+          YOUR FIRST LETTER · {minutes} MIN READ · NEXT ONE SHIPS SUNDAY
         </div>
       </div>
       <Digest issue={issue} />
     </main>
   );
+}
+
+function computeWordCount(issue: Issue): number {
+  let total = issue.editorIntro.split(/\s+/).length;
+  for (const s of issue.sections) {
+    total += s.intro.split(/\s+/).length;
+    for (const it of s.items) {
+      total += it.headline.split(/\s+/).length;
+      total += it.body.split(/\s+/).length;
+    }
+  }
+  return total;
 }

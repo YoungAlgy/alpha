@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { TOPICS } from "@/lib/topics";
+import { tap, unselect, confirm } from "@/lib/audio";
 import type { TopicId } from "@/lib/types";
 
 const TARGET = 5;
@@ -20,14 +21,19 @@ export default function TopicsPage() {
 
   function toggle(id: TopicId) {
     setPicked((prev) => {
-      if (prev.includes(id)) return prev.filter((t) => t !== id);
+      if (prev.includes(id)) {
+        unselect();
+        return prev.filter((t) => t !== id);
+      }
       if (prev.length >= TARGET) return prev;
+      tap();
       return [...prev, id];
     });
   }
 
   function submit() {
     if (picked.length !== TARGET) return;
+    confirm();
     update({ topics: picked });
     router.push("/theme" as never);
   }

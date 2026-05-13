@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { THEMES } from "@/lib/themes";
+import { chime, confirm } from "@/lib/audio";
 import type { ThemeId } from "@/lib/types";
 
 // Display-only swatch for each theme. Matches the palette in globals.css.
@@ -30,7 +31,13 @@ export default function ThemePage() {
     if (loaded && state.theme) setPicked(state.theme);
   }, [loaded, state.theme]);
 
+  function pickTheme(id: ThemeId) {
+    setPicked(id);
+    chime();
+  }
+
   function submit() {
+    confirm();
     update({ theme: picked });
     router.push("/fun" as never);
   }
@@ -60,7 +67,7 @@ export default function ThemePage() {
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setPicked(t.id)}
+                onClick={() => pickTheme(t.id)}
                 className="text-left rounded-lg transition-all overflow-hidden"
                 style={{
                   border: `2px solid ${isPicked ? "var(--accent)" : "var(--rule)"}`,

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useOnboarding } from "@/lib/onboarding-state";
+import { stepDone, fanfare } from "@/lib/audio";
 import type { Issue, UserProfile } from "@/lib/types";
 
 const STEPS = [
@@ -33,7 +34,11 @@ export default function WritingPage() {
 
     // Drive fake-but-paced progress UI while the real engine runs.
     const stepTimer = setInterval(() => {
-      setCurrentStep((s) => Math.min(s + 1, STEPS.length - 1));
+      setCurrentStep((s) => {
+        const next = Math.min(s + 1, STEPS.length - 1);
+        if (next !== s) stepDone(next);
+        return next;
+      });
     }, 4000);
 
     const profile: UserProfile = {
@@ -59,8 +64,11 @@ export default function WritingPage() {
         clearInterval(stepTimer);
         setCurrentStep(STEPS.length - 1);
         localStorage.setItem(STORAGE_KEY_ISSUE, JSON.stringify(data.issue));
+        // Mark inbox to play the arrival fanfare exactly once
+        localStorage.setItem("alpha-just-generated", "1");
         setDone(true);
-        setTimeout(() => router.push("/inbox" as never), 900);
+        fanfare();
+        setTimeout(() => router.push("/inbox" as never), 1200);
       })
       .catch((e) => {
         clearInterval(stepTimer);
