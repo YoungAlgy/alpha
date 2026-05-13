@@ -20,6 +20,13 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-05-13",
+    title: "Letter emails point at /inbox, not a magic link",
+    body:
+      "Now that sign-in uses a 6-digit code, the \"Read the full letter →\" button in your weekly email just opens the inbox. If you got signed out, there's a small \"Request a new code\" link below it.",
+    tag: "improved",
+  },
+  {
+    date: "2026-05-13",
     title: "Magic-link sign-in handles both flow types",
     body:
       "The auth callback now recognizes both PKCE (?code=…) and implicit-flow (#access_token=…) magic links, so clicking the link in any letter — or returning from checkout — lands you signed in instead of dropping you on a sign-in error page.",

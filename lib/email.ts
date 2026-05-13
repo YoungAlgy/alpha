@@ -167,10 +167,11 @@ interface RenderArgs {
   magicLink: string | null;
 }
 
-function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, magicLink }: RenderArgs): string {
-  // Prefer the magic link as the CTA if we have one — it signs them in AND
-  // lands them at the inbox. Falls back to inboxUrl if not.
-  const cta = magicLink || inboxUrl;
+function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf }: RenderArgs): string {
+  // CTA always points at /inbox. If the user is still signed in, they go
+  // straight to their letter. If not, /inbox bounces them to /signin where
+  // they request a 6-digit code — same as anywhere else in the app.
+  const signinUrl = inboxUrl.replace("/inbox", "/signin");
   return `<!doctype html>
 <html lang="en">
   <head><meta charset="utf-8"><title>Your Sunday alpha</title></head>
@@ -190,11 +191,13 @@ function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, magicLin
       </p>
       <pre style="font-family:Georgia,serif;font-size:16px;line-height:1.7;margin:0 0 36px;color:#1F3D2E;white-space:pre-wrap;">${escapeHtml(sectionList)}</pre>
       <div style="margin:40px 0;">
-        <a href="${escapeAttr(cta)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
+        <a href="${escapeAttr(inboxUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
           Read the full letter →
         </a>
       </div>
-      ${magicLink ? `<p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">This button signs you in automatically. The link expires in an hour — but you can always request a new one at <a href="${escapeAttr(inboxUrl.replace("/inbox", "/signin"))}" style="color:#A88947;">signin</a>.</p>` : ""}
+      <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
+        Need a new sign-in code? <a href="${escapeAttr(signinUrl)}" style="color:#A88947;">Request one here</a>.
+      </p>
       <p style="font-size:14px;line-height:1.6;color:#4A5F50;margin:48px 0 0;">
         — Alpha
       </p>
@@ -207,8 +210,7 @@ function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, magicLin
 </html>`;
 }
 
-function renderText({ firstName, teaser, sectionList, inboxUrl, weekOf, magicLink }: RenderArgs): string {
-  const cta = magicLink || inboxUrl;
+function renderText({ firstName, teaser, sectionList, inboxUrl, weekOf }: RenderArgs): string {
   return `${weekOf}
 
 Hi ${firstName},
@@ -219,8 +221,10 @@ THIS WEEK
 ${sectionList}
 
 Read the full letter:
-${cta}
-${magicLink ? `\n(This link signs you in automatically — expires in an hour.)\n` : ""}
+${inboxUrl}
+
+(If you got signed out, request a fresh 6-digit code at ${inboxUrl.replace("/inbox", "/signin")})
+
 — Alpha`;
 }
 
