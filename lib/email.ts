@@ -71,6 +71,14 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
 }
 
 function subjectFromIssue(issue: Issue): string {
+  // Lead with the first item's headline — most-likely-to-be-clicked thing —
+  // then bucket the topics as the second clause. Better preview text in Gmail
+  // / Apple Mail than a generic 'Your Sunday alpha · topics…'.
+  const lead = issue.sections[0]?.items?.[0]?.headline;
+  if (lead) {
+    const trimmed = lead.length > 70 ? lead.slice(0, 67).trimEnd() + "…" : lead;
+    return `${trimmed} — and 4 more this week`;
+  }
   const labels = issue.sections.slice(0, 3).map((s) => s.topicLabel.toLowerCase());
   return `Your Sunday alpha · ${labels.join(", ")}`;
 }
