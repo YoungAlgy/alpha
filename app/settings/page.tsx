@@ -145,6 +145,19 @@ export default function SettingsPage() {
           </Section>
         )}
 
+        <Section title="What's new">
+          <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+            Recent improvements, additions, and fixes.
+          </p>
+          <Link
+            href="/settings/changelog"
+            className="alpha-ui text-sm underline underline-offset-4"
+            style={{ color: "var(--accent-ink)" }}
+          >
+            Changelog →
+          </Link>
+        </Section>
+
         <Section title="Account">
           <div className="space-y-3">
             <button
