@@ -37,12 +37,29 @@ export type TopicId =
   | "startups-vc"
   | "faith-meaning";
 
-export type ItemKind = "play" | "watch" | "apply" | "note";
+export type ItemKind =
+  | "read"     // article, essay, news
+  | "watch"    // video, talk, film
+  | "listen"   // podcast, audio
+  | "try"      // app, tool, product
+  | "post"     // social post (X / Threads / Bluesky / Farcaster)
+  | "book"     // book recommendation
+  | "event"    // local or online event
+  | "note";    // plain editorial note, no primary action
+
+export interface Reference {
+  label: string;
+  url: string;
+  note?: string;
+}
 
 export interface DigestItem {
   kind: ItemKind;
   headline: string;
   body: string;
+  primaryRef?: Reference;
+  supplementaryRefs?: Reference[];
+  // Legacy field kept for backward-compat with sample-issue.ts
   source?: string;
   sourceUrl?: string;
 }

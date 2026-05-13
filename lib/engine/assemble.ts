@@ -36,11 +36,11 @@ export async function generateIssue(
       topicLabel: b.topicLabel,
       intro: b.intro,
       items: b.items.map((it) => ({
-        kind: "note" as const,
+        kind: it.kind,
         headline: it.headline,
         body: it.body,
-        source: it.source,
-        sourceUrl: it.sourceUrl,
+        primaryRef: it.primaryRef,
+        supplementaryRefs: it.supplementaryRefs,
       })),
     })),
   };

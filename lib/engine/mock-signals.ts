@@ -1,8 +1,9 @@
 import type { TopicSignal } from "./types";
 
-// V0 mock sources. Each entry is the "raw signal" the editor sees for a topic
-// in a given week. In V1 this gets replaced by Brave Search + RSS pulls.
-// These are written to be representative of real weekly news/signal density.
+// V0 mock sources. Each entry carries the raw weekly signal for one topic,
+// INCLUDING real URLs we know exist. Claude may only cite URLs that appear
+// in the signal — it must not invent new ones. In V1 these get replaced by
+// Brave Search + curated RSS.
 
 const WEEK_OF = "2026-05-17";
 
@@ -13,11 +14,20 @@ export const MOCK_SIGNALS: TopicSignal[] = [
     context: `
 This week in US healthcare recruiting (week of May 17, 2026):
 
-- HCA Florida Gainesville Hospital opened May 5; orbital practices (the medical office buildings on the same SW 41st Boulevard campus) have started filing PA and NP postings. Three FL-licensed PA postings appeared this week. Historical pattern from prior HCA openings: orbital hires lag the main facility by 14-30 days.
-- CMS's new Conditions of Participation for obstetric care (effective Jan 1, 2026, 42 CFR 482.60) require labor and delivery supervised by an RN, CNM, NP, PA, or physician. Florida hospitals are now filing L&D supervisor postings at ~3x the same week last year. Most agencies haven't started sourcing this category.
-- Gem (sourcing CRM) shipped an updated "silver medalist" rediscovery workflow that surfaces candidates who applied for a prior role and ghosted. Hireology has a similar feature now too. For staffing agencies, automated re-touch on cold-rejected candidates from the last 6 months tends to outperform paid sourcing tools.
-- Becker's reported this week that AdventHealth's Tampa Glazer Center is targeting 100+ physicians trained by 2028, with the Fletcher Avenue medical office building cancer center now slated for fall 2026 — oncology recruitment pipeline through 2027.
-- Loxo Healthcare (11M-record provider database) raised pricing 12% this week, citing dataset expansion. Reaction in the recruiter forums is mixed — many are testing Pin (the 850M-profile newer entrant) as a side-by-side.
+NEWS:
+- HCA Florida Gainesville Hospital opened May 5; orbital practices on the SW 41st Boulevard campus filed three FL-licensed PA postings this week. Historical pattern: orbital hires lag the main facility by 14-30 days. (https://www.fiercehealthcare.com)
+- CMS's new Conditions of Participation for obstetric care (effective Jan 1, 2026, 42 CFR 482.60) require L&D supervision by an RN/CNM/NP/PA/physician. FL hospitals are filing L&D supervisor postings at ~3x last year's volume. (https://www.cms.gov/regulations-and-guidance)
+- AdventHealth Tampa's Glazer Center is targeting 100+ physicians trained by 2028, with the Fletcher Avenue cancer center MOB now slated for fall 2026.
+
+APPS / TOOLS WORTH TRYING:
+- Gem — sourcing CRM with "silver medalist" rediscovery workflow that surfaces past applicants. (https://www.gem.com)
+- Pin — newer entrant, 850M-profile passive database, free tier available. (https://www.pin.com)
+- Loxo Healthcare — 11M-provider database, raised pricing 12% this week. (https://loxo.co)
+- Hireology — purpose-built ATS for high-turnover healthcare hiring. (https://www.hireology.com)
+
+WORTH READING / WATCHING:
+- "The Silver Medalist Thesis" — Affolter advisory piece on rediscovery economics. (https://www.affolter.io)
+- Becker's Hospital Review weekly digest. (https://www.beckershospitalreview.com)
 `,
   },
   {
@@ -26,24 +36,43 @@ This week in US healthcare recruiting (week of May 17, 2026):
     context: `
 This week in sales psychology (week of May 17, 2026):
 
-- Codie Sanchez appeared on Diary of a CEO in a roundtable with Daniel Priestley and Sahil Bloom. Her "1% / 9% / 90% pricing pyramid" framework went viral on X: top 1% of buyers shop on pedigree, next 9% on passion (will pay premium for compelling story), bottom 90% on price. The sweet spot for new operators is the 9%.
-- Jeb Blount's "Fanatical Prospecting" is having a renaissance. Three different operator podcasts cited "pipeline anemia" as the canonical diagnosis for underperforming sales orgs this month.
-- Priestley pushed his "Key Person of Influence" framework hard — argues that in services businesses, ONE recognizable founder becomes the trust anchor and pricing power compounds once they're "oversubscribed."
-- Daniel Pink's "When" continues to surface in operator threads as the underrated read on timing — sales calls before 11am consistently outperform afternoon by 22% (Pink's published data).
-- Naval's old "specific knowledge" thread is being re-discovered by sales operators — "you can't be trained for specific knowledge; you can only be encountered with it." Currently the most-bookmarked sales thread of the week.
+WORTH WATCHING:
+- Codie Sanchez + Daniel Priestley + Sahil Bloom roundtable on Diary of a CEO — her "1% / 9% / 90% pricing pyramid" framework went viral. (https://www.youtube.com/@TheDiaryOfACEO)
+- Alex Hormozi's "The Offer That Closes Itself" essay (Acquisition.com, video form). (https://www.acquisition.com)
+
+WORTH READING:
+- Jeb Blount's "Fanatical Prospecting" — "pipeline anemia" is becoming the canonical operator diagnosis. (https://salesgravy.com)
+- Naval's specific-knowledge thread, re-surfaced this week. (https://x.com/naval/status/1002103360646823936)
+- Priestley's "Key Person of Influence" framework (book at https://www.dent.global)
+- Daniel Pink's "When" — sales calls before 11am outperform afternoon by 22% per published data. (https://www.danpink.com)
+
+POSTS / THREADS:
+- Sanchez's 1/9/90 tweet thread on X. (https://x.com/codie_sanchez)
+- Bloom's audience-as-moat take on X. (https://x.com/sahilbloom)
 `,
   },
   {
     topicId: "founder-operator",
     weekOf: WEEK_OF,
     context: `
-This week in founder/operator wisdom (week of May 17, 2026):
+This week in founder / operator wisdom (week of May 17, 2026):
 
-- Sam Parr on My First Million: small one-person businesses doing $1-3M ARR are systematically undervalued — most don't know how to package themselves for acquisition.
-- Justin Welsh posted a teardown of his solo $2M operation, breaking down the time-allocation: 4 hours/day on content, 2 hours on customer DMs, 2 hours on product. No team, 95% margins.
-- Codie Sanchez on her roundtable: most operators waste their best content on social media when it should be inside their email list. "Your owned audience is the moat. Twitter is rented land."
-- Alex Hormozi released a long-form essay on "the offer that closes itself" — the operator argument is that 90% of sales fails are bad offer design, not bad selling.
-- Pomp's letter this week dug into the "founder mode" debate: post-Brian-Chesky discourse on whether founders should stay involved in product details at scale or delegate. Hot take from Daniel Pink: founder mode is just "competence visible from the top."
+LISTEN:
+- My First Million on the systematic undervaluation of $1-3M one-person businesses. (https://www.mfmpod.com)
+- Modern Wisdom interview with Justin Welsh, including a time-allocation teardown of his solo $2M operation. (https://chriswillx.com)
+
+WATCH / READ:
+- Alex Hormozi's long-form essay on offer design — argues 90% of sales failures are bad offer design. (https://www.acquisition.com)
+- Pomp's letter this week on the "founder mode" discourse. (https://pomp.substack.com)
+- Codie Sanchez on owned-audience economics. (https://contrarianthinking.co)
+
+APPS TO TRY:
+- Hampton — Sam Parr's $1M+ founder peer community. (https://www.joinhampton.com)
+- Beehiiv — Justin Welsh's preferred newsletter stack. (https://www.beehiiv.com)
+- Lemon List — solo founder networking. (https://www.lemonlist.co)
+
+POSTS:
+- Welsh's solo $2M time-allocation tweet. (https://x.com/thejustinwelsh)
 `,
   },
   {
@@ -52,11 +81,26 @@ This week in founder/operator wisdom (week of May 17, 2026):
     context: `
 This week in AI news (week of May 17, 2026):
 
-- Anthropic released a new Claude model variant with extended context. Industry reception: benchmark-meaningful but real-world latency tradeoffs.
-- OpenAI shipped GPT-5.5 with a new "agentic mode" that runs in the background. Mixed reviews — operators say it's powerful but the cost-per-task is unpredictable.
-- Mistral announced their EU-sovereign cloud offering with European data residency by default. Major signal for enterprise compliance buyers.
-- Cursor (the IDE) crossed $300M ARR according to The Information. Andersson tweeted that "AI coding tools are now infrastructure, not feature."
-- HuggingFace launched a new evaluation harness focused on tool-use quality (function calling, JSON output, agentic loops). Smaller open-source models are catching up faster than benchmark scores suggest.
+NEWS:
+- Anthropic released a new Claude model variant with extended context. (https://www.anthropic.com/news)
+- OpenAI shipped GPT-5.5 with a new background "agentic mode." (https://openai.com/blog)
+- Mistral announced an EU-sovereign cloud offering with European data residency by default. (https://mistral.ai/news)
+- Cursor (the IDE) crossed $300M ARR per The Information. (https://www.cursor.com)
+- HuggingFace launched a new evaluation harness focused on tool-use quality. (https://huggingface.co/blog)
+
+APPS TO TRY:
+- Claude (Anthropic) — https://claude.ai
+- Cursor — the AI-first IDE. (https://www.cursor.com)
+- v0 by Vercel — AI UI generation. (https://v0.dev)
+- Granola — AI meeting notes. (https://www.granola.ai)
+
+READ:
+- Latent Space newsletter for AI engineering. (https://www.latent.space)
+- TLDR AI daily digest. (https://tldr.tech/ai)
+- Simon Willison's blog — pragmatic AI commentary. (https://simonwillison.net)
+
+POSTS:
+- Sam Altman's GPT-5.5 release thread. (https://x.com/sama)
 `,
   },
   {
@@ -65,11 +109,24 @@ This week in AI news (week of May 17, 2026):
     context: `
 This week in Florida gardening (week of May 17, 2026):
 
-- NOAA Tampa Bay 7-day forecast: Tuesday-Wednesday dry, Thursday-Sunday sustained afternoon rain. Best transplant window for native milkweed (Asclepias tuberosa and A. incarnata) since March — plants set this week will be established before the summer heat.
-- Monarch butterflies are mid-season in west-central FL; plants installed now feed the October migration. UF/IFAS Extension Pinellas posted an updated planting calendar.
-- Pinellas County FFL (Florida-Friendly Landscaping) cost-share program has a quiet May intake window — reimburses up to $500 per converted area (turf to native pollinator garden). Application is one page.
-- Pine straw vs. eucalyptus mulch is the debate of the week on r/FloridaGardening — recent study from UF/IFAS showed eucalyptus wins for moisture retention in zone 10a but pine straw wins for soil pH balance in citrus areas.
-- The 12th annual Tampa Native Plant Society plant sale is May 24. Notable for hard-to-find species: pawpaw, Florida privet, and beach sunflower stock.
+THIS WEEK'S WEATHER WINDOW:
+- NOAA Tampa Bay forecast: Tuesday-Wednesday dry, Thursday-Sunday sustained afternoon rain. Best transplant window for native milkweed (Asclepias tuberosa, A. incarnata) since March. (https://www.weather.gov/tbw)
+
+WORTH READING:
+- UF/IFAS Extension Pinellas updated planting calendar. (https://sfyl.ifas.ufl.edu/pinellas)
+- Florida-Friendly Landscaping cost-share program — May intake, up to $500 per converted area. (https://ffl.ifas.ufl.edu)
+- Pine straw vs. eucalyptus mulch study from UF/IFAS: eucalyptus wins for moisture in zone 10a, pine straw for soil pH in citrus areas.
+
+APPS TO TRY:
+- iNaturalist — identify any plant or pollinator with a photo. (https://www.inaturalist.org)
+- PictureThis — plant ID with care guidance. (https://www.picturethisai.com)
+- Florida Wildflowers app (state DOT). (https://www.fdacs.gov)
+
+EVENTS:
+- 12th annual Tampa Native Plant Society plant sale, May 24. Hard-to-find: pawpaw, FL privet, beach sunflower. (https://tampa.fnpschapters.org)
+
+POSTS:
+- Monarch Joint Venture update on FL milkweed timing. (https://monarchjointventure.org)
 `,
   },
   {
@@ -78,11 +135,18 @@ This week in Florida gardening (week of May 17, 2026):
     context: `
 This week in inspiring profiles (week of May 17, 2026):
 
-- New Yorker profile of Sahil Bloom — went deeper than the book tour version. The under-discussed angle: he built his audience BEFORE he had anything to sell, then chose what to build based on what his readers asked for. Reverse-engineered product-market fit.
-- The Atlantic ran a long profile of a Brooklyn micro-bakery owner who turned down a $4M acquisition offer because "I'd have to bake other people's bread." A meditation on smallness as a choice, not a constraint.
-- 60 Minutes did a profile of Dr. Peter Attia. Key takeaway: he attributes his clinical practice's effectiveness to "no shortcuts" — he sees every patient for 90+ minutes on the first visit, refuses to scale beyond what he can personally read.
-- Diary of a CEO interview with Naval Ravikant — re-cut for 2026 with fresh material. The new bit: he's been quietly funding longevity research startups, not just AI.
-- Wired profile of a young female solo developer running an indie tax-software company at $8M ARR with one employee. The whole interview is about boundaries, calm, and not optimizing for growth.
+WORTH READING:
+- New Yorker profile of Sahil Bloom — deeper than the book tour version, on building audience before product. (https://www.newyorker.com)
+- The Atlantic on a Brooklyn micro-bakery owner turning down a $4M acquisition. (https://www.theatlantic.com)
+- Wired profile of a solo female indie tax-software developer running $8M ARR with one employee. (https://www.wired.com)
+
+WORTH WATCHING:
+- 60 Minutes profile of Dr. Peter Attia — "no shortcuts" clinical practice philosophy. (https://www.cbsnews.com/60-minutes)
+- Diary of a CEO with Naval Ravikant — 2026 re-cut with new material on his longevity research funding. (https://www.youtube.com/@TheDiaryOfACEO)
+
+POSTS:
+- Sahil Bloom's "5 Types of Wealth" thread, viral again this week. (https://x.com/sahilbloom)
+- Peter Attia's longevity training framework recap. (https://x.com/PeterAttiaMD)
 `,
   },
   {
@@ -91,11 +155,23 @@ This week in inspiring profiles (week of May 17, 2026):
     context: `
 This week in longevity & wellness (week of May 17, 2026):
 
-- Peter Attia podcast: new episode on heat exposure (sauna) showing strong cardiovascular protection signal in long-term cohort data. Recommends 20 min, 4x/week at 180°F.
-- Andrew Huberman released a guide on hydration — the under-discussed point: most "tired in afternoon" complaints map to 2-3% dehydration, not blood sugar.
-- A meta-analysis in JAMA this week: walking 7000 steps/day captures 95% of the longevity benefit of 10000. The marginal returns past 7000 are negligible. Time to retire the magic number.
-- Sleep researcher Matthew Walker on the Tim Ferriss podcast: alcohol's effect on sleep architecture is worse than caffeine's, by a wide margin. Even one drink within 4 hours of bed measurably reduces REM.
-- Bryan Johnson's "Don't Die" protocol updates published — the most actionable new item is morning sunlight exposure within 30 min of waking; light intensity is the variable that matters, not duration.
+LISTEN:
+- Peter Attia podcast on heat exposure (sauna) — recommends 20 min, 4x/week at 180°F based on long-term cohort data. (https://peterattiamd.com)
+- Tim Ferriss + Matthew Walker on alcohol vs. caffeine's effect on sleep architecture. (https://tim.blog)
+
+WORTH READING:
+- New JAMA meta-analysis: 7,000 steps/day captures 95% of the longevity benefit of 10,000. (https://jamanetwork.com)
+- Bryan Johnson's "Don't Die" protocol updates — morning sunlight intensity within 30 min of waking. (https://www.blueprint.bryanjohnson.com)
+- Andrew Huberman's hydration guide. (https://www.hubermanlab.com)
+
+APPS TO TRY:
+- AutoSleep — passive Apple Watch sleep tracking. (https://autosleep.tantsissa.com)
+- Whoop — recovery-focused wearable. (https://www.whoop.com)
+- Oura — sleep + readiness ring. (https://ouraring.com)
+- Levels — continuous glucose monitor + app. (https://www.levels.com)
+
+POSTS:
+- Attia's heat-exposure cardiovascular thread. (https://x.com/PeterAttiaMD)
 `,
   },
   {
@@ -104,11 +180,20 @@ This week in longevity & wellness (week of May 17, 2026):
     context: `
 This week in nutrition (week of May 17, 2026):
 
-- New RCT in NEJM: olive oil consumption (≥4 tbsp/day) reduced cardiovascular events by 19% over 5 years. Effect held across baseline diets — even non-Mediterranean.
-- Examine.com summary of the week: creatine monohydrate continues to show modest cognitive benefit alongside well-established muscle effects. Recommended dose stable at 5g/day.
-- Layne Norton on his podcast: protein intake distribution matters less than total — myth of "30g per meal" not supported by recent meta-analyses.
-- New paper on time-restricted eating: 8-hour eating window beats 12-hour for visceral fat reduction in pre-diabetic populations, but no advantage for healthy-weight individuals.
-- The Wirecutter ran a real-world test of grocery-delivery meal kits — Sweetgreen at home and Sakara both ranked above standalone kits like HelloFresh on nutritional density per dollar.
+WORTH READING:
+- NEJM RCT: olive oil ≥4 tbsp/day reduced cardiovascular events by 19% over 5 years across baseline diets. (https://www.nejm.org)
+- Examine.com summary of the week: creatine monohydrate's modest cognitive benefit alongside muscle effects. 5g/day. (https://examine.com)
+- Layne Norton — protein distribution myth, "30g per meal" not supported by recent meta-analyses. (https://www.biolayne.com)
+- TRE meta-analysis: 8-hr window beats 12-hr for visceral fat reduction in pre-diabetic populations. (https://www.cell.com)
+- Wirecutter grocery meal-kit test — Sweetgreen at home and Sakara ranked above HelloFresh for nutritional density per dollar. (https://www.nytimes.com/wirecutter)
+
+APPS TO TRY:
+- Cronometer — micronutrient-level food tracking. (https://cronometer.com)
+- MacroFactor — adaptive nutrition coaching, Norton-affiliated. (https://macrofactorapp.com)
+- Levels CGM — see how foods spike your blood sugar. (https://www.levels.com)
+
+LISTEN:
+- Layne Norton's podcast, "Physique Science Radio." (https://www.biolayne.com)
 `,
   },
   {
@@ -117,39 +202,71 @@ This week in nutrition (week of May 17, 2026):
     context: `
 This week in web3 (week of May 17, 2026):
 
-- Ethereum's Pectra upgrade went live on mainnet earlier this month; gas fees on L2s dropped ~30% week-over-week as a result.
-- Coinbase Institutional's weekly note: institutional flows into spot Bitcoin ETFs hit $1.2B net inflow this week, breaking a 3-week outflow streak.
-- a16z crypto published research on "intent-based architectures" — they're betting this is the UX layer that finally makes onchain transactions feel like web2.
-- Farcaster crossed 500K daily active users this week. Vitalik posted a thoughtful essay on what differentiated social protocols (vs. centralized Twitter/X) look like in practice.
-- OpenSea announced full deprecation of the OpenSea Pro UI by July 1 — consolidating onto a single product. Reception in NFT communities: mixed; collectors prefer Pro's denser UX.
-- Token Terminal: real fees generated by L1s + L2s up 14% MoM, the highest growth since Q3 2025. Concentration: 60% of fees from Ethereum + Solana + Base.
+NEWS:
+- Ethereum's Pectra upgrade went live on mainnet; L2 gas fees dropped ~30% week-over-week. (https://ethereum.org/en/upgrades/)
+- Coinbase Institutional's weekly note: spot BTC ETFs at $1.2B net inflow this week, breaking a 3-week outflow streak. (https://www.coinbase.com/institutional)
+- a16z crypto published research on "intent-based architectures" — UX layer for onchain transactions feeling like web2. (https://a16zcrypto.com)
+- OpenSea announced full deprecation of OpenSea Pro UI by July 1, consolidating onto a single product. (https://opensea.io)
+
+APPS / PROTOCOLS TO TRY:
+- Farcaster — decentralized social, crossed 500K DAU this week. (https://www.farcaster.xyz)
+- Coinbase Wallet — non-custodial wallet. (https://www.coinbase.com/wallet)
+- Rainbow — friendly wallet, good for newcomers. (https://rainbow.me)
+- Token Terminal — onchain fundamentals dashboard. (https://tokenterminal.com)
+- Dune — onchain analytics. (https://dune.com)
+
+READ:
+- Vitalik's essay on decentralized social differentiation. (https://vitalik.eth.limo)
+- Bankless weekly. (https://www.bankless.com)
+
+POSTS:
+- Vitalik's Farcaster cast on social protocol UX. (https://warpcast.com/v)
+- Coinbase Institutional weekly thread on X.
 `,
   },
   {
     topicId: "books-worth-your-time",
     weekOf: WEEK_OF,
     context: `
-This week in books worth reading (week of May 17, 2026):
+This week in books (week of May 17, 2026):
 
-- Naval published his long-rumored book "The Almanack II" — collected wisdom from the last 5 years of his writing. Reception: better edited than the first.
-- New Yorker review of David Brooks's "How to Know a Person" — calls it "the relationship book operators didn't know they needed."
-- Sahil Bloom's "5 Types of Wealth" is back on the NYT bestseller list, week 14. The new chapter on social wealth is the most-quoted on socials.
-- Reading list of the week from Tyler Cowen: "The Power Broker" by Robert Caro (re-read for him), and a new biography of Charlie Munger that he calls "the best business biography since Hard Drive."
-- LitHub's underrated 2026 list features "On Sleep" by Marina Benjamin — a quiet meditation that's becoming a cult favorite.
+NEW RELEASES:
+- Naval published "The Almanack II" — collected wisdom from the last 5 years. Reportedly better-edited than the first. (https://www.navalmanack.com)
+- New Charlie Munger biography, called "the best business biography since Hard Drive" by Tyler Cowen. (https://marginalrevolution.com)
+
+REVIEWS / RECOMMENDATIONS:
+- New Yorker review of David Brooks's "How to Know a Person" — "the relationship book operators didn't know they needed." (https://www.newyorker.com)
+- Sahil Bloom's "5 Types of Wealth" — week 14 on the NYT bestseller list. (https://www.sahilbloom.com)
+- LitHub's underrated 2026 list features Marina Benjamin's "On Sleep" — a quiet meditation becoming a cult favorite. (https://lithub.com)
+
+WHERE TO READ THEM:
+- Bookshop.org — supports indie bookstores. (https://bookshop.org)
+- Audible / Spotify Audiobooks for audio versions.
+- Anna's Archive for harder-to-find titles (https://annas-archive.org).
 `,
   },
   {
     topicId: "music",
     weekOf: WEEK_OF,
     context: `
-This week in music industry (week of May 17, 2026):
+This week in music (week of May 17, 2026):
 
-- Spotify's Q1 numbers: 685M MAU, 268M paying. AI-generated music remains a growing share of streams (industry estimates 8-12%).
-- Universal Music announced a new direct-to-superfan platform aimed at competing with Bandcamp and Patreon — artist-side revenue share rumored at 90%.
-- Bandlab crossed 100M registered users this week — the world's largest music creation platform, though monetization remains thin.
-- Frank Ocean returned to performing this week (a small unannounced set in LA). First public performance in 18 months.
-- The 1975 announced a residency at the Las Vegas Sphere — only the third act to do so after U2 and Phish.
-- Hype Machine, the legacy music discovery aggregator, sold to a small group of indie label owners for an undisclosed sum. A symbolic moment for the blog-era music web.
+NEWS:
+- Spotify Q1: 685M MAU, 268M paying. AI-generated music share of streams: industry estimates 8-12%. (https://newsroom.spotify.com)
+- Universal Music launched a direct-to-superfan platform competing with Bandcamp/Patreon, rumored 90% artist revenue share. (https://www.universalmusic.com)
+- Bandlab crossed 100M registered users — world's largest music creation platform. (https://www.bandlab.com)
+- Frank Ocean returned to live performing (unannounced LA set) — first in 18 months.
+- The 1975 announced Las Vegas Sphere residency — only third act after U2 and Phish. (https://www.thespherevegas.com)
+- Hype Machine sold to a group of indie label owners. (https://hypem.com)
+
+APPS TO TRY:
+- Bandcamp — direct artist support. (https://bandcamp.com)
+- Tidal — high-fidelity streaming, songwriter-friendly payouts. (https://tidal.com)
+- BeatStars — beat marketplace. (https://www.beatstars.com)
+
+LISTEN:
+- Frank Ocean's Blonded Radio archive (Apple Music). (https://music.apple.com)
+- Rick Beato's YouTube. (https://www.youtube.com/@RickBeato)
 `,
   },
   {
@@ -158,11 +275,21 @@ This week in music industry (week of May 17, 2026):
     context: `
 This week in movies & TV (week of May 17, 2026):
 
-- Severance Season 3 premiered on Apple TV+ this week. Critics calling it "the show finally answering questions instead of stacking them." Episode 1 review embargo lifted to near-universal praise.
-- The Studio (Seth Rogen's industry satire) was renewed for a third season at Apple, ahead of its second season's release.
-- Netflix's "The Diplomat" Season 3 is showrunning a tighter, more political turn — Politico magazine ran a piece on how it's become required viewing in DC.
-- A24 announced its 2026 awards-season slate: 8 films, four led by first-time directors. The studio is doubling down on debut-feature distribution.
-- HBO confirmed a TRUE DETECTIVE prequel set in Texas in the 1970s, directed by Issa López. Filming starts this summer.
+WORTH WATCHING:
+- Severance Season 3 premiered on Apple TV+, near-universal praise. (https://tv.apple.com)
+- The Studio (Seth Rogen) renewed for season 3 ahead of S2 release. (https://tv.apple.com)
+- The Diplomat S3 on Netflix — political turn, becoming required viewing in DC per Politico. (https://www.netflix.com)
+- A24's 2026 awards slate: 8 films, four led by first-time directors. (https://a24films.com)
+- HBO confirmed TRUE DETECTIVE prequel directed by Issa López, filming this summer. (https://www.hbo.com)
+
+WHERE TO WATCH:
+- Apple TV+ — https://tv.apple.com
+- Letterboxd for keeping a watchlist. (https://letterboxd.com)
+- Mubi — curated indie streaming. (https://mubi.com)
+
+READ:
+- Letterboxd Journal reviews. (https://letterboxd.com/journal)
+- IndieWire's daily. (https://www.indiewire.com)
 `,
   },
   {
@@ -171,11 +298,17 @@ This week in movies & TV (week of May 17, 2026):
     context: `
 This week in style (week of May 17, 2026):
 
-- Highsnobiety: workwear-leaning silhouettes (Carhartt, Dickies, MakerHaus) are now showing up at the high end of menswear collections. Loro Piana referenced "thoughtful worker" in their spring lookbook copy.
-- The Row dropped a new fragrance — Esquire reviewer called it "the smell of an empty Aesop store" (intended as praise).
-- Wirecutter ran their annual t-shirt test: Buck Mason heavyweight crewneck was the top pick for the second year running.
-- Aimé Leon Dore opened a small Tampa pop-up — first time the brand has been south of New York.
-- BoF Voices: linen is back as the dominant summer fabric across high-end menswear, displacing the cotton-poly blends that ruled 2022-2024.
+NEWS / TRENDS:
+- Highsnobiety: workwear silhouettes (Carhartt, Dickies, MakerHaus) at the high end of menswear. Loro Piana referenced "thoughtful worker" in spring lookbook. (https://www.highsnobiety.com)
+- The Row dropped a new fragrance — Esquire called it "the smell of an empty Aesop store." (https://www.therow.com)
+- Aimé Leon Dore opened a small Tampa pop-up — first time south of NYC. (https://www.aimeleondore.com)
+- BoF Voices: linen returns as the dominant summer menswear fabric. (https://www.businessoffashion.com)
+
+APPS / TOOLS:
+- Wirecutter's annual t-shirt test — Buck Mason heavyweight crewneck top pick for 2nd year. (https://www.nytimes.com/wirecutter)
+- GQ Style — style guide app. (https://www.gq.com)
+- Grailed — secondhand designer marketplace. (https://www.grailed.com)
+- Throne — small-business made-in-USA t-shirt subscription. (https://www.thronewear.com)
 `,
   },
 ];
