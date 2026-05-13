@@ -1,5 +1,10 @@
 import type { Issue, DigestItem, ItemKind } from "@/lib/types";
 import { ScrollFadeIn } from "./ScrollFadeIn";
+import { TOPIC_BY_ID } from "@/lib/topics";
+
+function sectionAnchor(topicId: string): string {
+  return `s-${topicId}`;
+}
 
 interface DigestProps {
   issue: Issue;
@@ -46,15 +51,22 @@ export function Digest({ issue }: DigestProps) {
         {issue.editorIntro}
       </p>
 
-      {issue.sections.map((section) => (
+      {issue.sections.map((section) => {
+        const meta = TOPIC_BY_ID[section.topicId];
+        return (
         <ScrollFadeIn key={section.topicId} className="mb-16">
-        <section>
+        <section id={sectionAnchor(section.topicId)}>
           <div
             className="border-t mb-10"
             style={{ borderColor: "var(--rule)" }}
           />
-          <h2 className="alpha-display text-3xl md:text-4xl font-bold mb-3 tracking-tight">
-            {section.topicLabel}
+          <h2 className="alpha-display text-3xl md:text-4xl font-bold mb-3 tracking-tight flex items-baseline gap-3">
+            {meta?.emoji && (
+              <span aria-hidden className="text-2xl md:text-3xl" style={{ opacity: 0.85 }}>
+                {meta.emoji}
+              </span>
+            )}
+            <span>{section.topicLabel}</span>
           </h2>
           {section.intro && (
             <p
@@ -71,7 +83,8 @@ export function Digest({ issue }: DigestProps) {
           </div>
         </section>
         </ScrollFadeIn>
-      ))}
+        );
+      })}
 
       <div
         className="border-t pt-12 mt-16"

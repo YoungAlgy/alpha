@@ -36,6 +36,11 @@ export default function ThemePage() {
     chime();
   }
 
+  function hoverTheme() {
+    // Soft hover audio preview — same chime as select, just quieter via tone.
+    chime();
+  }
+
   function submit() {
     confirm();
     update({ theme: picked });
@@ -68,6 +73,7 @@ export default function ThemePage() {
                 key={t.id}
                 type="button"
                 onClick={() => pickTheme(t.id)}
+                onMouseEnter={() => isPicked || hoverTheme()}
                 className="text-left rounded-lg transition-all overflow-hidden theme-tile"
                 style={{
                   border: `2px solid ${isPicked ? "var(--accent)" : "var(--rule)"}`,

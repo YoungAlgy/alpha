@@ -45,14 +45,27 @@ export function QuestionStep({
     router.push(`/${nextStep(currentPath)}` as never);
   }
 
+  const [skipping, setSkipping] = useState(false);
+
   function skip() {
     tap();
-    update({ [field]: undefined } as Partial<OnboardingState>);
-    router.push(`/${nextStep(currentPath)}` as never);
+    setSkipping(true);
+    setTimeout(() => {
+      update({ [field]: undefined } as Partial<OnboardingState>);
+      router.push(`/${nextStep(currentPath)}` as never);
+    }, 280);
   }
 
   return (
-    <form onSubmit={submit} className="space-y-8">
+    <form
+      onSubmit={submit}
+      className="space-y-8"
+      style={{
+        opacity: skipping ? 0 : 1,
+        transform: skipping ? "translateY(-6px)" : "translateY(0)",
+        transition: "opacity 240ms ease, transform 240ms ease",
+      }}
+    >
       <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight">
         {question}
       </h1>

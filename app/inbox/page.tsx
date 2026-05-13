@@ -9,6 +9,7 @@ import { AudioToggle } from "@/components/AudioToggle";
 import { ReadingProgress } from "@/components/ReadingProgress";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { FirstLetterCelebration } from "@/components/FirstLetterCelebration";
+import { LetterTOC } from "@/components/LetterTOC";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { fanfare } from "@/lib/audio";
 import type { Issue } from "@/lib/types";
@@ -130,6 +131,7 @@ export default function InboxPage() {
           YOUR FIRST LETTER · {minutes} MIN READ · NEXT ONE SHIPS SUNDAY
         </div>
       </div>
+      <LetterTOC issue={issue} />
       <Digest issue={issue} />
       <InstallPrompt />
       <FirstLetterCelebration active={celebrate} />
