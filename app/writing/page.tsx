@@ -4,15 +4,31 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { stepDone, fanfare } from "@/lib/audio";
-import type { Issue, UserProfile } from "@/lib/types";
+import { TOPIC_BY_ID } from "@/lib/topics";
+import { THEME_BY_ID } from "@/lib/themes";
+import type { Issue, UserProfile, TopicId, ThemeId } from "@/lib/types";
 
-const STEPS = [
-  "Pulling signal on your topics",
-  "Reading sources",
-  "Drafting your editor's note",
-  "Setting the page in your theme",
-  "Almost there",
-];
+function personalizedSteps(
+  topics: TopicId[] | undefined,
+  theme: ThemeId | undefined,
+  firstName: string | undefined
+): string[] {
+  const topicLabels = (topics || [])
+    .map((id) => TOPIC_BY_ID[id]?.label)
+    .filter(Boolean) as string[];
+  const themeLabel = theme ? THEME_BY_ID[theme]?.label : "Forest";
+  const sourceTopic = topicLabels[0] || "your topics";
+  const noteTopic = topicLabels[1] || sourceTopic;
+  return [
+    `Pulling signal on ${sourceTopic}`,
+    `Reading sources for ${noteTopic}`,
+    firstName
+      ? `Drafting your editor's note for ${firstName}`
+      : "Drafting your editor's note",
+    `Setting the page in ${themeLabel}`,
+    "Almost there",
+  ];
+}
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
 
@@ -23,6 +39,7 @@ export default function WritingPage() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const startedRef = useRef(false);
+  const steps = personalizedSteps(state.topics, state.theme, state.firstName);
 
   useEffect(() => {
     if (!loaded || startedRef.current) return;
@@ -35,7 +52,7 @@ export default function WritingPage() {
     // Drive fake-but-paced progress UI while the real engine runs.
     const stepTimer = setInterval(() => {
       setCurrentStep((s) => {
-        const next = Math.min(s + 1, STEPS.length - 1);
+        const next = Math.min(s + 1, steps.length - 1);
         if (next !== s) stepDone(next);
         return next;
       });
@@ -62,7 +79,7 @@ export default function WritingPage() {
       })
       .then((data: { issue: Issue }) => {
         clearInterval(stepTimer);
-        setCurrentStep(STEPS.length - 1);
+        setCurrentStep(steps.length - 1);
         localStorage.setItem(STORAGE_KEY_ISSUE, JSON.stringify(data.issue));
         // Mark inbox to play the arrival fanfare exactly once
         localStorage.setItem("alpha-just-generated", "1");
@@ -110,7 +127,7 @@ export default function WritingPage() {
           )}
         </div>
         <ul className="text-left space-y-3">
-          {STEPS.map((label, i) => {
+          {steps.map((label, i) => {
             const status =
               done || i < currentStep
                 ? "done"

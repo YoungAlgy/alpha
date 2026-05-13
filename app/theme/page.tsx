@@ -68,44 +68,83 @@ export default function ThemePage() {
                 key={t.id}
                 type="button"
                 onClick={() => pickTheme(t.id)}
-                className="text-left rounded-lg transition-all overflow-hidden"
+                className="text-left rounded-lg transition-all overflow-hidden theme-tile"
                 style={{
                   border: `2px solid ${isPicked ? "var(--accent)" : "var(--rule)"}`,
                   background: sw.paper,
                   aspectRatio: "4 / 5",
                   cursor: "pointer",
-                  boxShadow: isPicked ? "0 6px 16px rgba(0,0,0,0.10)" : undefined,
+                  boxShadow: isPicked
+                    ? `0 8px 24px ${sw.accent}40`
+                    : undefined,
+                  transform: isPicked ? "translateY(-2px)" : undefined,
                 }}
               >
-                <div className="h-full p-3 flex flex-col justify-between">
-                  <div>
-                    <div className="text-[8px] tracking-widest" style={{ color: sw.ink, opacity: 0.5 }}>
-                      SUNDAY · MAY 17
-                    </div>
-                    <div
-                      className="text-base font-bold mt-2"
-                      style={{
-                        color: sw.ink,
-                        fontFamily: t.id === "arcade" ? "var(--font-pixelify)" : "var(--font-display)",
-                      }}
-                    >
-                      Hi {firstName},
-                    </div>
-                    <div
-                      className="text-[8px] leading-snug mt-1"
-                      style={{ color: sw.ink, opacity: 0.7 }}
-                    >
-                      Two things pulling at me this week — the recruiting...
-                    </div>
+                <div className="h-full p-3 flex flex-col">
+                  <div
+                    className="text-[7px] tracking-[0.16em] mb-1.5"
+                    style={{ color: sw.ink, opacity: 0.45 }}
+                  >
+                    SUNDAY · MAY 17
                   </div>
-                  <div className="flex items-end justify-between">
-                    <div className="text-[10px] font-bold" style={{ color: sw.ink }}>
+                  <div
+                    className="text-[15px] font-bold mb-1"
+                    style={{
+                      color: sw.ink,
+                      fontFamily:
+                        t.id === "arcade"
+                          ? "var(--font-pixelify)"
+                          : "var(--font-display)",
+                      letterSpacing: "-0.01em",
+                      lineHeight: 1.1,
+                    }}
+                  >
+                    Hi {firstName},
+                  </div>
+                  <div
+                    className="text-[7.5px] leading-snug mt-0.5 line-clamp-2"
+                    style={{ color: sw.ink, opacity: 0.65 }}
+                  >
+                    Two things pulling at me this week — the recruiting signals feel unusually live right now…
+                  </div>
+                  <div
+                    className="my-2"
+                    style={{
+                      height: 1,
+                      background: sw.ink,
+                      opacity: 0.15,
+                    }}
+                  />
+                  <div
+                    className="text-[9px] font-bold"
+                    style={{
+                      color: sw.ink,
+                      fontFamily:
+                        t.id === "arcade"
+                          ? "var(--font-pixelify)"
+                          : "var(--font-display)",
+                    }}
+                  >
+                    Healthcare recruiting
+                  </div>
+                  <div
+                    className="text-[7px] mt-1 leading-snug line-clamp-2"
+                    style={{ color: sw.ink, opacity: 0.7 }}
+                  >
+                    Florida L&D supervisor postings are up 3x…
+                  </div>
+                  <div className="flex-1" />
+                  <div className="flex items-end justify-between mt-2">
+                    <div
+                      className="text-[10px] font-semibold"
+                      style={{ color: sw.ink }}
+                    >
                       {t.label}
                     </div>
                     <div className="flex gap-0.5">
-                      <span style={{ background: sw.paper, width: 6, height: 6, borderRadius: 1, border: `1px solid ${sw.ink}33` }} />
-                      <span style={{ background: sw.ink, width: 6, height: 6, borderRadius: 1 }} />
-                      <span style={{ background: sw.accent, width: 6, height: 6, borderRadius: 1 }} />
+                      <span style={{ background: sw.paper, width: 7, height: 7, borderRadius: 2, border: `1px solid ${sw.ink}33` }} />
+                      <span style={{ background: sw.ink, width: 7, height: 7, borderRadius: 2 }} />
+                      <span style={{ background: sw.accent, width: 7, height: 7, borderRadius: 2 }} />
                     </div>
                   </div>
                 </div>

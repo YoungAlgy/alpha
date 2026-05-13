@@ -46,13 +46,28 @@ export default function InboxPage() {
   if (missing) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
-        <div className="text-center space-y-6">
-          <p className="alpha-display text-2xl font-bold">
+        <div className="text-center space-y-6 max-w-md">
+          <div
+            className="alpha-display text-6xl font-bold"
+            style={{ color: "var(--accent-ink)", opacity: 0.6 }}
+          >
+            α
+          </div>
+          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
             No letter yet.
           </p>
-          <Link href="/welcome" className="alpha-button">
-            Start fresh →
-          </Link>
+          <p
+            className="alpha-display text-base md:text-lg leading-relaxed"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            Your first letter ships the moment you finish setting up. Picks up
+            where you left off if you started earlier.
+          </p>
+          <div className="pt-2">
+            <Link href="/welcome" className="alpha-button">
+              Start fresh →
+            </Link>
+          </div>
         </div>
       </main>
     );
