@@ -3,16 +3,51 @@
 import Link from "next/link";
 import { useState, FormEvent } from "react";
 import { Footer } from "@/components/Footer";
+import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { confirm as audioConfirm } from "@/lib/audio";
 
 export default function SigninPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!email.trim()) return;
-    // V0 stub: real magic-link flow lands with Supabase Auth wiring.
-    setSent(true);
+    const addr = email.trim();
+    if (!addr) return;
+    setBusy(true);
+    setErr(null);
+
+    if (!supabaseConfigured()) {
+      // V0 stub path — show success without actually sending. Used when env
+      // isn't wired in a given environment (e.g., a stale local checkout).
+      setTimeout(() => {
+        audioConfirm();
+        setSent(true);
+        setBusy(false);
+      }, 600);
+      return;
+    }
+
+    try {
+      const sb = supabaseClient();
+      const redirectTo = `${window.location.origin}/alpha/auth/callback?next=/inbox`;
+      const { error } = await sb.auth.signInWithOtp({
+        email: addr,
+        options: {
+          emailRedirectTo: redirectTo,
+          shouldCreateUser: true,
+        },
+      });
+      if (error) throw error;
+      audioConfirm();
+      setSent(true);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't send the link. Try again?");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -48,13 +83,27 @@ export default function SigninPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
+                  disabled={busy}
                   className="w-full text-center alpha-display text-2xl bg-transparent border-b py-3 focus:outline-none placeholder:opacity-40"
                   style={{ color: "var(--ink)", borderColor: "var(--rule)" }}
                 />
-                <button type="submit" className="alpha-button">
-                  Send magic link →
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="alpha-button"
+                  style={{ opacity: busy ? 0.6 : 1 }}
+                >
+                  {busy ? "Sending…" : "Send magic link →"}
                 </button>
               </form>
+              {err && (
+                <p
+                  className="alpha-ui text-sm mt-6"
+                  style={{ color: "var(--accent-ink)" }}
+                >
+                  {err}
+                </p>
+              )}
               <p
                 className="alpha-ui text-sm mt-12"
                 style={{ color: "var(--ink-soft)" }}
@@ -71,6 +120,12 @@ export default function SigninPage() {
             </>
           ) : (
             <>
+              <div
+                className="alpha-display text-6xl font-bold mb-6"
+                style={{ color: "var(--accent-ink)", opacity: 0.8 }}
+              >
+                ✉
+              </div>
               <h1 className="alpha-display text-4xl font-bold tracking-tight mb-3">
                 Check your email.
               </h1>
@@ -78,8 +133,23 @@ export default function SigninPage() {
                 className="alpha-display text-lg"
                 style={{ color: "var(--ink-soft)" }}
               >
-                We sent a sign-in link to <strong>{email}</strong>. It expires in 15
-                minutes.
+                We sent a sign-in link to <strong>{email}</strong>. It expires in
+                an hour.
+              </p>
+              <p
+                className="alpha-ui text-sm mt-12"
+                style={{ color: "var(--ink-soft)" }}
+              >
+                Didn&apos;t get it? Check spam, or{" "}
+                <button
+                  type="button"
+                  onClick={() => setSent(false)}
+                  className="underline underline-offset-4"
+                  style={{ color: "var(--accent-ink)" }}
+                >
+                  try a different address
+                </button>
+                .
               </p>
             </>
           )}

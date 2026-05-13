@@ -1,22 +1,33 @@
 import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
 import { resolveTopicSignal } from "./source-resolver";
+import { getCachedBlurb, setCachedBlurb } from "./blurb-cache";
+import { TOPIC_BY_ID } from "@/lib/topics";
 import type { Issue, UserProfile } from "@/lib/types";
 
 export async function generateIssue(
   user: UserProfile,
   weekOf: string,
 ): Promise<Issue> {
-  // Step 1 — for each topic, resolve signal (live via Brave Search if configured,
-  // otherwise hand-written mock). Then synthesize a blurb via Claude.
-  // V2 will cache (topic, week_of) → blurb in Supabase so the API costs amortize
-  // across all subscribers to that topic.
+  // Step 1 — for each topic, check the per-(topic, week_of) cache in Supabase.
+  // Cache hit → reuse the shared blurb. Cache miss → resolve signal (Brave or
+  // mock), synthesize via Claude, write back to cache for future subscribers.
+  // This is the cost unlock: 1 generation per topic-week instead of per user.
   const blurbPromises = user.topics.map(async (topicId) => {
+    const cached = await getCachedBlurb(topicId, weekOf);
+    if (cached) {
+      // Fill the label from the topic registry (we don't store it in DB)
+      const label = TOPIC_BY_ID[topicId]?.label || topicId;
+      return { ...cached, topicLabel: label };
+    }
     const signal = await resolveTopicSignal(topicId, weekOf);
     if (!signal) {
       throw new Error(`No signal available for topic: ${topicId}`);
     }
-    return generateTopicBlurb(topicId, weekOf, signal);
+    const blurb = await generateTopicBlurb(topicId, weekOf, signal);
+    // Fire-and-forget cache write — doesn't block the response
+    setCachedBlurb(blurb).catch(() => undefined);
+    return blurb;
   });
   const blurbs = await Promise.all(blurbPromises);
 

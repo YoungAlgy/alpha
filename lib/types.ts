@@ -90,6 +90,7 @@ export interface UserProfile {
   funBlurb?: string;
   topics: TopicId[];
   theme: ThemeId;
+  email?: string;
 }
 
 export interface Theme {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
+import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
@@ -11,12 +12,43 @@ export default function ArchivePage() {
   const [issues, setIssues] = useState<Issue[]>([]);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_ISSUE);
-      if (raw) setIssues([JSON.parse(raw) as Issue]);
-    } catch {
-      setIssues([]);
-    }
+    // Try authenticated read from Supabase first; fall back to localStorage.
+    (async () => {
+      if (supabaseConfigured()) {
+        try {
+          const sb = supabaseClient();
+          const { data: { session } } = await sb.auth.getSession();
+          if (session) {
+            const { data, error } = await sb
+              .from("issues")
+              .select("week_of, volume, number, editor_intro, sections")
+              .order("week_of", { ascending: false });
+            if (!error && data && data.length > 0) {
+              const mapped: Issue[] = data.map((row, i) => ({
+                id: `${session.user.id}-${row.week_of}-${i}`,
+                volume: row.volume,
+                number: row.number,
+                weekOf: row.week_of,
+                recipientFirstName: session.user.user_metadata?.first_name || "you",
+                recipientCity: "",
+                editorIntro: row.editor_intro,
+                sections: row.sections,
+              }));
+              setIssues(mapped);
+              return;
+            }
+          }
+        } catch {
+          // fall through to localStorage
+        }
+      }
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_ISSUE);
+        if (raw) setIssues([JSON.parse(raw) as Issue]);
+      } catch {
+        setIssues([]);
+      }
+    })();
   }, []);
 
   return (

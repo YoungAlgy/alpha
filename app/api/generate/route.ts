@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateIssue } from "@/lib/engine/assemble";
+import { persistIssueIfPossible } from "@/lib/engine/persist";
 import type { UserProfile } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -16,7 +17,16 @@ export async function POST(req: Request) {
     }
     const weekOf = body.weekOf || defaultWeekOf();
     const issue = await generateIssue(body.profile, weekOf);
-    return NextResponse.json({ issue });
+
+    // Best-effort persistence. Doesn't block the response if it fails — letter
+    // still renders for the user, just isn't saved to /archive.
+    const persistence = await persistIssueIfPossible(body.profile, issue, weekOf);
+
+    return NextResponse.json({
+      issue,
+      userId: persistence?.userId ?? null,
+      magicLink: persistence?.magicLink ?? null,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

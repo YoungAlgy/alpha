@@ -66,6 +66,7 @@ export default function WritingPage() {
       funBlurb: state.funBlurb,
       topics: state.topics,
       theme: state.theme || "forest",
+      email: state.email,
     };
 
     fetch("/alpha/api/generate", {
