@@ -41,6 +41,8 @@ export default function WritingPage() {
   const startedRef = useRef(false);
   const steps = personalizedSteps(state.topics, state.theme, state.firstName);
 
+  const [showEscape, setShowEscape] = useState(false);
+
   useEffect(() => {
     if (!loaded || startedRef.current) return;
     if (!state.firstName || !state.topics || state.topics.length === 0) {
@@ -48,6 +50,9 @@ export default function WritingPage() {
       return;
     }
     startedRef.current = true;
+
+    // After 90s the generation is unusually slow — give them a way out
+    const escapeTimer = setTimeout(() => setShowEscape(true), 90000);
 
     // Drive fake-but-paced progress UI while the real engine runs.
     const stepTimer = setInterval(() => {
@@ -93,7 +98,10 @@ export default function WritingPage() {
         setError(e.message || "Something went wrong.");
       });
 
-    return () => clearInterval(stepTimer);
+    return () => {
+      clearInterval(stepTimer);
+      clearTimeout(escapeTimer);
+    };
   }, [loaded, state, router]);
 
   const pct = Math.min(100, Math.round(((currentStep + (done ? 1 : 0)) / steps.length) * 100));
@@ -208,6 +216,22 @@ export default function WritingPage() {
           >
             {error} — try refreshing.
           </p>
+        )}
+        {!error && showEscape && !done && (
+          <div
+            className="alpha-ui text-sm space-y-2"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            <p>Taking longer than usual. The engine is still working in the background — your letter will appear on /inbox when it's ready.</p>
+            <button
+              type="button"
+              onClick={() => router.push("/inbox" as never)}
+              className="underline underline-offset-4"
+              style={{ color: "var(--accent-ink)" }}
+            >
+              Wait on the inbox →
+            </button>
+          </div>
         )}
       </div>
       <style>{`

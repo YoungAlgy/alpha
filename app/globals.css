@@ -415,6 +415,44 @@ body {
   object-fit: contain;
 }
 
+/* Accent-colored focus rings on inputs (a11y + brand alignment) */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: 0 1px 0 var(--accent);
+}
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Small keyboard-hint chip next to text inputs */
+.alpha-kbd-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  opacity: 0.7;
+}
+.alpha-kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper-deep);
+  font-size: 0.7rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 /* Onboarding page fade-in */
 @keyframes alpha-step-in {
   from { opacity: 0; transform: translateY(8px); }

@@ -104,27 +104,34 @@ export function QuestionStep({
           }}
         />
       )}
-      <div className="flex items-center gap-6 pt-2">
-        <button
-          type="submit"
-          disabled={!canContinue}
-          className="alpha-button"
-          style={{
-            opacity: canContinue ? 1 : 0.3,
-            cursor: canContinue ? "pointer" : "not-allowed",
-          }}
-        >
-          Continue →
-        </button>
-        {optional && (
+      <div className="flex items-center justify-between gap-6 pt-2">
+        <div className="flex items-center gap-6">
           <button
-            type="button"
-            onClick={skip}
-            className="alpha-ui text-sm underline underline-offset-4"
-            style={{ color: "var(--ink-soft)" }}
+            type="submit"
+            disabled={!canContinue}
+            className="alpha-button"
+            style={{
+              opacity: canContinue ? 1 : 0.3,
+              cursor: canContinue ? "pointer" : "not-allowed",
+            }}
           >
-            Skip
+            Continue →
           </button>
+          {optional && (
+            <button
+              type="button"
+              onClick={skip}
+              className="alpha-ui text-sm underline underline-offset-4"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              Skip
+            </button>
+          )}
+        </div>
+        {canContinue && !multiline && (
+          <span className="alpha-kbd-hint hidden md:inline-flex" aria-hidden>
+            <span className="alpha-kbd">↵</span> to continue
+          </span>
         )}
       </div>
     </form>
