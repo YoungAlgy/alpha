@@ -48,7 +48,19 @@ const pixelify = Pixelify_Sans({
 export const metadata: Metadata = {
   title: "Alpha — your weekly alpha",
   description:
-    "A personal weekly briefing on the five things you care about. Inside info, delivered Sunday.",
+    "A personal weekly letter on what matters to you. Pick five topics. Sundays.",
+  manifest: "/alpha/manifest.json",
+  icons: {
+    icon: [{ url: "/alpha/favicon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/alpha/favicon.svg" }],
+  },
+  themeColor: "#1F3D2E",
+  openGraph: {
+    title: "Alpha — your weekly alpha",
+    description: "A personal weekly letter on what matters to you.",
+    type: "website",
+    siteName: "Alpha",
+  },
 };
 
 export default function RootLayout({

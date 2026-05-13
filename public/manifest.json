@@ -1,0 +1,19 @@
+{
+  "name": "Alpha",
+  "short_name": "Alpha",
+  "description": "Your weekly alpha — a personal letter on what matters to you.",
+  "start_url": "/alpha/inbox",
+  "scope": "/alpha/",
+  "display": "standalone",
+  "background_color": "#F4EFE0",
+  "theme_color": "#1F3D2E",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/alpha/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
