@@ -5,6 +5,7 @@ import { useOnboarding } from "@/lib/onboarding-state";
 import { TOPIC_BY_ID } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { Footer } from "@/components/Footer";
+import { deleteUserAccount } from "@/lib/user-sync";
 
 export default function SettingsPage() {
   const { state, reset } = useOnboarding();
@@ -108,12 +109,16 @@ export default function SettingsPage() {
             <br />
             <button
               type="button"
-              onClick={() => {
-                if (confirm("Delete your local Alpha data? This cannot be undone.")) {
-                  reset();
-                  localStorage.removeItem("alpha-first-issue");
-                  window.location.href = "/welcome";
+              onClick={async () => {
+                if (!confirm("Delete your Alpha account? This removes your saved letters and profile. Can't be undone.")) return;
+                const result = await deleteUserAccount();
+                if (!result.ok) {
+                  alert(`Couldn't delete: ${result.error}\nLocal data will still clear.`);
                 }
+                reset();
+                localStorage.removeItem("alpha-first-issue");
+                localStorage.removeItem("alpha-theme");
+                window.location.href = "/welcome";
               }}
               className="alpha-ui text-sm underline underline-offset-4"
               style={{ color: "var(--ink-soft)" }}

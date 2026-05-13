@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { TopicId, ThemeId } from "./types";
+import { syncUserProfile } from "./user-sync";
 
 const STORAGE_KEY = "alpha-onboarding";
 
@@ -48,6 +49,9 @@ export function useOnboarding() {
     setState((prev) => {
       const next = { ...prev, ...patch };
       write(next);
+      // Fire-and-forget Supabase sync if user is authed. Errors are swallowed
+      // inside syncUserProfile — never blocks the UI.
+      syncUserProfile(next);
       return next;
     });
   }, []);
