@@ -6,6 +6,7 @@ import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { TOPICS } from "@/lib/topics";
 import { tap, unselect, confirm } from "@/lib/audio";
+import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { TopicId } from "@/lib/types";
 
 const TARGET = 5;
@@ -14,10 +15,25 @@ export default function TopicsPage() {
   const router = useRouter();
   const { state, update, loaded } = useOnboarding();
   const [picked, setPicked] = useState<TopicId[]>([]);
+  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
     if (loaded && state.topics) setPicked(state.topics);
   }, [loaded, state.topics]);
+
+  // Edit-from-settings detection: signed-in users go back to /settings on save
+  useEffect(() => {
+    if (!supabaseConfigured()) return;
+    (async () => {
+      try {
+        const sb = supabaseClient();
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) setSignedIn(true);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   function toggle(id: TopicId) {
     setPicked((prev) => {
@@ -31,10 +47,23 @@ export default function TopicsPage() {
     });
   }
 
-  function submit() {
+  async function submit() {
     if (picked.length !== TARGET) return;
     confirm();
     update({ topics: picked });
+    if (signedIn && supabaseConfigured()) {
+      try {
+        const sb = supabaseClient();
+        const { data: { user } } = await sb.auth.getUser();
+        if (user) {
+          await sb.from("users").update({ topics: picked }).eq("id", user.id);
+        }
+      } catch {
+        // best-effort
+      }
+      router.push("/settings" as never);
+      return;
+    }
     router.push("/theme" as never);
   }
 

@@ -1,17 +1,35 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { TOPIC_BY_ID } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { Footer } from "@/components/Footer";
 import { deleteUserAccount } from "@/lib/user-sync";
+import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+
+const ADMIN_EMAIL = "youngalgy@gmail.com";
 
 export default function SettingsPage() {
   const { state, reset } = useOnboarding();
   const themeLabel = state.theme
     ? THEMES.find((t) => t.id === state.theme)?.label
     : "Forest";
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!supabaseConfigured()) return;
+    (async () => {
+      try {
+        const sb = supabaseClient();
+        const { data: { user } } = await sb.auth.getUser();
+        if (user?.email === ADMIN_EMAIL) setIsAdmin(true);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -111,6 +129,21 @@ export default function SettingsPage() {
             Update card, cancel, see invoices — all in Stripe.
           </p>
         </Section>
+
+        {isAdmin && (
+          <Section title="Accounts (admin)">
+            <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+              See everyone who's signed up. Grant free subscriptions or remove users.
+            </p>
+            <Link
+              href="/settings/accounts"
+              className="alpha-ui text-sm underline underline-offset-4"
+              style={{ color: "var(--accent-ink)" }}
+            >
+              Manage all users →
+            </Link>
+          </Section>
+        )}
 
         <Section title="Account">
           <div className="space-y-3">

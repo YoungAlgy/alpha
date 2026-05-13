@@ -6,6 +6,7 @@ import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { THEMES } from "@/lib/themes";
 import { chime, confirm } from "@/lib/audio";
+import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { ThemeId } from "@/lib/types";
 
 // Display-only swatch for each theme. Matches the palette in globals.css.
@@ -26,10 +27,26 @@ export default function ThemePage() {
   const router = useRouter();
   const { state, update, loaded } = useOnboarding();
   const [picked, setPicked] = useState<ThemeId>("forest");
+  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
     if (loaded && state.theme) setPicked(state.theme);
   }, [loaded, state.theme]);
+
+  // Detect whether this is a signed-in user editing their theme (vs a new
+  // user going through onboarding) — they should return to /settings on submit.
+  useEffect(() => {
+    if (!supabaseConfigured()) return;
+    (async () => {
+      try {
+        const sb = supabaseClient();
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) setSignedIn(true);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   function pickTheme(id: ThemeId) {
     setPicked(id);
@@ -41,9 +58,24 @@ export default function ThemePage() {
     chime();
   }
 
-  function submit() {
+  async function submit() {
     confirm();
     update({ theme: picked });
+    // Signed-in user editing settings → persist to DB and return to /settings.
+    // New user in onboarding funnel → continue to /fun.
+    if (signedIn && supabaseConfigured()) {
+      try {
+        const sb = supabaseClient();
+        const { data: { user } } = await sb.auth.getUser();
+        if (user) {
+          await sb.from("users").update({ theme: picked }).eq("id", user.id);
+        }
+      } catch {
+        // best-effort — onboarding-state update already happened
+      }
+      router.push("/settings" as never);
+      return;
+    }
     router.push("/fun" as never);
   }
 
