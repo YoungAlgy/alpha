@@ -48,14 +48,39 @@ export async function POST(req: Request) {
             ? session.customer
             : session.customer?.id;
         if (email) {
-          await sb
-            .from("users")
-            .update({
-              stripe_customer_id: customerId ?? null,
-              subscribed_at: new Date().toISOString(),
-              cancelled_at: null,
-            })
-            .eq("email", email);
+          // Ensure the auth user exists (creates if missing) and grab their id.
+          // Without this, direct-checkout users (who bypass the onboarding
+          // funnel) have no public.users row when the webhook fires, and an
+          // UPDATE-by-email would silently no-op.
+          const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
+            type: "magiclink",
+            email,
+          });
+          if (linkErr || !linkData?.user) {
+            console.warn("[stripe-webhook] generateLink failed:", linkErr?.message);
+          } else {
+            const meta = session.metadata || session.subscription_data?.metadata || {};
+            const firstName =
+              (meta as Record<string, string>).alpha_first_name ||
+              (meta as Record<string, string>).first_name ||
+              "friend";
+            const city =
+              (meta as Record<string, string>).alpha_city ||
+              (meta as Record<string, string>).city ||
+              null;
+            await sb.from("users").upsert(
+              {
+                id: linkData.user.id,
+                email,
+                first_name: firstName,
+                city,
+                stripe_customer_id: customerId ?? null,
+                subscribed_at: new Date().toISOString(),
+                cancelled_at: null,
+              },
+              { onConflict: "id" }
+            );
+          }
         }
         break;
       }
