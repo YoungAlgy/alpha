@@ -43,7 +43,7 @@ export function StepShell({
         )}
       </nav>
       <div className="flex-1 flex items-center justify-center px-6 pb-16">
-        <div className="w-full max-w-xl">{children}</div>
+        <div className="w-full max-w-xl alpha-step-enter">{children}</div>
       </div>
     </main>
   );

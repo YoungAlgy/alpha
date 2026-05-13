@@ -1,4 +1,5 @@
 @import "tailwindcss";
+/* alpha · v0.9 */
 
 /* ============================================================
    Alpha — theme system
@@ -412,6 +413,15 @@ body {
   opacity: 0.85;
   background: var(--paper-deep);
   object-fit: contain;
+}
+
+/* Onboarding page fade-in */
+@keyframes alpha-step-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.alpha-step-enter {
+  animation: alpha-step-in 380ms ease-out;
 }
 
 /* Theme picker tile hover lift */

@@ -7,6 +7,7 @@ import { Digest } from "@/components/Digest";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { AudioToggle } from "@/components/AudioToggle";
 import { ReadingProgress } from "@/components/ReadingProgress";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { fanfare } from "@/lib/audio";
 import type { Issue } from "@/lib/types";
@@ -127,6 +128,7 @@ export default function InboxPage() {
         </div>
       </div>
       <Digest issue={issue} />
+      <InstallPrompt />
     </main>
   );
 }
