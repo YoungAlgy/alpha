@@ -30,12 +30,16 @@ export async function POST(req: Request) {
   const basePath = "/alpha";
 
   try {
+    const httpClient = Stripe.createNodeHttpClient();
     const stripe = new Stripe(secret, {
       apiVersion: "2026-04-22.dahlia",
-      httpClient: Stripe.createNodeHttpClient(),
+      httpClient,
       maxNetworkRetries: 0,
       timeout: 15000,
     });
+
+    // Debug: log the resolved http client class name
+    console.log("[stripe/checkout] httpClient:", httpClient?.constructor?.name, "getClientName:", httpClient?.getClientName?.());
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -55,9 +59,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: session.url });
   } catch (e) {
-    const err = e as { message?: string; type?: string; code?: string; statusCode?: number; cause?: unknown; stack?: string };
-    const causeStr = err.cause ? String(err.cause) : null;
-    const causeCode = (err.cause as { code?: string } | undefined)?.code;
+    const err = e as { message?: string; type?: string; code?: string; statusCode?: number; cause?: unknown; detail?: unknown; stack?: string };
+    const detailStr = err.detail ? String(err.detail) : null;
+    const detailObj = err.detail as { code?: string; message?: string; errno?: string; syscall?: string; hostname?: string } | undefined;
     return NextResponse.json(
       {
         error: err.message || "Stripe error",
@@ -65,9 +69,11 @@ export async function POST(req: Request) {
           type: err.type,
           code: err.code,
           status: err.statusCode,
-          causeStr,
-          causeCode,
-          stack: err.stack?.split("\n").slice(0, 6).join("\n"),
+          detailStr,
+          detailCode: detailObj?.code,
+          detailErrno: detailObj?.errno,
+          detailSyscall: detailObj?.syscall,
+          detailHostname: detailObj?.hostname,
         },
       },
       { status: 500 }
