@@ -10,6 +10,7 @@ import { ReadingProgress } from "@/components/ReadingProgress";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { FirstLetterCelebration } from "@/components/FirstLetterCelebration";
 import { LetterTOC } from "@/components/LetterTOC";
+import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { fanfare } from "@/lib/audio";
 import type { Issue } from "@/lib/types";
@@ -25,27 +26,66 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!loaded) return;
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_ISSUE);
-      if (!raw) {
+    (async () => {
+      // Path 1 — authenticated user reads from Supabase.
+      // Prefer this so a returning sign-in on a fresh device still sees the letter.
+      if (supabaseConfigured()) {
+        try {
+          const sb = supabaseClient();
+          const { data: { session } } = await sb.auth.getSession();
+          if (session) {
+            const { data, error } = await sb
+              .from("issues")
+              .select("week_of, volume, number, editor_intro, sections")
+              .order("week_of", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (!error && data) {
+              const { data: userRow } = await sb
+                .from("users")
+                .select("first_name, city, theme")
+                .eq("id", session.user.id)
+                .maybeSingle();
+              const themeToApply = userRow?.theme || state.theme || "forest";
+              document.documentElement.setAttribute("data-theme", themeToApply);
+              setIssue({
+                id: `${session.user.id}-${data.week_of}`,
+                volume: data.volume,
+                number: data.number,
+                weekOf: data.week_of,
+                recipientFirstName: userRow?.first_name || "you",
+                recipientCity: userRow?.city || "",
+                editorIntro: data.editor_intro,
+                sections: data.sections,
+              });
+              return; // authenticated path complete
+            }
+          }
+        } catch (e) {
+          console.warn("[inbox] supabase read failed, falling back to localStorage:", e);
+        }
+      }
+      // Path 2 — unauthenticated (or supabase down) falls back to localStorage.
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_ISSUE);
+        if (!raw) {
+          setMissing(true);
+          return;
+        }
+        const parsed: Issue = JSON.parse(raw);
+        setIssue(parsed);
+        if (state.theme) {
+          document.documentElement.setAttribute("data-theme", state.theme);
+        }
+        if (localStorage.getItem("alpha-just-generated") === "1") {
+          localStorage.removeItem("alpha-just-generated");
+          setCelebrate(true);
+          setTimeout(() => fanfare(), 300);
+        }
+      } catch {
         setMissing(true);
-        return;
       }
-      const parsed: Issue = JSON.parse(raw);
-      setIssue(parsed);
-      // Apply user's chosen theme to the document
-      if (state.theme) {
-        document.documentElement.setAttribute("data-theme", state.theme);
-      }
-      // Celebrate first arrival
-      if (localStorage.getItem("alpha-just-generated") === "1") {
-        localStorage.removeItem("alpha-just-generated");
-        setCelebrate(true);
-        setTimeout(() => fanfare(), 300);
-      }
-    } catch {
-      setMissing(true);
-    }
+    })();
   }, [loaded, state.theme]);
 
   if (missing) {
