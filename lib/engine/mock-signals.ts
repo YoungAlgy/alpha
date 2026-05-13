@@ -311,6 +311,330 @@ APPS / TOOLS:
 - Throne — small-business made-in-USA t-shirt subscription. (https://www.thronewear.com)
 `,
   },
+  {
+    topicId: "marketing-growth",
+    weekOf: WEEK_OF,
+    context: `
+This week in marketing & growth (week of May 17, 2026):
+
+WORTH READING:
+- Lenny's Newsletter weekly: "PMF metrics — what to actually measure." (https://www.lennysnewsletter.com)
+- Marketing Brew on Liquid Death's $1B valuation and the "absurd packaging > absurd product" thesis. (https://www.marketingbrew.com)
+- Reforge guide on cold-start growth loops. (https://www.reforge.com)
+
+WORTH LISTENING:
+- The Marketing Millennials with Mark Ritson on positioning vs. messaging. (https://themarketingmillennials.com)
+- Modern Wisdom interview with Rory Sutherland on alchemy of nonsense marketing. (https://chriswillx.com)
+
+APPS TO TRY:
+- Beehiiv — newsletter platform challenging Substack. (https://www.beehiiv.com)
+- Mutiny — landing page personalization. (https://www.mutinyhq.com)
+- Posthog — open-source product analytics. (https://posthog.com)
+- Linear's marketing site is the most-imitated landing page of 2026. (https://linear.app)
+
+POSTS:
+- April Dunford's positioning thread. (https://x.com/aprildunford)
+- Andrew Chen on cold-start. (https://x.com/andrewchen)
+`,
+  },
+  {
+    topicId: "ai-for-work",
+    weekOf: WEEK_OF,
+    context: `
+This week in AI for work (week of May 17, 2026):
+
+APPS TO TRY:
+- Cursor — AI-first IDE, crossed $300M ARR. (https://www.cursor.com)
+- Granola — AI meeting notes that show up next to your transcript. (https://www.granola.ai)
+- v0 by Vercel — generate React UIs from prompts. (https://v0.dev)
+- Perplexity — AI search with citations. (https://www.perplexity.ai)
+- Notion AI — embedded inside docs, finally good. (https://www.notion.so)
+
+WORTH READING:
+- Ethan Mollick's One Useful Thing on agent workflows. (https://www.oneusefulthing.org)
+- Simon Willison's blog on practical prompts. (https://simonwillison.net)
+- Anthropic's Claude best-practices guide for engineering. (https://www.anthropic.com/news)
+- a16z's "Big Ideas in Tech 2026" — half the list is AI-for-work. (https://a16z.com)
+
+LISTEN:
+- Latent Space podcast on tool-use evaluation. (https://www.latent.space)
+- AI Daily Brief — short morning digest. (https://www.nlw.media)
+`,
+  },
+  {
+    topicId: "solo-side-income",
+    weekOf: WEEK_OF,
+    context: `
+This week in solo & side income (week of May 17, 2026):
+
+LISTEN:
+- My First Million on $1-3M solo businesses being systematically undervalued. (https://www.mfmpod.com)
+- The Solopreneur Hour with Michael O'Neal. (https://solohour.com)
+
+WORTH READING:
+- Justin Welsh's weekly LinkedIn OS edition. (https://www.justinwelsh.me)
+- Codie Sanchez on buying small businesses as side income. (https://contrarianthinking.co)
+- Pieter Levels (Nomad List founder) tweet thread on indie hacker stack 2026. (https://x.com/levelsio)
+
+APPS TO TRY:
+- Gumroad — sell digital products in 5 minutes. (https://gumroad.com)
+- Stan Store — bio-link plus mini storefront. (https://www.stan.store)
+- Beehiiv — newsletter monetization. (https://www.beehiiv.com)
+- Whop — sell digital subscriptions. (https://whop.com)
+- Cal.com — paid consultations. (https://cal.com)
+
+POSTS:
+- Pieter Levels income transparency tweet. (https://x.com/levelsio)
+- Justin Welsh's solo-business teardown. (https://x.com/thejustinwelsh)
+`,
+  },
+  {
+    topicId: "personal-finance",
+    weekOf: WEEK_OF,
+    context: `
+This week in personal finance (week of May 17, 2026):
+
+WORTH READING:
+- The Money Guy Show's 2026 Financial Order of Operations update. (https://moneyguy.com)
+- Ramit Sethi on negotiating salary in a flat market. (https://www.iwillteachyoutoberich.com)
+- Nick Maggiulli's Of Dollars and Data weekly on rebalancing in choppy markets. (https://ofdollarsanddata.com)
+- NerdWallet 2026 best high-yield savings accounts ranking. (https://www.nerdwallet.com)
+
+APPS TO TRY:
+- Monarch Money — replaces Mint, fast-growing budgeting app. (https://www.monarchmoney.com)
+- Copilot — best-designed budgeting app for iOS. (https://www.copilot.money)
+- Empower (formerly Personal Capital) — net worth tracker. (https://www.empower.com)
+- Wealthfront — robo-advisor with cash management. (https://www.wealthfront.com)
+
+LISTEN:
+- The Money Guy Show. (https://moneyguy.com)
+- ChooseFI on financial independence. (https://www.choosefi.com)
+
+POSTS:
+- Ramit's negotiation thread. (https://x.com/ramit)
+`,
+  },
+  {
+    topicId: "real-estate",
+    weekOf: WEEK_OF,
+    context: `
+This week in real estate (week of May 17, 2026):
+
+NEWS:
+- 30-year mortgage rates settled at 6.4% this week — first sub-6.5% close of 2026. (https://www.bankrate.com)
+- Redfin Q2 report: median home prices flat YoY nationally; Sun Belt cities cooling. (https://www.redfin.com)
+- Florida insurance crisis update — Citizens Property Insurance raising rates 12%. (https://www.tampabay.com)
+
+WORTH LISTENING:
+- BiggerPockets podcast on small multifamily in 2026. (https://www.biggerpockets.com)
+- Real Estate Rookie — first-deal stories. (https://www.biggerpockets.com)
+- The Money Guy on house-hacking math. (https://moneyguy.com)
+
+APPS TO TRY:
+- Stessa — free rental property accounting. (https://www.stessa.com)
+- Redfin — best-designed home search. (https://www.redfin.com)
+- DealCheck — quickly underwrite rentals. (https://dealcheck.io)
+- RentMeter — rent comps. (https://www.rentmeter.com)
+
+POSTS:
+- Lance Lambert's housing data threads. (https://x.com/NewsLambert)
+`,
+  },
+  {
+    topicId: "macro-markets",
+    weekOf: WEEK_OF,
+    context: `
+This week in macro & markets (week of May 17, 2026):
+
+NEWS:
+- Fed minutes show committee split on June cut — most members favor holding. (https://www.federalreserve.gov)
+- April CPI print 2.6% YoY, third consecutive cooling month. (https://www.bls.gov)
+- 10-year Treasury yield closed at 4.18%, 8bp lower week-over-week. (https://www.treasury.gov)
+
+WORTH READING:
+- Apricitas Economics weekly on labor-market crosscurrents. (https://www.apricitas.io)
+- Joey Politano on cooling inflation prints. (https://www.apricitas.io)
+- Calculated Risk on housing leading indicators. (https://www.calculatedriskblog.com)
+- Sam Ro's TKer weekly. (https://www.tker.co)
+
+WORTH LISTENING:
+- Macro Voices weekly. (https://www.macrovoices.com)
+- Odd Lots with Joe Weisenthal + Tracy Alloway. (https://www.bloomberg.com/oddlots)
+
+POSTS:
+- Claudia Sahm on the Sahm Rule. (https://x.com/Claudia_Sahm)
+- Mike Cembalest's Eye on the Market notes. (https://www.jpmorgan.com)
+`,
+  },
+  {
+    topicId: "mental-health",
+    weekOf: WEEK_OF,
+    context: `
+This week in mental health (week of May 17, 2026):
+
+WORTH READING:
+- New JAMA Psychiatry paper on SSRIs vs. talk therapy long-term outcomes. (https://jamanetwork.com)
+- Atlantic profile of Bessel van der Kolk on trauma research evolution. (https://www.theatlantic.com)
+- NYT Well section on the "languishing" phenomenon updated for 2026. (https://www.nytimes.com/well)
+
+APPS TO TRY:
+- BetterHelp — online therapy. (https://www.betterhelp.com)
+- Headspace — guided meditation. (https://www.headspace.com)
+- How We Feel — emotion-tracking app from Dr. Marc Brackett. (https://howwefeel.org)
+- Finch — gamified self-care companion. (https://finchcare.com)
+- Insight Timer — free meditation library. (https://insighttimer.com)
+
+LISTEN:
+- The Happiness Lab with Dr. Laurie Santos. (https://www.happinesslab.fm)
+- Hidden Brain. (https://hiddenbrain.org)
+- 10 Percent Happier with Dan Harris. (https://www.tenpercent.com)
+
+POSTS:
+- Adam Grant on the case for "languishing." (https://x.com/AdamMGrant)
+`,
+  },
+  {
+    topicId: "womens-health",
+    weekOf: WEEK_OF,
+    context: `
+This week in women's health (week of May 17, 2026):
+
+WORTH READING:
+- Dr. Stacy Sims's substack on training around the menstrual cycle. (https://www.drstacysims.com)
+- Dr. Mary Claire Haver on perimenopause hormone protocols. (https://thepauselife.com)
+- Modern Fertility blog on AMH testing. (https://modernfertility.com)
+- New NEJM paper on HRT cardiovascular risk reanalysis. (https://www.nejm.org)
+
+APPS TO TRY:
+- Oura ring — cycle + temperature tracking. (https://ouraring.com)
+- Natural Cycles — FDA-cleared cycle tracking. (https://www.naturalcycles.com)
+- Maven Clinic — virtual women's-health platform. (https://www.mavenclinic.com)
+- Tia — women's primary care + therapy. (https://www.asktia.com)
+- Flo — cycle and pregnancy tracking, 200M users. (https://flo.health)
+
+LISTEN:
+- Dr. Mary Claire Haver on Diary of a CEO. (https://www.youtube.com/@TheDiaryOfACEO)
+- The Period Whisperer podcast. (https://nicolejardim.com)
+
+POSTS:
+- Dr. Stacy Sims's threads on perimenopause training. (https://x.com/drstacysims)
+`,
+  },
+  {
+    topicId: "psychology-behavior",
+    weekOf: WEEK_OF,
+    context: `
+This week in psychology & behavior (week of May 17, 2026):
+
+WORTH READING:
+- Adam Grant on the "ideal self" trap in goal-setting. (https://adamgrant.net)
+- Behavioral Scientist on default-effect updates in retirement plans. (https://behavioralscientist.org)
+- Brain Pickings (now The Marginalian) on solitude as a cognitive resource. (https://www.themarginalian.org)
+- Psyche essay on emotional granularity. (https://psyche.co)
+
+WORTH LISTENING:
+- Hidden Brain on confirmation bias. (https://hiddenbrain.org)
+- The Happiness Lab on positive psychology myths. (https://www.happinesslab.fm)
+- Choiceology with Katy Milkman. (https://www.schwab.com/podcast)
+
+APPS TO TRY:
+- Reflectly — guided journaling. (https://reflectly.app)
+- Daylio — mood + habit tracker. (https://daylio.net)
+
+POSTS:
+- Adam Grant's thread on the "ideal self" trap. (https://x.com/AdamMGrant)
+- Katy Milkman on fresh-start effect. (https://x.com/katy_milkman)
+`,
+  },
+  {
+    topicId: "parenting",
+    weekOf: WEEK_OF,
+    context: `
+This week in parenting (week of May 17, 2026):
+
+WORTH READING:
+- Emily Oster's ParentData weekly on screen time research. (https://www.parentdata.org)
+- Big Little Feelings on tantrum coaching scripts. (https://www.biglittlefeelings.com)
+- NYT Parenting on managing chore expectations by age. (https://www.nytimes.com)
+- Jessica Lahey on the "Gift of Failure" being more relevant than ever. (https://www.jessicalahey.com)
+
+WORTH LISTENING:
+- Dr. Becky's Good Inside podcast on sibling rivalry. (https://www.goodinside.com)
+- Janet Lansbury — Unruffled podcast. (https://www.janetlansbury.com)
+- We Can Do Hard Things with Glennon Doyle on co-parenting. (https://wecandohardthingspodcast.com)
+
+APPS TO TRY:
+- Cozi — family calendar. (https://www.cozi.com)
+- Tinybeans — private photo journal for grandparents. (https://tinybeans.com)
+- BabyCenter — milestone tracker. (https://www.babycenter.com)
+- Khan Academy Kids — free, no ads. (https://learn.khanacademy.org/khan-academy-kids/)
+
+POSTS:
+- Dr. Becky on naming feelings before solving them. (https://x.com/drbeckyatgoodinside)
+- Emily Oster threads on parenting data. (https://x.com/profemilyoster)
+`,
+  },
+  {
+    topicId: "startups-vc",
+    weekOf: WEEK_OF,
+    context: `
+This week in startups & VC (week of May 17, 2026):
+
+NEWS:
+- a16z launches new $7B fund focused on AI applications layer. (https://a16z.com)
+- Stripe valuation rumored at $95B in tender offer. (https://www.theinformation.com)
+- Y Combinator W26 batch is 38% AI-focused. (https://www.ycombinator.com/blog)
+
+WORTH READING:
+- The Information's weekly. (https://www.theinformation.com)
+- Stratechery by Ben Thompson on hyperscaler vs. application startup margins. (https://stratechery.com)
+- Lenny's Newsletter on PMF in AI-first products. (https://www.lennysnewsletter.com)
+
+WORTH LISTENING:
+- 20VC with Harry Stebbings. (https://www.thetwentyminutevc.com)
+- Invest Like the Best with Patrick O'Shaughnessy. (https://joincolossus.com)
+- The All-In podcast. (https://www.allinpodcast.co)
+
+APPS TO TRY:
+- Affinity — relationship intelligence for investors. (https://www.affinity.co)
+- Carta — cap table + equity management. (https://carta.com)
+- Mercury — bank built for startups. (https://mercury.com)
+- Vanta — SOC 2 automation. (https://www.vanta.com)
+
+POSTS:
+- Marc Andreessen on application-layer disruption. (https://x.com/pmarca)
+- Garry Tan's weekly YC notes. (https://x.com/garrytan)
+`,
+  },
+  {
+    topicId: "faith-meaning",
+    weekOf: WEEK_OF,
+    context: `
+This week in faith & meaning (week of May 17, 2026):
+
+WORTH READING:
+- Christianity Today weekly on biblical literacy decline. (https://www.christianitytoday.com)
+- The Gospel Coalition on practical theology. (https://www.thegospelcoalition.org)
+- Richard Rohr's Daily Meditation on contemplative practice. (https://cac.org)
+- Plough Quarterly long-form essays. (https://www.plough.com)
+- Comment Magazine on faith and public life. (https://comment.org)
+
+WORTH LISTENING:
+- The Bible Project podcast — Old Testament thematic series. (https://bibleproject.com)
+- Tim Keller's archived sermons (Redeemer Presbyterian). (https://gospelinlife.com)
+- On Being with Krista Tippett — meaning, faith, ethics. (https://onbeing.org)
+- Holy Post podcast. (https://www.holypost.com)
+
+WORTH READING (books):
+- N.T. Wright's "Surprised by Hope." (https://bookshop.org)
+- Marilynne Robinson's "Gilead." (https://bookshop.org)
+- "Practicing the Way" by John Mark Comer. (https://practicingtheway.org)
+
+POSTS:
+- Tim Keller's archived threads. (https://x.com/timkellernyc)
+- The Bible Project visual essays. (https://bibleproject.com)
+`,
+  },
 ];
 
 export function getSignal(topicId: string, weekOf?: string): TopicSignal | undefined {

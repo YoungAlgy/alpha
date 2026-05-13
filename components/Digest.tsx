@@ -5,6 +5,7 @@ import { TOPIC_BY_ID } from "@/lib/topics";
 function sectionAnchor(topicId: string): string {
   return `s-${topicId}`;
 }
+// touched 2026-05-13 — invalidate stale turbopack cache
 
 interface DigestProps {
   issue: Issue;
