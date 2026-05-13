@@ -2,9 +2,31 @@
 
 /* ============================================================
    Alpha — theme system
-   Brand chrome (Soft) is the default. Themes affect the digest.
+   Brand chrome (Forest) is the default. Themes affect the digest.
    Apply theme via <html data-theme="xxx">.
+   :root holds Forest defaults so a missing data-theme renders correctly;
+   each [data-theme="..."] rule overrides via equal-specificity later in cascade.
    ============================================================ */
+
+:root {
+  --paper: #F4EFE0;
+  --paper-deep: #E5DEC8;
+  --ink: #1F3D2E;
+  --ink-soft: #4A5F50;
+  --rule: #C8D0BC;
+  --accent: #C9A961;
+  --accent-ink: #A88947;
+  --accent-2: #1F3D2E;
+  --callout-bg: #C9A9611F;
+  --callout-ink: #A88947;
+  --quote-bar: #1F3D2E;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(31, 61, 46, 0.06);
+}
 
 [data-theme="soft"] {
   --paper: #FBF6EC;
@@ -146,7 +168,6 @@
   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-:root,
 [data-theme="forest"] {
   --paper: #F4EFE0;
   --paper-deep: #E5DEC8;
@@ -211,27 +232,20 @@
    Base
    ============================================================ */
 
-html {
-  background: var(--paper);
+html, body {
+  background-color: var(--paper);
   color: var(--ink);
-  transition: background-color 280ms ease, color 280ms ease;
+}
+
+html, body, .alpha-card, .alpha-button, .topic-card, .theme-tile, button, a, input, textarea, footer, nav, article, section {
+  transition: background-color 260ms ease, color 260ms ease, border-color 260ms ease, box-shadow 260ms ease;
 }
 
 body {
-  background: var(--paper);
-  color: var(--ink);
   font-family: var(--font-ui), system-ui, sans-serif;
   font-feature-settings: "ss01", "ss02";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background-color 280ms ease, color 280ms ease;
-}
-
-* {
-  /* Theme variable transitions for borders, accents, callouts */
-  transition-property: background-color, border-color, color, box-shadow;
-  transition-duration: 240ms;
-  transition-timing-function: ease;
 }
 
 ::selection {
