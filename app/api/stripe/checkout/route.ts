@@ -56,10 +56,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ url: session.url });
   } catch (e) {
     const err = e as { message?: string; type?: string; code?: string; statusCode?: number; cause?: unknown; stack?: string };
-    console.error("[stripe/checkout] MESSAGE:", err.message);
-    console.error("[stripe/checkout] TYPE:", err.type, "CODE:", err.code, "STATUS:", err.statusCode);
-    console.error("[stripe/checkout] CAUSE:", err.cause);
-    console.error("[stripe/checkout] STACK:", err.stack);
-    return NextResponse.json({ error: err.message || "Stripe error" }, { status: 500 });
+    const causeStr = err.cause ? String(err.cause) : null;
+    const causeCode = (err.cause as { code?: string } | undefined)?.code;
+    return NextResponse.json(
+      {
+        error: err.message || "Stripe error",
+        _debug: {
+          type: err.type,
+          code: err.code,
+          status: err.statusCode,
+          causeStr,
+          causeCode,
+          stack: err.stack?.split("\n").slice(0, 6).join("\n"),
+        },
+      },
+      { status: 500 }
+    );
   }
 }
