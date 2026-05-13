@@ -1,0 +1,343 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Alpha — theme system
+   Brand chrome (Soft) is the default. Themes affect the digest.
+   Apply theme via <html data-theme="xxx">.
+   ============================================================ */
+
+[data-theme="soft"] {
+  --paper: #FBF6EC;
+  --paper-deep: #F2EBDA;
+  --ink: #3A2E26;
+  --ink-soft: #6B5448;
+  --rule: #E5DBC6;
+  --accent: #F4A57D;          /* peach */
+  --accent-ink: #C7724A;
+  --accent-2: #A8C3A0;        /* sage */
+  --callout-bg: #F4A57D26;
+  --callout-ink: #C7724A;
+  --quote-bar: #A8C3A0;
+  --font-display: var(--font-fraunces);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-dm-sans);
+  --radius: 14px;
+  --radius-card: 18px;
+  --shadow-card: 0 1px 0 rgba(58, 46, 38, 0.04), 0 8px 28px rgba(58, 46, 38, 0.06);
+}
+
+[data-theme="linen"] {
+  --paper: #FAF6EE;
+  --paper-deep: #F1EADB;
+  --ink: #1A1A1A;
+  --ink-soft: #5C544A;
+  --rule: #E5DDCB;
+  --accent: #C75D3F;
+  --accent-ink: #A24527;
+  --accent-2: #1A1A1A;
+  --callout-bg: #C75D3F1A;
+  --callout-ink: #A24527;
+  --quote-bar: #C75D3F;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 4px;
+  --radius-card: 6px;
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="ink"] {
+  --paper: #FFFFFF;
+  --paper-deep: #F5F5F0;
+  --ink: #000000;
+  --ink-soft: #555555;
+  --rule: #DDDDDD;
+  --accent: #B3162F;
+  --accent-ink: #B3162F;
+  --accent-2: #000000;
+  --callout-bg: #B3162F12;
+  --callout-ink: #B3162F;
+  --quote-bar: #B3162F;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 0;
+  --radius-card: 0;
+  --shadow-card: none;
+}
+
+[data-theme="cottage"] {
+  --paper: #ECEEDA;
+  --paper-deep: #D4DCC4;
+  --ink: #3D3528;
+  --ink-soft: #6B5F4A;
+  --rule: #C7D0B5;
+  --accent: #A86B4F;
+  --accent-ink: #8B5238;
+  --accent-2: #6B8E5A;
+  --callout-bg: #A86B4F1A;
+  --callout-ink: #8B5238;
+  --quote-bar: #6B8E5A;
+  --font-display: var(--font-fraunces);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-dm-sans);
+  --radius: 12px;
+  --radius-card: 16px;
+  --shadow-card: 0 1px 0 rgba(61, 53, 40, 0.05), 0 6px 20px rgba(61, 53, 40, 0.05);
+}
+
+[data-theme="arcade"] {
+  --paper: #FFF8E7;
+  --paper-deep: #FFEBC2;
+  --ink: #2D1E47;
+  --ink-soft: #5C4480;
+  --rule: #FFB8DD;
+  --accent: #FF6B9D;
+  --accent-ink: #E04481;
+  --accent-2: #7FBC00;
+  --callout-bg: #FF6B9D1F;
+  --callout-ink: #E04481;
+  --quote-bar: #7FBC00;
+  --font-display: var(--font-pixelify);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-dm-sans);
+  --radius: 4px;
+  --radius-card: 8px;
+  --shadow-card: 3px 3px 0 #2D1E47;
+}
+
+[data-theme="marina"] {
+  --paper: #F4ECD8;
+  --paper-deep: #E8DCBE;
+  --ink: #2D3A4A;
+  --ink-soft: #5B6A7D;
+  --rule: #C8D5DF;
+  --accent: #E89B6A;
+  --accent-ink: #C77C4A;
+  --accent-2: #A9C8DE;
+  --callout-bg: #E89B6A1F;
+  --callout-ink: #C77C4A;
+  --quote-bar: #A9C8DE;
+  --font-display: var(--font-fraunces);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-dm-sans);
+  --radius: 18px;
+  --radius-card: 22px;
+  --shadow-card: 0 2px 0 rgba(45, 58, 74, 0.05), 0 10px 30px rgba(45, 58, 74, 0.08);
+}
+
+[data-theme="midnight"] {
+  --paper: #0F1419;
+  --paper-deep: #1A2028;
+  --ink: #E8D5A8;
+  --ink-soft: #9DA8B5;
+  --rule: #2A323D;
+  --accent: #7BA7D9;
+  --accent-ink: #A9C7E8;
+  --accent-2: #E8D5A8;
+  --callout-bg: #7BA7D91F;
+  --callout-ink: #A9C7E8;
+  --quote-bar: #E8D5A8;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 10px;
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+:root,
+[data-theme="forest"] {
+  --paper: #F4EFE0;
+  --paper-deep: #E5DEC8;
+  --ink: #1F3D2E;
+  --ink-soft: #4A5F50;
+  --rule: #C8D0BC;
+  --accent: #C9A961;
+  --accent-ink: #A88947;
+  --accent-2: #1F3D2E;
+  --callout-bg: #C9A9611F;
+  --callout-ink: #A88947;
+  --quote-bar: #1F3D2E;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(31, 61, 46, 0.06);
+}
+
+[data-theme="mono"] {
+  --paper: #FFFFFF;
+  --paper-deep: #F5F5F5;
+  --ink: #000000;
+  --ink-soft: #707070;
+  --rule: #E5E5E5;
+  --accent: #FF0000;
+  --accent-ink: #FF0000;
+  --accent-2: #000000;
+  --callout-bg: #FF000010;
+  --callout-ink: #FF0000;
+  --quote-bar: #000000;
+  --font-display: var(--font-inter);
+  --font-body: var(--font-inter);
+  --font-ui: var(--font-inter);
+  --radius: 2px;
+  --radius-card: 2px;
+  --shadow-card: none;
+}
+
+[data-theme="sunset"] {
+  --paper: #FAEBD7;
+  --paper-deep: #F5D9B5;
+  --ink: #5E3B5A;
+  --ink-soft: #8C6587;
+  --rule: #E8C8AA;
+  --accent: #E87C3E;
+  --accent-ink: #C8612A;
+  --accent-2: #5E3B5A;
+  --callout-bg: #E87C3E1F;
+  --callout-ink: #C8612A;
+  --quote-bar: #E87C3E;
+  --font-display: var(--font-fraunces);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-dm-sans);
+  --radius: 16px;
+  --radius-card: 20px;
+  --shadow-card: 0 1px 0 rgba(94, 59, 90, 0.05), 0 8px 24px rgba(94, 59, 90, 0.08);
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+
+html {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui), system-ui, sans-serif;
+  font-feature-settings: "ss01", "ss02";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--paper);
+}
+
+/* ============================================================
+   Editorial digest typography
+   ============================================================ */
+
+.alpha-digest {
+  font-family: var(--font-body), Georgia, serif;
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+.alpha-display {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+.alpha-ui {
+  font-family: var(--font-ui), system-ui, sans-serif;
+}
+
+.alpha-mono {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.alpha-rule {
+  border-color: var(--rule);
+}
+
+/* PLAY · WATCH · APPLY — small red letterspaced caps, no pill.
+   Matches Ally's Weekly Drop treatment exactly. */
+.alpha-callout-tag {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  font-weight: 700;
+  display: inline-block;
+  margin-right: 0.6rem;
+  vertical-align: 0.18em;
+}
+
+.alpha-callout-box {
+  background: var(--callout-bg);
+  padding: 0.875rem 1.125rem;
+  border-radius: var(--radius);
+  border-left: 2px solid var(--accent);
+  margin-top: 0.75rem;
+}
+
+.alpha-stamp {
+  font-family: var(--font-display), Georgia, serif;
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--accent-ink);
+}
+
+.alpha-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.08);
+  vertical-align: middle;
+}
+
+.alpha-quote {
+  border-left: 3px solid var(--quote-bar);
+  padding-left: 1rem;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.alpha-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.alpha-button {
+  font-family: var(--font-ui), system-ui, sans-serif;
+  font-weight: 600;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  padding: 0.875rem 1.5rem;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.alpha-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+
+.alpha-button-accent {
+  background: var(--accent);
+  color: var(--paper);
+}
+
+[data-theme="arcade"] .alpha-button {
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+[data-theme="arcade"] .alpha-button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
