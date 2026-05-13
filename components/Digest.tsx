@@ -15,6 +15,15 @@ const KIND_LABEL: Record<ItemKind, string> = {
   note: "",
 };
 
+function faviconUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=64`;
+  } catch {
+    return null;
+  }
+}
+
 export function Digest({ issue }: DigestProps) {
   return (
     <article className="alpha-body max-w-2xl mx-auto px-6 py-20 md:py-28">
@@ -30,7 +39,7 @@ export function Digest({ issue }: DigestProps) {
       </h1>
 
       <p
-        className="alpha-display text-lg md:text-xl leading-relaxed mb-20"
+        className="alpha-display alpha-editor-intro text-lg md:text-xl leading-relaxed mb-20"
         style={{ color: "var(--ink)" }}
       >
         {issue.editorIntro}
@@ -99,10 +108,18 @@ function Item({ item }: { item: DigestItem }) {
           href={item.primaryRef.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="alpha-ui mt-4 inline-flex items-baseline gap-2 font-semibold underline underline-offset-4 decoration-1"
+          className="alpha-ui mt-4 inline-flex items-center gap-1 font-semibold underline underline-offset-4 decoration-1"
           style={{ color: "var(--accent-ink)" }}
         >
-          {kindLabel || "Open"}: {item.primaryRef.label}
+          {faviconUrl(item.primaryRef.url) && (
+            <img
+              src={faviconUrl(item.primaryRef.url)!}
+              alt=""
+              loading="lazy"
+              className="alpha-src-favicon"
+            />
+          )}
+          <span>{kindLabel || "Open"}: {item.primaryRef.label}</span>
           <span aria-hidden>↗</span>
         </a>
       )}
@@ -122,10 +139,18 @@ function Item({ item }: { item: DigestItem }) {
                   href={ref.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline underline-offset-4 decoration-1"
+                  className="inline-flex items-center gap-1 underline underline-offset-4 decoration-1"
                   style={{ color: "var(--ink-soft)" }}
                 >
-                  {ref.label} ↗
+                  {faviconUrl(ref.url) && (
+                    <img
+                      src={faviconUrl(ref.url)!}
+                      alt=""
+                      loading="lazy"
+                      className="alpha-src-favicon"
+                    />
+                  )}
+                  <span>{ref.label} ↗</span>
                 </a>
                 {ref.note && (
                   <span style={{ color: "var(--ink-soft)" }}> — {ref.note}</span>

@@ -65,7 +65,9 @@ export default function TopicsPage() {
                 type="button"
                 onClick={() => toggle(t.id)}
                 disabled={atLimit}
-                className="text-left p-4 rounded-lg transition-all"
+                className="topic-card text-left p-4 rounded-lg"
+                data-picked={isPicked}
+                data-at-limit={atLimit}
                 style={{
                   background: isPicked ? "var(--callout-bg)" : "transparent",
                   border: `1.5px solid ${
