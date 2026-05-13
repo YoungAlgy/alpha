@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 
@@ -17,6 +17,14 @@ import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 // When successful we router.replace to `next` (default /inbox).
 // When neither code nor hash is present we fall back to /signin.
 export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<CallbackShell message="Signing you in…" />}>
+      <Inner />
+    </Suspense>
+  );
+}
+
+function Inner() {
   const router = useRouter();
   const params = useSearchParams();
   const [err, setErr] = useState<string | null>(null);
@@ -67,6 +75,10 @@ export default function AuthCallbackPage() {
     })();
   }, [router, params]);
 
+  return <CallbackShell message={err || "Signing you in…"} />;
+}
+
+function CallbackShell({ message }: { message: string }) {
   return (
     <main className="min-h-screen flex items-center justify-center px-6">
       <div className="text-center">
@@ -80,7 +92,7 @@ export default function AuthCallbackPage() {
           className="alpha-display text-lg"
           style={{ color: "var(--ink-soft)" }}
         >
-          {err ? err : "Signing you in…"}
+          {message}
         </p>
       </div>
     </main>
