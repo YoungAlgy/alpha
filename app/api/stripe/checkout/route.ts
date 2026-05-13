@@ -32,10 +32,9 @@ export async function POST(req: Request) {
   try {
     const stripe = new Stripe(secret, {
       apiVersion: "2026-04-22.dahlia",
-      // Force the Node https client. Stripe SDK v22's default fetch path
-      // intermittently fails with retry-exhausted connection errors on
-      // Vercel serverless functions even though the keys/network are fine.
       httpClient: Stripe.createNodeHttpClient(),
+      maxNetworkRetries: 0,
+      timeout: 15000,
     });
 
     const session = await stripe.checkout.sessions.create({
@@ -56,8 +55,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: session.url });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Stripe error";
-    console.error("[stripe/checkout] failed:", message, e);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const err = e as { message?: string; type?: string; code?: string; statusCode?: number; cause?: unknown; stack?: string };
+    console.error("[stripe/checkout] MESSAGE:", err.message);
+    console.error("[stripe/checkout] TYPE:", err.type, "CODE:", err.code, "STATUS:", err.statusCode);
+    console.error("[stripe/checkout] CAUSE:", err.cause);
+    console.error("[stripe/checkout] STACK:", err.stack);
+    return NextResponse.json({ error: err.message || "Stripe error" }, { status: 500 });
   }
 }
