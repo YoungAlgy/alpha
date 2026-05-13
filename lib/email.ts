@@ -1,18 +1,55 @@
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { Resend } from "resend";
 import type { Issue } from "@/lib/types";
 
-let _client: Resend | null = null;
+// Dual provider: prefer AWS SES (alpha@youngalgy.com), fall back to Resend
+// (alpha@avahealth.co) if SES isn't configured yet. Lets us cut over without
+// a flag-day deploy.
 
-function client(): Resend {
-  if (_client) return _client;
-  const key = process.env.RESEND_API_KEY;
-  if (!key) throw new Error("RESEND_API_KEY missing");
-  _client = new Resend(key);
-  return _client;
+type Provider = "ses" | "resend";
+
+function sesConfigured(): boolean {
+  return (
+    !!process.env.AWS_ACCESS_KEY_ID?.trim() &&
+    !!process.env.AWS_SECRET_ACCESS_KEY?.trim()
+  );
 }
 
+function resendConfiguredInternal(): boolean {
+  return !!process.env.RESEND_API_KEY?.trim();
+}
+
+function activeProvider(): Provider | null {
+  if (sesConfigured()) return "ses";
+  if (resendConfiguredInternal()) return "resend";
+  return null;
+}
+
+let _ses: SESv2Client | null = null;
+function sesClient(): SESv2Client {
+  if (_ses) return _ses;
+  _ses = new SESv2Client({
+    region: process.env.AWS_REGION?.trim() || "us-east-1",
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID!.trim(),
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!.trim(),
+    },
+  });
+  return _ses;
+}
+
+let _resend: Resend | null = null;
+function resendClient(): Resend {
+  if (_resend) return _resend;
+  _resend = new Resend(process.env.RESEND_API_KEY!.trim());
+  return _resend;
+}
+
+// Back-compat: callers check `resendConfigured()` to decide whether to send.
+// Keep the name even though we now also accept SES — the boolean is "is some
+// email provider configured."
 export function resendConfigured(): boolean {
-  return !!process.env.RESEND_API_KEY;
+  return activeProvider() !== null;
 }
 
 export interface SendLetterParams {
@@ -27,9 +64,17 @@ export interface SendLetterParams {
 // and a link to the full letter on web. V1 will render the entire letter as
 // styled HTML (via React Email or similar).
 export async function sendLetterNotification(params: SendLetterParams): Promise<{ id: string }> {
-  const from = process.env.RESEND_FROM || "Alpha <onboarding@resend.dev>";
-  const subject = subjectFromIssue(params.issue);
+  const provider = activeProvider();
+  if (!provider) throw new Error("No email provider configured");
 
+  // SES path uses ALPHA_EMAIL_FROM; Resend keeps its legacy RESEND_FROM so
+  // we don't accidentally email avahealth.co from SES (it isn't verified there).
+  const from =
+    provider === "ses"
+      ? process.env.ALPHA_EMAIL_FROM?.trim() || "Alpha <alpha@youngalgy.com>"
+      : process.env.RESEND_FROM?.trim() || "Alpha <onboarding@resend.dev>";
+
+  const subject = subjectFromIssue(params.issue);
   const teaser = params.issue.editorIntro.slice(0, 320).trim();
   const sectionList = params.issue.sections
     .map((s) => `• ${s.topicLabel}`)
@@ -53,8 +98,39 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     magicLink: params.magicLink ?? null,
   });
 
-  const result = await client().emails.send({
-    from,
+  if (provider === "ses") {
+    try {
+      const out = await sesClient().send(
+        new SendEmailCommand({
+          FromEmailAddress: from,
+          Destination: { ToAddresses: [params.to] },
+          Content: {
+            Simple: {
+              Subject: { Data: subject, Charset: "UTF-8" },
+              Body: {
+                Html: { Data: html, Charset: "UTF-8" },
+                Text: { Data: text, Charset: "UTF-8" },
+              },
+              Headers: [{ Name: "X-Alpha-Issue-Id", Value: params.issue.id }],
+            },
+          },
+        })
+      );
+      return { id: out.MessageId ?? "" };
+    } catch (e) {
+      // SES still in sandbox / DKIM not yet propagated / recipient not verified —
+      // automatically fall back to Resend so the user still gets their letter.
+      if (!resendConfiguredInternal()) throw e;
+      console.warn(
+        "[email] SES failed, falling back to Resend:",
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+
+  const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <onboarding@resend.dev>";
+  const result = await resendClient().emails.send({
+    from: resendFrom,
     to: params.to,
     subject,
     html,
@@ -63,7 +139,6 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
       "X-Alpha-Issue-Id": params.issue.id,
     },
   });
-
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);
   }
