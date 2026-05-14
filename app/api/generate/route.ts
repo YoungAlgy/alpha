@@ -4,6 +4,7 @@ import { generateIssue } from "@/lib/engine/assemble";
 import { persistIssueIfPossible } from "@/lib/engine/persist";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
+import { supabaseServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -61,22 +62,67 @@ export async function POST(req: Request) {
 
     // Best-effort email send (doesn't block on failure either — letter still
     // renders on /inbox even if email delivery hiccups)
+    //
+    // Idempotency: if a delivered_at stamp already exists for this (user,
+    // week) we DO NOT re-send. Protects against /writing remounts, double-
+    // submits, retries that succeeded the first time but the client never
+    // saw the response, etc. The cron uses the same gate via delivered_at.
     const origin = new URL(req.url).origin;
     const inboxUrl = `${origin}/alpha/inbox`;
     let emailSent = false;
     if (profile.email && resendConfigured()) {
-      try {
-        await sendLetterNotification({
-          to: profile.email,
-          firstName: profile.firstName,
-          issue,
-          inboxUrl,
-          magicLink: persistence?.magicLink ?? null,
-          userId: persistence?.userId ?? null,
-        });
-        emailSent = true;
-      } catch (e) {
-        console.warn("[generate] letter email failed:", e instanceof Error ? e.message : e);
+      let alreadyDelivered = false;
+      if (persistence?.userId) {
+        try {
+          const sb = await supabaseServiceClient();
+          const { data: existing } = await sb
+            .from("issues")
+            .select("delivered_at")
+            .eq("user_id", persistence.userId)
+            .eq("week_of", weekOf)
+            .maybeSingle();
+          alreadyDelivered = !!existing?.delivered_at;
+        } catch (e) {
+          console.warn(
+            "[generate] delivered_at lookup failed (will attempt send):",
+            e instanceof Error ? e.message : e
+          );
+        }
+      }
+      if (alreadyDelivered) {
+        console.log(
+          `[generate] skipped letter email for ${profile.email} — already delivered for ${weekOf}`
+        );
+      } else {
+        try {
+          await sendLetterNotification({
+            to: profile.email,
+            firstName: profile.firstName,
+            issue,
+            inboxUrl,
+            magicLink: persistence?.magicLink ?? null,
+            userId: persistence?.userId ?? null,
+          });
+          emailSent = true;
+          // Stamp delivered_at so subsequent re-triggers short-circuit.
+          if (persistence?.userId) {
+            try {
+              const sb = await supabaseServiceClient();
+              await sb
+                .from("issues")
+                .update({ delivered_at: new Date().toISOString() })
+                .eq("user_id", persistence.userId)
+                .eq("week_of", weekOf);
+            } catch (e) {
+              console.warn(
+                "[generate] delivered_at stamp failed:",
+                e instanceof Error ? e.message : e
+              );
+            }
+          }
+        } catch (e) {
+          console.warn("[generate] letter email failed:", e instanceof Error ? e.message : e);
+        }
       }
     }
 

@@ -71,11 +71,17 @@ export async function GET(req: Request) {
   const startedAt = Date.now();
   let sent = 0;
   let skippedNoTopics = 0;
+  let skippedAlreadyDelivered = 0;
   let failed = 0;
   const failures: Array<{ email: string; error: string }> = [];
 
+  // Allow ?force=1 to override the delivered_at idempotency gate (only the
+  // admin will ever hit this with the CRON_SECRET in hand; useful for explicit
+  // resend-this-week ops, never set by the Vercel cron itself).
+  const force = url.searchParams.get("force") === "1";
+
   console.log(
-    `[cron/weekly-send] weekOf=${weekOf} subscribers=${rows.length}`
+    `[cron/weekly-send] weekOf=${weekOf} subscribers=${rows.length} force=${force}`
   );
 
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
@@ -85,6 +91,26 @@ export async function GET(req: Request) {
     if (!row.first_name || topics.length === 0) {
       skippedNoTopics++;
       continue;
+    }
+
+    // Idempotency gate: if this (user, week) already has a delivered_at
+    // stamp, skip the send entirely. Prevents duplicate emails when the
+    // endpoint gets hit multiple times (admin re-trigger, Vercel cron retry,
+    // ?weekOf= backfill, etc.). Override with ?force=1.
+    if (!force) {
+      const { data: existing } = await sb
+        .from("issues")
+        .select("delivered_at")
+        .eq("user_id", row.id)
+        .eq("week_of", weekOf)
+        .maybeSingle();
+      if (existing?.delivered_at) {
+        skippedAlreadyDelivered++;
+        console.log(
+          `[cron/weekly-send] skipped (already delivered ${existing.delivered_at}) → ${row.email}`
+        );
+        continue;
+      }
     }
 
     const profile: UserProfile = {
@@ -126,6 +152,19 @@ export async function GET(req: Request) {
           magicLink: null, // no auto-sign-in for weekly emails; user clicks /inbox
           userId: row.id,
         });
+        // Stamp delivered_at so future runs of the cron skip this user this
+        // week. Best-effort — if the update errors we still consider the send
+        // successful (the email went out), we just log so we know to watch.
+        const { error: stampErr } = await sb
+          .from("issues")
+          .update({ delivered_at: new Date().toISOString() })
+          .eq("user_id", row.id)
+          .eq("week_of", weekOf);
+        if (stampErr) {
+          console.warn(
+            `[cron/weekly-send] sent but delivered_at stamp failed for ${row.email}: ${stampErr.message}`
+          );
+        }
       }
 
       sent++;
@@ -149,6 +188,7 @@ export async function GET(req: Request) {
     subscribers: rows.length,
     sent,
     skippedNoTopics,
+    skippedAlreadyDelivered,
     failed,
     elapsedMs,
     failures: failures.slice(0, 25),

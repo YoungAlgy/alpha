@@ -20,6 +20,13 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-05-14",
+    title: "Letter only ships once per week per subscriber, period",
+    body:
+      "Closed a hole where the weekly-send endpoint could fire the same letter multiple times to the same person if the cron got triggered more than once for the same week (admin re-trigger, ?weekOf= backfill, an unlucky retry). Now every send stamps a delivered_at marker; the next trigger reads it and short-circuits. Backfilled the marker on all existing letters so no historical week ever re-sends. The first-letter generate endpoint got the same idempotency gate.",
+    tag: "fixed",
+  },
+  {
+    date: "2026-05-14",
     title: "Sharper sources behind every section",
     body:
       "Rewrote the search queries powering all 24 topic areas to anchor on named publishers, operators, and outlets the audience actually recognizes — primary sources over SEO listicles, with one query per topic intentionally specific so each section has texture instead of three near-duplicate result sets.",
