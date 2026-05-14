@@ -19,6 +19,13 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-05-14",
+    title: "Weekly letter actually ships every Sunday now",
+    body:
+      "A Sunday-at-10am-ET cron loops every active subscriber, generates a fresh personalized letter from your topics, and emails it. Topic blurbs cache across subscribers each week so it's fast and consistent — the first subscriber on a given topic pays the Claude cost, everyone else reads the same well-edited section.",
+    tag: "new",
+  },
+  {
     date: "2026-05-13",
     title: "Letter emails point at /inbox, not a magic link",
     body:
