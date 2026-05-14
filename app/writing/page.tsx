@@ -74,16 +74,19 @@ export default function WritingPage() {
       email: state.email,
     };
 
-    fetch("/alpha/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile }),
-    })
-      .then((r) => {
+    // Retry once with a backoff if the first attempt fails. The engine can
+    // hiccup on Brave rate-limit / a flaky Claude call / cold Lambda starts;
+    // these are usually transient. After two failures we surface the recovery
+    // UI so the user isn't stranded staring at a writing animation.
+    async function attemptGenerate(retriesLeft: number): Promise<void> {
+      try {
+        const r = await fetch("/alpha/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile }),
+        });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((data: { issue: Issue; magicLink?: string | null }) => {
+        const data = (await r.json()) as { issue: Issue; magicLink?: string | null };
         clearInterval(stepTimer);
         setCurrentStep(steps.length - 1);
         localStorage.setItem(STORAGE_KEY_ISSUE, JSON.stringify(data.issue));
@@ -101,11 +104,19 @@ export default function WritingPage() {
             router.push("/inbox" as never);
           }
         }, 1200);
-      })
-      .catch((e) => {
+      } catch (e) {
+        if (retriesLeft > 0) {
+          console.warn(`[writing] generate failed, retrying once:`, e);
+          // 4-second backoff before retry — long enough for transient cold
+          // starts to recover.
+          setTimeout(() => attemptGenerate(retriesLeft - 1), 4000);
+          return;
+        }
         clearInterval(stepTimer);
-        setError(e.message || "Something went wrong.");
-      });
+        setError(e instanceof Error ? e.message : "Something went wrong.");
+      }
+    }
+    attemptGenerate(1);
 
     return () => {
       clearInterval(stepTimer);
@@ -219,12 +230,57 @@ export default function WritingPage() {
           })}
         </ul>
         {error && (
-          <p
-            className="alpha-ui text-sm"
-            style={{ color: "var(--accent-ink)" }}
+          <div
+            className="alpha-card p-5 text-left space-y-3"
+            style={{
+              borderColor: "var(--rule)",
+              borderRadius: "var(--radius-card)",
+              background: "var(--paper-deep)",
+            }}
           >
-            {error} — try refreshing.
-          </p>
+            <p className="alpha-display text-base font-semibold">
+              Hiccup writing your first letter.
+            </p>
+            <p
+              className="alpha-ui text-sm leading-relaxed"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              Your subscription is active — Stripe got the payment fine. The
+              engine just stumbled. You can try again now, or jump to your
+              inbox and it'll show up there once the engine recovers (usually
+              within a few minutes).
+            </p>
+            <p
+              className="alpha-ui text-xs leading-relaxed"
+              style={{ color: "var(--ink-soft)", opacity: 0.7 }}
+            >
+              Technical: {error}
+            </p>
+            <div className="flex flex-wrap gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="alpha-button"
+              >
+                Try again →
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/inbox" as never)}
+                className="alpha-ui text-sm underline underline-offset-4"
+                style={{ color: "var(--ink-soft)" }}
+              >
+                Go to inbox
+              </button>
+              <a
+                href="mailto:youngalgy@gmail.com?subject=Alpha%20generate%20failure"
+                className="alpha-ui text-sm underline underline-offset-4"
+                style={{ color: "var(--ink-soft)" }}
+              >
+                Email support
+              </a>
+            </div>
+          </div>
         )}
         {!error && showEscape && !done && (
           <div

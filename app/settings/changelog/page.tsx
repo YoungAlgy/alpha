@@ -20,6 +20,20 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-05-14",
+    title: "Better recovery if the first letter hits a snag",
+    body:
+      "On the rare chance the engine stumbles right after you pay, the screen now auto-retries once, then shows a clear card explaining your subscription is fine, with one-click options to try again, jump to your inbox, or email support.",
+    tag: "improved",
+  },
+  {
+    date: "2026-05-14",
+    title: "Tighter editorial bar on what makes it into your letter",
+    body:
+      "Tuned the letter-writing prompt to prefer primary sources over aggregators, skip stale and SEO-listicle items, and never double up two pieces on the same story. Three picks, all earning their slot.",
+    tag: "improved",
+  },
+  {
+    date: "2026-05-14",
     title: "Weekly letter actually ships every Sunday now",
     body:
       "A Sunday-at-10am-ET cron loops every active subscriber, generates a fresh personalized letter from your topics, and emails it. Topic blurbs cache across subscribers each week so it's fast and consistent — the first subscriber on a given topic pays the Claude cost, everyone else reads the same well-edited section.",

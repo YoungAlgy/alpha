@@ -35,11 +35,18 @@ Per item:
 - Pick the URL that's MOST useful (the actual thing to click, not a homepage)
 - Each item should make the reader feel they got something useful — a link to click, a thing to try, a thread to read, an app to install, an event to attend
 
+Recency & quality bar:
+- The signal includes URLs from the past week. PREFER those. If you cite older items, they must be genuinely evergreen (a foundational book, a long-standing tool) — not stale news.
+- Skip sources that read like SEO listicles, content farms, or pure aggregators when a primary source exists in the signal.
+- If two signal items cover the same story, cite the better one, don't write two items on it.
+- "Worth your attention" is the bar. Three items, all earning their slot.
+
 Hard rules:
 - Never invent URLs. If a URL isn't in the signal, leave the ref out.
-- Never invent statistics. Stats must come from the signal.
-- No words: "leverage," "synergy," "game-changer," "unprecedented," "in a world where," "Hope this helps!"
+- Never invent statistics, dates, prices, or names. If it's not in the signal, don't claim it.
+- No words: "leverage," "synergy," "game-changer," "unprecedented," "in a world where," "in today's fast-paced," "Hope this helps!"
 - Don't start headlines with "How," "Why," "The X You Need To Know," "X Reasons."
+- Don't recap the news cycle. Tell the reader why they should care about THIS thing this week.
 
 Output is JSON only — no prose before or after.`;
 
