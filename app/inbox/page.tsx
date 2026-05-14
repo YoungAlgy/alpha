@@ -179,7 +179,15 @@ export default function InboxPage() {
           className="max-w-5xl mx-auto px-6 pb-3 alpha-mono text-center"
           style={{ color: "var(--accent-ink)" }}
         >
-          YOUR FIRST LETTER · {minutes} MIN READ · NEXT ONE SHIPS SUNDAY
+          {weekLabel(issue.weekOf).toUpperCase()} · {minutes} MIN READ · NEXT ONE SHIPS {nextSundayLabel().toUpperCase()}
+        </div>
+        <div
+          className="max-w-5xl mx-auto px-6 pb-3 alpha-ui text-center text-xs"
+          style={{ color: "var(--ink-soft)" }}
+        >
+          <Link href="/archive" className="underline underline-offset-4 hover:opacity-80">
+            Read past letters →
+          </Link>
         </div>
       </div>
       <LetterTOC issue={issue} />
@@ -188,6 +196,29 @@ export default function InboxPage() {
       <FirstLetterCelebration active={celebrate} />
     </main>
   );
+}
+
+// Format the issue's week_of (ISO or already-formatted) into a tight header
+// label like "May 17" — falls back to the raw string if parse fails.
+function weekLabel(weekOf: string): string {
+  // Already a long-form string like "Sunday, May 17, 2026"?
+  if (weekOf.includes(",")) {
+    const m = weekOf.match(/^[^,]+,\s*([A-Za-z]+\s+\d+)/);
+    if (m) return m[1];
+    return weekOf;
+  }
+  const d = new Date(weekOf + "T12:00:00");
+  if (isNaN(d.getTime())) return weekOf;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// "Next one ships May 24" — finds the upcoming Sunday from today (UTC).
+function nextSundayLabel(): string {
+  const d = new Date();
+  const day = d.getUTCDay(); // 0 = Sunday
+  const daysAhead = day === 0 ? 7 : 7 - day;
+  d.setUTCDate(d.getUTCDate() + daysAhead);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function computeWordCount(issue: Issue): number {

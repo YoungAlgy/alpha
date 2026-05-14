@@ -1,129 +1,137 @@
 import type { TopicId } from "@/lib/types";
 
-// Per-topic search queries fed to Brave. We run a small number per topic
-// (~3) and join the results into a signal context for Claude.
-// The third query is intentionally local/specific so each section gets
-// a fresh, current angle.
+// Per-topic Brave Search queries. We run 3 per topic and Claude synthesizes
+// from the joined results. Two design principles tuned 2026-05-14:
+//
+//   1. Anchor on named publishers / authors / operators the audience recognizes.
+//      Generic "this week" queries pull SEO listicles; named-subject queries
+//      pull primary sources.
+//   2. Keep one of the three intentionally specific (a name, a subtopic, a
+//      release / outlet) so the section has texture instead of three near-
+//      duplicate result sets.
+//
+// Brave's `freshness: "pw"` (past-week) is already applied at call site, so
+// queries don't need their own "this week" anchor.
 
 export const TOPIC_QUERIES: Record<TopicId, string[]> = {
   "healthcare-recruiting": [
-    "US healthcare recruiting news this week",
-    "hospital hiring trends 2026",
-    "nurse shortage staffing agency",
+    "US healthcare hiring market news",
+    "Becker's hospital review nurse staffing 2026",
+    "scope of practice CRNA NP physician assistant",
   ],
   "sales-persuasion": [
-    "sales psychology insights this week",
-    "B2B selling tactics 2026",
-    "cold outreach response rates",
+    "sales psychology Cialdini Voss Hormozi",
+    "B2B cold outreach reply rates Jeb Blount",
+    "sales call recording analysis Gong Chorus",
   ],
   "founder-operator": [
-    "founder wisdom My First Million this week",
-    "operator playbook scaling SaaS",
-    "Hormozi Welsh Sahil Bloom",
+    "My First Million Sam Parr Shaan Puri",
+    "Alex Hormozi Justin Welsh solo operator playbook",
+    "Stratechery Ben Thompson business strategy",
   ],
   "marketing-growth": [
-    "marketing growth tactics this week",
-    "best newsletter platforms 2026",
-    "B2B PMF growth loops",
+    "Lenny Rachitsky newsletter PMF growth",
+    "April Dunford positioning B2B",
+    "marketing brew growth loops cold start",
   ],
   "personal-finance": [
-    "personal finance investing news this week",
-    "high yield savings 401k strategy 2026",
-    "solopreneur side hustle indie hacker income 2026",
+    "Money Guy Show Ramit Sethi financial planning",
+    "Nick Maggiulli Of Dollars and Data investing",
+    "Justin Welsh Pieter Levels solopreneur income",
   ],
   "real-estate": [
-    "real estate market this week",
-    "mortgage rates 2026",
-    "rental property investing",
+    "BiggerPockets housing market mortgage rates",
+    "Lance Lambert housing data inventory",
+    "Florida insurance crisis property values",
   ],
   "macro-markets": [
-    "macro economy this week",
-    "Fed rate decision 2026",
-    "Treasury yields inflation",
+    "Joey Politano Apricitas inflation labor",
+    "Sam Ro TKer Mike Cembalest markets",
+    "Federal Reserve FOMC rate decision yield curve",
   ],
   "longevity-wellness": [
-    "longevity research this week",
-    "Peter Attia Huberman protocols",
-    "sleep recovery training",
+    "Peter Attia podcast longevity protocol",
+    "Andrew Huberman sleep hydration training",
+    "Bryan Johnson Don't Die Blueprint study",
   ],
   "nutrition-food": [
-    "nutrition research this week",
-    "protein creatine olive oil benefits",
-    "time restricted eating studies",
+    "Layne Norton Examine nutrition meta-analysis",
+    "protein creatine olive oil cardiovascular",
+    "time restricted eating GLP-1 obesity",
   ],
   "mental-health": [
-    "mental health research this week",
-    "therapy modalities 2026",
-    "anxiety depression treatment",
+    "JAMA Psychiatry therapy SSRI meta-analysis",
+    "Bessel van der Kolk trauma research",
+    "Hidden Brain Happiness Lab podcast research",
   ],
   "womens-health": [
-    "women's health research this week",
-    "perimenopause hormone protocols 2026",
-    "menstrual cycle training fertility",
+    "Dr Stacy Sims women training menstrual cycle",
+    "Mary Claire Haver perimenopause HRT",
+    "NEJM women's health hormone replacement trial",
   ],
   "books-worth-your-time": [
-    "best books to read 2026",
-    "non-fiction recommendations this week",
-    "Tyler Cowen book recommendations",
+    "Tyler Cowen Marginal Revolution book recommendations",
+    "Sahil Bloom David Brooks Naval new release",
+    "NYT bestseller non-fiction this month",
   ],
   "psychology-behavior": [
-    "psychology research this week",
-    "behavioral science new findings 2026",
-    "Adam Grant Katy Milkman",
+    "Adam Grant Katy Milkman behavioral science",
+    "Marginalian Maria Popova Brain Pickings essay",
+    "JAMA Psychology Today new research findings",
   ],
   "parenting": [
-    "parenting research this week",
-    "gentle parenting Big Little Feelings 2026",
-    "Emily Oster child development",
+    "Emily Oster ParentData research",
+    "Dr Becky Kennedy Good Inside parenting",
+    "Big Little Feelings Janet Lansbury tantrum",
   ],
   "inspiring-people": [
-    "inspiring profile this week",
-    "New Yorker Atlantic profile 2026",
-    "operator profile Wired Esquire",
+    "New Yorker profile founder operator",
+    "The Atlantic Wired long-form profile",
+    "Diary of a CEO Modern Wisdom interview",
   ],
   "movies-tv": [
-    "best new movies TV this week",
-    "Severance A24 Apple TV+ 2026",
-    "indie film release 2026",
+    "Letterboxd Journal A24 Apple TV+ premiere",
+    "IndieWire The Ringer film criticism",
+    "Severance The Studio Diplomat HBO Netflix",
   ],
   "music": [
-    "music industry news this week",
-    "new album release 2026",
-    "Frank Ocean Spotify Bandcamp",
+    "Rick Beato Anthony Fantano music industry",
+    "Pitchfork Stereogum new album release",
+    "Spotify Bandcamp Tidal artist economics",
   ],
   "style-fashion": [
-    "menswear style trends this week",
-    "Highsnobiety BoF 2026",
-    "Aimé Leon Dore The Row Buck Mason",
+    "Highsnobiety Business of Fashion menswear",
+    "Aimé Leon Dore The Row Loro Piana drop",
+    "GQ Wirecutter heavyweight tee Buck Mason",
   ],
   "sports-betting": [
-    "sports betting edges sharp action this week",
-    "DraftKings FanDuel line movement closing line value 2026",
-    "NFL NBA MLB news this week",
+    "Unabated sharp action closing line value",
+    "Action Network PRO sportsbook line movement",
+    "NFL NBA MLB injury report Vegas odds",
   ],
   "ai-news": [
-    "AI model release Anthropic OpenAI Mistral this week",
-    "best AI tools for work Cursor Granola v0 Notion 2026",
-    "AI workflow automation productivity 2026",
+    "Anthropic OpenAI Mistral model release",
+    "Latent Space Simon Willison AI engineering",
+    "Cursor Granola v0 Perplexity Notion AI tool",
   ],
   "web3-updates": [
-    "web3 protocol news this week",
-    "Ethereum L2 Farcaster 2026",
-    "crypto ETF flows institutional",
+    "Vitalik Ethereum upgrade Layer 2",
+    "Bankless Coinbase Institutional crypto ETF flows",
+    "Farcaster Warpcast decentralized social",
   ],
   "fl-gardening": [
-    "Florida gardening this week",
-    "UF IFAS native plants pollinators",
-    "Tampa Bay garden events",
+    "UF IFAS Florida-Friendly Landscaping native plants",
+    "Tampa Bay native plant society event sale",
+    "Florida pollinator milkweed monarch garden",
   ],
   "startups-vc": [
-    "startup VC news this week",
-    "Y Combinator a16z 2026",
-    "startup fundraise tender offer",
+    "The Information Y Combinator a16z fundraise",
+    "Stratechery Lenny startup operator essay",
+    "20VC All-In podcast venture deal flow",
   ],
   "faith-meaning": [
-    "Christianity faith essay this week",
-    "Bible Project Tim Keller",
-    "contemplative theology 2026",
+    "Christianity Today Gospel Coalition essay",
+    "Bible Project Tim Keller theology podcast",
+    "Plough Comment Magazine Richard Rohr contemplative",
   ],
 };

@@ -16,11 +16,26 @@ interface AdminUserRow {
   stripe_customer_id: string | null;
   subscribed_at: string | null;
   cancelled_at: string | null;
+  unsubscribed_at: string | null;
   created_at: string;
+}
+
+interface Stats {
+  totalUsers: number;
+  paying: number;
+  freeGranted: number;
+  cancelled: number;
+  unsubscribed: number;
+  notSubscribed: number;
+  latestIssueWeekOf: string | null;
+  latestIssueCount: number;
+  sesProductionAccess: boolean | null;
+  sesMaxSendsPerDay: number | null;
 }
 
 export default function AdminAccountsPage() {
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -38,6 +53,7 @@ export default function AdminAccountsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setUsers(data.users);
+      if (data.stats) setStats(data.stats);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn't load users.");
     }
@@ -67,6 +83,7 @@ export default function AdminAccountsPage() {
   }
 
   function statusLabel(u: AdminUserRow): { label: string; color: string } {
+    if (u.unsubscribed_at) return { label: "Unsubscribed", color: "var(--ink-soft)" };
     if (u.cancelled_at) return { label: "Cancelled", color: "var(--ink-soft)" };
     if (u.subscribed_at && u.stripe_customer_id) return { label: "Paying", color: "var(--accent-ink)" };
     if (u.subscribed_at && !u.stripe_customer_id) return { label: "Free (granted)", color: "var(--accent-ink)" };
@@ -106,6 +123,62 @@ export default function AdminAccountsPage() {
         <p className="alpha-ui text-sm mb-10" style={{ color: "var(--ink-soft)" }}>
           Admin-only. Everyone who has signed up for Alpha. Grant free, delete, or just look.
         </p>
+
+        {stats && (
+          <div
+            className="alpha-card p-5 mb-10"
+            style={{
+              borderColor: "var(--rule)",
+              borderRadius: "var(--radius-card)",
+              background: "var(--paper-deep)",
+            }}
+          >
+            <div className="alpha-mono mb-4" style={{ color: "var(--accent-ink)" }}>
+              OPERATIONAL STATE
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <Stat label="Paying" value={stats.paying} />
+              <Stat label="Free (granted)" value={stats.freeGranted} />
+              <Stat label="Cancelled" value={stats.cancelled} />
+              <Stat label="Unsubscribed" value={stats.unsubscribed} />
+              <Stat
+                label="Latest issue"
+                value={stats.latestIssueWeekOf || "—"}
+                sub={
+                  stats.latestIssueWeekOf
+                    ? `${stats.latestIssueCount} sent`
+                    : undefined
+                }
+              />
+              <Stat
+                label="SES production"
+                value={
+                  stats.sesProductionAccess === null
+                    ? "—"
+                    : stats.sesProductionAccess
+                    ? "live"
+                    : "sandbox"
+                }
+                sub={
+                  stats.sesMaxSendsPerDay
+                    ? `${stats.sesMaxSendsPerDay.toLocaleString()}/day cap`
+                    : undefined
+                }
+                color={
+                  stats.sesProductionAccess === false
+                    ? "var(--accent-ink)"
+                    : undefined
+                }
+              />
+              <Stat
+                label="Sunday cron"
+                value="armed"
+                sub="14:00 UTC weekly"
+              />
+              <Stat label="Total users" value={stats.totalUsers} />
+            </div>
+          </div>
+        )}
 
         {err && (
           <p className="alpha-ui text-sm mb-6" style={{ color: "var(--accent-ink)" }}>
@@ -240,5 +313,39 @@ export default function AdminAccountsPage() {
       </section>
       <Footer />
     </main>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  sub,
+  color,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  color?: string;
+}) {
+  return (
+    <div>
+      <div className="alpha-mono mb-1" style={{ color: "var(--ink-soft)", fontSize: 10 }}>
+        {label.toUpperCase()}
+      </div>
+      <div
+        className="alpha-display text-2xl font-bold leading-tight"
+        style={{ color: color || "var(--ink)" }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div
+          className="alpha-ui text-xs mt-1"
+          style={{ color: "var(--ink-soft)" }}
+        >
+          {sub}
+        </div>
+      )}
+    </div>
   );
 }

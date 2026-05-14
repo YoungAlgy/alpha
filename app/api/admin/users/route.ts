@@ -1,9 +1,95 @@
 import { NextResponse } from "next/server";
+import { SESv2Client, GetAccountCommand } from "@aws-sdk/client-sesv2";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 const ADMIN_EMAIL = "youngalgy@gmail.com";
+
+interface Stats {
+  totalUsers: number;
+  paying: number;
+  freeGranted: number;
+  cancelled: number;
+  unsubscribed: number;
+  notSubscribed: number;
+  latestIssueWeekOf: string | null;
+  latestIssueCount: number;
+  sesProductionAccess: boolean | null;
+  sesMaxSendsPerDay: number | null;
+}
+
+async function gatherStats(): Promise<Stats> {
+  const sb = await supabaseServiceClient();
+
+  // One query, in-memory aggregation — small population, fine for V1
+  const { data: rows } = await sb
+    .from("users")
+    .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id");
+
+  const stats = {
+    totalUsers: rows?.length ?? 0,
+    paying: 0,
+    freeGranted: 0,
+    cancelled: 0,
+    unsubscribed: 0,
+    notSubscribed: 0,
+  };
+  for (const r of rows ?? []) {
+    if (r.unsubscribed_at) stats.unsubscribed++;
+    if (r.cancelled_at) stats.cancelled++;
+    else if (r.subscribed_at && r.stripe_customer_id) stats.paying++;
+    else if (r.subscribed_at && !r.stripe_customer_id) stats.freeGranted++;
+    else stats.notSubscribed++;
+  }
+
+  // Latest issue snapshot — surfaces whether the weekly cron is running
+  const { data: latestIssues } = await sb
+    .from("issues")
+    .select("week_of")
+    .order("week_of", { ascending: false })
+    .limit(1);
+  const latestWeekOf = latestIssues?.[0]?.week_of ?? null;
+
+  let latestIssueCount = 0;
+  if (latestWeekOf) {
+    const { count } = await sb
+      .from("issues")
+      .select("*", { count: "exact", head: true })
+      .eq("week_of", latestWeekOf);
+    latestIssueCount = count ?? 0;
+  }
+
+  // SES production-access probe — costs an extra AWS call but it's the most
+  // load-bearing operational flag right now (sandbox = signins broken for
+  // non-verified recipients).
+  let sesProductionAccess: boolean | null = null;
+  let sesMaxSendsPerDay: number | null = null;
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    try {
+      const ses = new SESv2Client({
+        region: process.env.AWS_REGION?.trim() || "us-east-1",
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID.trim(),
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY.trim(),
+        },
+      });
+      const r = await ses.send(new GetAccountCommand({}));
+      sesProductionAccess = !!r.ProductionAccessEnabled;
+      sesMaxSendsPerDay = r.SendQuota?.Max24HourSend ?? null;
+    } catch (e) {
+      console.warn("[admin/users] SES probe failed:", e instanceof Error ? e.message : e);
+    }
+  }
+
+  return {
+    ...stats,
+    latestIssueWeekOf: latestWeekOf,
+    latestIssueCount,
+    sesProductionAccess,
+    sesMaxSendsPerDay,
+  };
+}
 
 async function requireAdmin(): Promise<{ ok: true } | { ok: false; res: NextResponse }> {
   const sb = await supabaseServerClient();
@@ -22,16 +108,19 @@ export async function GET() {
   if (!gate.ok) return gate.res;
 
   const sb = await supabaseServiceClient();
-  const { data, error } = await sb
-    .from("users")
-    .select("id, email, first_name, city, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, created_at")
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const [{ data: users, error }, stats] = await Promise.all([
+    sb
+      .from("users")
+      .select("id, email, first_name, city, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, created_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
+    gatherStats(),
+  ]);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json({ users: data });
+  return NextResponse.json({ users, stats });
 }
 
 interface ActionBody {

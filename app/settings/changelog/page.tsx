@@ -20,6 +20,34 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-05-14",
+    title: "Sharper sources behind every section",
+    body:
+      "Rewrote the search queries powering all 24 topic areas to anchor on named publishers, operators, and outlets the audience actually recognizes — primary sources over SEO listicles, with one query per topic intentionally specific so each section has texture instead of three near-duplicate result sets.",
+    tag: "improved",
+  },
+  {
+    date: "2026-05-14",
+    title: "Admin operational state at a glance",
+    body:
+      "The /settings/accounts admin page now opens with a stats panel — paying vs free-granted vs cancelled vs unsubscribed counts, the latest issue's week and how many shipped, SES production vs sandbox status with the daily cap, and the Sunday cron readiness. Catches \"is the pipeline actually running?\" without grep.",
+    tag: "new",
+  },
+  {
+    date: "2026-05-14",
+    title: "Inbox header tells you when the next one ships",
+    body:
+      "The sticky inbox banner now shows the current letter's week and the date the next one drops, plus a small \"Read past letters →\" link to the archive. No more guessing whether you're looking at this week's edition.",
+    tag: "improved",
+  },
+  {
+    date: "2026-05-14",
+    title: "Cleaner copy on the city step",
+    body:
+      "Tightened the onboarding city helper so it reads in one breath: \"Lets the letter know when something nearby is worth mentioning — local events, weather windows, regional news. Never shared.\"",
+    tag: "improved",
+  },
+  {
+    date: "2026-05-14",
     title: "One-click unsubscribe in every letter",
     body:
       "Every weekly email now carries a signed unsubscribe link plus the inbox-provider headers Gmail and Apple Mail use to render a one-click unsubscribe button next to the sender. Hits an endpoint, sets your account to unsubscribed, you're out — Stripe billing is separate and untouched.",
