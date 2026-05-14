@@ -43,7 +43,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const weekOf = currentSundayIso();
+  // Allow ?weekOf=YYYY-MM-DD override (useful for backfills + admin testing
+  // when the schedule hasn't fired yet). Defaults to most-recent-Sunday-UTC.
+  const url = new URL(req.url);
+  const weekOfOverride = url.searchParams.get("weekOf");
+  const weekOf =
+    weekOfOverride && /^\d{4}-\d{2}-\d{2}$/.test(weekOfOverride)
+      ? weekOfOverride
+      : currentSundayIso();
   const sb = await supabaseServiceClient();
 
   const { data: subscribers, error } = await sb
