@@ -59,7 +59,8 @@ export async function GET(req: Request) {
       "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, theme, topics"
     )
     .not("subscribed_at", "is", null)
-    .is("cancelled_at", null);
+    .is("cancelled_at", null)
+    .is("unsubscribed_at", null);
 
   if (error) {
     console.error("[cron/weekly-send] subscriber fetch failed:", error.message);
@@ -123,6 +124,7 @@ export async function GET(req: Request) {
           issue,
           inboxUrl,
           magicLink: null, // no auto-sign-in for weekly emails; user clicks /inbox
+          userId: row.id,
         });
       }
 

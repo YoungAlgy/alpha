@@ -1,6 +1,7 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { Resend } from "resend";
 import type { Issue } from "@/lib/types";
+import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
 
 // Dual provider: prefer AWS SES (alpha@youngalgy.com), fall back to Resend
 // (alpha@avahealth.co) if SES isn't configured yet. Lets us cut over without
@@ -58,6 +59,10 @@ export interface SendLetterParams {
   issue: Issue;
   inboxUrl: string;
   magicLink?: string | null;
+  /** User id used to mint the signed one-click unsubscribe token. If omitted
+   *  the email still sends but won't include unsubscribe links/headers — only
+   *  use this for legacy callers that don't have a user id available. */
+  userId?: string | null;
 }
 
 // V0 email: a short editorial notification with the editor's note as a teaser
@@ -80,6 +85,12 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     .map((s) => `• ${s.topicLabel}`)
     .join("\n");
 
+  // Build the unsubscribe URL once and reuse it everywhere (HTML link, plain
+  // text link, and the RFC 8058 List-Unsubscribe header that Gmail / Apple
+  // Mail use to render their inbox-side unsubscribe button).
+  const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
+  const unsubUrl = params.userId ? buildUnsubscribeUrl(params.userId, origin) : null;
+
   const html = renderHTML({
     firstName: params.firstName,
     teaser,
@@ -87,6 +98,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     inboxUrl: params.inboxUrl,
     weekOf: params.issue.weekOf,
     magicLink: params.magicLink ?? null,
+    unsubscribeUrl: unsubUrl,
   });
 
   const text = renderText({
@@ -96,7 +108,20 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     inboxUrl: params.inboxUrl,
     weekOf: params.issue.weekOf,
     magicLink: params.magicLink ?? null,
+    unsubscribeUrl: unsubUrl,
   });
+
+  // Headers shared across providers. List-Unsubscribe + List-Unsubscribe-Post
+  // (RFC 2369 + 8058) tell Gmail / Apple Mail / Outlook to surface a one-click
+  // unsubscribe button. The Post variant tells them they can use POST without
+  // the user being navigated away from their inbox.
+  const sharedHeaders: Array<{ Name: string; Value: string }> = [
+    { Name: "X-Alpha-Issue-Id", Value: params.issue.id },
+  ];
+  if (unsubUrl) {
+    sharedHeaders.push({ Name: "List-Unsubscribe", Value: `<${unsubUrl}>` });
+    sharedHeaders.push({ Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click" });
+  }
 
   if (provider === "ses") {
     try {
@@ -111,7 +136,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
                 Html: { Data: html, Charset: "UTF-8" },
                 Text: { Data: text, Charset: "UTF-8" },
               },
-              Headers: [{ Name: "X-Alpha-Issue-Id", Value: params.issue.id }],
+              Headers: sharedHeaders,
             },
           },
         })
@@ -129,15 +154,20 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   }
 
   const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <onboarding@resend.dev>";
+  const resendHeaders: Record<string, string> = {
+    "X-Alpha-Issue-Id": params.issue.id,
+  };
+  if (unsubUrl) {
+    resendHeaders["List-Unsubscribe"] = `<${unsubUrl}>`;
+    resendHeaders["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+  }
   const result = await resendClient().emails.send({
     from: resendFrom,
     to: params.to,
     subject,
     html,
     text,
-    headers: {
-      "X-Alpha-Issue-Id": params.issue.id,
-    },
+    headers: resendHeaders,
   });
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);
@@ -165,13 +195,17 @@ interface RenderArgs {
   inboxUrl: string;
   weekOf: string;
   magicLink: string | null;
+  unsubscribeUrl: string | null;
 }
 
-function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf }: RenderArgs): string {
+function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
   // CTA always points at /inbox. If the user is still signed in, they go
   // straight to their letter. If not, /inbox bounces them to /signin where
   // they request a 6-digit code — same as anywhere else in the app.
   const signinUrl = inboxUrl.replace("/inbox", "/signin");
+  const unsubLine = unsubscribeUrl
+    ? `<a href="${escapeAttr(unsubscribeUrl)}" style="color:#6B7B70;">Unsubscribe</a> · `
+    : "";
   return `<!doctype html>
 <html lang="en">
   <head><meta charset="utf-8"><title>Your Sunday alpha</title></head>
@@ -202,15 +236,16 @@ function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf }: Render
         — Alpha
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
-      <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#4A5F50;text-align:center;">
-        ALPHA · A WEEKLY LETTER · ${new Date().getFullYear()}
+      <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
+        ${unsubLine}ALPHA · A WEEKLY LETTER · ${new Date().getFullYear()}
       </p>
     </div>
   </body>
 </html>`;
 }
 
-function renderText({ firstName, teaser, sectionList, inboxUrl, weekOf }: RenderArgs): string {
+function renderText({ firstName, teaser, sectionList, inboxUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
+  const unsubLine = unsubscribeUrl ? `\n\nUnsubscribe: ${unsubscribeUrl}` : "";
   return `${weekOf}
 
 Hi ${firstName},
@@ -225,7 +260,7 @@ ${inboxUrl}
 
 (If you got signed out, request a fresh 6-digit code at ${inboxUrl.replace("/inbox", "/signin")})
 
-— Alpha`;
+— Alpha${unsubLine}`;
 }
 
 function escapeHtml(s: string): string {

@@ -20,6 +20,13 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-05-14",
+    title: "One-click unsubscribe in every letter",
+    body:
+      "Every weekly email now carries a signed unsubscribe link plus the inbox-provider headers Gmail and Apple Mail use to render a one-click unsubscribe button next to the sender. Hits an endpoint, sets your account to unsubscribed, you're out — Stripe billing is separate and untouched.",
+    tag: "new",
+  },
+  {
+    date: "2026-05-14",
     title: "Better recovery if the first letter hits a snag",
     body:
       "On the rare chance the engine stumbles right after you pay, the screen now auto-retries once, then shows a clear card explaining your subscription is fine, with one-click options to try again, jump to your inbox, or email support.",

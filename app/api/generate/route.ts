@@ -72,6 +72,7 @@ export async function POST(req: Request) {
           issue,
           inboxUrl,
           magicLink: persistence?.magicLink ?? null,
+          userId: persistence?.userId ?? null,
         });
         emailSent = true;
       } catch (e) {
