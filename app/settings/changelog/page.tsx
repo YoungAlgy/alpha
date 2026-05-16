@@ -19,6 +19,13 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-05-16",
+    title: "Every letter ships from alpha@youngalgy.com",
+    body:
+      "Cut over Alpha's transactional email to its own branded sender, alpha@youngalgy.com, with full DKIM and SPF authentication. Weekly digests, welcome emails, and any future system mail all leave from the same address. (Behind the scenes: switched providers, verified the domain, dropped the temporary fallback.)",
+    tag: "improved",
+  },
+  {
     date: "2026-05-14",
     title: "Letter only ships once per week per subscriber, period",
     body:
