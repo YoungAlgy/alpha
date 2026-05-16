@@ -20,6 +20,13 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-05-16",
+    title: "Sign-in codes also come from alpha@youngalgy.com",
+    body:
+      "The 6-digit code you enter at sign-in now arrives from the same branded address as the weekly letter. Consistent sender across every email Alpha sends — fewer junk-folder false positives and easier to recognize in your inbox.",
+    tag: "improved",
+  },
+  {
+    date: "2026-05-16",
     title: "Every letter ships from alpha@youngalgy.com",
     body:
       "Cut over Alpha's transactional email to its own branded sender, alpha@youngalgy.com, with full DKIM and SPF authentication. Weekly digests, welcome emails, and any future system mail all leave from the same address. (Behind the scenes: switched providers, verified the domain, dropped the temporary fallback.)",
