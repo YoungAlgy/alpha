@@ -24,8 +24,9 @@ function getCtx(): AudioContext | null {
 export function isAudioEnabled(): boolean {
   if (typeof window === "undefined") return false;
   const v = localStorage.getItem(STORAGE_KEY);
-  // Default: ON. Users can turn it off; we remember.
-  return v !== "off";
+  // Default: OFF (per plan §15 — "Audio annoyance: off by default. Persistent
+  // toggle"). Users opt in from the inbox header and we remember.
+  return v === "on";
 }
 
 export function setAudioEnabled(on: boolean): void {

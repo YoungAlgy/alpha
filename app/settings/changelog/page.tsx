@@ -19,6 +19,20 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-05-17",
+    title: "Topics are now stackable — $5 buys 5 topics, add more anytime",
+    body:
+      "Instead of a fixed five-topic plan, Alpha is now $5/mo for the base five topics with the option to add five-topic bundles for $5/mo each, up to 25 topics ($25/mo). Bump or drop tiers from Settings → Billing; Stripe prorates the change.",
+    tag: "new",
+  },
+  {
+    date: "2026-05-17",
+    title: "Audio off by default",
+    body:
+      "Sound effects (clicks, confirmations, the fanfare on first letter) now default to off. Flip them on from the speaker icon in the inbox header — your choice persists.",
+    tag: "improved",
+  },
+  {
     date: "2026-05-16",
     title: "Sign-in codes also come from alpha@youngalgy.com",
     body:
