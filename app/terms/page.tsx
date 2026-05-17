@@ -12,15 +12,17 @@ export default function TermsPage() {
 
       <H2>The service</H2>
       <p>
-        Alpha is a paid weekly email/web newsletter. You pick five topics, and every
-        Sunday we deliver an AI-sourced, human-reviewed letter written for you. We
-        may add features over time. We may also remove or change features when it
-        makes the product better.
+        Alpha is a paid weekly email/web newsletter. You pick a set of topics, and
+        every Sunday we deliver an AI-sourced, human-reviewed letter written for
+        you. We may add features over time. We may also remove or change features
+        when it makes the product better.
       </p>
 
       <H2>Subscription &amp; billing</H2>
       <ul>
-        <li>Alpha is <strong>$5 per month, USD</strong>, billed monthly to your card.</li>
+        <li>Alpha starts at <strong>$5 per month, USD</strong> for 5 topics, billed
+          monthly to your card. You can add bundles of 5 more topics for $5/mo each
+          (up to 25 topics, $25/mo) from Settings → Billing.</li>
         <li>Your subscription auto-renews each month until you cancel.</li>
         <li>You can cancel any time from Settings → Billing. Cancellation takes
           effect at the end of the current billing cycle; you keep access until then.</li>

@@ -98,7 +98,9 @@ export default function SettingsPage() {
 
         <Section title="Your topics">
           <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
-            The five things your letter focuses on each week.
+            {topicQuota === 5
+              ? "The five things your letter focuses on each week."
+              : `The ${topicQuota} things your letter focuses on each week.`}
           </p>
           <ul className="space-y-1 mb-3">
             {(state.topics || []).map((id) => {

@@ -18,9 +18,9 @@ export default function PrivacyPage() {
           <strong>Account basics:</strong> your first name, email address, and city.
         </li>
         <li>
-          <strong>Your interests:</strong> the five topics you picked, your chosen
-          theme, and any optional context you shared (what you do, what you&apos;re
-          working on, a non-work interest).
+          <strong>Your interests:</strong> the topics you picked (5–25 depending on
+          your plan tier), your chosen theme, and any optional context you shared
+          (what you do, what you&apos;re working on, a non-work interest).
         </li>
         <li>
           <strong>Letters we write you:</strong> a copy of each weekly letter is saved
