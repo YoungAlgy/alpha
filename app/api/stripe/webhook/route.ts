@@ -62,6 +62,8 @@ export async function POST(req: Request) {
             const meta = (session.metadata || {}) as Record<string, string>;
             const firstName = meta.alpha_first_name || meta.first_name || "friend";
             const city = meta.alpha_city || meta.city || null;
+            // Initial signup: quantity 1 ⇒ topic_quota 5 (the base bundle).
+            // customer.subscription.updated will overwrite if they upgrade.
             await sb.from("users").upsert(
               {
                 id: linkData.user.id,
@@ -71,6 +73,7 @@ export async function POST(req: Request) {
                 stripe_customer_id: customerId ?? null,
                 subscribed_at: new Date().toISOString(),
                 cancelled_at: null,
+                topic_quota: 5,
               },
               { onConflict: "id" }
             );
@@ -78,6 +81,7 @@ export async function POST(req: Request) {
         }
         break;
       }
+      case "customer.subscription.created":
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
         const customerId =
@@ -85,12 +89,19 @@ export async function POST(req: Request) {
         // If subscription is canceled-at-period-end, capture intent without
         // hard-cancelling access (user keeps reading until period_end).
         const cancellingAtPeriodEnd = sub.cancel_at_period_end;
+        // Mirror subscription quantity → topic_quota. Single subscription
+        // item assumed (one Alpha price). Defaults to 1 → quota 5 if for
+        // any reason the items list is empty. Cap at 25 (5 add-ons max).
+        const firstItem = sub.items?.data?.[0];
+        const quantity = firstItem?.quantity ?? 1;
+        const topicQuota = Math.max(5, Math.min(25, quantity * 5));
         await sb
           .from("users")
           .update({
             cancelled_at: cancellingAtPeriodEnd
               ? new Date(sub.cancel_at! * 1000).toISOString()
               : null,
+            topic_quota: topicQuota,
           })
           .eq("stripe_customer_id", customerId);
         break;

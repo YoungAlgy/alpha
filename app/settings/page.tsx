@@ -17,6 +17,11 @@ export default function SettingsPage() {
     ? THEMES.find((t) => t.id === state.theme)?.label
     : "Forest";
   const [isAdmin, setIsAdmin] = useState(false);
+  // Topic-quota state: quota = max topics they can pick (5/10/15/20/25),
+  // priceCents = current monthly bill in cents. Both come from public.users
+  // (mirror of Stripe subscription quantity × $5).
+  const [topicQuota, setTopicQuota] = useState<number>(5);
+  const [busyTier, setBusyTier] = useState<"up" | "down" | null>(null);
 
   useEffect(() => {
     if (!supabaseConfigured()) return;
@@ -24,12 +29,48 @@ export default function SettingsPage() {
       try {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
-        if (user?.email === ADMIN_EMAIL) setIsAdmin(true);
+        if (!user) return;
+        if (user.email === ADMIN_EMAIL) setIsAdmin(true);
+        const { data: row } = await sb
+          .from("users")
+          .select("topic_quota")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (row?.topic_quota && typeof row.topic_quota === "number") {
+          setTopicQuota(Math.max(5, Math.min(25, row.topic_quota)));
+        }
       } catch {
         // ignore
       }
     })();
   }, []);
+
+  async function changeTier(direction: "up" | "down") {
+    const confirmMsg =
+      direction === "up"
+        ? `Add 5 more topics? Your bill goes up $5/mo (prorated this cycle).`
+        : `Drop 5 topics? Your bill goes down $5/mo. Already-selected topics over the new cap will need to be unpicked next time you visit Topics.`;
+    if (!confirm(confirmMsg)) return;
+    setBusyTier(direction);
+    try {
+      const res = await fetch("/alpha/api/stripe/update-quantity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setTopicQuota(data.topicQuota);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Couldn't update plan.");
+    } finally {
+      setBusyTier(null);
+    }
+  }
+
+  const monthlyDollars = (topicQuota / 5) * 5;
+  const canAdd = topicQuota < 25;
+  const canRemove = topicQuota > 5;
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -99,7 +140,42 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Billing">
-          <p className="alpha-display text-base mb-3">Alpha · $5 / month</p>
+          <p className="alpha-display text-base mb-1">
+            Alpha · ${monthlyDollars} / month
+          </p>
+          <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+            {topicQuota} topics this cycle
+          </p>
+          <div className="flex flex-wrap gap-4 mb-3">
+            {canAdd && (
+              <button
+                type="button"
+                disabled={busyTier !== null}
+                onClick={() => changeTier("up")}
+                className="alpha-ui text-sm underline underline-offset-4"
+                style={{
+                  color: "var(--accent-ink)",
+                  opacity: busyTier ? 0.4 : 1,
+                }}
+              >
+                {busyTier === "up" ? "Adding…" : "Add 5 more topics (+$5/mo) →"}
+              </button>
+            )}
+            {canRemove && (
+              <button
+                type="button"
+                disabled={busyTier !== null}
+                onClick={() => changeTier("down")}
+                className="alpha-ui text-sm underline underline-offset-4"
+                style={{
+                  color: "var(--ink-soft)",
+                  opacity: busyTier ? 0.4 : 1,
+                }}
+              >
+                {busyTier === "down" ? "Dropping…" : "Drop 5 topics (−$5/mo)"}
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={async () => {

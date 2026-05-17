@@ -9,28 +9,41 @@ import { tap, unselect, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { TopicId } from "@/lib/types";
 
-const TARGET = 5;
+const DEFAULT_TARGET = 5; // unsigned (first-onboarding) flow always picks 5
 
 export default function TopicsPage() {
   const router = useRouter();
   const { state, update, loaded } = useOnboarding();
   const [picked, setPicked] = useState<TopicId[]>([]);
   const [signedIn, setSignedIn] = useState(false);
+  // Quota = how many topics this user is currently paid up for. 5 = base,
+  // 10/15/20/25 = +1/+2/+3/+4 add-ons. Unsigned users get the default 5.
+  const [target, setTarget] = useState<number>(DEFAULT_TARGET);
 
   useEffect(() => {
     if (loaded && state.topics) setPicked(state.topics);
   }, [loaded, state.topics]);
 
-  // Edit-from-settings detection: signed-in users go back to /settings on save
+  // Edit-from-settings detection: signed-in users go back to /settings on save.
+  // Also fetch their topic_quota so the picker matches what they've paid for.
   useEffect(() => {
     if (!supabaseConfigured()) return;
     (async () => {
       try {
         const sb = supabaseClient();
         const { data: { session } } = await sb.auth.getSession();
-        if (session) setSignedIn(true);
+        if (!session) return;
+        setSignedIn(true);
+        const { data: row } = await sb
+          .from("users")
+          .select("topic_quota")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        if (row?.topic_quota && typeof row.topic_quota === "number") {
+          setTarget(Math.max(5, Math.min(25, row.topic_quota)));
+        }
       } catch {
-        // ignore
+        // ignore — keep default target
       }
     })();
   }, []);
@@ -41,14 +54,14 @@ export default function TopicsPage() {
         unselect();
         return prev.filter((t) => t !== id);
       }
-      if (prev.length >= TARGET) return prev;
+      if (prev.length >= target) return prev;
       tap();
       return [...prev, id];
     });
   }
 
   async function submit() {
-    if (picked.length !== TARGET) return;
+    if (picked.length !== target) return;
     confirm();
     update({ topics: picked });
     if (signedIn && supabaseConfigured()) {
@@ -67,14 +80,16 @@ export default function TopicsPage() {
     router.push("/fun" as never);
   }
 
-  const remaining = TARGET - picked.length;
+  const remaining = target - picked.length;
 
   return (
     <StepShell stepIndex={7} prevPath="focus">
       <div className="space-y-8">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
-            Pick five things you want to stay sharp on.
+            {target === DEFAULT_TARGET
+              ? "Pick five things you want to stay sharp on."
+              : `Pick ${target} things you want to stay sharp on.`}
           </h1>
           <p
             className="alpha-ui text-sm md:text-base"
@@ -87,7 +102,7 @@ export default function TopicsPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {TOPICS.map((t) => {
             const isPicked = picked.includes(t.id);
-            const atLimit = picked.length >= TARGET && !isPicked;
+            const atLimit = picked.length >= target && !isPicked;
             return (
               <button
                 key={t.id}
@@ -138,16 +153,16 @@ export default function TopicsPage() {
           >
             {remaining > 0
               ? `Pick ${remaining} more`
-              : `5 of 5 — ready to continue`}
+              : `${target} of ${target} — ready to continue`}
           </span>
           <button
             type="button"
             onClick={submit}
-            disabled={picked.length !== TARGET}
+            disabled={picked.length !== target}
             className="alpha-button"
             style={{
-              opacity: picked.length === TARGET ? 1 : 0.3,
-              cursor: picked.length === TARGET ? "pointer" : "not-allowed",
+              opacity: picked.length === target ? 1 : 0.3,
+              cursor: picked.length === target ? "pointer" : "not-allowed",
             }}
           >
             Continue →
