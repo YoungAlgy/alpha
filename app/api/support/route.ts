@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
+import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,18 @@ interface SupportPayload {
 // otherwise falls back to server-console log. Also notifies youngalgy@gmail.com
 // via Resend when configured (best-effort, doesn't block on email failure).
 export async function POST(req: Request) {
+  // Rate limit: 5 tickets per IP per hour. The table has an "anyone insert"
+  // RLS policy + this is an unauthenticated form, so without a cap it's a
+  // spam / inbox-flood vector. Resets per cold start (casual-abuse deterrent).
+  const ip = clientKeyFromRequest(req);
+  const limited = rateLimit(`support:${ip}`, { limit: 5, windowMs: 60 * 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many messages. Try again in ${Math.ceil(limited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+
   let body: SupportPayload;
   try {
     body = (await req.json()) as SupportPayload;
@@ -23,6 +36,11 @@ export async function POST(req: Request) {
 
   if (!body?.email || !body?.message) {
     return NextResponse.json({ error: "email and message required" }, { status: 400 });
+  }
+
+  // Bound payload sizes so a single ticket can't dump megabytes into the table.
+  if (body.email.length > 200 || body.message.length > 5000 || (body.name?.length ?? 0) > 120) {
+    return NextResponse.json({ error: "Input too long." }, { status: 400 });
   }
 
   const supabaseConfigured =

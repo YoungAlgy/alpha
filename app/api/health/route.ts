@@ -6,17 +6,10 @@ export const runtime = "nodejs";
 // are configured. Doesn't reach external services (Supabase, Stripe, etc.)
 // to keep the check fast and avoid cascading failures from downstream blips.
 export async function GET() {
-  const sesReady =
-    !!process.env.AWS_ACCESS_KEY_ID && !!process.env.AWS_SECRET_ACCESS_KEY;
   const checks = {
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     resend: !!process.env.RESEND_API_KEY,
-    ses: sesReady,
-    emailProvider: sesReady
-      ? "ses"
-      : process.env.RESEND_API_KEY
-      ? "resend"
-      : "none",
+    emailProvider: process.env.RESEND_API_KEY ? "resend" : "none",
     stripe: !!process.env.STRIPE_SECRET_KEY,
     stripeWebhook: !!process.env.STRIPE_WEBHOOK_SECRET,
     supabase:
@@ -26,7 +19,7 @@ export async function GET() {
   };
   return NextResponse.json({
     ok: true,
-    version: "alpha-v0.37",
+    version: "alpha-v0.62",
     timestamp: new Date().toISOString(),
     checks,
   });

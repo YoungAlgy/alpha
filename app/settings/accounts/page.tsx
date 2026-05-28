@@ -29,8 +29,6 @@ interface Stats {
   notSubscribed: number;
   latestIssueWeekOf: string | null;
   latestIssueCount: number;
-  sesProductionAccess: boolean | null;
-  sesMaxSendsPerDay: number | null;
 }
 
 export default function AdminAccountsPage() {
@@ -151,24 +149,9 @@ export default function AdminAccountsPage() {
                 }
               />
               <Stat
-                label="SES production"
-                value={
-                  stats.sesProductionAccess === null
-                    ? "—"
-                    : stats.sesProductionAccess
-                    ? "live"
-                    : "sandbox"
-                }
-                sub={
-                  stats.sesMaxSendsPerDay
-                    ? `${stats.sesMaxSendsPerDay.toLocaleString()}/day cap`
-                    : undefined
-                }
-                color={
-                  stats.sesProductionAccess === false
-                    ? "var(--accent-ink)"
-                    : undefined
-                }
+                label="Email"
+                value="Resend"
+                sub="alpha@youngalgy.com"
               />
               <Stat
                 label="Sunday cron"

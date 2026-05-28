@@ -1,42 +1,14 @@
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { Resend } from "resend";
 import type { Issue } from "@/lib/types";
 import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
 
-// Dual provider: prefer AWS SES (alpha@youngalgy.com), fall back to Resend
-// (alpha@avahealth.co) if SES isn't configured yet. Lets us cut over without
-// a flag-day deploy.
-
-type Provider = "ses" | "resend";
-
-function sesConfigured(): boolean {
-  return (
-    !!process.env.AWS_ACCESS_KEY_ID?.trim() &&
-    !!process.env.AWS_SECRET_ACCESS_KEY?.trim()
-  );
-}
+// Single provider: Resend, sending from the verified alpha@youngalgy.com
+// domain. (We previously carried an AWS SES branch as a dual-provider cutover
+// path, but AWS denied production access and we standardized on Resend —
+// the SES code was dead and has been removed.)
 
 function resendConfiguredInternal(): boolean {
   return !!process.env.RESEND_API_KEY?.trim();
-}
-
-function activeProvider(): Provider | null {
-  if (sesConfigured()) return "ses";
-  if (resendConfiguredInternal()) return "resend";
-  return null;
-}
-
-let _ses: SESv2Client | null = null;
-function sesClient(): SESv2Client {
-  if (_ses) return _ses;
-  _ses = new SESv2Client({
-    region: process.env.AWS_REGION?.trim() || "us-east-1",
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!.trim(),
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!.trim(),
-    },
-  });
-  return _ses;
 }
 
 let _resend: Resend | null = null;
@@ -46,11 +18,9 @@ function resendClient(): Resend {
   return _resend;
 }
 
-// Back-compat: callers check `resendConfigured()` to decide whether to send.
-// Keep the name even though we now also accept SES — the boolean is "is some
-// email provider configured."
+// Callers check `resendConfigured()` to decide whether to attempt a send.
 export function resendConfigured(): boolean {
-  return activeProvider() !== null;
+  return resendConfiguredInternal();
 }
 
 export interface SendLetterParams {
@@ -69,15 +39,7 @@ export interface SendLetterParams {
 // and a link to the full letter on web. V1 will render the entire letter as
 // styled HTML (via React Email or similar).
 export async function sendLetterNotification(params: SendLetterParams): Promise<{ id: string }> {
-  const provider = activeProvider();
-  if (!provider) throw new Error("No email provider configured");
-
-  // SES path uses ALPHA_EMAIL_FROM; Resend keeps its legacy RESEND_FROM so
-  // we don't accidentally email avahealth.co from SES (it isn't verified there).
-  const from =
-    provider === "ses"
-      ? process.env.ALPHA_EMAIL_FROM?.trim() || "Alpha <alpha@youngalgy.com>"
-      : process.env.RESEND_FROM?.trim() || "Alpha <onboarding@resend.dev>";
+  if (!resendConfiguredInternal()) throw new Error("No email provider configured");
 
   const subject = subjectFromIssue(params.issue);
   const teaser = params.issue.editorIntro.slice(0, 320).trim();
@@ -111,49 +73,10 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     unsubscribeUrl: unsubUrl,
   });
 
-  // Headers shared across providers. List-Unsubscribe + List-Unsubscribe-Post
-  // (RFC 2369 + 8058) tell Gmail / Apple Mail / Outlook to surface a one-click
-  // unsubscribe button. The Post variant tells them they can use POST without
-  // the user being navigated away from their inbox.
-  const sharedHeaders: Array<{ Name: string; Value: string }> = [
-    { Name: "X-Alpha-Issue-Id", Value: params.issue.id },
-  ];
-  if (unsubUrl) {
-    sharedHeaders.push({ Name: "List-Unsubscribe", Value: `<${unsubUrl}>` });
-    sharedHeaders.push({ Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click" });
-  }
-
-  if (provider === "ses") {
-    try {
-      const out = await sesClient().send(
-        new SendEmailCommand({
-          FromEmailAddress: from,
-          Destination: { ToAddresses: [params.to] },
-          Content: {
-            Simple: {
-              Subject: { Data: subject, Charset: "UTF-8" },
-              Body: {
-                Html: { Data: html, Charset: "UTF-8" },
-                Text: { Data: text, Charset: "UTF-8" },
-              },
-              Headers: sharedHeaders,
-            },
-          },
-        })
-      );
-      return { id: out.MessageId ?? "" };
-    } catch (e) {
-      // SES still in sandbox / DKIM not yet propagated / recipient not verified —
-      // automatically fall back to Resend so the user still gets their letter.
-      if (!resendConfiguredInternal()) throw e;
-      console.warn(
-        "[email] SES failed, falling back to Resend:",
-        e instanceof Error ? e.message : e
-      );
-    }
-  }
-
-  const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <onboarding@resend.dev>";
+  // List-Unsubscribe + List-Unsubscribe-Post (RFC 2369 + 8058) tell Gmail /
+  // Apple Mail / Outlook to surface a one-click unsubscribe button. The Post
+  // variant tells them they can use POST without navigating away from the inbox.
+  const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <alpha@youngalgy.com>";
   const resendHeaders: Record<string, string> = {
     "X-Alpha-Issue-Id": params.issue.id,
   };

@@ -19,6 +19,20 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-05-24",
+    title: "Deleting your account now fully erases your data",
+    body:
+      "Fixed the account-deletion flow so it actually removes your profile and every saved letter from our database (and signs you out), rather than just clearing your local session. One click, gone for good.",
+    tag: "fixed",
+  },
+  {
+    date: "2026-05-24",
+    title: "Hardened account + billing security",
+    body:
+      "Tightened the database so plan tier, subscription status, and billing identity can only ever be changed by our payment system — never from the browser. Your profile fields (name, topics, theme) stay freely editable. Belt-and-suspenders work behind the scenes; nothing changes in how you use Alpha.",
+    tag: "security",
+  },
+  {
     date: "2026-05-17",
     title: "Topics are now stackable — $5 buys 5 topics, add more anytime",
     body:

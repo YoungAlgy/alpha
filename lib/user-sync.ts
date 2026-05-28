@@ -33,18 +33,24 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
   }
 }
 
-// Delete the authenticated user's row in public.users (cascades to public.issues
-// via on-delete-cascade) and sign them out. Auth row in auth.users persists
-// for V0 — owner can manually purge via service-role admin if needed.
+// Delete the authenticated user's account via the server-side endpoint, which
+// deletes the auth.users row with the service role — cascading to public.users
+// + public.issues (FK on delete cascade). The previous implementation deleted
+// via the browser client, but public.users has no DELETE RLS policy, so it
+// silently affected zero rows and the data persisted while the UI reported
+// success. Routing through the service role fixes that.
 export async function deleteUserAccount(): Promise<{ ok: boolean; error?: string }> {
   if (!supabaseConfigured()) return { ok: true }; // localStorage-only path
   try {
     const sb = supabaseClient();
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return { ok: true };
-    const { error } = await sb.from("users").delete().eq("id", session.user.id);
-    if (error) return { ok: false, error: error.message };
-    await sb.auth.signOut();
+    const res = await fetch("/alpha/api/account/delete", { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { ok: false, error: data.error || `HTTP ${res.status}` };
+    }
+    await sb.auth.signOut().catch(() => {});
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "unknown" };

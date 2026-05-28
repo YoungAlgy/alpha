@@ -28,7 +28,7 @@ interface SubscriberRow {
 //   1. Find all users where subscribed_at IS NOT NULL AND cancelled_at IS NULL
 //   2. For each, generate this Sunday's Issue via the same engine /api/generate
 //      uses (Brave + Claude + per-topic cache), persist via upsert on (user_id,
-//      week_of), and send the letter email via the dual SES → Resend pipeline.
+//      week_of), and send the letter email via Resend.
 //   3. Topic blurbs are cached per (topic_id, week_of) so the first user pays
 //      the Claude cost and the rest reuse — order-of-N-topics calls, not
 //      N-users × N-topics.
@@ -140,8 +140,8 @@ export async function GET(req: Request) {
         { onConflict: "user_id,week_of" }
       );
 
-      // Send the letter. lib/email.ts prefers SES; falls back to Resend.
-      if (resendConfigured() || process.env.AWS_ACCESS_KEY_ID) {
+      // Send the letter via Resend (lib/email.ts).
+      if (resendConfigured()) {
         const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
         const inboxUrl = `${origin}/alpha/inbox`;
         await sendLetterNotification({

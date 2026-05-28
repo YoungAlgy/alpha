@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { SESv2Client, GetAccountCommand } from "@aws-sdk/client-sesv2";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -15,8 +14,6 @@ interface Stats {
   notSubscribed: number;
   latestIssueWeekOf: string | null;
   latestIssueCount: number;
-  sesProductionAccess: boolean | null;
-  sesMaxSendsPerDay: number | null;
 }
 
 async function gatherStats(): Promise<Stats> {
@@ -60,34 +57,10 @@ async function gatherStats(): Promise<Stats> {
     latestIssueCount = count ?? 0;
   }
 
-  // SES production-access probe — costs an extra AWS call but it's the most
-  // load-bearing operational flag right now (sandbox = signins broken for
-  // non-verified recipients).
-  let sesProductionAccess: boolean | null = null;
-  let sesMaxSendsPerDay: number | null = null;
-  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-    try {
-      const ses = new SESv2Client({
-        region: process.env.AWS_REGION?.trim() || "us-east-1",
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID.trim(),
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY.trim(),
-        },
-      });
-      const r = await ses.send(new GetAccountCommand({}));
-      sesProductionAccess = !!r.ProductionAccessEnabled;
-      sesMaxSendsPerDay = r.SendQuota?.Max24HourSend ?? null;
-    } catch (e) {
-      console.warn("[admin/users] SES probe failed:", e instanceof Error ? e.message : e);
-    }
-  }
-
   return {
     ...stats,
     latestIssueWeekOf: latestWeekOf,
     latestIssueCount,
-    sesProductionAccess,
-    sesMaxSendsPerDay,
   };
 }
 
