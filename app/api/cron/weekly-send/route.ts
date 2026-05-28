@@ -18,6 +18,7 @@ interface SubscriberRow {
   fun_blurb: string | null;
   theme: string | null;
   topics: string[] | null;
+  topic_quota: number | null;
 }
 
 // Sundays-at-10am-ET cron entrypoint. Vercel Cron sends an Authorization
@@ -56,7 +57,7 @@ export async function GET(req: Request) {
   const { data: subscribers, error } = await sb
     .from("users")
     .select(
-      "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, theme, topics"
+      "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, theme, topics, topic_quota"
     )
     .not("subscribed_at", "is", null)
     .is("cancelled_at", null)
@@ -87,7 +88,13 @@ export async function GET(req: Request) {
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
   // total Claude time is bounded by topics-this-week, not users × topics.
   for (const row of rows) {
-    const topics = (row.topics ?? []) as TopicId[];
+    // Clamp to the number of topics they're paid up for. Defends against a
+    // topics array written directly to the DB (the RLS trigger permits the
+    // topics column) that exceeds quota — both a billing bypass (more
+    // sections than paid for) and a cost/timeout vector (a huge array would
+    // fan out into that many Claude calls).
+    const quota = Math.max(5, Math.min(25, row.topic_quota ?? 5));
+    const topics = ((row.topics ?? []) as TopicId[]).slice(0, quota);
     if (!row.first_name || topics.length === 0) {
       skippedNoTopics++;
       continue;

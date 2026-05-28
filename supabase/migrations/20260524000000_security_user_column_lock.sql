@@ -50,3 +50,13 @@ create trigger protect_user_privileged_columns_trg
 create index if not exists users_stripe_customer_id_idx
   on public.users (stripe_customer_id)
   where stripe_customer_id is not null;
+
+-- Hard DB cap on topics array length (defense beyond the app-level clamps in
+-- the cron + /api/generate). The RLS trigger lets users write the topics
+-- column, so without this a crafted browser-client write could set a
+-- 1000-element array that the Sunday cron would fan out into that many
+-- Claude calls. Cap matches the maximum paid quota (25).
+alter table public.users drop constraint if exists users_topics_len_chk;
+alter table public.users
+  add constraint users_topics_len_chk
+  check (topics is null or array_length(topics, 1) <= 25);

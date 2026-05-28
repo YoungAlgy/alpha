@@ -15,7 +15,7 @@ const ProfileSchema = z.object({
   jobBlurb: z.string().max(280).optional(),
   projectBlurb: z.string().max(600).optional(),
   funBlurb: z.string().max(280).optional(),
-  topics: z.array(z.string().min(1).max(60)).min(1).max(10),
+  topics: z.array(z.string().min(1).max(60)).min(1).max(25),
   theme: z.string().max(30).default("forest"),
   email: z.string().email().optional(),
 });

@@ -31,6 +31,20 @@ function faviconUrl(url: string): string | null {
   }
 }
 
+// Only ever render http(s) links. Letter URLs originate from Brave results
+// (untrusted) routed through Claude, so a poisoned/hallucinated `javascript:`
+// or `data:` URL could otherwise reach an <a href> and execute on click.
+// Returns the URL if safe, else null (caller hides the link).
+function safeUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export function Digest({ issue }: DigestProps) {
   return (
     <article className="alpha-body max-w-2xl mx-auto px-6 py-20 md:py-28">
@@ -120,9 +134,9 @@ function Item({ item }: { item: DigestItem }) {
       </h3>
       <p className="text-base md:text-lg leading-relaxed">{item.body}</p>
 
-      {item.primaryRef && (
+      {item.primaryRef && safeUrl(item.primaryRef.url) && (
         <a
-          href={item.primaryRef.url}
+          href={safeUrl(item.primaryRef.url)!}
           target="_blank"
           rel="noopener noreferrer"
           className="alpha-ui mt-4 inline-flex items-center gap-1 font-semibold underline underline-offset-4 decoration-1"
@@ -150,10 +164,10 @@ function Item({ item }: { item: DigestItem }) {
             ALSO
           </div>
           <ul className="space-y-1.5">
-            {item.supplementaryRefs.map((ref, i) => (
+            {item.supplementaryRefs.filter((ref) => safeUrl(ref.url)).map((ref, i) => (
               <li key={i} className="alpha-ui text-sm leading-relaxed">
                 <a
-                  href={ref.url}
+                  href={safeUrl(ref.url)!}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 underline underline-offset-4 decoration-1"
