@@ -21,8 +21,10 @@ export async function supabaseServerClient() {
             cookieStore.set(name, value, options);
           }
         } catch {
-          // Called from a Server Component — Next.js doesn't allow cookie sets there.
-          // Middleware refreshes the session instead.
+          // Called from a Server Component — Next.js doesn't allow cookie sets
+          // there. Harmless here: the app is client-rendered and the browser
+          // Supabase client refreshes tokens + persists cookies itself; the
+          // server route handlers where we actually gate auth can set cookies.
         }
       },
     },

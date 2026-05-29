@@ -66,7 +66,10 @@ export function QuestionStep({
         transition: "opacity 240ms ease, transform 240ms ease",
       }}
     >
-      <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight">
+      <h1
+        id="alpha-question"
+        className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight"
+      >
         {question}
       </h1>
       {helper && (
@@ -80,6 +83,7 @@ export function QuestionStep({
       {multiline ? (
         <textarea
           autoFocus
+          aria-labelledby="alpha-question"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
@@ -94,6 +98,7 @@ export function QuestionStep({
       ) : (
         <input
           autoFocus
+          aria-labelledby="alpha-question"
           type={field === "email" ? "email" : "text"}
           value={value}
           onChange={(e) => setValue(e.target.value)}

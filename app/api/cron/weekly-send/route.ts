@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { generateIssue } from "@/lib/engine/assemble";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
@@ -7,6 +8,16 @@ import type { UserProfile, TopicId, ThemeId } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 800; // Vercel Pro cap
+
+// Constant-time bearer-token check (avoids the timing side-channel of `===`
+// on a secret; CWE-208). Hash both sides to equal length so timingSafeEqual
+// never throws on length mismatch.
+function bearerMatches(authHeader: string | null, expected: string): boolean {
+  if (!authHeader) return false;
+  const a = crypto.createHash("sha256").update(authHeader).digest();
+  const b = crypto.createHash("sha256").update(`Bearer ${expected}`).digest();
+  return crypto.timingSafeEqual(a, b);
+}
 
 interface SubscriberRow {
   id: string;
@@ -39,7 +50,7 @@ interface SubscriberRow {
 export async function GET(req: Request) {
   const expected = process.env.CRON_SECRET?.trim();
   const auth = req.headers.get("authorization");
-  if (!expected || auth !== `Bearer ${expected}`) {
+  if (!expected || !bearerMatches(auth, expected)) {
     console.warn("[cron/weekly-send] unauthorized request");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
