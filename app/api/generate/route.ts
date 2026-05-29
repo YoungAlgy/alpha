@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import Stripe from "stripe";
 import { generateIssue } from "@/lib/engine/assemble";
 import { persistIssueIfPossible } from "@/lib/engine/persist";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
-import { supabaseServiceClient } from "@/lib/supabase/server";
+import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -23,7 +24,75 @@ const ProfileSchema = z.object({
 const BodySchema = z.object({
   profile: ProfileSchema,
   weekOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // Stripe Checkout session id, threaded through from the success_url
+  // (/writing?session_id=...). Proves the first letter was paid for.
+  sessionId: z.string().max(200).optional(),
 });
+
+// Payment gate. Letter generation costs real money (Claude + Brave) and the
+// first letter is the paid hook — without this, anyone could complete the free
+// onboarding, skip the Stripe button, and POST here directly for a free letter.
+// (Matches the "no free trial — exploitation risk" product decision.)
+//
+// Allow when ANY of:
+//   - Stripe isn't configured (local dev / the checkout 503 stub path)
+//   - the caller is an authenticated, currently-subscribed user
+//   - a Stripe Checkout session id is supplied AND Stripe says it's paid
+// Fail OPEN on a genuine Stripe infra blip (real session exists, API hiccuped)
+// so a paying customer's first letter is never blocked. Fail CLOSED on a
+// missing / fabricated / unpaid session.
+async function verifyPaid(
+  sessionId: string | undefined
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const secret = process.env.STRIPE_SECRET_KEY?.trim();
+  if (!secret) return { ok: true }; // dev / Stripe-less stub flow
+
+  // Already-subscribed authed user (future re-generate path)
+  try {
+    const sb = await supabaseServerClient();
+    const {
+      data: { user },
+    } = await sb.auth.getUser();
+    if (user) {
+      const svc = await supabaseServiceClient();
+      const { data } = await svc
+        .from("users")
+        .select("subscribed_at, cancelled_at")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (data?.subscribed_at && !data.cancelled_at) return { ok: true };
+    }
+  } catch {
+    // ignore — fall through to session check
+  }
+
+  if (!sessionId) {
+    return { ok: false, error: "Payment required. Subscribe to receive your letter." };
+  }
+
+  try {
+    const stripe = new Stripe(secret, {
+      apiVersion: "2026-04-22.dahlia",
+      httpClient: Stripe.createNodeHttpClient(),
+    });
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (
+      session.payment_status === "paid" ||
+      session.payment_status === "no_payment_required"
+    ) {
+      return { ok: true };
+    }
+    return { ok: false, error: "Payment not completed. Subscribe to receive your letter." };
+  } catch (e) {
+    // resource_missing = fabricated / nonexistent session → definitively not paid.
+    if (e instanceof Stripe.errors.StripeInvalidRequestError) {
+      return { ok: false, error: "Couldn't verify payment. Subscribe to receive your letter." };
+    }
+    // Genuine Stripe infra error → fail open so a real payer isn't blocked.
+    console.warn("[generate] stripe verify blip, allowing:", e instanceof Error ? e.message : e);
+    return { ok: true };
+  }
+}
 
 export async function POST(req: Request) {
   // Rate limit: 3 generations per IP per hour. Resets on cold start.
@@ -47,6 +116,12 @@ export async function POST(req: Request) {
         ? `Invalid input: ${e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`
         : "Invalid JSON";
     return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  // Payment gate — see verifyPaid(). 402 = subscribe first.
+  const paid = await verifyPaid(body.sessionId);
+  if (!paid.ok) {
+    return NextResponse.json({ error: paid.error }, { status: 402 });
   }
 
   try {

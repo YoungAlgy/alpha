@@ -74,6 +74,13 @@ export default function WritingPage() {
       email: state.email,
     };
 
+    // Stripe Checkout drops the user here as /writing?session_id=cs_... — pass
+    // it to the generate API so it can confirm the first letter was paid for.
+    const sessionId =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("session_id") || undefined
+        : undefined;
+
     // Retry once with a backoff if the first attempt fails. The engine can
     // hiccup on Brave rate-limit / a flaky Claude call / cold Lambda starts;
     // these are usually transient. After two failures we surface the recovery
@@ -83,8 +90,15 @@ export default function WritingPage() {
         const r = await fetch("/alpha/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profile }),
+          body: JSON.stringify({ profile, sessionId }),
         });
+        if (r.status === 402) {
+          // Payment gate — they reached /writing without a paid session.
+          // Send them to checkout rather than the generic retry card.
+          clearInterval(stepTimer);
+          router.push("/checkout" as never);
+          return;
+        }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = (await r.json()) as { issue: Issue; magicLink?: string | null };
         clearInterval(stepTimer);
