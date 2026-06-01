@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Digest } from "@/components/Digest";
 import { Footer } from "@/components/Footer";
+import { ShareButton } from "@/components/ShareButton";
 import { SAMPLE_ISSUE } from "@/lib/sample-issue";
 
 // Public, indexable sample issue — the trust asset for a pay-before-you-see-it
@@ -72,10 +73,19 @@ export default function SamplePage() {
             Pick your five topics and we&apos;ll build a letter just for you.
             $5 a month, cancel anytime, no ads.
           </p>
-          <div className="pt-2">
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/welcome" className="alpha-button alpha-button-accent text-base">
               Start your letter →
             </Link>
+            <ShareButton
+              context="sample"
+              url="https://youngalgy.com/alpha/sample"
+              title="alpha. — a sample issue"
+              text="A weekly letter on the five topics you care about. Here's a sample:"
+              label="Share this sample"
+              className="alpha-ui text-base underline underline-offset-4"
+              style={{ color: "var(--accent-ink)" }}
+            />
           </div>
         </div>
       </div>

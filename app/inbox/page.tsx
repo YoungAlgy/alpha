@@ -10,6 +10,7 @@ import { ReadingProgress } from "@/components/ReadingProgress";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { FirstLetterCelebration } from "@/components/FirstLetterCelebration";
 import { LetterTOC } from "@/components/LetterTOC";
+import { ShareButton } from "@/components/ShareButton";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { fanfare } from "@/lib/audio";
@@ -182,12 +183,21 @@ export default function InboxPage() {
           {weekLabel(issue.weekOf).toUpperCase()} · {minutes} MIN READ · NEXT ONE SHIPS {nextSundayLabel().toUpperCase()}
         </div>
         <div
-          className="max-w-5xl mx-auto px-6 pb-3 alpha-ui text-center text-xs"
+          className="max-w-5xl mx-auto px-6 pb-3 alpha-ui text-center text-xs flex items-center justify-center gap-4"
           style={{ color: "var(--ink-soft)" }}
         >
           <Link href="/archive" className="underline underline-offset-4 hover:opacity-80">
             Read past letters →
           </Link>
+          <span aria-hidden style={{ opacity: 0.4 }}>·</span>
+          <ShareButton
+            context="inbox"
+            url="https://youngalgy.com/alpha"
+            title="alpha. — your weekly alpha"
+            text="A weekly letter on the five topics you care about. Worth a look:"
+            label="Tell a friend"
+            className="underline underline-offset-4 hover:opacity-80"
+          />
         </div>
       </div>
       <LetterTOC issue={issue} />
