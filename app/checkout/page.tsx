@@ -6,6 +6,7 @@ import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { TOPIC_BY_ID } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
+import { track } from "@/lib/analytics";
 import type { ThemeId } from "@/lib/types";
 
 const SWATCHES: Record<ThemeId, { paper: string; ink: string; accent: string }> = {
@@ -31,6 +32,7 @@ export default function CheckoutPage() {
   async function subscribe() {
     setSubscribing(true);
     setStripeErr(null);
+    track("checkout_started", { topics: state.topics?.length ?? 0 });
     try {
       const res = await fetch("/alpha/api/stripe/checkout", {
         method: "POST",

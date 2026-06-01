@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { stepDone, fanfare } from "@/lib/audio";
+import { track } from "@/lib/analytics";
 import { TOPIC_BY_ID } from "@/lib/topics";
 import { THEME_BY_ID } from "@/lib/themes";
 import type { Issue, UserProfile, TopicId, ThemeId } from "@/lib/types";
@@ -107,6 +108,9 @@ export default function WritingPage() {
         localStorage.setItem("alpha-just-generated", "1");
         setDone(true);
         fanfare();
+        // Funnel terminal event — the moment a paid subscriber's first letter
+        // lands. The conversion the whole funnel exists to produce.
+        track("letter_generated");
         // Auto sign-in after checkout: the generate API returned a single-use
         // magic link tied to this email. Hitting it sets the Supabase session
         // cookie and bounces to /inbox via /auth/callback. Without this the

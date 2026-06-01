@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   Fraunces,
   Newsreader,
@@ -9,6 +9,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import { ThemeApplier } from "@/components/ThemeApplier";
+import { PostHogProvider } from "@/components/PostHogProvider";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -63,7 +64,6 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/alpha/apple-touch-icon.png", sizes: "180x180" }],
   },
-  themeColor: "#1F3D2E",
   openGraph: {
     title: "Alpha — your weekly alpha",
     description: "A personal weekly letter on what matters to you, every Sunday.",
@@ -87,6 +87,10 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#1F3D2E",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -106,6 +110,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <ThemeApplier />
+        <PostHogProvider />
         {children}
       </body>
     </html>
