@@ -10,8 +10,8 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 ---
 
 ## QUEUE (ranked, living)
-1-5. ✅ DONE (see below).
-6. **[next] UX: onboarding topic picker** (`/app/topics/page.tsx`) — touch targets (≥44px), mobile layout, a11y (keyboard/aria for the pick-5 grid), the "pick N more" affordance; the key conversion moment.
+1-6. ✅ DONE (see below).
+7. **[next] Reading experience** (`/app/inbox/page.tsx`, `/app/writing/page.tsx`, `components/Digest.tsx`) — generation skeleton/perceived latency, mobile viewport on the letter, scroll/readability. Check the /writing generating-state and /inbox letter rendering on mobile widths.
 7. **Reading experience / skeletons** during generation; mobile viewport on /inbox + letter.
 8. **Design consistency** — Forest chrome, lowercase `alpha.` wordmark, spacing/hierarchy/a11y across surfaces.
 9. **SEO/landing** — CWV/Lighthouse; headers already set.
@@ -26,7 +26,11 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `2d92143` — **empty-Brave-week → mock fallback** (zero-URL live signal no longer ships a link-less section). Verified real.
 - `2fe34e3` — **generation retry-once on malformed JSON**. Verified real.
 - `edb34e5` — **ux(archive): real error state** (was masking DB errors as "no letters"), friendly week labels, empty-state CTA, bigger tap targets. tsc+build clean, /archive 200.
+- `ce2c7cd` — **a11y(topic picker):** aria-pressed on toggles, role=group, aria-live count, aria-label. Verified attrs render. Keyboard already worked; touch targets fine.
 - Signal audit: all 24 topics healthy (11–25 URLs). Mock covers 23/24 (missing web3-updates).
+
+## OPS NOTES
+- Dev-server port detection flaky across cycles (leftover `next dev`/`next-server` procs hold 3000/3001). Before a dev render check: `pkill -f "next dev"; pkill -f "next-server"` then curl BOTH 3000 and 3001 to find the live one. Always pkill after.
 
 ## DECISIONS I MADE
 - `C:\Users\Algy\alpha`; Next.js (not Vite). Sacred guard was prompt-only → built CODE enforcement (strengthen-only).
