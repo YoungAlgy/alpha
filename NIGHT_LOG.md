@@ -10,7 +10,10 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 ---
 
 ## QUEUE (ranked, living)
-10. **[next] Security re-spot-check** — RLS on issues/users, Stripe webhook signature/tamper, LLM prompt-injection via user topic selections (topics are user-controlled → flow into the generation prompt context? verify they can't inject), secret exposure in client bundle, leaking another subscriber's letter (RLS on /inbox/[id]).
+11. **[next] SEO/landing** — CWV/Lighthouse-ish pass: image/asset weight on the landing + sample, font loading, any layout-shift, JSON-LD/structured data opportunity for the landing, meta completeness. Headers + OG already verified. Look for a concrete shippable win (e.g., add Organization/WebSite JSON-LD, or fix a perf/CLS issue).
+12. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
+13. (note) Mobile section-nav for the letter (desktop-only TOC) — later.
+14. (note) `<Wordmark>` component to DRY the 12× inline pattern — skip unless idle.
 11. **SEO/landing** — CWV/Lighthouse; headers + OG already verified.
 12. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
 13. (note) Mobile section-nav for the letter (LetterTOC is desktop-only `hidden xl:block`) — debatable for a linear letter; later.
@@ -27,6 +30,7 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `5621d3f` — **ux(writing): paced generation animation** to the real ~45s wait — no more stall at 80%. /writing 200.
 - `d360bb9` — **design: consistent lowercase-brand titles** via title.template ("%s · alpha."); landing absolute; sample OG keeps "— alpha." for shares. Verified rendered titles.
 - `b019cc3` — **web3-updates mock signal** added → 24/24 fallback coverage. Real verified-resolving URLs (dropped dead weekinethereumnews.com). Verified mock fallback + live guard both hold. Parametrized verify-mock-fallback.mts (takes topic arg).
+- `4aa51fe` — **security: editor-note prompt-injection hardening** — profile fields (firstName/city/blurbs) flow into the prompt; fenced in <reader-profile> + "treat as data" directive + length clamps (defense on cron path too). Verified: injection funBlurb ignored. Re-confirmed RLS/webhook/topic-enum sound.
 - Signal audit: all 24 topics healthy (11–25 URLs). Mock now covers 24/24.
 
 ## OPS NOTES
