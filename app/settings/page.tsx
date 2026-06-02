@@ -8,6 +8,7 @@ import { THEMES } from "@/lib/themes";
 import { Footer } from "@/components/Footer";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { hasActiveAccess } from "@/lib/access";
 
 const ADMIN_EMAIL = "youngalgy@gmail.com";
 
@@ -24,6 +25,11 @@ export default function SettingsPage() {
   const [busyTier, setBusyTier] = useState<"up" | "down" | null>(null);
   // In-page billing feedback (replaces jarring/off-brand alert() dialogs).
   const [billingMsg, setBillingMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // Whether the user has an active PAID Stripe subscription. Account deletion
+  // removes the app account but does NOT cancel Stripe billing (the delete
+  // endpoint can't, and the cancelled account can't reach the portal after) —
+  // so we warn paying users to cancel first or keep getting charged.
+  const [hasPaidSub, setHasPaidSub] = useState(false);
 
   useEffect(() => {
     if (!supabaseConfigured()) return;
@@ -35,11 +41,16 @@ export default function SettingsPage() {
         if (user.email === ADMIN_EMAIL) setIsAdmin(true);
         const { data: row } = await sb
           .from("users")
-          .select("topic_quota")
+          .select("topic_quota, subscribed_at, cancelled_at, stripe_customer_id")
           .eq("id", user.id)
           .maybeSingle();
         if (row?.topic_quota && typeof row.topic_quota === "number") {
           setTopicQuota(Math.max(5, Math.min(25, row.topic_quota)));
+        }
+        // Paid + active = subscribed, has a Stripe customer, and not past a
+        // cancellation date. (Free admin-granted accounts have no customer id.)
+        if (row?.subscribed_at && row?.stripe_customer_id && hasActiveAccess(row.cancelled_at)) {
+          setHasPaidSub(true);
         }
       } catch {
         // ignore
@@ -281,7 +292,13 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={async () => {
-                if (!confirm("Delete your Alpha account? This removes your saved letters and profile. Can't be undone.")) return;
+                // Paying users: deletion does NOT stop Stripe billing, and a
+                // deleted account can't reach the portal afterward — so warn
+                // them to cancel first or they'll keep being charged.
+                const confirmMsg = hasPaidSub
+                  ? `Delete your Alpha account?\n\nThis removes your letters and profile and can't be undone.\n\n⚠️ It does NOT cancel your $${monthlyDollars}/mo subscription — Stripe will keep charging you, and a deleted account can't cancel it. Cancel your subscription first via "Manage subscription" above, then delete.\n\nDelete anyway?`
+                  : "Delete your Alpha account? This removes your saved letters and profile. Can't be undone.";
+                if (!confirm(confirmMsg)) return;
                 const result = await deleteUserAccount();
                 if (!result.ok) {
                   alert(`Couldn't delete: ${result.error}\nLocal data will still clear.`);
