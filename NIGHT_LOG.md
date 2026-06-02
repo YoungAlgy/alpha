@@ -10,8 +10,7 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 ---
 
 ## QUEUE (ranked, living)
-9. **[next] web3-updates mock signal** — the only topic without a mock entry (mock covers 23/24). Add a real, stable-URL mock to `lib/engine/mock-signals.ts` so it has a fallback in an empty-Brave week. REAL URLs only — verify they resolve. Closes engine fallback coverage to 24/24.
-10. **Security re-spot-check** — RLS, webhook tamper, prompt-injection via topic selections, secret exposure in client bundle.
+10. **[next] Security re-spot-check** — RLS on issues/users, Stripe webhook signature/tamper, LLM prompt-injection via user topic selections (topics are user-controlled → flow into the generation prompt context? verify they can't inject), secret exposure in client bundle, leaking another subscriber's letter (RLS on /inbox/[id]).
 11. **SEO/landing** — CWV/Lighthouse; headers + OG already verified.
 12. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
 13. (note) Mobile section-nav for the letter (LetterTOC is desktop-only `hidden xl:block`) — debatable for a linear letter; later.
@@ -27,7 +26,8 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `ce2c7cd` — **a11y(topic picker):** aria-pressed, role=group, aria-live count, aria-label. Verified attrs render.
 - `5621d3f` — **ux(writing): paced generation animation** to the real ~45s wait — no more stall at 80%. /writing 200.
 - `d360bb9` — **design: consistent lowercase-brand titles** via title.template ("%s · alpha."); landing absolute; sample OG keeps "— alpha." for shares. Verified rendered titles.
-- Signal audit: all 24 topics healthy (11–25 URLs). Mock covers 23/24 (missing web3-updates → queue #9).
+- `b019cc3` — **web3-updates mock signal** added → 24/24 fallback coverage. Real verified-resolving URLs (dropped dead weekinethereumnews.com). Verified mock fallback + live guard both hold. Parametrized verify-mock-fallback.mts (takes topic arg).
+- Signal audit: all 24 topics healthy (11–25 URLs). Mock now covers 24/24.
 
 ## OPS NOTES
 - Dev-server port flaky across cycles (leftover procs hold 3000/3001). Before a dev render: `pkill -f "next dev"; pkill -f "next-server"`, then probe both 3000 and 3001 for the 200. Always pkill after.
