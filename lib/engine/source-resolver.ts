@@ -1,6 +1,7 @@
 import { braveConfigured, braveSearch, formatAsSignal } from "@/lib/brave";
 import { TOPIC_QUERIES } from "./topic-queries";
 import { getSignal } from "./mock-signals";
+import { extractSignalUrls } from "./url-guard";
 import type { TopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
 
@@ -45,5 +46,15 @@ async function fetchLiveSignal(
   );
 
   const context = `This week's signal for ${topicId} (week of ${weekOf}), gathered live from Brave Search:\n\n${blocks.join("\n\n———\n\n")}\n\nURLs above are real. You may cite them. Do not invent URLs.`;
+
+  // If the live signal carries NO real URLs (every Brave query came back empty
+  // this week), treat it as "no live signal" so the caller falls back to the
+  // curated mock — which always has real URLs. Without this, the strict URL
+  // guard would drop every link the model cites and ship a link-less section.
+  if (extractSignalUrls(context).size === 0) {
+    console.warn(`[source-resolver] live signal for ${topicId} had 0 URLs — falling back to mock`);
+    return undefined;
+  }
+
   return { topicId, weekOf, context };
 }
