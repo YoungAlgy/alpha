@@ -22,6 +22,16 @@ export const metadata: Metadata = {
     type: "article",
     images: ["/alpha/og-image.png"],
   },
+  // Sample-specific Twitter card too — otherwise X falls back to the layout's
+  // generic title/description. Shares are a channel now (the ShareButton), so
+  // the preview should match the sample everywhere.
+  twitter: {
+    card: "summary_large_image",
+    title: "A sample issue — alpha.",
+    description:
+      "See what a Sunday letter from alpha. looks like before you sign up.",
+    images: ["/alpha/og-image.png"],
+  },
 };
 
 export default function SamplePage() {
