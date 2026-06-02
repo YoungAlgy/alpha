@@ -275,7 +275,7 @@ export default function Landing() {
             to get.&rdquo;
           </p>
           <p className="alpha-ui text-sm mt-4" style={{ color: "var(--ink-soft)" }}>
-            — the person behind alpha.
+            — Algy, who makes alpha.
           </p>
         </div>
       </section>
