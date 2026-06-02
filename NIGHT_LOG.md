@@ -10,19 +10,12 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 ---
 
 ## QUEUE (ranked, living)
-1-7. ✅ DONE (see below).
-8. **[next] Design consistency** — sweep all surfaces for Forest chrome + lowercase `alpha.` wordmark consistency, spacing/hierarchy, a11y (heading order, contrast, focus states). Candidates: landing, signin, settings, support, checkout, 404. Pick the highest-impact inconsistency and fix.
-9. **SEO/landing** — CWV/Lighthouse; headers already set.
-10. **Security re-spot-check** — RLS, webhook tamper, prompt-injection via topic selections.
-11. **web3-updates mock signal** — only topic without a mock entry; add one.
+9. **[next] web3-updates mock signal** — the only topic without a mock entry (mock covers 23/24). Add a real, stable-URL mock to `lib/engine/mock-signals.ts` so it has a fallback in an empty-Brave week. REAL URLs only — verify they resolve. Closes engine fallback coverage to 24/24.
+10. **Security re-spot-check** — RLS, webhook tamper, prompt-injection via topic selections, secret exposure in client bundle.
+11. **SEO/landing** — CWV/Lighthouse; headers + OG already verified.
 12. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
-13. (note) Consider a mobile section-nav for the letter (LetterTOC is desktop-only `hidden xl:block`); debatable value for a linear letter — left for later.
-7. **Reading experience / skeletons** during generation; mobile viewport on /inbox + letter.
-8. **Design consistency** — Forest chrome, lowercase `alpha.` wordmark, spacing/hierarchy/a11y across surfaces.
-9. **SEO/landing** — CWV/Lighthouse; headers already set.
-10. **Security re-spot-check** — RLS, webhook tamper, prompt-injection via topic selections.
-11. **web3-updates mock signal** — only topic without a mock entry; add one (real, stable web3 URLs) so it has a fallback in an empty-Brave week. Low-med.
-12. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
+13. (note) Mobile section-nav for the letter (LetterTOC is desktop-only `hidden xl:block`) — debatable for a linear letter; later.
+14. (note) Wordmark is an identical 12× inline pattern — a `<Wordmark>` component would DRY it but it's not user-facing; skip unless idle.
 
 ## DONE (commit hashes)
 - `28ca13a` — **code-level no-invented-links guard** (was prompt-only). Verified real.
@@ -30,16 +23,19 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `011d0fc` — **resilient assembly** (allSettled; one failed topic doesn't sink the letter). Verified real.
 - `2d92143` — **empty-Brave-week → mock fallback** (zero-URL live signal no longer ships a link-less section). Verified real.
 - `2fe34e3` — **generation retry-once on malformed JSON**. Verified real.
-- `edb34e5` — **ux(archive): real error state** (was masking DB errors as "no letters"), friendly week labels, empty-state CTA, bigger tap targets. tsc+build clean, /archive 200.
-- `ce2c7cd` — **a11y(topic picker):** aria-pressed on toggles, role=group, aria-live count, aria-label. Verified attrs render. Keyboard already worked; touch targets fine.
-- `5621d3f` — **ux(writing): paced generation animation** to the real ~45s wait (steps scale to chosen topics, ~6s cadence) — no more stall at "Almost there"/80%. tsc+build clean, /writing 200.
-- Signal audit: all 24 topics healthy (11–25 URLs). Mock covers 23/24 (missing web3-updates).
+- `edb34e5` — **ux(archive): real error state** + friendly week labels + empty CTA + tap targets. /archive 200.
+- `ce2c7cd` — **a11y(topic picker):** aria-pressed, role=group, aria-live count, aria-label. Verified attrs render.
+- `5621d3f` — **ux(writing): paced generation animation** to the real ~45s wait — no more stall at 80%. /writing 200.
+- `d360bb9` — **design: consistent lowercase-brand titles** via title.template ("%s · alpha."); landing absolute; sample OG keeps "— alpha." for shares. Verified rendered titles.
+- Signal audit: all 24 topics healthy (11–25 URLs). Mock covers 23/24 (missing web3-updates → queue #9).
 
 ## OPS NOTES
-- Dev-server port detection flaky across cycles (leftover `next dev`/`next-server` procs hold 3000/3001). Before a dev render check: `pkill -f "next dev"; pkill -f "next-server"` then curl BOTH 3000 and 3001 to find the live one. Always pkill after.
+- Dev-server port flaky across cycles (leftover procs hold 3000/3001). Before a dev render: `pkill -f "next dev"; pkill -f "next-server"`, then probe both 3000 and 3001 for the 200. Always pkill after.
+- Avoid `sed` on NIGHT_LOG (it duplicated the QUEUE once); use Write to rewrite the whole file.
 
 ## DECISIONS I MADE
 - `C:\Users\Algy\alpha`; Next.js (not Vite). Sacred guard was prompt-only → built CODE enforcement (strengthen-only).
 - Live DB direct-query unavailable (token 403 + not in MCP); did NOT hunt creds; HTTP+code verification used.
-- Resilience philosophy: keep partial letters over failing whole; fall back to mock over shipping link-less; retry-once over first-fail giving up.
-- libuv `async.c` assertion at tsx script exit = harmless Windows teardown noise, not a failure.
+- Resilience: keep partial letters over failing whole; mock-fallback over link-less; retry-once over first-fail.
+- Title system: template for child pages, absolute for landing, self-contained OG/Twitter on sample (not templated).
+- libuv `async.c` assertion at tsx script exit = harmless Windows teardown noise.
