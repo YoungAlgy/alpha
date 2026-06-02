@@ -18,7 +18,16 @@ export default function SigninPage() {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0); // seconds until "Resend" re-enables
+  const [resent, setResent] = useState(false); // transient "new code sent" confirmation
   const codeInputRef = useRef<HTMLInputElement>(null);
+
+  // Tick the resend cooldown down to zero.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   // Pre-fill remembered email + onboarding email
   useEffect(() => {
@@ -66,18 +75,26 @@ export default function SigninPage() {
     if (step === "code") codeInputRef.current?.focus();
   }, [step]);
 
-  async function sendCode(e?: FormEvent) {
+  const RESEND_COOLDOWN_S = 30;
+
+  async function sendCode(e?: FormEvent, isResend = false) {
     e?.preventDefault();
+    // Guard: don't fire while busy or during the resend cooldown (prevents
+    // hammering "Resend" into Supabase's OTP rate limit + duplicate emails).
+    if (busy || (isResend && cooldown > 0)) return;
     const addr = email.trim();
     if (!addr) return;
     setBusy(true);
     setErr(null);
+    setResent(false);
 
     if (!supabaseConfigured()) {
       // V0 stub path
       setTimeout(() => {
         audioConfirm();
         setStep("code");
+        setCooldown(RESEND_COOLDOWN_S);
+        if (isResend) setResent(true);
         setBusy(false);
       }, 400);
       return;
@@ -97,6 +114,8 @@ export default function SigninPage() {
       }
       audioConfirm();
       setStep("code");
+      setCooldown(RESEND_COOLDOWN_S);
+      if (isResend) setResent(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn't send the code. Try again?");
     } finally {
@@ -244,18 +263,32 @@ export default function SigninPage() {
                   {err}
                 </p>
               )}
+              {resent && !err && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="alpha-ui text-sm mt-6"
+                  style={{ color: "var(--ink-soft)" }}
+                >
+                  New code sent ✓ — check your email.
+                </p>
+              )}
               <div
                 className="alpha-ui text-sm mt-12 space-x-4"
                 style={{ color: "var(--ink-soft)" }}
               >
                 <button
                   type="button"
-                  onClick={() => sendCode()}
-                  disabled={busy}
+                  onClick={() => sendCode(undefined, true)}
+                  disabled={busy || cooldown > 0}
                   className="underline underline-offset-4"
-                  style={{ color: "var(--accent-ink)" }}
+                  style={{
+                    color: "var(--accent-ink)",
+                    opacity: busy || cooldown > 0 ? 0.5 : 1,
+                    cursor: busy || cooldown > 0 ? "default" : "pointer",
+                  }}
                 >
-                  Resend code
+                  {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
                 </button>
                 <span>·</span>
                 <button
@@ -264,6 +297,7 @@ export default function SigninPage() {
                     setStep("email");
                     setCode("");
                     setErr(null);
+                    setResent(false);
                   }}
                   className="underline underline-offset-4"
                 >
