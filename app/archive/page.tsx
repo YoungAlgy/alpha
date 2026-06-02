@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
@@ -9,67 +9,72 @@ import type { Issue } from "@/lib/types";
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
 
 interface ArchiveItem {
-  id: string; // /inbox/<id> destination
+  id: string; // /inbox/<id> destination ("inbox" = the localStorage first issue)
   weekOf: string;
   firstLine: string;
-  recipientFirstName: string;
 }
+
+type LoadState = "loading" | "error" | "ready";
 
 export default function ArchivePage() {
   const [items, setItems] = useState<ArchiveItem[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [state, setState] = useState<LoadState>("loading");
 
-  useEffect(() => {
-    (async () => {
-      if (supabaseConfigured()) {
-        try {
-          const sb = supabaseClient();
-          const { data: { session } } = await sb.auth.getSession();
-          if (session) {
-            const { data, error } = await sb
-              .from("issues")
-              .select("id, week_of, editor_intro")
-              .order("week_of", { ascending: false });
-            const { data: userRow } = await sb
-              .from("users")
-              .select("first_name")
-              .eq("id", session.user.id)
-              .maybeSingle();
-            if (!error && data && data.length > 0) {
-              const rows = data as Array<{ id: string; week_of: string; editor_intro: string }>;
-              setItems(
-                rows.map((row) => ({
-                  id: row.id,
-                  weekOf: row.week_of,
-                  firstLine: row.editor_intro,
-                  recipientFirstName: userRow?.first_name || "you",
-                }))
-              );
-              setLoaded(true);
-              return;
-            }
-          }
-        } catch {
-          // fall through
-        }
-      }
+  const load = useCallback(async () => {
+    setState("loading");
+    // Signed-in users: the DB is the source of truth. A query error must NOT
+    // be masked as "no letters" — that's alarming to a paying subscriber. Only
+    // fall back to localStorage when NOT signed in (or Supabase unconfigured).
+    if (supabaseConfigured()) {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY_ISSUE);
-        if (raw) {
-          const issue = JSON.parse(raw) as Issue;
-          setItems([{
-            id: "inbox", // localStorage issue lives at /inbox (not /inbox/[id])
-            weekOf: issue.weekOf,
-            firstLine: issue.editorIntro,
-            recipientFirstName: issue.recipientFirstName,
-          }]);
+        const sb = supabaseClient();
+        const {
+          data: { session },
+        } = await sb.auth.getSession();
+        if (session) {
+          // RLS scopes issues to auth.uid() = user_id — no explicit filter needed.
+          const { data, error } = await sb
+            .from("issues")
+            .select("id, week_of, editor_intro")
+            .order("week_of", { ascending: false });
+          if (error) {
+            setState("error");
+            return;
+          }
+          const rows = (data || []) as Array<{ id: string; week_of: string; editor_intro: string }>;
+          setItems(
+            rows.map((row) => ({
+              id: row.id,
+              weekOf: row.week_of,
+              firstLine: row.editor_intro,
+            }))
+          );
+          setState("ready");
+          return;
         }
       } catch {
-        // ignore
+        setState("error");
+        return;
       }
-      setLoaded(true);
-    })();
+    }
+    // Unauthenticated / unconfigured: best-effort localStorage of the first issue.
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_ISSUE);
+      if (raw) {
+        const issue = JSON.parse(raw) as Issue;
+        setItems([{ id: "inbox", weekOf: issue.weekOf, firstLine: issue.editorIntro }]);
+      } else {
+        setItems([]);
+      }
+    } catch {
+      setItems([]);
+    }
+    setState("ready");
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -81,11 +86,7 @@ export default function ArchivePage() {
         >
           alpha<span style={{ color: "var(--accent)" }}>.</span>
         </Link>
-        <Link
-          href="/inbox"
-          className="alpha-ui text-sm"
-          style={{ color: "var(--ink-soft)" }}
-        >
+        <Link href="/inbox" className="alpha-ui text-sm py-2" style={{ color: "var(--ink-soft)" }}>
           ← Inbox
         </Link>
       </nav>
@@ -95,9 +96,9 @@ export default function ArchivePage() {
           Archive
         </h1>
 
-        {!loaded ? (
-          <ul className="space-y-6 animate-pulse">
-            {[0, 1].map((i) => (
+        {state === "loading" && (
+          <ul className="space-y-6 animate-pulse" aria-hidden>
+            {[0, 1, 2].map((i) => (
               <li key={i} className="border-b pb-6" style={{ borderColor: "var(--rule)" }}>
                 <div className="h-3 w-24 mb-3 rounded" style={{ background: "var(--rule)" }} />
                 <div className="h-5 w-full mb-2 rounded" style={{ background: "var(--rule)" }} />
@@ -105,27 +106,46 @@ export default function ArchivePage() {
               </li>
             ))}
           </ul>
-        ) : items.length === 0 ? (
-          <p className="alpha-display text-lg" style={{ color: "var(--ink-soft)" }}>
-            No letters yet. Your first one ships after subscribing.
-          </p>
-        ) : (
+        )}
+
+        {state === "error" && (
+          <div className="space-y-4">
+            <p className="alpha-display text-lg" style={{ color: "var(--ink)" }}>
+              Couldn&apos;t load your letters.
+            </p>
+            <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
+              That&apos;s almost always a temporary hiccup — your letters are safe.
+            </p>
+            <button type="button" onClick={() => load()} className="alpha-button">
+              Try again
+            </button>
+          </div>
+        )}
+
+        {state === "ready" && items.length === 0 && (
+          <div className="space-y-5">
+            <p className="alpha-display text-lg" style={{ color: "var(--ink-soft)" }}>
+              No letters yet. Your first one ships the Sunday after you subscribe.
+            </p>
+            <Link href="/inbox" className="alpha-button">
+              Go to your inbox →
+            </Link>
+          </div>
+        )}
+
+        {state === "ready" && items.length > 0 && (
           <ul className="space-y-6">
             {items.map((item) => (
-              <li
-                key={item.id}
-                className="border-b pb-6"
-                style={{ borderColor: "var(--rule)" }}
-              >
+              <li key={item.id} className="border-b pb-6" style={{ borderColor: "var(--rule)" }}>
                 <Link
                   href={item.id === "inbox" ? "/inbox" : `/inbox/${item.id}`}
-                  className="block group"
+                  className="block group py-1"
                 >
-                  <div className="alpha-mono mb-1" style={{ color: "var(--ink-soft)" }}>
-                    {item.weekOf.toUpperCase()}
+                  <div className="alpha-mono mb-1" style={{ color: "var(--accent-ink)" }}>
+                    {weekLabel(item.weekOf).toUpperCase()}
                   </div>
-                  <p className="alpha-display text-lg md:text-xl font-semibold group-hover:opacity-70">
-                    Hi {item.recipientFirstName}, — {truncate(item.firstLine, 110)}
+                  <p className="alpha-display text-lg md:text-xl font-semibold leading-snug group-hover:opacity-70">
+                    {truncate(item.firstLine, 120)}
                   </p>
                 </Link>
               </li>
@@ -136,6 +156,18 @@ export default function ArchivePage() {
       <Footer />
     </main>
   );
+}
+
+// Friendly week label, matching /inbox. Handles ISO ("2026-05-24" → "May 24")
+// and already-formatted ("Sunday, May 24, 2026" → "May 24"); falls back to raw.
+function weekLabel(weekOf: string): string {
+  if (weekOf.includes(",")) {
+    const m = weekOf.match(/^[^,]+,\s*([A-Za-z]+\s+\d+)/);
+    return m ? m[1] : weekOf;
+  }
+  const d = new Date(weekOf + "T12:00:00");
+  if (isNaN(d.getTime())) return weekOf;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function truncate(s: string, n: number): string {
