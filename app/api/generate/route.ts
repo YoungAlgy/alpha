@@ -6,6 +6,7 @@ import { persistIssueIfPossible } from "@/lib/engine/persist";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
+import { hasActiveAccess } from "@/lib/access";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -60,7 +61,9 @@ async function verifyPaid(
         .select("subscribed_at, cancelled_at")
         .eq("id", user.id)
         .maybeSingle();
-      if (data?.subscribed_at && !data.cancelled_at) return { ok: true };
+      // Access runs through the paid period — a future cancelled_at (cancel-
+      // at-period-end) still counts as active. See lib/access.hasActiveAccess.
+      if (data?.subscribed_at && hasActiveAccess(data.cancelled_at)) return { ok: true };
     }
   } catch {
     // ignore — fall through to session check

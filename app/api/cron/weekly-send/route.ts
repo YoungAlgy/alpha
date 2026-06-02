@@ -37,7 +37,8 @@ interface SubscriberRow {
 // We refuse anything else, so this can't be hit manually from the open web.
 //
 // Behavior:
-//   1. Find all users where subscribed_at IS NOT NULL AND cancelled_at IS NULL
+//   1. Find all users where subscribed_at IS NOT NULL AND access is still live
+//      (cancelled_at IS NULL or still in the future) AND unsubscribed_at IS NULL
 //   2. For each, generate this Sunday's Issue via the same engine /api/generate
 //      uses (Brave + Claude + per-topic cache), persist via upsert on (user_id,
 //      week_of), and send the letter email via Resend.
@@ -65,13 +66,21 @@ export async function GET(req: Request) {
       : currentSundayIso();
   const sb = await supabaseServiceClient();
 
+  // Access runs through the end of the paid period. The webhook stores
+  // cancelled_at as the date access ENDS, so a *future* cancelled_at means
+  // "cancel-at-period-end scheduled but still paid up" — those readers must
+  // keep getting letters. Only exclude null-or-future... i.e. include
+  // (cancelled_at IS NULL OR cancelled_at > now). The old `.is(cancelled_at,
+  // null)` cut these paying customers off weeks early. Mirrors
+  // lib/access.hasActiveAccess().
+  const nowIso = new Date().toISOString();
   const { data: subscribers, error } = await sb
     .from("users")
     .select(
       "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, theme, topics, topic_quota"
     )
     .not("subscribed_at", "is", null)
-    .is("cancelled_at", null)
+    .or(`cancelled_at.is.null,cancelled_at.gt.${nowIso}`)
     .is("unsubscribed_at", null);
 
   if (error) {
