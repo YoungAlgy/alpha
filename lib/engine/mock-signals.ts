@@ -642,6 +642,41 @@ POSTS:
 - The Bible Project visual essays. (https://bibleproject.com)
 `,
   },
+  {
+    topicId: "web3-updates",
+    weekOf: WEEK_OF,
+    context: `
+This week in Web3 (week of May 17, 2026). URLs below are real — cite them, never invent:
+
+PROTOCOL / NEWS:
+- Ethereum Foundation blog — protocol roadmap, upgrade notes, research posts. (https://blog.ethereum.org)
+- ethereum.org — canonical docs on the network, staking, and L2s. (https://ethereum.org)
+- Vitalik Buterin's site — long-form essays on privacy, scaling, and governance. (https://vitalik.eth.limo)
+- L2BEAT — the reference dashboard for Layer-2 TVL, risk, and stage classifications. (https://l2beat.com)
+- a16z crypto — research and policy writing from the largest crypto fund. (https://a16zcrypto.com)
+- Paradigm — technical research (MEV, AMMs, rollups) from the research-led fund. (https://www.paradigm.xyz)
+
+DATA / TOOLS TO TRY:
+- DeFiLlama — TVL across chains and protocols, no login. (https://defillama.com)
+- Dune — community SQL dashboards on on-chain data. (https://dune.com)
+- Etherscan — the canonical Ethereum block explorer. (https://etherscan.io)
+- Messari — research, screeners, and asset profiles. (https://messari.io)
+- Electric Capital — the annual Developer Report on who's actually building. (https://www.electriccapital.com)
+
+DECENTRALIZED SOCIAL:
+- Farcaster — the sufficiently-decentralized social protocol. (https://www.farcaster.xyz)
+- Warpcast — the flagship Farcaster client. (https://warpcast.com)
+
+READ / LISTEN:
+- Bankless — newsletter + podcast on the open-finance thesis. (https://www.bankless.com)
+- The Defiant — DeFi news and analysis. (https://thedefiant.io)
+- Decrypt — accessible daily web3 + crypto news. (https://decrypt.co)
+- Coinbase blog — institutional flows, product, and policy. (https://www.coinbase.com/blog)
+
+POSTS:
+- Vitalik on Warpcast — roadmap and research threads. (https://warpcast.com/vitalik.eth)
+`,
+  },
 ];
 
 export function getSignal(topicId: string, weekOf?: string): TopicSignal | undefined {

@@ -15,12 +15,12 @@ const { extractSignalUrls, isAllowedUrl } = await import("../lib/engine/url-guar
 const zero = extractSignalUrls("This week: no results. (no results — error)").size;
 console.log(`(1) zero-URL context → ${zero} URLs ${zero === 0 ? "✓" : "✗"}`);
 
-const sig = await resolveTopicSignal("ai-news" as never, "2026-05-31");
+const sig = await resolveTopicSignal((process.argv[2] || "ai-news") as never, "2026-05-31");
 const sigUrls = sig ? extractSignalUrls(sig.context).size : 0;
 console.log(`(2) Brave-disabled resolveTopicSignal("ai-news") → ${sig ? "mock signal" : "UNDEFINED"}, ${sigUrls} URLs ${sigUrls > 0 ? "✓" : "✗"}`);
 if (!sig) { console.log("FAIL — no fallback signal"); process.exit(1); }
 
-const blurb = await generateTopicBlurb("ai-news" as never, "2026-05-31", sig);
+const blurb = await generateTopicBlurb((process.argv[2] || "ai-news") as never, "2026-05-31", sig);
 const allowed = extractSignalUrls(sig.context);
 const links = blurb.items.flatMap((it) => [it.primaryRef?.url, ...(it.supplementaryRefs?.map((r) => r.url) || [])]).filter(Boolean) as string[];
 const viol = links.filter((u) => !isAllowedUrl(u, allowed)).length;
