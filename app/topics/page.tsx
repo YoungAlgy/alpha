@@ -99,7 +99,11 @@ export default function TopicsPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div
+          role="group"
+          aria-label={`Choose ${target} topics`}
+          className="grid grid-cols-2 md:grid-cols-3 gap-3"
+        >
           {TOPICS.map((t) => {
             const isPicked = picked.includes(t.id);
             const atLimit = picked.length >= target && !isPicked;
@@ -109,6 +113,8 @@ export default function TopicsPage() {
                 type="button"
                 onClick={() => toggle(t.id)}
                 disabled={atLimit}
+                aria-pressed={isPicked}
+                aria-label={t.label}
                 className="topic-card text-left p-4 rounded-lg"
                 data-picked={isPicked}
                 data-at-limit={atLimit}
@@ -148,6 +154,8 @@ export default function TopicsPage() {
 
         <div className="sticky bottom-4 flex items-center justify-between gap-4 pt-4">
           <span
+            role="status"
+            aria-live="polite"
             className="alpha-ui text-sm"
             style={{ color: "var(--ink-soft)" }}
           >
