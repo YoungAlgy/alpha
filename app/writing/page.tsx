@@ -18,17 +18,22 @@ function personalizedSteps(
     .map((id) => TOPIC_BY_ID[id]?.label)
     .filter(Boolean) as string[];
   const themeLabel = theme ? THEME_BY_ID[theme]?.label : "Forest";
-  const sourceTopic = topicLabels[0] || "your topics";
-  const noteTopic = topicLabels[1] || sourceTopic;
-  return [
-    `Pulling signal on ${sourceTopic}`,
-    `Reading sources for ${noteTopic}`,
-    firstName
-      ? `Drafting your editor's note for ${firstName}`
-      : "Drafting your editor's note",
-    `Setting the page in ${themeLabel}`,
-    "Almost there",
-  ];
+  // One "reading" beat per chosen topic (named, so it feels like real work on
+  // THEIR topics), then the note + theme + a final hold. More, finer steps +
+  // a slower cadence keep the progress bar moving through the full ~45s cold
+  // generation instead of stalling at 80% on "Almost there" for half the wait.
+  const shown = topicLabels.slice(0, 4);
+  const steps: string[] = shown.map((l) => `Reading this week on ${l}`);
+  if (steps.length === 0) steps.push("Reading this week on your topics");
+  if (topicLabels.length > 4) {
+    steps.push(`Pulling signal on ${topicLabels.length - 4} more`);
+  }
+  steps.push(
+    firstName ? `Drafting your editor's note, ${firstName}` : "Drafting your editor's note"
+  );
+  steps.push(`Setting the page in ${themeLabel}`);
+  steps.push("Almost ready");
+  return steps;
 }
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
@@ -55,14 +60,17 @@ export default function WritingPage() {
     // After 90s the generation is unusually slow — give them a way out
     const escapeTimer = setTimeout(() => setShowEscape(true), 90000);
 
-    // Drive fake-but-paced progress UI while the real engine runs.
+    // Drive fake-but-paced progress UI while the real engine runs. ~6s cadence
+    // over ~8 steps spans ~42s — matched to a cold first-letter generation, so
+    // the bar keeps climbing instead of stalling. A fast (cached) generation
+    // short-circuits via `done`, which jumps the bar to 100%.
     const stepTimer = setInterval(() => {
       setCurrentStep((s) => {
         const next = Math.min(s + 1, steps.length - 1);
         if (next !== s) stepDone(next);
         return next;
       });
-    }, 4000);
+    }, 6000);
 
     const profile: UserProfile = {
       firstName: state.firstName,
