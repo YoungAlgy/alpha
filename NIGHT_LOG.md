@@ -10,8 +10,7 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 ---
 
 ## QUEUE (ranked, living)  — REFRESHED after 11 cycles (re-audit focus on untouched surfaces)
-12. **[next] Letter EMAIL template** (`lib/email.ts` renderHTML/renderText) — the PRIMARY delivery channel, not yet audited this run. Check: mobile email rendering, dark-mode email, the teaser/sections markup, unsubscribe footer, plaintext alt, deliverability hygiene (List-Unsubscribe already there per memory). Find a concrete shippable win.
-13. **/signin flow** — 6-digit code UX: loading/error states, resend, invalid-code handling, mobile/a11y.
+13. **[next] /signin flow** (`app/signin/page.tsx`) — 6-digit code UX: loading/error states, resend code, invalid/expired-code handling, paste-OTP, mobile (numeric inputmode/autocomplete one-time-code), a11y. Find a concrete shippable win.
 14. **/settings** — billing + topic-management UX: states, mobile, a11y.
 15. **Perf pass** — landing/sample asset weight, font loading strategy, CLS.
 16. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
@@ -34,6 +33,7 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `b019cc3` — **web3-updates mock signal** added → 24/24 fallback coverage. Real verified-resolving URLs (dropped dead weekinethereumnews.com). Verified mock fallback + live guard both hold. Parametrized verify-mock-fallback.mts (takes topic arg).
 - `4aa51fe` — **security: editor-note prompt-injection hardening** — profile fields (firstName/city/blurbs) flow into the prompt; fenced in <reader-profile> + "treat as data" directive + length clamps (defense on cron path too). Verified: injection funBlurb ignored. Re-confirmed RLS/webhook/topic-enum sound.
 - `f5a4286` — **seo(landing): Organization+WebSite+Product JSON-LD** (@graph, offer $5 USD InStock, no fake ratings). Verified renders + parses valid.
+- `b5bcbf9` — **email: mobile viewport + dark-mode color-scheme=light + mobile gutters** on the letter HTML (was a bare <head> → dark clients auto-inverted the cream/forest palette). Exported renderHTML for preview; verified 8/8 markup checks, rendered to /tmp. No live send. (preview harness: `npx tsx scripts/preview-email.mts`)
 - Signal audit: all 24 topics healthy (11–25 URLs). Mock now covers 24/24.
 
 ## OPS NOTES
