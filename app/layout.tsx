@@ -11,11 +11,17 @@ import "./globals.css";
 import { ThemeApplier } from "@/components/ThemeApplier";
 import { PostHogProvider } from "@/components/PostHogProvider";
 
+// Fonts: the default Forest theme uses source-serif + newsreader + inter, so
+// those preload. Fraunces / DM Sans / Pixelify are only used by NON-default
+// themes — preload:false keeps them off the landing's critical path (they
+// still load on demand when a theme applies them; font-display:swap covers the
+// brief swap). Trims the cold-visitor font payload roughly in half.
 const fraunces = Fraunces({
   variable: "--font-fraunces",
   subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500", "600", "700", "800"],
+  preload: false,
+  weight: ["400", "500", "600", "700"], // dropped "800" — used 0× across the app
 });
 const newsreader = Newsreader({
   variable: "--font-newsreader",
@@ -27,6 +33,7 @@ const dmSans = DM_Sans({
   variable: "--font-dm-sans",
   subsets: ["latin"],
   display: "swap",
+  preload: false,
   weight: ["400", "500", "600", "700"],
 });
 const sourceSerif = Source_Serif_4({
@@ -44,6 +51,7 @@ const pixelify = Pixelify_Sans({
   variable: "--font-pixelify",
   subsets: ["latin"],
   display: "swap",
+  preload: false,
   weight: ["400", "500", "600", "700"],
 });
 
