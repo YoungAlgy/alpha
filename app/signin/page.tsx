@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Footer } from "@/components/Footer";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { confirm as audioConfirm } from "@/lib/audio";
+import { isValidEmail } from "@/lib/validate-email";
 
 const REMEMBERED_EMAIL_KEY = "alpha-signin-email";
 
@@ -84,6 +85,14 @@ export default function SigninPage() {
     if (busy || (isResend && cooldown > 0)) return;
     const addr = email.trim();
     if (!addr) return;
+    // Same lax-native-validation gap as onboarding: "john@gmail" passes the
+    // browser's type="email" but Supabase then fails to deliver an OTP. Catch
+    // the typo here with a friendly message instead of a dead-end "couldn't
+    // send the code."
+    if (!isValidEmail(addr)) {
+      setErr("That doesn't look like an email — check for a typo.");
+      return;
+    }
     setBusy(true);
     setErr(null);
     setResent(false);

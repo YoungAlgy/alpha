@@ -13,7 +13,11 @@ interface QuestionStepProps {
   multiline?: boolean;
   optional?: boolean;
   currentPath: string;
-  required?: boolean;
+  /** Optional format check (e.g. email). Returns an error message to show
+   *  inline and block advancing, or null when the value looks good. The
+   *  browser's native type="email" is too lax for the money path (it accepts
+   *  "john@gmail"), so the email step passes a real validator here. */
+  validate?: (value: string) => string | null;
 }
 
 export function QuestionStep({
@@ -24,11 +28,13 @@ export function QuestionStep({
   multiline = false,
   optional = false,
   currentPath,
+  validate,
 }: QuestionStepProps) {
   const router = useRouter();
   const { state, update, loaded } = useOnboarding();
   const initial = (state[field] as string) || "";
   const [value, setValue] = useState<string>(initial);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (loaded) setValue((state[field] as string) || "");
@@ -40,6 +46,16 @@ export function QuestionStep({
   function submit(e?: FormEvent) {
     e?.preventDefault();
     if (!canContinue) return;
+    // Format gate (e.g. email): block advancing on a likely typo and show it
+    // inline here, rather than letting a bad address reach Stripe / the send.
+    if (validate) {
+      const msg = validate(trimmed);
+      if (msg) {
+        setError(msg);
+        return;
+      }
+    }
+    setError(null);
     audioConfirm();
     update({ [field]: trimmed || undefined } as Partial<OnboardingState>);
     router.push(`/${nextStep(currentPath)}` as never);
@@ -85,7 +101,10 @@ export function QuestionStep({
           autoFocus
           aria-labelledby="alpha-question"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (error) setError(null);
+          }}
           placeholder={placeholder}
           rows={4}
           className="w-full alpha-display text-2xl md:text-3xl bg-transparent border-b pt-3 pb-5 focus:outline-none focus:border-current placeholder:opacity-40 resize-none"
@@ -101,7 +120,10 @@ export function QuestionStep({
           aria-labelledby="alpha-question"
           type={field === "email" ? "email" : "text"}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (error) setError(null);
+          }}
           placeholder={placeholder}
           className="w-full alpha-display text-3xl md:text-4xl bg-transparent border-b pt-3 pb-5 focus:outline-none focus:border-current placeholder:opacity-40"
           style={{
@@ -110,6 +132,16 @@ export function QuestionStep({
             lineHeight: 1.35,
           }}
         />
+      )}
+      {error && (
+        <p
+          role="alert"
+          aria-live="assertive"
+          className="alpha-ui text-sm"
+          style={{ color: "var(--accent-ink)" }}
+        >
+          {error}
+        </p>
       )}
       <div className="flex items-center justify-between gap-6 pt-2">
         <div className="flex items-center gap-6">
