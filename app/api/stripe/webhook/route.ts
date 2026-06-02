@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
+import { checkoutUserMutation } from "@/lib/webhook-user-mutation";
 
 export const runtime = "nodejs";
 
@@ -62,21 +63,33 @@ export async function POST(req: Request) {
             const meta = (session.metadata || {}) as Record<string, string>;
             const firstName = meta.alpha_first_name || meta.first_name || "friend";
             const city = meta.alpha_city || meta.city || null;
-            // Initial signup: quantity 1 ⇒ topic_quota 5 (the base bundle).
-            // customer.subscription.updated will overwrite if they upgrade.
-            await sb.from("users").upsert(
-              {
-                id: linkData.user.id,
-                email,
-                first_name: firstName,
-                city,
-                stripe_customer_id: customerId ?? null,
-                subscribed_at: new Date().toISOString(),
-                cancelled_at: null,
-                topic_quota: 5,
-              },
-              { onConflict: "id" }
-            );
+            const userId = linkData.user.id;
+            // Look up the existing row so we don't clobber subscription-owned
+            // state (topic_quota / cancelled_at) on a re-delivered or
+            // out-of-order checkout event. See lib/webhook-user-mutation.
+            const { data: existing } = await sb
+              .from("users")
+              .select("subscribed_at")
+              .eq("id", userId)
+              .maybeSingle();
+            const mut = checkoutUserMutation(existing ?? null, {
+              userId,
+              email,
+              firstName,
+              city,
+              customerId: customerId ?? null,
+              nowIso: new Date().toISOString(),
+            });
+            if (mut.kind === "insert") {
+              const { error: insErr } = await sb.from("users").insert(mut.row);
+              if (insErr) console.warn("[stripe-webhook] user insert failed:", insErr.message);
+            } else {
+              const { error: updErr } = await sb
+                .from("users")
+                .update(mut.patch)
+                .eq("id", userId);
+              if (updErr) console.warn("[stripe-webhook] user update failed:", updErr.message);
+            }
           }
         }
         break;
