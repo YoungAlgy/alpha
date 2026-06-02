@@ -10,12 +10,14 @@ Real-generation / verification harnesses (reuse to verify any change; scripts/ e
 - `npx tsx scripts/verify-access-window.mts` — hasActiveAccess boundary table + READ-ONLY live-DB filter check.
 - `npx tsx scripts/verify-webhook-mutation.mts` — checkout.session.completed non-clobber invariant + READ-ONLY live tie-in.
 - `npx tsx scripts/inspect-user-completeness.mts` — READ-ONLY: are real subscribers deliverable (first_name + topics)? structure only, no PII.
+- `npx tsx scripts/verify-stripe-cancel-on-delete.mts` — cancelCustomerSubscriptions logic via a STUBBED Stripe client (no network/live risk); hard-refuses a non-test key, so swapping to sk_test_ unlocks a full test-mode pass.
 - `npx tsx scripts/preview-email.mts` — renders the letter email HTML to /tmp (no live send).
 
 ---
 
-## ⚠️ FOR ALGY — needs your review (money-path, not auto-shipped)
-- **Account deletion does NOT cancel the Stripe subscription.** `POST /api/account/delete` deletes the auth user (cascades to public.users + issues — verified correct) but never cancels Stripe, and a deleted account can't reach the portal afterward → **a paying user who deletes keeps being billed $5/mo with no way to stop it.** I shipped the SAFE mitigation (`60e64b9`: the delete confirm now warns paying users to cancel billing first). The real fix is server-side cancel-on-delete — a live Stripe subscription cancel (money op, STOP-class, untestable here), so I did NOT auto-ship it. SKETCH for you: in app/api/account/delete/route.ts, BEFORE `admin.deleteUser`, read the user's stripe_customer_id from public.users; if set + Stripe configured, `stripe.subscriptions.list({ customer, status: 'all' })` and `stripe.subscriptions.cancel(id)` each active/trialing one (best-effort try/catch, never block the delete). Then delete the auth user. Verify with a real test subscription in Stripe test mode.
+## ⚠️ FOR ALGY — recommendations
+- **Local `.env.local` STRIPE_SECRET_KEY is a LIVE key** (line 9's own comment says to "Swap for sk_test_… to validate flow without real money", but it's currently sk_live). Footgun: local checkout/cancel testing hits real money. Recommend swapping local → your sk_test key. Once swapped, `npx tsx scripts/verify-stripe-cancel-on-delete.mts` auto-runs a full test-mode create→cancel→cleanup (it hard-refuses to run on a live key).
+- **(DONE — was the cancel-on-delete item)** Account deletion now cancels the Stripe subscription (`b1bdc85`, shipped with Algy present). Logic verified via stub (11/11) + build; the actual cancel CALL was not executed because the only local key is LIVE — do a test-mode pass (above) when convenient for full confidence.
 
 ## QUEUE (ranked, living) — FRESH RE-AUDIT mode
 Re-audit keeps finding real bugs (16, 17, 18, 19). Keep going.
@@ -43,9 +45,10 @@ Re-audit keeps finding real bugs (16, 17, 18, 19). Keep going.
 - `57db88d` — CYCLE 17 / fix(billing): keep delivering through the paid period after cancel-at-period-end. lib/access.hasActiveAccess; weekly-send `.or(...gt now)`; generate gate. 6/6 + live reconcile; build; cron 401/inbox 200.
 - `ad7ce29` — CYCLE 18 / fix(webhook): checkout.session.completed idempotent (no quota/cancel clobber). lib/webhook-user-mutation pure decision; insert-or-non-clobbering-update. 19/19 + live tie-in; build; webhook config-gated.
 - `60e64b9` — CYCLE 19 / fix(settings): warn paying users that deleting won't stop Stripe billing. Found while auditing the delete path: deletion cascade is CORRECT (no orphan), but it doesn't cancel Stripe → billed-after-delete. Shipped the UI warning (hasPaidSub via hasActiveAccess); server-side cancel-on-delete flagged FOR ALGY above (money op). Also added inspect-user-completeness.mts (READ-ONLY) → confirmed both real subscribers complete/deliverable + cycle-18 change safe (first_name+topics come from syncUserProfile, not the webhook). Clean build; /settings 200.
+- `b1bdc85` — **fix(billing): cancel the Stripe subscription on account deletion** (closes the cycle-19 FOR-ALGY item; done interactively with Algy back). New lib/stripe-cancel.cancelCustomerSubscriptions (lists status:"all", cancels non-terminal immediately, skips canceled/incomplete_expired, best-effort per-sub); delete route reads stripe_customer_id then cancels then deletes. 11/11 stub-logic + build typechecks real SDK calls + delete route 401 unauth'd. Cancel CALL not executed (local key is LIVE) — test-mode pass recommended.
 - Signal audit: all 24 topics healthy. Mock covers 24/24.
 
-## STATUS @ 19 cycles
+## STATUS @ 19 cycles (+ interactive)
 Generation engine fully hardened. **Money/delivery path correct on four axes the re-audit surfaced: (16) email typos can't reach Stripe/the send; (17) cancel-at-period-end keeps paid letters; (18) re-delivered checkout webhooks don't clobber quota/cancel; (19) deletion cascade verified clean + paying users warned about post-delete billing.** Confirmed: Stripe webhook solid (signature/paid-period/idempotency); account-deletion data-cascade correct (FK on delete cascade, no orphan recipient); cycle-18 change safe (live data shows subscribers complete). ONE open money-path item deferred to Algy: cancel Stripe on account delete. UX/email/landing/fonts all done. App strongly converging — remaining is re-audit + the Algy-review item.
 
 ## OPS NOTES
