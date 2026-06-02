@@ -49,7 +49,14 @@ const pixelify = Pixelify_Sans({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://youngalgy.com"),
-  title: "Alpha — your weekly alpha",
+  // Consistent lowercase-brand titles across every page. Child pages set just
+  // their page name (e.g. "Privacy") and the template appends "· alpha." —
+  // no more drift between "— Alpha", "— alpha.", and "Alpha —". A page can
+  // opt out with title.absolute (the landing does).
+  title: {
+    default: "alpha. — your weekly alpha",
+    template: "%s · alpha.",
+  },
   description:
     "A personal weekly letter on what matters to you. Pick five topics. Sundays.",
   manifest: "/alpha/manifest.json",
@@ -65,7 +72,7 @@ export const metadata: Metadata = {
     apple: [{ url: "/alpha/apple-touch-icon.png", sizes: "180x180" }],
   },
   openGraph: {
-    title: "Alpha — your weekly alpha",
+    title: "alpha. — your weekly alpha",
     description: "A personal weekly letter on what matters to you, every Sunday.",
     type: "website",
     siteName: "Alpha",
@@ -75,13 +82,13 @@ export const metadata: Metadata = {
         url: "/alpha/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Alpha — your weekly alpha",
+        alt: "alpha. — your weekly alpha",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Alpha — your weekly alpha",
+    title: "alpha. — your weekly alpha",
     description: "A personal weekly letter on what matters to you, every Sunday.",
     images: ["/alpha/og-image.png"],
   },

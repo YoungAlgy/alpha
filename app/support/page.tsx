@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { SupportForm } from "./SupportForm";
 
-export const metadata = { title: "Support — Alpha" };
+export const metadata = { title: "Support" };
 
 export default function SupportPage() {
   return (

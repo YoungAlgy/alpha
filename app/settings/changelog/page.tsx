@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Footer } from "@/components/Footer";
 
 export const metadata: Metadata = {
-  title: "Changelog — Alpha",
+  title: "Changelog",
   robots: { index: false, follow: false },
 };
 

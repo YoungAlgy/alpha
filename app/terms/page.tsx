@@ -1,6 +1,6 @@
 import { LegalLayout } from "@/components/LegalLayout";
 
-export const metadata = { title: "Terms — Alpha" };
+export const metadata = { title: "Terms" };
 
 export default function TermsPage() {
   return (

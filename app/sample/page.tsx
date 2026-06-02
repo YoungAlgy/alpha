@@ -10,7 +10,7 @@ import { SAMPLE_ISSUE } from "@/lib/sample-issue";
 // what a visitor sees here is what they'd get. Linked from the landing page and
 // every marketing channel.
 export const metadata: Metadata = {
-  title: "A sample issue — alpha.",
+  title: "A sample issue",
   description:
     "See what a Sunday letter from alpha. looks like. A personal weekly letter on the five topics you care about — sourced, edited, and worth your time.",
   alternates: { canonical: "https://youngalgy.com/alpha/sample" },
