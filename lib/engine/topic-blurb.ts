@@ -88,19 +88,30 @@ Write this week's ${topic.label} section. Return JSON in this exact shape:
 
 Three items exactly. VARY the kinds across them. Include URLs only from the signal above. Make each item feel like a small piece of education with something concrete to click or try.`;
 
-  const response = await anthropicClient().messages.create({
-    model: MODEL,
-    max_tokens: 4000,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userPrompt }],
-  });
+  // Generate + parse, retrying ONCE on a malformed-JSON response. Sonnet is
+  // told "JSON only" but occasionally wraps it in prose or truncates; a single
+  // retry recovers the transient case before we give up and skip the topic.
+  async function callAndParse(): Promise<ParsedBlurb> {
+    const response = await anthropicClient().messages.create({
+      model: MODEL,
+      max_tokens: 4000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
+    });
+    const text = response.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { type: "text"; text: string }).text)
+      .join("\n");
+    return extractJson(text);
+  }
 
-  const text = response.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { type: "text"; text: string }).text)
-    .join("\n");
-
-  const parsed = extractJson(text);
+  let parsed: ParsedBlurb;
+  try {
+    parsed = await callAndParse();
+  } catch (e) {
+    console.warn(`[topic-blurb] ${topicId} ${weekOf}: parse failed, retrying once: ${e instanceof Error ? e.message : e}`);
+    parsed = await callAndParse();
+  }
 
   const mapped = parsed.items.map((it) => ({
     kind: narrowKind(it.kind),
