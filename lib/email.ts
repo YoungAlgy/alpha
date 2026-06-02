@@ -121,7 +121,9 @@ interface RenderArgs {
   unsubscribeUrl: string | null;
 }
 
-function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
+// Exported (pure, no I/O) so the email can be previewed/snapshot-tested
+// without ever triggering a live send.
+export function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
   // CTA always points at /inbox. If the user is still signed in, they go
   // straight to their letter. If not, /inbox bounces them to /signin where
   // they request a 6-digit code — same as anywhere else in the app.
@@ -131,9 +133,24 @@ function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, unsubscr
     : "";
   return `<!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><title>Your Sunday alpha</title></head>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- The letter is a light cream/forest design. Tell mail clients NOT to
+         auto-invert it in dark mode, which otherwise mangles the palette. -->
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <title>Your Sunday alpha</title>
+    <style>
+      /* Tighter gutters on phones (supported in Apple Mail, Gmail app, etc.;
+         degrades gracefully where <style> is stripped). */
+      @media only screen and (max-width:600px) {
+        .alpha-wrap { padding: 32px 20px !important; }
+      }
+    </style>
+  </head>
   <body style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
-    <div style="max-width:560px;margin:0 auto;padding:48px 32px;">
+    <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
       <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
         ${escapeHtml(weekOf.toUpperCase())}
       </div>
