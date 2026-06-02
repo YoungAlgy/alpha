@@ -11,9 +11,11 @@ import { LetterTOC } from "@/components/LetterTOC";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { Issue } from "@/lib/types";
 
-// Renders a specific past issue by ID (UUID from public.issues.id) when authed.
-// Falls back to the localStorage 'latest' for unauthenticated users hitting
-// /inbox/<anything> directly.
+// Renders a specific past issue by ID (UUID from public.issues.id) for its
+// signed-in owner. The fetch is scoped to the user (RLS + an explicit user_id
+// filter), so another user's id — or any unknown/missing id — returns nothing
+// and we show a friendly "can't find that letter" state with sign-in/archive
+// links. (No localStorage fallback here; that only lives on the main /inbox.)
 
 export default function IssuePage() {
   const params = useParams<{ issueId: string }>();
