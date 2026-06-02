@@ -67,9 +67,53 @@ const FAQ = [
   },
 ];
 
+// Structured data for richer search results. Static + app-controlled (no user
+// input → safe to inline). Every claim is true: $5/mo, USD, in stock. No
+// aggregateRating/reviewCount — we won't fabricate social proof.
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://youngalgy.com/alpha#org",
+      name: "alpha.",
+      url: "https://youngalgy.com/alpha",
+      logo: "https://youngalgy.com/alpha/icon-512.png",
+      email: "alex@avahealth.co",
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://youngalgy.com/alpha#website",
+      name: "alpha.",
+      url: "https://youngalgy.com/alpha",
+      publisher: { "@id": "https://youngalgy.com/alpha#org" },
+    },
+    {
+      "@type": "Product",
+      name: "alpha. — a weekly personal letter",
+      description:
+        "A personal weekly letter on the five topics you choose, sourced and edited so it's worth your time. Every Sunday.",
+      brand: { "@id": "https://youngalgy.com/alpha#org" },
+      url: "https://youngalgy.com/alpha",
+      offers: {
+        "@type": "Offer",
+        price: "5.00",
+        priceCurrency: "USD",
+        availability: "https://schema.org/InStock",
+        url: "https://youngalgy.com/alpha",
+      },
+    },
+  ],
+};
+
 export default function Landing() {
   return (
     <main className="min-h-screen flex flex-col">
+      <script
+        type="application/ld+json"
+        // Static, app-controlled object — no user input. Standard Next JSON-LD pattern.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
       {/* Nav */}
       <nav className="px-6 py-6 max-w-5xl mx-auto w-full flex items-center justify-between">
         <span
