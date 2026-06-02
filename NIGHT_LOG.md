@@ -9,10 +9,10 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 
 ---
 
-## QUEUE (ranked, living)  — REFRESHED after 11 cycles (re-audit focus on untouched surfaces)
-15. **[next] Perf pass** — landing/sample asset weight (the 6 next/font Google fonts in layout — that's a lot of font payload; consider trimming/subsetting), font display strategy, any CLS, the og-image/icon sizes. Find a concrete shippable win (likely: prune unused fonts).
-16. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
-17. (notes) account-delete error still alert()-based (rare path); mobile letter TOC; `<Wordmark>` DRY — skip unless idle. If queue exhausted → fresh full re-audit (generation/billing/UX/security/perf).
+## QUEUE (ranked, living)  — targeted queue exhausted after 15 cycles → FRESH RE-AUDIT mode
+16. **[next] FRESH FULL RE-AUDIT** — every prior cycle covered a known surface; now re-read with fresh eyes for NEW issues across: generation engine (any remaining edge), billing/webhook correctness, the onboarding funnel steps not yet touched (role/focus/fun/name/city/theme/email pages), error.tsx/not-found, accessibility holes, perf, dead code. Pick the single highest-leverage NEW finding and ship it. If genuinely nothing material → smallest worthwhile polish (e.g., account-delete alert()→in-page; `<Wordmark>` DRY) and log that the app is converging.
+17. **Monitoring** — guard drop-count / generation health in admin stats. Low.
+18. (notes) account-delete error alert() (rare); mobile letter TOC; `<Wordmark>` DRY.
 14. **/settings** — billing + topic-management UX: states, mobile, a11y.
 15. **Perf pass** — landing/sample asset weight, font loading strategy, CLS.
 16. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
@@ -38,7 +38,11 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `b5bcbf9` — **email: mobile viewport + dark-mode color-scheme=light + mobile gutters** on the letter HTML (was a bare <head> → dark clients auto-inverted the cream/forest palette). Exported renderHTML for preview; verified 8/8 markup checks, rendered to /tmp. No live send. (preview harness: `npx tsx scripts/preview-email.mts`)
 - `3144dab` — **ux(signin): resend-code 30s cooldown + "new code sent ✓" confirmation** (was no cooldown/feedback → OTP-email spam + Supabase rate-limit errors). /signin 200. Paste-OTP/inputmode already solid.
 - `bcdae87` — **ux(settings): in-page billing feedback** replacing alert() on the +5/−5 tier buttons + portal (success + error, aria-live). /settings 200.
+- `cc3fe77` — **perf(fonts): dropped unused Fraunces weight 800 (0 uses) + preload:false on the 3 non-default-theme fonts** (Fraunces/DM Sans/Pixelify) — trims cold-visitor preload payload; default Forest fonts (source-serif/newsreader/inter) still preload. Build clean.
 - Signal audit: all 24 topics healthy (11–25 URLs). Mock now covers 24/24.
+
+## STATUS @ 15 cycles
+All known high-leverage surfaces hardened. Generation: code URL-guard, allSettled resilience, empty→mock fallback, JSON retry, 24/24 mock, injection-hardened editor note. Billing/flow verified + in-page feedback. UX: archive/onboarding-a11y/writing-pacing/signin-cooldown/settings-feedback. Email mobile+dark-mode. Landing JSON-LD + brand titles. Fonts trimmed. App is converging — remaining work is re-audit-driven + polish.
 
 ## OPS NOTES
 - Dev-server port flaky across cycles (leftover procs hold 3000/3001). Before a dev render: `pkill -f "next dev"; pkill -f "next-server"`, then probe both 3000 and 3001 for the 200. Always pkill after.
