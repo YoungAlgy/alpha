@@ -10,8 +10,13 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 ---
 
 ## QUEUE (ranked, living)
-1-6. ✅ DONE (see below).
-7. **[next] Reading experience** (`/app/inbox/page.tsx`, `/app/writing/page.tsx`, `components/Digest.tsx`) — generation skeleton/perceived latency, mobile viewport on the letter, scroll/readability. Check the /writing generating-state and /inbox letter rendering on mobile widths.
+1-7. ✅ DONE (see below).
+8. **[next] Design consistency** — sweep all surfaces for Forest chrome + lowercase `alpha.` wordmark consistency, spacing/hierarchy, a11y (heading order, contrast, focus states). Candidates: landing, signin, settings, support, checkout, 404. Pick the highest-impact inconsistency and fix.
+9. **SEO/landing** — CWV/Lighthouse; headers already set.
+10. **Security re-spot-check** — RLS, webhook tamper, prompt-injection via topic selections.
+11. **web3-updates mock signal** — only topic without a mock entry; add one.
+12. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
+13. (note) Consider a mobile section-nav for the letter (LetterTOC is desktop-only `hidden xl:block`); debatable value for a linear letter — left for later.
 7. **Reading experience / skeletons** during generation; mobile viewport on /inbox + letter.
 8. **Design consistency** — Forest chrome, lowercase `alpha.` wordmark, spacing/hierarchy/a11y across surfaces.
 9. **SEO/landing** — CWV/Lighthouse; headers already set.
@@ -27,6 +32,7 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `2fe34e3` — **generation retry-once on malformed JSON**. Verified real.
 - `edb34e5` — **ux(archive): real error state** (was masking DB errors as "no letters"), friendly week labels, empty-state CTA, bigger tap targets. tsc+build clean, /archive 200.
 - `ce2c7cd` — **a11y(topic picker):** aria-pressed on toggles, role=group, aria-live count, aria-label. Verified attrs render. Keyboard already worked; touch targets fine.
+- `5621d3f` — **ux(writing): paced generation animation** to the real ~45s wait (steps scale to chosen topics, ~6s cadence) — no more stall at "Almost there"/80%. tsc+build clean, /writing 200.
 - Signal audit: all 24 topics healthy (11–25 URLs). Mock covers 23/24 (missing web3-updates).
 
 ## OPS NOTES
