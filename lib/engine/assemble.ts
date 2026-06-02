@@ -29,10 +29,38 @@ export async function generateIssue(
     setCachedBlurb(blurb).catch(() => undefined);
     return blurb;
   });
-  const blurbs = await Promise.all(blurbPromises);
 
-  // Step 2 — generate personalized editor's note that weaves the 5 sections together
-  const editorIntro = await generateEditorNote(user, blurbs);
+  // Resilient fan-out: a transient Brave/Claude failure on ONE topic must not
+  // sink the whole letter. Keep the sections that succeeded (in the user's
+  // chosen order); only fail outright if EVERY topic failed. The failed topic
+  // retries on the next generation (cache miss).
+  const settled = await Promise.allSettled(blurbPromises);
+  const blurbs = settled
+    .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof generateTopicBlurb>>> => r.status === "fulfilled")
+    .map((r) => r.value);
+  settled.forEach((r, i) => {
+    if (r.status === "rejected") {
+      console.warn(`[assemble] topic "${user.topics[i]}" failed, skipping section: ${r.reason}`);
+    }
+  });
+  if (blurbs.length === 0) {
+    throw new Error("All topic sections failed to generate");
+  }
+
+  // Step 2 — personalized editor's note weaving the sections. If it fails,
+  // fall back to a clean standalone intro rather than sinking the letter.
+  let editorIntro: string;
+  try {
+    editorIntro = await generateEditorNote(user, blurbs);
+  } catch (e) {
+    console.warn(`[assemble] editor note failed, using fallback intro: ${e instanceof Error ? e.message : e}`);
+    const labels = blurbs.map((b) => b.topicLabel.toLowerCase());
+    const list =
+      labels.length > 1
+        ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`
+        : labels[0];
+    editorIntro = `A few things worth your time this week — across ${list}. Dig into whatever pulls at you and let the rest wait.`;
+  }
 
   // Step 3 — assemble Issue
   const issue: Issue = {
