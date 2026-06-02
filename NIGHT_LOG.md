@@ -15,6 +15,10 @@ Real-generation / verification harnesses (reuse to verify any change; scripts/ e
 
 ---
 
+## ✅ STATUS — LAUNCH-READY (interactive pass, 2026-06-02, Algy driving)
+App is **fully marketable**; Algy confirmed it looks good on mobile (real device). Marketable surface all verified (landing/sample/OG/SEO/cron/trust/error pages). Interactive commits this pass: `b1bdc85` cancel-on-delete Stripe sub, `a0b6274` inbox doc fix, `7734792` PWA manifest icons + dead-asset cleanup, `6fba749` contact email unified → youngalgy@gmail.com, `125cc52` founder note signed "— Algy, who makes alpha.".
+**PAUSED / DO NOT auto-run:** Algy is driving interactively. Posting/marketing is GATED on his explicit green-light (LinkedIn draft is ready; other socials off-limits until he says). If the stale cycle-20 ScheduleWakeup fires → DO NOT auto-audit or auto-push; just await Algy's direction. The audit converged (cycles 16–19 + interactive) — code/security/billing are in strong shape; the binding constraint is TRAFFIC, not code.
+
 ## ⚠️ FOR ALGY — recommendations
 - **Local `.env.local` STRIPE_SECRET_KEY is a LIVE key** (line 9's own comment says to "Swap for sk_test_… to validate flow without real money", but it's currently sk_live). Footgun: local checkout/cancel testing hits real money. Recommend swapping local → your sk_test key. Once swapped, `npx tsx scripts/verify-stripe-cancel-on-delete.mts` auto-runs a full test-mode create→cancel→cleanup (it hard-refuses to run on a live key).
 - **(DONE — was the cancel-on-delete item)** Account deletion now cancels the Stripe subscription (`b1bdc85`, shipped with Algy present). Logic verified via stub (11/11) + build; the actual cancel CALL was not executed because the only local key is LIVE — do a test-mode pass (above) when convenient for full confidence.
