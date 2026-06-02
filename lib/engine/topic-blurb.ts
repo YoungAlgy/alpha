@@ -1,5 +1,6 @@
 import { anthropicClient, MODEL } from "./client";
 import { TOPIC_BY_ID } from "@/lib/topics";
+import { extractSignalUrls, enforceSignalUrls } from "./url-guard";
 import type { TopicId } from "@/lib/types";
 import type { TopicBlurb, TopicSignal, BlurbItemKind } from "./types";
 
@@ -101,20 +102,34 @@ Three items exactly. VARY the kinds across them. Include URLs only from the sign
 
   const parsed = extractJson(text);
 
+  const mapped = parsed.items.map((it) => ({
+    kind: narrowKind(it.kind),
+    headline: it.headline,
+    body: it.body,
+    primaryRef: it.primaryRef || undefined,
+    supplementaryRefs:
+      Array.isArray(it.supplementaryRefs) && it.supplementaryRefs.length > 0
+        ? it.supplementaryRefs
+        : undefined,
+  }));
+
+  // SACRED GUARD (code-level, not just prompt): drop any URL the model
+  // returned that is not actually present in the signal. A hallucinated link
+  // physically cannot reach a letter. See lib/engine/url-guard.ts.
+  const allowed = extractSignalUrls(signal.context);
+  const { items, dropped } = enforceSignalUrls(mapped, allowed);
+  if (dropped > 0) {
+    console.warn(
+      `[url-guard] ${topicId} ${weekOf}: dropped ${dropped} URL(s) not present in signal (model hallucination blocked)`
+    );
+  }
+
   return {
     topicId,
     topicLabel: topic.label,
     weekOf,
     intro: parsed.intro,
-    items: parsed.items.map((it) => ({
-      kind: narrowKind(it.kind),
-      headline: it.headline,
-      body: it.body,
-      primaryRef: it.primaryRef || undefined,
-      supplementaryRefs: Array.isArray(it.supplementaryRefs) && it.supplementaryRefs.length > 0
-        ? it.supplementaryRefs
-        : undefined,
-    })),
+    items,
   };
 }
 
