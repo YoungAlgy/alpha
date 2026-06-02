@@ -79,7 +79,7 @@ const JSON_LD = {
       name: "alpha.",
       url: "https://youngalgy.com/alpha",
       logo: "https://youngalgy.com/alpha/icon-512.png",
-      email: "alex@avahealth.co",
+      email: "youngalgy@gmail.com",
     },
     {
       "@type": "WebSite",
