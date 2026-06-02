@@ -9,11 +9,13 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 
 ---
 
-## QUEUE (ranked, living)
-11. **[next] SEO/landing** — CWV/Lighthouse-ish pass: image/asset weight on the landing + sample, font loading, any layout-shift, JSON-LD/structured data opportunity for the landing, meta completeness. Headers + OG already verified. Look for a concrete shippable win (e.g., add Organization/WebSite JSON-LD, or fix a perf/CLS issue).
-12. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
-13. (note) Mobile section-nav for the letter (desktop-only TOC) — later.
-14. (note) `<Wordmark>` component to DRY the 12× inline pattern — skip unless idle.
+## QUEUE (ranked, living)  — REFRESHED after 11 cycles (re-audit focus on untouched surfaces)
+12. **[next] Letter EMAIL template** (`lib/email.ts` renderHTML/renderText) — the PRIMARY delivery channel, not yet audited this run. Check: mobile email rendering, dark-mode email, the teaser/sections markup, unsubscribe footer, plaintext alt, deliverability hygiene (List-Unsubscribe already there per memory). Find a concrete shippable win.
+13. **/signin flow** — 6-digit code UX: loading/error states, resend, invalid-code handling, mobile/a11y.
+14. **/settings** — billing + topic-management UX: states, mobile, a11y.
+15. **Perf pass** — landing/sample asset weight, font loading strategy, CLS.
+16. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
+17. (notes) mobile letter TOC; `<Wordmark>` DRY — skip unless idle.
 11. **SEO/landing** — CWV/Lighthouse; headers + OG already verified.
 12. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
 13. (note) Mobile section-nav for the letter (LetterTOC is desktop-only `hidden xl:block`) — debatable for a linear letter; later.
@@ -31,6 +33,7 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `d360bb9` — **design: consistent lowercase-brand titles** via title.template ("%s · alpha."); landing absolute; sample OG keeps "— alpha." for shares. Verified rendered titles.
 - `b019cc3` — **web3-updates mock signal** added → 24/24 fallback coverage. Real verified-resolving URLs (dropped dead weekinethereumnews.com). Verified mock fallback + live guard both hold. Parametrized verify-mock-fallback.mts (takes topic arg).
 - `4aa51fe` — **security: editor-note prompt-injection hardening** — profile fields (firstName/city/blurbs) flow into the prompt; fenced in <reader-profile> + "treat as data" directive + length clamps (defense on cron path too). Verified: injection funBlurb ignored. Re-confirmed RLS/webhook/topic-enum sound.
+- `f5a4286` — **seo(landing): Organization+WebSite+Product JSON-LD** (@graph, offer $5 USD InStock, no fake ratings). Verified renders + parses valid.
 - Signal audit: all 24 topics healthy (11–25 URLs). Mock now covers 24/24.
 
 ## OPS NOTES
