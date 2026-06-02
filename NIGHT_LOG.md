@@ -10,10 +10,9 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 ---
 
 ## QUEUE (ranked, living)  — REFRESHED after 11 cycles (re-audit focus on untouched surfaces)
-14. **[next] /settings UX** (`app/settings/page.tsx` + accounts) — billing + topic-management states, the +5/-5 add-on tier buttons' loading/error feedback, mobile, a11y. Find a concrete shippable win.
-15. **Perf pass** — landing/sample asset weight, font loading strategy, CLS.
+15. **[next] Perf pass** — landing/sample asset weight (the 6 next/font Google fonts in layout — that's a lot of font payload; consider trimming/subsetting), font display strategy, any CLS, the og-image/icon sizes. Find a concrete shippable win (likely: prune unused fonts).
 16. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
-17. (notes) mobile letter TOC; `<Wordmark>` DRY — skip unless idle. If queue exhausted → fresh full re-audit.
+17. (notes) account-delete error still alert()-based (rare path); mobile letter TOC; `<Wordmark>` DRY — skip unless idle. If queue exhausted → fresh full re-audit (generation/billing/UX/security/perf).
 14. **/settings** — billing + topic-management UX: states, mobile, a11y.
 15. **Perf pass** — landing/sample asset weight, font loading strategy, CLS.
 16. **Monitoring** — surface guard drop-count / generation health in admin stats. Low.
@@ -38,6 +37,7 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `f5a4286` — **seo(landing): Organization+WebSite+Product JSON-LD** (@graph, offer $5 USD InStock, no fake ratings). Verified renders + parses valid.
 - `b5bcbf9` — **email: mobile viewport + dark-mode color-scheme=light + mobile gutters** on the letter HTML (was a bare <head> → dark clients auto-inverted the cream/forest palette). Exported renderHTML for preview; verified 8/8 markup checks, rendered to /tmp. No live send. (preview harness: `npx tsx scripts/preview-email.mts`)
 - `3144dab` — **ux(signin): resend-code 30s cooldown + "new code sent ✓" confirmation** (was no cooldown/feedback → OTP-email spam + Supabase rate-limit errors). /signin 200. Paste-OTP/inputmode already solid.
+- `bcdae87` — **ux(settings): in-page billing feedback** replacing alert() on the +5/−5 tier buttons + portal (success + error, aria-live). /settings 200.
 - Signal audit: all 24 topics healthy (11–25 URLs). Mock now covers 24/24.
 
 ## OPS NOTES
