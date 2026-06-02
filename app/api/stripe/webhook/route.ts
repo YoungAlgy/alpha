@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
-import { checkoutUserMutation } from "@/lib/webhook-user-mutation";
+import { checkoutUserMutation, isFirstSubscription } from "@/lib/webhook-user-mutation";
+import { sendWelcomeEmail, resendConfigured } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -89,6 +90,25 @@ export async function POST(req: Request) {
                 .update(mut.patch)
                 .eq("id", userId);
               if (updErr) console.warn("[stripe-webhook] user update failed:", updErr.message);
+            }
+            // One-time welcome email on first subscription. Best-effort — never
+            // block the webhook. isFirstSubscription reads the PRE-write row, so
+            // a re-delivered / out-of-order checkout won't resend it.
+            if (isFirstSubscription(existing ?? null) && resendConfigured()) {
+              try {
+                const origin =
+                  process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
+                await sendWelcomeEmail({
+                  to: email,
+                  firstName,
+                  inboxUrl: `${origin}/alpha/inbox`,
+                });
+              } catch (e) {
+                console.warn(
+                  "[stripe-webhook] welcome email failed:",
+                  e instanceof Error ? e.message : e
+                );
+              }
             }
           }
         }

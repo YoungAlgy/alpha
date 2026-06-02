@@ -2,7 +2,7 @@
 // a re-delivered / out-of-order event. The core invariant: an UPDATE to an
 // existing row must never carry topic_quota or cancelled_at.
 // Run: npx tsx scripts/verify-webhook-mutation.mts
-const { checkoutUserMutation } = await import("../lib/webhook-user-mutation.ts");
+const { checkoutUserMutation, isFirstSubscription } = await import("../lib/webhook-user-mutation.ts");
 
 const idn = {
   userId: "u-123",
@@ -63,6 +63,13 @@ for (const ex of [{ subscribed_at: null }, { subscribed_at: "2026-05-01T00:00:00
   const clean = m.kind === "update" && !("topic_quota" in m.patch) && !("cancelled_at" in m.patch);
   check(`existing subscribed_at=${JSON.stringify(ex.subscribed_at)} → clean update`, clean);
 }
+
+// (4b) Welcome-email gate: fires only on the FIRST subscription, so a
+//      re-delivered / out-of-order checkout doesn't email an existing sub again.
+console.log("(4b) isFirstSubscription gate:");
+check("no row yet → first subscription (send welcome)", isFirstSubscription(null) === true);
+check("row exists, not yet subscribed → first subscription", isFirstSubscription({ subscribed_at: null }) === true);
+check("row already subscribed → NOT first (no resend)", isFirstSubscription({ subscribed_at: "2026-05-01T00:00:00.000Z" }) === false);
 
 // (5) Live, READ-ONLY: against a REAL subscribed user, a re-delivered checkout
 //     must resolve to a clean update (no quota/cancel clobber). Proves the

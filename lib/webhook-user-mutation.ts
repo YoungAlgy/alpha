@@ -57,3 +57,13 @@ export function checkoutUserMutation(
   if (!existing.subscribed_at) patch.subscribed_at = id.nowIso;
   return { kind: "update", patch };
 }
+
+// True only the FIRST time a customer subscribes — i.e. no row yet, or a row
+// that wasn't marked subscribed. Used to gate the one-time welcome email so a
+// re-delivered / out-of-order checkout.session.completed (Stripe is
+// at-least-once) doesn't email an established subscriber again.
+export function isFirstSubscription(
+  existing: { subscribed_at: string | null } | null
+): boolean {
+  return !existing?.subscribed_at;
+}

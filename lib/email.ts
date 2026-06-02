@@ -215,3 +215,106 @@ function escapeHtml(s: string): string {
 function escapeAttr(s: string): string {
   return escapeHtml(s);
 }
+
+// ─── Welcome email ────────────────────────────────────────────────────────
+// Sent once, on first subscription, from the Stripe webhook. Confirms the
+// payment worked, points to the first letter (already generated + waiting on
+// web), and sets the Sunday cadence + passwordless sign-in expectation.
+
+export interface SendWelcomeParams {
+  to: string;
+  firstName: string;
+  inboxUrl: string;
+}
+
+export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id: string }> {
+  if (!resendConfiguredInternal()) throw new Error("No email provider configured");
+  const html = renderWelcomeHTML(params);
+  const text = renderWelcomeText(params);
+  const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <alpha@youngalgy.com>";
+  const result = await resendClient().emails.send({
+    from: resendFrom,
+    to: params.to,
+    subject: "Welcome to alpha. — your first letter's ready",
+    html,
+    text,
+  });
+  if (result.error) {
+    throw new Error(`Resend: ${result.error.message}`);
+  }
+  return { id: result.data?.id ?? "" };
+}
+
+// Exported (pure, no I/O) so the welcome email can be previewed/snapshot-tested
+// without a live send — same pattern as renderHTML.
+export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; inboxUrl: string }): string {
+  const signinUrl = inboxUrl.replace("/inbox", "/signin");
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <title>Welcome to alpha.</title>
+    <style>
+      @media only screen and (max-width:600px) {
+        .alpha-wrap { padding: 32px 20px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
+    <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
+      <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
+        WELCOME TO ALPHA
+      </div>
+      <h1 style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;">
+        You&rsquo;re in, ${escapeHtml(firstName)}.
+      </h1>
+      <p style="font-size:18px;line-height:1.6;margin:0 0 24px;">
+        Thanks for subscribing. Your first letter is already written and waiting
+        &mdash; built around the five topics you picked.
+      </p>
+      <div style="margin:36px 0;">
+        <a href="${escapeAttr(inboxUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
+          Read your first letter &rarr;
+        </a>
+      </div>
+      <p style="font-size:16px;line-height:1.7;margin:0 0 12px;">
+        From here on, a new letter lands <strong>every Sunday</strong> &mdash; in
+        your inbox and on the web. No feeds, no firehose. Just the five things you
+        care about.
+      </p>
+      <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
+        Signed out when you click through? We&rsquo;ll email you a 6-digit code
+        &mdash; <a href="${escapeAttr(signinUrl)}" style="color:#A88947;">sign in here</a>.
+        No password to remember.
+      </p>
+      <p style="font-size:14px;line-height:1.6;color:#4A5F50;margin:40px 0 0;">
+        &mdash; Algy
+      </p>
+      <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
+      <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
+        ALPHA · A WEEKLY LETTER · ${new Date().getFullYear()}
+      </p>
+    </div>
+  </body>
+</html>`;
+}
+
+function renderWelcomeText({ firstName, inboxUrl }: { firstName: string; inboxUrl: string }): string {
+  return `Welcome to alpha.
+
+You're in, ${firstName}.
+
+Thanks for subscribing. Your first letter is already written and waiting — built around the five topics you picked.
+
+Read your first letter:
+${inboxUrl}
+
+From here on, a new letter lands every Sunday — in your inbox and on the web. No feeds, no firehose. Just the five things you care about.
+
+(Signed out when you click through? We'll email you a 6-digit code at ${inboxUrl.replace("/inbox", "/signin")} — no password to remember.)
+
+— Algy`;
+}
