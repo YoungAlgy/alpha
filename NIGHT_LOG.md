@@ -10,9 +10,8 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 ---
 
 ## QUEUE (ranked, living)
-1-4. ✅ DONE (see below).
-5. **[next] UX: archive of past letters** (`/app/archive/page.tsx`) — verify empty / loading / error states; mobile touch targets; confirm it lists real past issues for a signed-in user.
-6. **UX: onboarding topic picker** — touch targets (≥44px), mobile, a11y; the key conversion moment.
+1-5. ✅ DONE (see below).
+6. **[next] UX: onboarding topic picker** (`/app/topics/page.tsx`) — touch targets (≥44px), mobile layout, a11y (keyboard/aria for the pick-5 grid), the "pick N more" affordance; the key conversion moment.
 7. **Reading experience / skeletons** during generation; mobile viewport on /inbox + letter.
 8. **Design consistency** — Forest chrome, lowercase `alpha.` wordmark, spacing/hierarchy/a11y across surfaces.
 9. **SEO/landing** — CWV/Lighthouse; headers already set.
@@ -26,6 +25,7 @@ Real-generation harnesses (reuse to verify any generation/letter change; scripts
 - `011d0fc` — **resilient assembly** (allSettled; one failed topic doesn't sink the letter). Verified real.
 - `2d92143` — **empty-Brave-week → mock fallback** (zero-URL live signal no longer ships a link-less section). Verified real.
 - `2fe34e3` — **generation retry-once on malformed JSON**. Verified real.
+- `edb34e5` — **ux(archive): real error state** (was masking DB errors as "no letters"), friendly week labels, empty-state CTA, bigger tap targets. tsc+build clean, /archive 200.
 - Signal audit: all 24 topics healthy (11–25 URLs). Mock covers 23/24 (missing web3-updates).
 
 ## DECISIONS I MADE
