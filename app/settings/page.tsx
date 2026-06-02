@@ -22,6 +22,8 @@ export default function SettingsPage() {
   // (mirror of Stripe subscription quantity × $5).
   const [topicQuota, setTopicQuota] = useState<number>(5);
   const [busyTier, setBusyTier] = useState<"up" | "down" | null>(null);
+  // In-page billing feedback (replaces jarring/off-brand alert() dialogs).
+  const [billingMsg, setBillingMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   useEffect(() => {
     if (!supabaseConfigured()) return;
@@ -52,6 +54,7 @@ export default function SettingsPage() {
         : `Drop 5 topics? Your bill goes down $5/mo. Already-selected topics over the new cap will need to be unpicked next time you visit Topics.`;
     if (!confirm(confirmMsg)) return;
     setBusyTier(direction);
+    setBillingMsg(null);
     try {
       const res = await fetch("/alpha/api/stripe/update-quantity", {
         method: "POST",
@@ -61,8 +64,16 @@ export default function SettingsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setTopicQuota(data.topicQuota);
+      const dollars = (data.topicQuota / 5) * 5;
+      setBillingMsg({
+        kind: "ok",
+        text:
+          direction === "up"
+            ? `Added — you're now on ${data.topicQuota} topics, $${dollars}/mo. Pick the new ones from Change topics.`
+            : `Dropped — you're now on ${data.topicQuota} topics, $${dollars}/mo.`,
+      });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Couldn't update plan.");
+      setBillingMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't update plan." });
     } finally {
       setBusyTier(null);
     }
@@ -178,24 +189,35 @@ export default function SettingsPage() {
               </button>
             )}
           </div>
+          {billingMsg && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="alpha-ui text-sm mb-3"
+              style={{ color: billingMsg.kind === "err" ? "var(--accent-ink)" : "var(--ink-soft)" }}
+            >
+              {billingMsg.text}
+            </p>
+          )}
           <button
             type="button"
             onClick={async () => {
+              setBillingMsg(null);
               try {
                 const res = await fetch("/alpha/api/stripe/portal", { method: "POST" });
                 const data = await res.json();
                 if (res.status === 401) {
-                  alert("Sign in first to manage billing.");
+                  setBillingMsg({ kind: "err", text: "Sign in first to manage billing." });
                   return;
                 }
                 if (res.status === 400) {
-                  alert(data.error || "Subscribe first.");
+                  setBillingMsg({ kind: "err", text: data.error || "Subscribe first." });
                   return;
                 }
                 if (!res.ok || !data.url) throw new Error(data.error || `HTTP ${res.status}`);
                 window.location.href = data.url;
               } catch (e) {
-                alert(e instanceof Error ? e.message : "Couldn't open billing.");
+                setBillingMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't open billing." });
               }
             }}
             className="alpha-ui text-sm underline underline-offset-4"
