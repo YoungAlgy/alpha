@@ -163,9 +163,15 @@ export async function POST(req: Request) {
     }
   } catch (e) {
     console.error("[stripe-webhook] handler error:", e instanceof Error ? e.message : e);
-    // Return 200 so Stripe doesn't keep retrying for application errors —
-    // we'll see them in logs. (Return 5xx only for transient infra failures.)
-    return NextResponse.json({ received: true, error: "handler error" });
+    // Return 5xx so Stripe RETRIES (webhooks are at-least-once). The handlers are
+    // idempotent — checkoutUserMutation does a non-clobbering update on an existing
+    // row, the welcome email is gated on isFirstSubscription (reads the pre-write
+    // row), and the subscription.* paths set columns to their current value — so a
+    // retry safely recovers a transient Supabase/Stripe blip instead of silently
+    // losing the user-row state-write (which would strand a paid user with no
+    // access). A genuinely-unprocessable event just retries ~3d then Stripe stops
+    // (log noise, no harm). (#35 — audit S27)
+    return NextResponse.json({ received: false, error: "handler error" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });
