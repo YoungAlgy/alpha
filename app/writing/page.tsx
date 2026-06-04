@@ -257,6 +257,7 @@ export default function WritingPage() {
         </ul>
         {error && (
           <div
+            role="alert"
             className="alpha-card p-5 text-left space-y-3"
             style={{
               borderColor: "var(--rule)",
