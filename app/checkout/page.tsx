@@ -190,6 +190,7 @@ export default function CheckoutPage() {
           </button>
           {stripeErr && (
             <p
+              role="alert"
               className="alpha-ui text-xs text-center"
               style={{ color: "var(--accent-ink)" }}
             >

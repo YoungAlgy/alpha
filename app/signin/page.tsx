@@ -187,6 +187,7 @@ export default function SigninPage() {
                 <input
                   autoFocus
                   type="email"
+                  aria-label="Email address"
                   required
                   inputMode="email"
                   autoComplete="email"
@@ -208,6 +209,7 @@ export default function SigninPage() {
               </form>
               {err && (
                 <p
+                  role="alert"
                   className="alpha-ui text-sm mt-6"
                   style={{ color: "var(--accent-ink)" }}
                 >
@@ -243,6 +245,7 @@ export default function SigninPage() {
                 <input
                   ref={codeInputRef}
                   type="text"
+                  aria-label="6-digit sign-in code"
                   required
                   inputMode="numeric"
                   autoComplete="one-time-code"
@@ -266,6 +269,7 @@ export default function SigninPage() {
               </form>
               {err && (
                 <p
+                  role="alert"
                   className="alpha-ui text-sm mt-6"
                   style={{ color: "var(--accent-ink)" }}
                 >
