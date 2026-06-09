@@ -19,7 +19,7 @@ const HOW = [
   {
     n: "1",
     t: "Pick five topics",
-    d: "From 24 — AI and markets to longevity, books, parenting, gardening. The five you actually want to keep up with.",
+    d: "From 25 — AI and markets to longevity, books, trading cards, parenting. The five you actually want to keep up with.",
   },
   {
     n: "2",
@@ -210,7 +210,7 @@ export default function Landing() {
       <section className="px-6 py-16 md:py-24">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="alpha-display text-3xl md:text-4xl font-bold tracking-tight mb-4">
-            Twenty-four topics. You pick five.
+            Twenty-five topics. You pick five.
           </h2>
           <p className="alpha-ui text-base mb-10 leading-relaxed" style={{ color: "var(--ink-soft)" }}>
             Whatever you want to stay sharp on — there&apos;s almost certainly a lane for it.

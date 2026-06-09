@@ -30,6 +30,7 @@ export type TopicId =
   | "music"
   | "style-fashion"
   | "sports-betting"
+  | "trading-cards"
   | "ai-news"
   | "web3-updates"
   | "fl-gardening"

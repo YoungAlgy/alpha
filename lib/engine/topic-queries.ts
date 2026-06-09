@@ -109,6 +109,11 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "Action Network PRO sportsbook line movement",
     "NFL NBA MLB injury report Vegas odds",
   ],
+  "trading-cards": [
+    "sports card market Card Ladder PSA grading",
+    "Pokemon TCG set release TCGplayer prices",
+    "Fanatics Topps sports cards hobby news",
+  ],
   "ai-news": [
     "Anthropic OpenAI Mistral model release",
     "Latent Space Simon Willison AI engineering",

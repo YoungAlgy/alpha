@@ -677,6 +677,31 @@ POSTS:
 - Vitalik on Warpcast — roadmap and research threads. (https://warpcast.com/vitalik.eth)
 `,
   },
+  {
+    topicId: "trading-cards",
+    weekOf: WEEK_OF,
+    context: `
+This week in trading cards (week of May 17, 2026). URLs below are real — cite them, never invent:
+
+MARKET DATA / PRICES:
+- Card Ladder — sales-history price tracking and market indexes across sports cards; the hobby's reference chart. (https://www.cardladder.com)
+- GemRate — grading-volume data across PSA, BGS, SGC, and CGC; tracks what's actually being graded each week. (https://www.gemrate.com)
+- ALT — sports-card market values and a liquid marketplace for high-end cards. (https://www.alt.xyz)
+
+GRADING / AUTHENTICATION:
+- PSA — the largest card grader; population reports show exactly how many copies exist at each grade. (https://www.psacard.com)
+- Beckett — grading plus the longest-running price guides in the hobby. (https://www.beckett.com)
+
+MARKETPLACES / RELEASES:
+- TCGplayer — the central marketplace for Pokémon, Magic, and other TCG singles, with set-by-set price data. (https://www.tcgplayer.com)
+- Fanatics Collect — Fanatics' marketplace and vault for sports cards and trading cards. (https://www.fanaticscollect.com)
+- Blowout Cards — major box/case retailer; its forums are where release news and checklist leaks surface first. (https://blowoutcards.com)
+
+NEWS / ANALYSIS:
+- Sports Card Investor — market-movers coverage and hobby strategy from Geoff Wilson's team. (https://www.sportscardinvestor.com)
+- PokéBeach — the longest-running Pokémon TCG news site: set reveals, English release dates, translations. (https://www.pokebeach.com)
+`,
+  },
 ];
 
 export function getSignal(topicId: string, weekOf?: string): TopicSignal | undefined {
