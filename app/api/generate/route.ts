@@ -7,6 +7,7 @@ import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
+import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -178,6 +179,10 @@ export async function POST(req: Request) {
             firstName: profile.firstName,
             issue,
             inboxUrl,
+            // Tokenized view-in-browser CTA — opens the letter with no session.
+            letterUrl: persistence?.userId
+              ? buildLetterUrl(persistence.userId, inboxUrl.replace(/\/alpha\/inbox$/, ""))
+              : null,
             magicLink: persistence?.magicLink ?? null,
             userId: persistence?.userId ?? null,
           });

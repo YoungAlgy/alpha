@@ -100,18 +100,26 @@ export default function InboxPage() {
             α
           </div>
           <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
-            No letter yet.
+            No letter on this device yet.
           </p>
           <p
             className="alpha-display text-base md:text-lg leading-relaxed"
             style={{ color: "var(--ink-soft)" }}
           >
-            Your first letter ships the moment you finish setting up. Picks up
-            where you left off if you started earlier.
+            Already subscribed? Sign in and your letters will be right here —
+            we&apos;ll email you a 6-digit code, no password. New here? Set up
+            your first letter in a couple of minutes.
           </p>
-          <div className="pt-2">
-            <Link href="/welcome" className="alpha-button">
-              Start fresh →
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link href="/signin" className="alpha-button">
+              Sign in to see my letters →
+            </Link>
+            <Link
+              href="/welcome"
+              className="alpha-ui text-sm underline underline-offset-4"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              I&apos;m new — start fresh
             </Link>
           </div>
         </div>

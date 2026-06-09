@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { generateIssue } from "@/lib/engine/assemble";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
+import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { TOPIC_BY_ID } from "@/lib/topics";
 import type { UserProfile, TopicId, ThemeId } from "@/lib/types";
 
@@ -176,7 +177,10 @@ export async function GET(req: Request) {
           firstName: row.first_name,
           issue,
           inboxUrl,
-          magicLink: null, // no auto-sign-in for weekly emails; user clicks /inbox
+          // Tokenized view-in-browser link: the CTA opens the letter directly
+          // with no session — no more "No letter yet" on a signed-out device.
+          letterUrl: buildLetterUrl(row.id, origin),
+          magicLink: null,
           userId: row.id,
         });
         // Stamp delivered_at so future runs of the cron skip this user this

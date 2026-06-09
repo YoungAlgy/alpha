@@ -7,6 +7,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: ["/alpha", "/alpha/sample", "/alpha/welcome", "/alpha/privacy", "/alpha/terms", "/alpha/support", "/alpha/signin"],
         disallow: [
+          "/alpha/letter", // tokenized view-in-browser URLs — never index
           "/alpha/inbox",
           "/alpha/archive",
           "/alpha/settings",

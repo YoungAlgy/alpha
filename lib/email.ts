@@ -28,6 +28,10 @@ export interface SendLetterParams {
   firstName: string;
   issue: Issue;
   inboxUrl: string;
+  /** Tokenized /letter URL (view-in-browser). When present the CTA points
+   *  here so the letter opens with NO session — fixes the "No letter yet"
+   *  dead end subscribers hit clicking the email on a signed-out device. */
+  letterUrl?: string | null;
   magicLink?: string | null;
   /** User id used to mint the signed one-click unsubscribe token. If omitted
    *  the email still sends but won't include unsubscribe links/headers — only
@@ -58,6 +62,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     teaser,
     sectionList,
     inboxUrl: params.inboxUrl,
+    letterUrl: params.letterUrl ?? null,
     weekOf: params.issue.weekOf,
     magicLink: params.magicLink ?? null,
     unsubscribeUrl: unsubUrl,
@@ -68,6 +73,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     teaser,
     sectionList,
     inboxUrl: params.inboxUrl,
+    letterUrl: params.letterUrl ?? null,
     weekOf: params.issue.weekOf,
     magicLink: params.magicLink ?? null,
     unsubscribeUrl: unsubUrl,
@@ -105,7 +111,11 @@ function subjectFromIssue(issue: Issue): string {
   const lead = issue.sections[0]?.items?.[0]?.headline;
   if (lead) {
     const trimmed = lead.length > 70 ? lead.slice(0, 67).trimEnd() + "…" : lead;
-    return `${trimmed} — and 4 more this week`;
+    // Count the OTHER topics accurately — quota can be 5–25 and a topic can
+    // drop in a thin week, so never hardcode "4 more".
+    const others = Math.max(0, issue.sections.length - 1);
+    if (others === 0) return trimmed;
+    return `${trimmed} — and ${others} more topic${others === 1 ? "" : "s"} this week`;
   }
   const labels = issue.sections.slice(0, 3).map((s) => s.topicLabel.toLowerCase());
   return `Your Sunday alpha · ${labels.join(", ")}`;
@@ -116,6 +126,7 @@ interface RenderArgs {
   teaser: string;
   sectionList: string;
   inboxUrl: string;
+  letterUrl?: string | null;
   weekOf: string;
   magicLink: string | null;
   unsubscribeUrl: string | null;
@@ -123,10 +134,11 @@ interface RenderArgs {
 
 // Exported (pure, no I/O) so the email can be previewed/snapshot-tested
 // without ever triggering a live send.
-export function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
-  // CTA always points at /inbox. If the user is still signed in, they go
-  // straight to their letter. If not, /inbox bounces them to /signin where
-  // they request a 6-digit code — same as anywhere else in the app.
+export function renderHTML({ firstName, teaser, sectionList, inboxUrl, letterUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
+  // CTA prefers the tokenized /letter URL — it opens the letter directly with
+  // no session, on any device (the view-in-browser pattern). Falls back to
+  // /inbox for legacy callers without a letter token.
+  const ctaUrl = letterUrl || inboxUrl;
   const signinUrl = inboxUrl.replace("/inbox", "/signin");
   const unsubLine = unsubscribeUrl
     ? `<a href="${escapeAttr(unsubscribeUrl)}" style="color:#6B7B70;">Unsubscribe</a> · `
@@ -165,12 +177,12 @@ export function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, u
       </p>
       <pre style="font-family:Georgia,serif;font-size:16px;line-height:1.7;margin:0 0 36px;color:#1F3D2E;white-space:pre-wrap;">${escapeHtml(sectionList)}</pre>
       <div style="margin:40px 0;">
-        <a href="${escapeAttr(inboxUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
+        <a href="${escapeAttr(ctaUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
           Read the full letter →
         </a>
       </div>
       <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
-        Need a new sign-in code? <a href="${escapeAttr(signinUrl)}" style="color:#A88947;">Request one here</a>.
+        Want to change topics or read past letters? <a href="${escapeAttr(signinUrl)}" style="color:#A88947;">Sign in here</a> — we&rsquo;ll email you a 6-digit code.
       </p>
       <p style="font-size:14px;line-height:1.6;color:#4A5F50;margin:48px 0 0;">
         — Alpha
@@ -184,7 +196,7 @@ export function renderHTML({ firstName, teaser, sectionList, inboxUrl, weekOf, u
 </html>`;
 }
 
-function renderText({ firstName, teaser, sectionList, inboxUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
+function renderText({ firstName, teaser, sectionList, inboxUrl, letterUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
   const unsubLine = unsubscribeUrl ? `\n\nUnsubscribe: ${unsubscribeUrl}` : "";
   return `${weekOf}
 
@@ -196,9 +208,9 @@ THIS WEEK
 ${sectionList}
 
 Read the full letter:
-${inboxUrl}
+${letterUrl || inboxUrl}
 
-(If you got signed out, request a fresh 6-digit code at ${inboxUrl.replace("/inbox", "/signin")})
+(To change topics or read past letters, sign in at ${inboxUrl.replace("/inbox", "/signin")} — we'll email you a 6-digit code.)
 
 — Alpha${unsubLine}`;
 }
