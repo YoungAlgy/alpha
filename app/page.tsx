@@ -39,8 +39,8 @@ const WHY = [
     d: "You don't have to hunt across ten apps and a hundred tabs. The good stuff comes to you, once a week.",
   },
   {
-    t: "Real sources, edited by hand",
-    d: "We surface from primary sources and known voices — then a human bar decides what earns a slot. Three picks per topic, all worth it.",
+    t: "Real sources, enforced in code",
+    d: "Every link in your letter comes from a real, live search that week. If a source isn't real, it can't appear — that rule is enforced in code, not vibes.",
   },
   {
     t: "Yours, and only yours",
