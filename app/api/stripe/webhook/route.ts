@@ -59,7 +59,10 @@ export async function POST(req: Request) {
             email,
           });
           if (linkErr || !linkData?.user) {
-            console.warn("[stripe-webhook] generateLink failed:", linkErr?.message);
+            // THROW so the outer catch returns 5xx and Stripe retries (#35).
+            // Swallowing this stranded a paid user with no users row and no
+            // retry — the exact failure the 5xx-on-error change exists for.
+            throw new Error(`generateLink failed: ${linkErr?.message ?? "no user returned"}`);
           } else {
             const meta = (session.metadata || {}) as Record<string, string>;
             const firstName = meta.alpha_first_name || meta.first_name || "friend";
@@ -81,19 +84,24 @@ export async function POST(req: Request) {
               customerId: customerId ?? null,
               nowIso: new Date().toISOString(),
             });
+            // A failed user write must THROW (-> 5xx -> Stripe retry, #35).
+            // It must also happen BEFORE the welcome email: sending the welcome
+            // after a failed write would double-send it on the retry (the
+            // isFirstSubscription gate reads the PRE-write row).
             if (mut.kind === "insert") {
               const { error: insErr } = await sb.from("users").insert(mut.row);
-              if (insErr) console.warn("[stripe-webhook] user insert failed:", insErr.message);
+              if (insErr) throw new Error(`user insert failed: ${insErr.message}`);
             } else {
               const { error: updErr } = await sb
                 .from("users")
                 .update(mut.patch)
                 .eq("id", userId);
-              if (updErr) console.warn("[stripe-webhook] user update failed:", updErr.message);
+              if (updErr) throw new Error(`user update failed: ${updErr.message}`);
             }
-            // One-time welcome email on first subscription. Best-effort — never
-            // block the webhook. isFirstSubscription reads the PRE-write row, so
-            // a re-delivered / out-of-order checkout won't resend it.
+            // One-time welcome email on first subscription. Best-effort — its
+            // own try/catch, never blocks or retries the webhook. The
+            // isFirstSubscription gate (pre-write row) keeps retries from
+            // resending it once the write above has succeeded.
             if (isFirstSubscription(existing ?? null) && resendConfigured()) {
               try {
                 const origin =
@@ -129,7 +137,10 @@ export async function POST(req: Request) {
         const firstItem = sub.items?.data?.[0];
         const quantity = firstItem?.quantity ?? 1;
         const topicQuota = Math.max(5, Math.min(25, quantity * 5));
-        await sb
+        // Throw on failure -> 5xx -> Stripe retries (#35). Set-to-current, so
+        // a retry is idempotent. Silently losing this write desyncs paid quota
+        // / cancellation state from Stripe with no recovery.
+        const { error: subErr } = await sb
           .from("users")
           .update({
             cancelled_at: cancellingAtPeriodEnd
@@ -138,16 +149,21 @@ export async function POST(req: Request) {
             topic_quota: topicQuota,
           })
           .eq("stripe_customer_id", customerId);
+        if (subErr) throw new Error(`subscription mirror failed: ${subErr.message}`);
         break;
       }
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         const customerId =
           typeof sub.customer === "string" ? sub.customer : sub.customer.id;
-        await sb
+        // Throw on failure -> 5xx -> Stripe retries (#35). Losing this write
+        // would keep sending letters to (and granting access for) an ended
+        // subscription forever.
+        const { error: delErr } = await sb
           .from("users")
           .update({ cancelled_at: new Date().toISOString() })
           .eq("stripe_customer_id", customerId);
+        if (delErr) throw new Error(`cancellation mirror failed: ${delErr.message}`);
         break;
       }
       case "invoice.payment_failed": {
