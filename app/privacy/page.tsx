@@ -1,6 +1,10 @@
 import { LegalLayout } from "@/components/LegalLayout";
 
-export const metadata = { title: "Privacy" };
+export const metadata = {
+  title: "Privacy",
+  description:
+    "How alpha. handles your data: what we store, what we never do with it (no ads, no selling), and how deletion works.",
+};
 
 export default function PrivacyPage() {
   return (

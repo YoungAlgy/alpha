@@ -8,7 +8,6 @@ const html = renderHTML({
   sectionList: SAMPLE_ISSUE.sections.map((s) => `• ${s.topicLabel}`).join("\n"),
   inboxUrl: "https://youngalgy.com/alpha/inbox",
   weekOf: SAMPLE_ISSUE.weekOf,
-  magicLink: null,
   unsubscribeUrl: "https://youngalgy.com/alpha/api/unsubscribe?token=demo",
 });
 writeFileSync("/tmp/alpha-email-preview.html", html);

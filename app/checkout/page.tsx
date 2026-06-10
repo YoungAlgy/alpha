@@ -137,7 +137,7 @@ export default function CheckoutPage() {
           >
             <div>
               <div className="alpha-mono mb-2" style={{ color: "var(--ink-soft)" }}>
-                YOUR FIVE TOPICS
+                YOUR TOPICS
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {(state.topics || []).map((id) => {

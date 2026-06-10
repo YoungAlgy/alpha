@@ -205,34 +205,10 @@ LISTEN:
 - Layne Norton's podcast, "Physique Science Radio." (https://www.biolayne.com)
 `,
   },
-  {
-    topicId: "web3-updates",
-    weekOf: WEEK_OF,
-    context: `
-This week in web3 (week of May 17, 2026):
-
-NEWS:
-- Ethereum's Pectra upgrade went live on mainnet; L2 gas fees dropped ~30% week-over-week. (https://ethereum.org/en/upgrades/)
-- Coinbase Institutional's weekly note: spot BTC ETFs at $1.2B net inflow this week, breaking a 3-week outflow streak. (https://www.coinbase.com/institutional)
-- a16z crypto published research on "intent-based architectures" — UX layer for onchain transactions feeling like web2. (https://a16zcrypto.com)
-- OpenSea announced full deprecation of OpenSea Pro UI by July 1, consolidating onto a single product. (https://opensea.io)
-
-APPS / PROTOCOLS TO TRY:
-- Farcaster — decentralized social, crossed 500K DAU this week. (https://www.farcaster.xyz)
-- Coinbase Wallet — non-custodial wallet. (https://www.coinbase.com/wallet)
-- Rainbow — friendly wallet, good for newcomers. (https://rainbow.me)
-- Token Terminal — onchain fundamentals dashboard. (https://tokenterminal.com)
-- Dune — onchain analytics. (https://dune.com)
-
-READ:
-- Vitalik's essay on decentralized social differentiation. (https://vitalik.eth.limo)
-- Bankless weekly. (https://www.bankless.com)
-
-POSTS:
-- Vitalik's Farcaster cast on social protocol UX. (https://warpcast.com/v)
-- Coinbase Institutional weekly thread on X.
-`,
-  },
+  // (The web3-updates mock lives near the end of this file — the older dated
+  // entry that used to sit here was deleted: getSignal() returns the FIRST
+  // match, so the stale entry with week-specific claims was shadowing the
+  // accurate source-descriptive one.)
   {
     topicId: "books-worth-your-time",
     weekOf: WEEK_OF,

@@ -19,6 +19,20 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-06-10",
+    title: "Email links now open your letter instantly",
+    body:
+      "The \"Read the full letter\" button in your Sunday email now opens your letter directly — on any device, signed in or not. No more landing on an empty inbox when your session expired.",
+    tag: "fixed",
+  },
+  {
+    date: "2026-06-10",
+    title: "New topic: Trading cards",
+    body:
+      "Sports cards and TCGs — market moves, grading, releases, what collectors are chasing. That's 25 topics to pick from now.",
+    tag: "new",
+  },
+  {
     date: "2026-05-24",
     title: "Deleting your account now fully erases your data",
     body:
@@ -71,7 +85,7 @@ const ENTRIES: Entry[] = [
     date: "2026-05-14",
     title: "Sharper sources behind every section",
     body:
-      "Rewrote the search queries powering all 24 topic areas to anchor on named publishers, operators, and outlets the audience actually recognizes — primary sources over SEO listicles, with one query per topic intentionally specific so each section has texture instead of three near-duplicate result sets.",
+      "Rewrote the search queries powering every topic area to anchor on named publishers, operators, and outlets the audience actually recognizes — primary sources over SEO listicles, with one query per topic intentionally specific so each section has texture instead of three near-duplicate result sets.",
     tag: "improved",
   },
   {

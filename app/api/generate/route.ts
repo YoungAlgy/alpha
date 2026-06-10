@@ -183,7 +183,6 @@ export async function POST(req: Request) {
             letterUrl: persistence?.userId
               ? buildLetterUrl(persistence.userId, inboxUrl.replace(/\/alpha\/inbox$/, ""))
               : null,
-            magicLink: persistence?.magicLink ?? null,
             userId: persistence?.userId ?? null,
           });
           emailSent = true;
@@ -222,10 +221,11 @@ export async function POST(req: Request) {
 }
 
 function defaultWeekOf(): string {
-  // Round to most recent Sunday in ISO yyyy-mm-dd
+  // Round to most recent Sunday in ISO yyyy-mm-dd. UTC throughout — matches
+  // the weekly cron's currentSundayIso() so the same week never gets two keys
+  // (the old version mixed local getDay/setDate with UTC toISOString).
   const now = new Date();
-  const day = now.getDay(); // 0 = Sunday
-  const offset = day === 0 ? 0 : day;
-  now.setDate(now.getDate() - offset);
+  const day = now.getUTCDay(); // 0 = Sunday
+  now.setUTCDate(now.getUTCDate() - day);
   return now.toISOString().slice(0, 10);
 }

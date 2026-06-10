@@ -102,6 +102,7 @@ export async function POST(req: Request) {
                   to: email,
                   firstName,
                   inboxUrl: `${origin}/alpha/inbox`,
+                  userId, // adds List-Unsubscribe headers (deliverability)
                 });
               } catch (e) {
                 console.warn(

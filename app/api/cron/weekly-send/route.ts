@@ -106,8 +106,25 @@ export async function GET(req: Request) {
     `[cron/weekly-send] weekOf=${weekOf} subscribers=${rows.length} force=${force}`
   );
 
+  // Prefetch this week's delivered stamps in ONE query (was a per-subscriber
+  // lookup — N+1 that adds a round trip per user as the list grows).
+  const alreadyDelivered = new Set<string>();
+  if (!force) {
+    const { data: stamps } = await sb
+      .from("issues")
+      .select("user_id")
+      .eq("week_of", weekOf)
+      .not("delivered_at", "is", null);
+    for (const s of (stamps ?? []) as Array<{ user_id: string }>) {
+      alreadyDelivered.add(s.user_id);
+    }
+  }
+
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
   // total Claude time is bounded by topics-this-week, not users × topics.
+  // NOTE for scale: at ~100+ subscribers the per-user generation time will
+  // press against maxDuration — the path is chunked sends (cursor param +
+  // multiple cron slots), not parallelism (Claude rate limits bind first).
   for (const row of rows) {
     // Clamp to the number of topics they're paid up for. Defends against a
     // topics array written directly to the DB (the RLS trigger permits the
@@ -125,20 +142,10 @@ export async function GET(req: Request) {
     // stamp, skip the send entirely. Prevents duplicate emails when the
     // endpoint gets hit multiple times (admin re-trigger, Vercel cron retry,
     // ?weekOf= backfill, etc.). Override with ?force=1.
-    if (!force) {
-      const { data: existing } = await sb
-        .from("issues")
-        .select("delivered_at")
-        .eq("user_id", row.id)
-        .eq("week_of", weekOf)
-        .maybeSingle();
-      if (existing?.delivered_at) {
-        skippedAlreadyDelivered++;
-        console.log(
-          `[cron/weekly-send] skipped (already delivered ${existing.delivered_at}) → ${row.email}`
-        );
-        continue;
-      }
+    if (!force && alreadyDelivered.has(row.id)) {
+      skippedAlreadyDelivered++;
+      console.log(`[cron/weekly-send] skipped (already delivered this week) → ${row.email}`);
+      continue;
     }
 
     const profile: UserProfile = {
@@ -180,7 +187,6 @@ export async function GET(req: Request) {
           // Tokenized view-in-browser link: the CTA opens the letter directly
           // with no session — no more "No letter yet" on a signed-out device.
           letterUrl: buildLetterUrl(row.id, origin),
-          magicLink: null,
           userId: row.id,
         });
         // Stamp delivered_at so future runs of the cron skip this user this

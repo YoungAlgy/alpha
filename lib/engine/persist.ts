@@ -55,8 +55,11 @@ export async function persistIssueIfPossible(
     const userId = linkData.user.id;
     const magicLink = linkData.properties?.action_link ?? null;
 
-    // Sync the profile fields onto public.users (service role bypasses RLS)
-    await sb.from("users").upsert(
+    // Sync the profile fields onto public.users (service role bypasses RLS).
+    // Surface failures: this row is what the weekly cron reads — a silently
+    // failed sync means next Sunday's letter generates from stale/missing
+    // profile data with no trace of why.
+    const { error: profileErr } = await sb.from("users").upsert(
       {
         id: userId,
         email,
@@ -70,6 +73,9 @@ export async function persistIssueIfPossible(
       },
       { onConflict: "id" }
     );
+    if (profileErr) {
+      console.error("[persist] users profile upsert failed:", profileErr.message);
+    }
 
     // Persist the issue
     const { error: issueErr } = await sb.from("issues").upsert(

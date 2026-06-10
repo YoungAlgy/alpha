@@ -32,7 +32,6 @@ export interface SendLetterParams {
    *  here so the letter opens with NO session — fixes the "No letter yet"
    *  dead end subscribers hit clicking the email on a signed-out device. */
   letterUrl?: string | null;
-  magicLink?: string | null;
   /** User id used to mint the signed one-click unsubscribe token. If omitted
    *  the email still sends but won't include unsubscribe links/headers — only
    *  use this for legacy callers that don't have a user id available. */
@@ -64,7 +63,6 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     inboxUrl: params.inboxUrl,
     letterUrl: params.letterUrl ?? null,
     weekOf: params.issue.weekOf,
-    magicLink: params.magicLink ?? null,
     unsubscribeUrl: unsubUrl,
   });
 
@@ -75,7 +73,6 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     inboxUrl: params.inboxUrl,
     letterUrl: params.letterUrl ?? null,
     weekOf: params.issue.weekOf,
-    magicLink: params.magicLink ?? null,
     unsubscribeUrl: unsubUrl,
   });
 
@@ -128,7 +125,6 @@ interface RenderArgs {
   inboxUrl: string;
   letterUrl?: string | null;
   weekOf: string;
-  magicLink: string | null;
   unsubscribeUrl: string | null;
 }
 
@@ -237,6 +233,9 @@ export interface SendWelcomeParams {
   to: string;
   firstName: string;
   inboxUrl: string;
+  /** When present, adds RFC 8058 List-Unsubscribe headers (deliverability +
+   *  inbox-side unsubscribe button) — same scheme as the letter email. */
+  userId?: string | null;
 }
 
 export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id: string }> {
@@ -244,12 +243,20 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
   const html = renderWelcomeHTML(params);
   const text = renderWelcomeText(params);
   const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <alpha@youngalgy.com>";
+  const headers: Record<string, string> = {};
+  if (params.userId) {
+    const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
+    const unsubUrl = buildUnsubscribeUrl(params.userId, origin);
+    headers["List-Unsubscribe"] = `<${unsubUrl}>`;
+    headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+  }
   const result = await resendClient().emails.send({
     from: resendFrom,
     to: params.to,
     subject: "Welcome to alpha. — your first letter's ready",
     html,
     text,
+    headers,
   });
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);
@@ -285,7 +292,7 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
       </h1>
       <p style="font-size:18px;line-height:1.6;margin:0 0 24px;">
         Thanks for subscribing. Your first letter is already written and waiting
-        &mdash; built around the five topics you picked.
+        &mdash; built around the topics you picked.
       </p>
       <div style="margin:36px 0;">
         <a href="${escapeAttr(inboxUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
@@ -319,7 +326,7 @@ function renderWelcomeText({ firstName, inboxUrl }: { firstName: string; inboxUr
 
 You're in, ${firstName}.
 
-Thanks for subscribing. Your first letter is already written and waiting — built around the five topics you picked.
+Thanks for subscribing. Your first letter is already written and waiting — built around the topics you picked.
 
 Read your first letter:
 ${inboxUrl}

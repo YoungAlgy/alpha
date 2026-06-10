@@ -100,9 +100,9 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "Spotify Bandcamp Tidal artist economics",
   ],
   "style-fashion": [
-    "Highsnobiety Business of Fashion menswear",
-    "Aimé Leon Dore The Row Loro Piana drop",
-    "GQ Wirecutter heavyweight tee Buck Mason",
+    "Highsnobiety Business of Fashion style trends",
+    "Vogue Who What Wear womenswear trends",
+    "GQ Aimé Leon Dore menswear drop",
   ],
   "sports-betting": [
     "Unabated sharp action closing line value",

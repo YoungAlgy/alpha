@@ -1,6 +1,10 @@
 import { LegalLayout } from "@/components/LegalLayout";
 
-export const metadata = { title: "Terms" };
+export const metadata = {
+  title: "Terms",
+  description:
+    "The terms of service for alpha. — a $5/month personal weekly letter. Billing, cancellation, refunds, and what you can expect from the service.",
+};
 
 export default function TermsPage() {
   return (
@@ -13,9 +17,10 @@ export default function TermsPage() {
       <H2>The service</H2>
       <p>
         Alpha is a paid weekly email/web newsletter. You pick a set of topics, and
-        every Sunday we deliver an AI-sourced, human-reviewed letter written for
-        you. We may add features over time. We may also remove or change features
-        when it makes the product better.
+        every Sunday we deliver a letter written for you by AI from real sources
+        — every link must come from a live web search made that week, a rule
+        enforced in code. We may add features over time. We may also remove or
+        change features when it makes the product better.
       </p>
 
       <H2>Subscription &amp; billing</H2>

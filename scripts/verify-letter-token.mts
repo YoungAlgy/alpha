@@ -55,7 +55,6 @@ const html = renderHTML({
   inboxUrl: "https://youngalgy.com/alpha/inbox",
   letterUrl: url,
   weekOf: "2026-06-07",
-  magicLink: null,
   unsubscribeUrl: null,
 });
 check("CTA href is the tokenized letter URL", html.includes(`href="${url.replace(/&/g, "&amp;")}"`) || html.includes(`href="${url}"`));
@@ -70,7 +69,6 @@ const legacy = renderHTML({
   inboxUrl: "https://youngalgy.com/alpha/inbox",
   letterUrl: null,
   weekOf: "2026-06-07",
-  magicLink: null,
   unsubscribeUrl: null,
 });
 check("no token → CTA falls back to /inbox", legacy.includes('href="https://youngalgy.com/alpha/inbox"'));

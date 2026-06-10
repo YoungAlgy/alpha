@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
+import { hasActiveAccess } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -66,9 +67,13 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (row.cancelled_at) {
+  // Block only when access has actually ENDED. A cancel-at-period-end user
+  // (future cancelled_at) is still paid up — blocking their tier change was
+  // both inconsistent with the access rule everywhere else and lost revenue
+  // when an upgrading user is clearly choosing to stay.
+  if (!hasActiveAccess(row.cancelled_at)) {
     return NextResponse.json(
-      { error: "Subscription is cancelled — reactivate via the billing portal first." },
+      { error: "Subscription has ended — reactivate via the billing portal first." },
       { status: 400 }
     );
   }

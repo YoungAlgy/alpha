@@ -51,7 +51,7 @@ const WHY = [
 const FAQ = [
   {
     q: "Is it just AI spitting out links?",
-    a: "AI does the reading and first draft; the format, the bar for what's good, and the voice are set by a person. The goal is a letter that feels edited, not generated.",
+    a: "AI does the reading and the writing. A person set the format, the voice, and the rules it writes by — including a hard one enforced in code: every link must come from a real web search made that week. The goal is a letter that feels edited, not generated.",
   },
   {
     q: "Can I change my topics later?",

@@ -32,9 +32,13 @@ async function gatherStats(): Promise<Stats> {
     unsubscribed: 0,
     notSubscribed: 0,
   };
+  // Mutually exclusive buckets so the counts sum to totalUsers (the old
+  // version double-counted a user who was both unsubscribed and paying).
+  // Priority mirrors what the owner cares about most: opted out > cancelled >
+  // paying > free > never-subscribed.
   for (const r of rows ?? []) {
     if (r.unsubscribed_at) stats.unsubscribed++;
-    if (r.cancelled_at) stats.cancelled++;
+    else if (r.cancelled_at) stats.cancelled++;
     else if (r.subscribed_at && r.stripe_customer_id) stats.paying++;
     else if (r.subscribed_at && !r.stripe_customer_id) stats.freeGranted++;
     else stats.notSubscribed++;
