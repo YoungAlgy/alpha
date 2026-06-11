@@ -1,6 +1,6 @@
 # Alpha
 
-A $5/mo personal weekly newsletter. Users pick 5 topics from a curated menu of 24; we deliver an AI-sourced, human-reviewed letter every Sunday on what actually matters in those topics.
+A $5/mo personal weekly newsletter. Users pick 5 topics from a curated menu of 25 (add-on bundles up to 25 topics, $25/mo); every Sunday we deliver an AI-written letter built from real sources — every cited link must come from that week's live search, enforced in code (lib/engine/url-guard.ts).
 
 Lives at `youngalgy.com/alpha` (Vercel rewrite from a separate Next.js project at this repo to `alpha-chi-five.vercel.app`).
 
@@ -59,7 +59,7 @@ components/
 
 lib/
   types.ts                    canonical app types (Issue, UserProfile, ItemKind, ThemeId, TopicId)
-  topics.ts                   24-topic registry (after the AI/finance mergers + sports add)
+  topics.ts                   25-topic registry (latest add: trading-cards, 2026-06-10)
   themes.ts                   10-theme registry
   audio.ts                    Web Audio synth sound palette
   onboarding-state.ts         localStorage state + ONBOARDING_STEPS ordering

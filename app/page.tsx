@@ -55,7 +55,7 @@ const FAQ = [
   },
   {
     q: "Can I change my topics later?",
-    a: "Anytime, from settings. Swap any of your five whenever your interests shift.",
+    a: "Anytime, from settings. Swap any of your topics whenever your interests shift — and add more in bundles of five if five isn't enough.",
   },
   {
     q: "How do I cancel?",

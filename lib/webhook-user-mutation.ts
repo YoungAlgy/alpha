@@ -50,10 +50,20 @@ export function checkoutUserMutation(
   }
   // Row already exists (an onboarding user whose row was created during the
   // funnel, OR a re-delivered / out-of-order checkout event). Affirm only what
-  // checkout is authoritative for — link the Stripe customer, and mark
-  // subscribed_at only if it isn't set yet — WITHOUT clobbering topic_quota /
-  // cancelled_at (subscription-owned) or the user's own first_name / city.
-  const patch: Record<string, unknown> = { stripe_customer_id: id.customerId };
+  // checkout is authoritative for — link the Stripe customer, mark
+  // subscribed_at only if it isn't set yet, and CLEAR unsubscribed_at —
+  // WITHOUT clobbering topic_quota / cancelled_at (subscription-owned) or the
+  // user's own first_name / city.
+  //
+  // unsubscribed_at: paying at checkout is explicit re-consent to receive the
+  // letters (the letters ARE the product). No subscription.* event owns this
+  // column, so if checkout doesn't clear it, a previously-unsubscribed user
+  // who pays again is silently skipped by the weekly cron forever — a paying
+  // subscriber receiving nothing.
+  const patch: Record<string, unknown> = {
+    stripe_customer_id: id.customerId,
+    unsubscribed_at: null,
+  };
   if (!existing.subscribed_at) patch.subscribed_at = id.nowIso;
   return { kind: "update", patch };
 }

@@ -301,7 +301,7 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
       </div>
       <p style="font-size:16px;line-height:1.7;margin:0 0 12px;">
         From here on, a new letter lands <strong>every Sunday</strong> &mdash; in
-        your inbox and on the web. No feeds, no firehose. Just the five things you
+        your inbox and on the web. No feeds, no firehose. Just the things you
         care about.
       </p>
       <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
@@ -331,7 +331,7 @@ Thanks for subscribing. Your first letter is already written and waiting — bui
 Read your first letter:
 ${inboxUrl}
 
-From here on, a new letter lands every Sunday — in your inbox and on the web. No feeds, no firehose. Just the five things you care about.
+From here on, a new letter lands every Sunday — in your inbox and on the web. No feeds, no firehose. Just the things you care about.
 
 (Signed out when you click through? We'll email you a 6-digit code at ${inboxUrl.replace("/inbox", "/signin")} — no password to remember.)
 

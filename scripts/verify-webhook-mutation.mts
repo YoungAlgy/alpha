@@ -64,6 +64,18 @@ for (const ex of [{ subscribed_at: null }, { subscribed_at: "2026-05-01T00:00:00
   check(`existing subscribed_at=${JSON.stringify(ex.subscribed_at)} → clean update`, clean);
 }
 
+// (4c) Re-subscribe after one-click unsubscribe: checkout must CLEAR
+//      unsubscribed_at (no subscription.* event owns it) or the cron skips a
+//      PAYING subscriber forever.
+console.log("(4c) unsubscribed_at clearing:");
+for (const ex of [{ subscribed_at: null }, { subscribed_at: "2026-05-01T00:00:00.000Z" }]) {
+  const m = checkoutUserMutation(ex, idn);
+  check(
+    `existing subscribed_at=${JSON.stringify(ex.subscribed_at)} → patch clears unsubscribed_at`,
+    m.kind === "update" && "unsubscribed_at" in m.patch && m.patch.unsubscribed_at === null
+  );
+}
+
 // (4b) Welcome-email gate: fires only on the FIRST subscription, so a
 //      re-delivered / out-of-order checkout doesn't email an existing sub again.
 console.log("(4b) isFirstSubscription gate:");
