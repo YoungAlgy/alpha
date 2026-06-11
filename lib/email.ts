@@ -253,7 +253,7 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
   const result = await resendClient().emails.send({
     from: resendFrom,
     to: params.to,
-    subject: "Welcome to alpha. — your first letter's ready",
+    subject: "Welcome to alpha. — your first letter is on its way",
     html,
     text,
     headers,
@@ -291,8 +291,8 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
         You&rsquo;re in, ${escapeHtml(firstName)}.
       </h1>
       <p style="font-size:18px;line-height:1.6;margin:0 0 24px;">
-        Thanks for subscribing. Your first letter is already written and waiting
-        &mdash; built around the topics you picked.
+        Thanks for subscribing. Your first letter is being written for you right
+        now &mdash; built around the topics you picked. It takes about a minute.
       </p>
       <div style="margin:36px 0;">
         <a href="${escapeAttr(inboxUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
@@ -326,7 +326,7 @@ function renderWelcomeText({ firstName, inboxUrl }: { firstName: string; inboxUr
 
 You're in, ${firstName}.
 
-Thanks for subscribing. Your first letter is already written and waiting — built around the topics you picked.
+Thanks for subscribing. Your first letter is being written for you right now — built around the topics you picked. It takes about a minute.
 
 Read your first letter:
 ${inboxUrl}

@@ -76,7 +76,7 @@ export default function CheckoutPage() {
             className="alpha-display text-lg md:text-xl leading-relaxed"
             style={{ color: "var(--ink-soft)" }}
           >
-            Your first letter is ready. Subscribe to receive it.
+            Subscribe and we&apos;ll write your first letter on the spot.
           </p>
         </div>
 

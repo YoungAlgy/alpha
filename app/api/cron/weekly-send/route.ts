@@ -163,7 +163,12 @@ export async function GET(req: Request) {
       const issue = await generateIssue(profile, weekOf);
 
       // Upsert the issue so re-runs are idempotent on (user_id, week_of).
-      await sb.from("issues").upsert(
+      // THROW on failure (caught by the per-user catch below) — if this row
+      // doesn't exist, the email must NOT go out: the delivered_at stamp after
+      // the send would no-op against a missing row, and the next cron run
+      // would regenerate AND RESEND — a duplicate email to the subscriber.
+      // Skipping the send means the next run retries the whole user cleanly.
+      const { error: issueUpsertErr } = await sb.from("issues").upsert(
         {
           user_id: row.id,
           week_of: weekOf,
@@ -174,6 +179,9 @@ export async function GET(req: Request) {
         },
         { onConflict: "user_id,week_of" }
       );
+      if (issueUpsertErr) {
+        throw new Error(`issue upsert failed: ${issueUpsertErr.message}`);
+      }
 
       // Send the letter via Resend (lib/email.ts).
       if (resendConfigured()) {

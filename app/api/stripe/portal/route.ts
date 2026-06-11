@@ -39,7 +39,11 @@ export async function POST(req: Request) {
       apiVersion: "2026-04-22.dahlia",
       httpClient: Stripe.createNodeHttpClient(),
     });
-    const origin = new URL(req.url).origin;
+    // Prefer the public app URL — behind the youngalgy.com rewrite, req.url's
+    // origin is the internal Vercel hostname, which would bounce the user to
+    // the unrouted deployment after they finish in the Stripe portal. Same
+    // pattern as the checkout route.
+    const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || new URL(req.url).origin;
     const session = await stripe.billingPortal.sessions.create({
       customer: row.stripe_customer_id,
       return_url: `${origin}/alpha/settings`,

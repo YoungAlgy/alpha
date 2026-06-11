@@ -130,12 +130,25 @@ export async function POST(req: Request) {
   });
 
   // Write through to public.users immediately so the UI reflects without
-  // waiting on the webhook round-trip.
+  // waiting on the webhook round-trip. Surface a failed write instead of
+  // returning 200 with a stale DB — Stripe is already updated (source of
+  // truth; the subscription.updated webhook re-mirrors and throws on failure),
+  // so tell the client the truth and let the webhook reconcile.
   const newQuota = Math.max(5, Math.min(25, nextQty * 5));
-  await svc
+  const { error: quotaErr } = await svc
     .from("users")
     .update({ topic_quota: newQuota })
     .eq("id", user.id);
+  if (quotaErr) {
+    console.error("[update-quantity] quota write-through failed:", quotaErr.message);
+    return NextResponse.json(
+      {
+        error:
+          "Plan updated with Stripe, but the app didn't sync yet — it will reflect within a minute. Refresh to check.",
+      },
+      { status: 500 }
+    );
+  }
 
   // unit_amount * quantity = total monthly cents (price has unit_amount 500)
   const unitAmount =
