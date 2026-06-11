@@ -253,7 +253,9 @@ export default function Landing() {
             </span>
           </div>
           <p className="alpha-ui text-base leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-            One tier. No upsell, no &ldquo;premium.&rdquo; Cancel in one click whenever you want.
+            Five topics for $5. Want more? Add five-topic bundles for $5 each,
+            up to 25 topics. No &ldquo;premium,&rdquo; no ads — and you can cancel in one
+            click whenever you want.
           </p>
           <div className="pt-2">
             <Link href="/welcome" className="alpha-button alpha-button-accent text-base">

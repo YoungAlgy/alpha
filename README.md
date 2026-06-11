@@ -15,7 +15,7 @@ Lives at `youngalgy.com/alpha` (Vercel rewrite from a separate Next.js project a
 | AI | Claude Sonnet 4.6 via `@anthropic-ai/sdk` |
 | Web search | Brave Search API ($5/mo free credit covers V0) |
 | Payments | Stripe — dedicated Alpha account (`acct_1TWfDlAhrDpDN9sH`), not shared with Ava |
-| Email | AWS SES (`alpha@youngalgy.com`, DKIM verified) with Resend fallback in code |
+| Email | Resend (`alpha@youngalgy.com` — SPF/DKIM/DMARC verified). SES was dropped (AWS denied prod access); its code is removed. |
 
 ## Architecture highlights
 
@@ -38,8 +38,7 @@ app/
   settings / settings/accounts / settings/changelog                                 account, admin, what's new
   signin / privacy / terms / support / not-found                                   static + sign-in
   api/
-    generate                  Claude pipeline (rate-limited, zod-validated, persists issue + user)
-    send-letter               Resend/SES wrapper (also auto-called from /api/generate)
+    generate                  Claude pipeline (rate-limited, zod-validated, persists issue + user, sends first-letter email)
     support                   support form → Supabase + email notify
     stripe/checkout           creates Stripe Checkout Session (success_url uses NEXT_PUBLIC_APP_URL)
     stripe/webhook            handles checkout.session.completed (upsert), sub events
@@ -66,7 +65,7 @@ lib/
   user-sync.ts                Supabase user sync + delete-account
   rate-limit.ts               in-memory IP bucket
   stripe.ts                   product/price constants (new Alpha account)
-  email.ts                    dual-provider (SES preferred, Resend fallback) + HTML/text letter renderer
+  email.ts                    Resend sender + HTML/text renderers (letter + welcome)
   brave.ts                    Brave Search client
   supabase/                   client.ts / server.ts / types.ts
   engine/
@@ -92,19 +91,19 @@ Required for full functionality (see `.env.local`):
 
 ```
 ANTHROPIC_API_KEY=             # Claude
-RESEND_API_KEY=                # Email fallback
-RESEND_FROM=                   # Resend "from" (used only if SES is down)
-STRIPE_SECRET_KEY=             # Stripe (new Alpha account)
-STRIPE_WEBHOOK_SECRET=         # whsec_... for the new account's webhook
+RESEND_API_KEY=                # Email (sole provider)
+RESEND_FROM=Alpha <alpha@youngalgy.com>
+STRIPE_SECRET_KEY=             # Stripe (Alpha account)
+STRIPE_WEBHOOK_SECRET=         # whsec_... for the webhook endpoint
 BRAVE_SEARCH_API_KEY=          # Brave Search
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SECRET_KEY=
-NEXT_PUBLIC_APP_URL=https://youngalgy.com  # used for Stripe success_url + magic-link redirectTo
-AWS_ACCESS_KEY_ID=             # SES SMTP user (alpha-ses-sender IAM)
-AWS_SECRET_ACCESS_KEY=
-AWS_REGION=us-east-1
-ALPHA_EMAIL_FROM=Alpha <alpha@youngalgy.com>
+NEXT_PUBLIC_APP_URL=https://youngalgy.com  # canonical origin for Stripe URLs + ALL email links
+UNSUBSCRIBE_SECRET=            # HMAC secret for unsubscribe + letter-view tokens
+CRON_SECRET=                   # bearer for /api/cron/weekly-send (Vercel Cron sends it)
+SUPPORT_FORWARD_EMAIL=         # where /api/support notifications go (optional)
+NEXT_PUBLIC_POSTHOG_KEY=       # analytics (optional — inert if unset)
 ```
 
 `GET /alpha/api/health` returns which services are configured + active email provider.

@@ -35,18 +35,23 @@ export default function InboxPage() {
           const sb = supabaseClient();
           const { data: { session } } = await sb.auth.getSession();
           if (session) {
-            const { data, error } = await sb
-              .from("issues")
-              .select("week_of, volume, number, editor_intro, sections")
-              .order("week_of", { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            if (!error && data) {
-              const { data: userRow } = await sb
+            // Independent queries — run them in parallel (same pattern as
+            // /letter) instead of two sequential round trips on the app's
+            // most-visited page.
+            const [{ data, error }, { data: userRow }] = await Promise.all([
+              sb
+                .from("issues")
+                .select("week_of, volume, number, editor_intro, sections")
+                .order("week_of", { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+              sb
                 .from("users")
                 .select("first_name, city, theme")
                 .eq("id", session.user.id)
-                .maybeSingle();
+                .maybeSingle(),
+            ]);
+            if (!error && data) {
               const themeToApply = userRow?.theme || state.theme || "forest";
               document.documentElement.setAttribute("data-theme", themeToApply);
               setIssue({

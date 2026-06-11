@@ -146,7 +146,12 @@ export async function POST(req: Request) {
     // week) we DO NOT re-send. Protects against /writing remounts, double-
     // submits, retries that succeeded the first time but the client never
     // saw the response, etc. The cron uses the same gate via delivered_at.
-    const origin = new URL(req.url).origin;
+    // NEVER derive this from req.url: behind the youngalgy.com rewrite the
+    // request origin is the internal Vercel hostname, and these URLs go into
+    // the subscriber's EMAIL — links to the internal host land on a domain
+    // where their session cookie doesn't exist ("No letter yet" dead end; a
+    // real subscriber hit exactly this). Same canonical fallback as the cron.
+    const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
     const inboxUrl = `${origin}/alpha/inbox`;
     let emailSent = false;
     if (profile.email && resendConfigured()) {
