@@ -24,21 +24,21 @@ export const SAMPLE_ISSUE: Issue = {
   recipientFirstName: "there",
   recipientCity: "",
   editorIntro:
-    "This is a taste — the shape of a Sunday letter and the kind of sources it pulls from. Your real letters are fresh each week and built around the five topics you pick, so they'll read like they were written for you, because they were. Here are five I'd hand someone curious about what lands in their inbox.",
+    "This is a taste. The shape of a Sunday letter and the kind of sources it pulls from. Your real letters are fresh each week and built around the five topics you pick, so they'll read like they were written for you, because they were. Here are five I'd hand someone curious about what lands in their inbox.",
   sections: [
     {
       topicId: "ai-news",
-      topicLabel: "AI — news, releases & tools for work",
+      topicLabel: "AI: news, releases & tools for work",
       intro:
-        "The frontier moves weekly; what's hard is knowing which moves actually change how you work. Three sources that translate the noise into something usable.",
+        "The frontier moves weekly. What's hard is knowing which moves actually change how you work. Three sources that translate the noise into something usable.",
       items: [
         {
           kind: "read",
           headline: "Go straight to the source on model releases",
           body:
-            "When a new model ships, the lab's own announcement tells you what genuinely changed before the hot takes pile on. Anthropic's news page is a clean primary source for capability and safety updates — worth a glance whenever you hear a model name you don't recognize.",
+            "When a new model ships, the lab's own announcement tells you what genuinely changed before the hot takes pile on. Anthropic's news page is a clean primary source for capability and safety updates. Worth a glance whenever you hear a model name you don't recognize.",
           primaryRef: {
-            label: "Anthropic — News",
+            label: "Anthropic News",
             url: "https://www.anthropic.com/news",
           },
         },
@@ -56,7 +56,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "The most reliable plain-language translator of AI research",
           body:
-            "Simon Willison writes up what's new in language models in a way a smart non-specialist can follow — no hype, lots of hands-on detail. If you read one AI writer, this is a defensible pick.",
+            "Simon Willison writes up what's new in language models in a way a smart non-specialist can follow. No hype, lots of hands-on detail. If you read one AI writer, this is a defensible pick.",
           primaryRef: {
             label: "Simon Willison's Weblog",
             url: "https://simonwillison.net",
@@ -68,13 +68,13 @@ export const SAMPLE_ISSUE: Issue = {
       topicId: "personal-finance",
       topicLabel: "Personal finance, investing & side income",
       intro:
-        "The good stuff in money writing isn't tips — it's the handful of ideas that change how you behave. These three earn their slot for that reason.",
+        "The good stuff in money writing isn't tips. It's the handful of ideas that change how you behave. These three earn their slot for that reason.",
       items: [
         {
           kind: "read",
           headline: "Data-driven writing that fixes how you think about saving",
           body:
-            "Nick Maggiulli's Of Dollars And Data is unusually good at replacing money-anxiety with evidence — when to buy, why time-in-market beats timing, how wealth actually compounds. Quietly one of the best financial blogs going.",
+            "Nick Maggiulli's Of Dollars And Data is unusually good at replacing money-anxiety with evidence: when to buy, why time-in-market beats timing, how wealth actually compounds. Quietly one of the best financial blogs going.",
           primaryRef: {
             label: "Of Dollars And Data",
             url: "https://ofdollarsanddata.com",
@@ -84,7 +84,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "listen",
           headline: "Money conversations that are really about behavior",
           body:
-            "Ramit Sethi's work lands because it treats money as a psychology problem, not a math one — spend extravagantly on what you love, cut costs mercilessly on what you don't. Useful whether you're broke or comfortable.",
+            "Ramit Sethi's work lands because it treats money as a psychology problem more than a math one. Spend extravagantly on what you love, cut costs mercilessly on what you don't. Useful at any income level.",
           primaryRef: {
             label: "I Will Teach You To Be Rich",
             url: "https://www.iwillteachyoutoberich.com",
@@ -94,9 +94,9 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "Short essays on money, risk, and human behavior",
           body:
-            "The Collaborative Fund blog — Morgan Housel's old home — is a deep archive of short pieces on why people make the financial decisions they do. Evergreen, re-readable, and rarely about a specific stock.",
+            "The Collaborative Fund blog, Morgan Housel's old home, is a deep archive of short pieces on why people make the financial decisions they do. Evergreen, re-readable, and rarely about a specific stock.",
           primaryRef: {
-            label: "Collaborative Fund — Blog",
+            label: "Collaborative Fund Blog",
             url: "https://collabfund.com/blog/",
           },
         },
@@ -122,7 +122,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "listen",
           headline: "Protocols you can actually act on, with the why attached",
           body:
-            "Huberman Lab translates neuroscience into concrete routines — light in the morning, when to caffeinate, how to wind down. Pair it with a skeptic's eye and it's a strong practical input.",
+            "Huberman Lab translates neuroscience into concrete routines: light in the morning, when to caffeinate, how to wind down. Pair it with a skeptic's eye and it's a strong practical input.",
           primaryRef: {
             label: "Huberman Lab",
             url: "https://www.hubermanlab.com",
@@ -144,7 +144,7 @@ export const SAMPLE_ISSUE: Issue = {
       topicId: "founder-operator",
       topicLabel: "Founder & operator wisdom",
       intro:
-        "For anyone building something — a company, a side project, a career. Tactics that travel, from people doing the work.",
+        "For anyone building something: a company, a side project, a career. Tactics that travel, from people doing the work.",
       items: [
         {
           kind: "listen",
@@ -160,7 +160,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "The clearest strategic thinker on tech and business",
           body:
-            "Ben Thompson's Stratechery is the reference for understanding why tech companies do what they do — platforms, aggregation, leverage. Dense, but it changes how you see the whole board.",
+            "Ben Thompson's Stratechery is the reference for understanding why tech companies do what they do: platforms, aggregation, leverage. Dense, but it changes how you see the whole board.",
           primaryRef: {
             label: "Stratechery",
             url: "https://stratechery.com",
@@ -170,7 +170,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "Product and growth, from someone who ran it",
           body:
-            "Lenny Rachitsky's newsletter is the operator's handbook for product, growth, and go-to-market — concrete frameworks pressure-tested by practitioners, not theory.",
+            "Lenny Rachitsky's newsletter is the operator's handbook for product, growth, and go-to-market: concrete frameworks pressure-tested by practitioners, not theory.",
           primaryRef: {
             label: "Lenny's Newsletter",
             url: "https://www.lennysnewsletter.com",
@@ -182,13 +182,13 @@ export const SAMPLE_ISSUE: Issue = {
       topicId: "books-worth-your-time",
       topicLabel: "Books worth your time",
       intro:
-        "Not a bestseller list — a couple of curators worth trusting, so the next thing you read is worth the hours.",
+        "Not a bestseller list. A couple of curators worth trusting, so the next thing you read is worth the hours.",
       items: [
         {
           kind: "read",
           headline: "An economist's relentless reading list",
           body:
-            "Tyler Cowen reads more than anyone and shares what's worth it on Marginal Revolution. His book recommendations skew curious and wide-ranging — history, fiction, the genuinely obscure.",
+            "Tyler Cowen reads more than anyone and shares what's worth it on Marginal Revolution. His book recommendations skew curious and wide-ranging: history, fiction, the genuinely obscure.",
           primaryRef: {
             label: "Marginal Revolution",
             url: "https://marginalrevolution.com",
@@ -210,7 +210,7 @@ export const SAMPLE_ISSUE: Issue = {
           body:
             "Derek Sivers keeps public notes on every book he reads, with a one-line 'is it worth your time' verdict up top. A great way to triage before you commit.",
           primaryRef: {
-            label: "Derek Sivers — Book Notes",
+            label: "Derek Sivers Book Notes",
             url: "https://sive.rs/book",
           },
         },

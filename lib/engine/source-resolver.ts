@@ -40,12 +40,12 @@ async function fetchLiveSignal(
         const results = await braveSearch(q, { count: 6, freshness: "pw" });
         return `QUERY: ${q}\n${formatAsSignal(q, results)}`;
       } catch (e) {
-        return `QUERY: ${q}\n(no results — ${e instanceof Error ? e.message : "error"})`;
+        return `QUERY: ${q}\n(no results: ${e instanceof Error ? e.message : "error"})`;
       }
     })
   );
 
-  const context = `This week's signal for ${topicId} (week of ${weekOf}), gathered live from Brave Search:\n\n${blocks.join("\n\n———\n\n")}\n\nURLs above are real. You may cite them. Do not invent URLs.`;
+  const context = `This week's signal for ${topicId} (week of ${weekOf}), gathered live from Brave Search:\n\n${blocks.join("\n\n---\n\n")}\n\nURLs above are real. You may cite them. Do not invent URLs.`;
 
   // If the live signal carries NO real URLs (every Brave query came back empty
   // this week), treat it as "no live signal" so the caller falls back to the
