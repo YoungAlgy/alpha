@@ -19,7 +19,7 @@ const HOW = [
   {
     n: "1",
     t: "Pick five topics",
-    d: "From 25 — AI and markets to longevity, books, trading cards, parenting. The five you actually want to keep up with.",
+    d: "From 25: AI and markets to longevity, books, trading cards, parenting. The five you actually want to keep up with.",
   },
   {
     n: "2",
@@ -40,7 +40,7 @@ const WHY = [
   },
   {
     t: "Real sources, enforced in code",
-    d: "Every link in your letter comes from a real, live search that week. If a source isn't real, it can't appear — that rule is enforced in code, not vibes.",
+    d: "Every link in your letter comes from a real, live search that week. If a source isn't real, it can't appear. That rule is enforced in code, not vibes.",
   },
   {
     t: "Yours, and only yours",
@@ -51,11 +51,11 @@ const WHY = [
 const FAQ = [
   {
     q: "Is it just AI spitting out links?",
-    a: "AI does the reading and the writing. A person set the format, the voice, and the rules it writes by — including a hard one enforced in code: every link must come from a real web search made that week. The goal is a letter that feels edited, not generated.",
+    a: "AI does the reading and the writing. A person set the format, the voice, and the rules it writes by, including a hard one enforced in code: every link must come from a real web search made that week. The goal is a letter that feels edited, not generated.",
   },
   {
     q: "Can I change my topics later?",
-    a: "Anytime, from settings. Swap any of your topics whenever your interests shift — and add more in bundles of five if five isn't enough.",
+    a: "Anytime, from settings. Swap any of your topics whenever your interests shift. Add more in bundles of five if five isn't enough.",
   },
   {
     q: "How do I cancel?",
@@ -63,7 +63,7 @@ const FAQ = [
   },
   {
     q: "When does it arrive?",
-    a: "Every Sunday. One letter, in your inbox and on the web — read it whenever your Sunday is.",
+    a: "Every Sunday. One letter, in your inbox and on the web. Read it whenever your Sunday is.",
   },
 ];
 
@@ -90,7 +90,7 @@ const JSON_LD = {
     },
     {
       "@type": "Product",
-      name: "alpha. — a weekly personal letter",
+      name: "alpha. A weekly personal letter",
       description:
         "A personal weekly letter on the five topics you choose, sourced and edited so it's worth your time. Every Sunday.",
       brand: { "@id": "https://youngalgy.com/alpha#org" },
@@ -151,7 +151,7 @@ export default function Landing() {
             className="alpha-display text-xl md:text-2xl leading-relaxed max-w-xl mx-auto"
             style={{ color: "var(--ink-soft)" }}
           >
-            A personal letter on the five topics you care about — sourced,
+            A personal letter on the five topics you care about. Sourced,
             edited, and worth your time. Every Sunday.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
@@ -213,7 +213,7 @@ export default function Landing() {
             Twenty-five topics. You pick five.
           </h2>
           <p className="alpha-ui text-base mb-10 leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-            Whatever you want to stay sharp on — there&apos;s almost certainly a lane for it.
+            Whatever you want to stay sharp on, there&apos;s almost certainly a lane for it.
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             {TOPICS.map((t) => (
@@ -254,7 +254,7 @@ export default function Landing() {
           </div>
           <p className="alpha-ui text-base leading-relaxed" style={{ color: "var(--ink-soft)" }}>
             Five topics for $5. Want more? Add five-topic bundles for $5 each,
-            up to 25 topics. No &ldquo;premium,&rdquo; no ads — and you can cancel in one
+            up to 25 topics. No &quot;premium,&quot; no ads. And you can cancel in one
             click whenever you want.
           </p>
           <div className="pt-2">
@@ -272,12 +272,12 @@ export default function Landing() {
           style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)" }}
         >
           <p className="alpha-display text-lg md:text-xl leading-relaxed italic" style={{ color: "var(--ink)" }}>
-            &ldquo;I built alpha. because I was tired of either missing things
+            &quot;I built alpha. because I was tired of either missing things
             that mattered or drowning trying not to. This is the letter I wanted
-            to get.&rdquo;
+            to get.&quot;
           </p>
           <p className="alpha-ui text-sm mt-4" style={{ color: "var(--ink-soft)" }}>
-            — Algy, who makes alpha.
+            Algy, who makes alpha.
           </p>
         </div>
       </section>

@@ -62,7 +62,7 @@ export const metadata: Metadata = {
   // no more drift between "— Alpha", "— alpha.", and "Alpha —". A page can
   // opt out with title.absolute (the landing does).
   title: {
-    default: "alpha. — your weekly alpha",
+    default: "alpha. your weekly alpha",
     template: "%s · alpha.",
   },
   description:
@@ -80,7 +80,7 @@ export const metadata: Metadata = {
     apple: [{ url: "/alpha/apple-touch-icon.png", sizes: "180x180" }],
   },
   openGraph: {
-    title: "alpha. — your weekly alpha",
+    title: "alpha. your weekly alpha",
     description: "A personal weekly letter on what matters to you, every Sunday.",
     type: "website",
     siteName: "Alpha",
@@ -90,13 +90,13 @@ export const metadata: Metadata = {
         url: "/alpha/og-image.png",
         width: 1200,
         height: 630,
-        alt: "alpha. — your weekly alpha",
+        alt: "alpha. your weekly alpha",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "alpha. — your weekly alpha",
+    title: "alpha. your weekly alpha",
     description: "A personal weekly letter on what matters to you, every Sunday.",
     images: ["/alpha/og-image.png"],
   },
