@@ -9,7 +9,7 @@ import { TOPICS } from "@/lib/topics";
 // device. Warm visitors are one click from starting; cold visitors get the
 // context they need first. Static + indexable (this is the SEO/share surface).
 export const metadata: Metadata = {
-  title: { absolute: "alpha. — your weekly alpha" },
+  title: { absolute: "alpha. your weekly alpha" },
   description:
     "A personal weekly letter on the five topics you care about. Sourced and edited so it's worth your time. $5 a month, every Sunday.",
   alternates: { canonical: "https://youngalgy.com/alpha" },
