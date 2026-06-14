@@ -114,7 +114,7 @@ export default function ArchivePage() {
               Couldn&apos;t load your letters.
             </p>
             <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
-              That&apos;s almost always a temporary hiccup — your letters are safe.
+              That&apos;s almost always a temporary hiccup. Your letters are safe.
             </p>
             <button type="button" onClick={() => load()} className="alpha-button">
               Try again

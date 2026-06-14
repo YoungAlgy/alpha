@@ -124,7 +124,7 @@ export default async function LetterPage({
           >
             Sign in
           </Link>{" "}
-          — we&apos;ll email you a 6-digit code, no password.
+          and we&apos;ll email you a 6-digit code, no password.
         </p>
       </div>
     </main>
@@ -147,7 +147,7 @@ function LinkProblem({ reason }: { reason: "expired" | "no-letter" }) {
             : "Couldn't load your letter."}
         </p>
         <p className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
-          No worries — sign in with your email and we&apos;ll take you straight
+          No worries. Sign in with your email and we&apos;ll take you straight
           to your latest letter. We&apos;ll send a 6-digit code, no password.
         </p>
         <div className="pt-2">

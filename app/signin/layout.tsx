@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Sign in",
   description:
-    "Sign in to alpha. with just your email — we send a 6-digit code, no password to remember.",
+    "Sign in to alpha. with just your email. We send a 6-digit code, no password to remember.",
 };
 
 export default function SigninLayout({ children }: { children: React.ReactNode }) {

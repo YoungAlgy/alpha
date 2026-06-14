@@ -113,7 +113,7 @@ export default function CheckoutPage() {
                 className="text-[8px] leading-snug mt-1"
                 style={{ color: sw.ink, opacity: 0.7 }}
               >
-                Two things pulling at me this week — the recruiting signals…
+                Two things pulling at me this week. The recruiting signals…
               </div>
             </div>
             <div className="flex items-center justify-between mt-2">
@@ -194,7 +194,7 @@ export default function CheckoutPage() {
               className="alpha-ui text-xs text-center"
               style={{ color: "var(--accent-ink)" }}
             >
-              {stripeErr} — try again, or email youngalgy@gmail.com.
+              {stripeErr}. Try again, or email youngalgy@gmail.com.
             </p>
           )}
           <p

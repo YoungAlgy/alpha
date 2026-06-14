@@ -9,7 +9,7 @@ export default function FunPage() {
       <QuestionStep
         field="funBlurb"
         currentPath="fun"
-        question="One fun one — something non-work you've been into?"
+        question="One fun one. Something non-work you've been into?"
         helper="We'll find one fun item for you most weeks."
         placeholder="Florida pollinator gardening"
         multiline

@@ -59,7 +59,7 @@ export async function generateIssue(
       labels.length > 1
         ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`
         : labels[0];
-    editorIntro = `A few things worth your time this week — across ${list}. Dig into whatever pulls at you and let the rest wait.`;
+    editorIntro = `A few things worth your time this week, across ${list}. Dig into whatever pulls at you and let the rest wait.`;
   }
 
   // Step 3 — assemble Issue

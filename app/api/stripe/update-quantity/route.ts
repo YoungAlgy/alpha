@@ -73,7 +73,7 @@ export async function POST(req: Request) {
   // when an upgrading user is clearly choosing to stay.
   if (!hasActiveAccess(row.cancelled_at)) {
     return NextResponse.json(
-      { error: "Subscription has ended — reactivate via the billing portal first." },
+      { error: "Subscription has ended. Reactivate via the billing portal first." },
       { status: 400 }
     );
   }
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
   const item = sub.items.data[0];
   if (!item) {
     return NextResponse.json(
-      { error: "Subscription has no line items — contact support." },
+      { error: "Subscription has no line items. Contact support." },
       { status: 500 }
     );
   }
@@ -144,7 +144,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          "Plan updated with Stripe, but the app didn't sync yet — it will reflect within a minute. Refresh to check.",
+          "Plan updated with Stripe, but the app didn't sync yet. It will reflect within a minute. Refresh to check.",
       },
       { status: 500 }
     );

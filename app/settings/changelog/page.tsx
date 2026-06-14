@@ -22,14 +22,14 @@ const ENTRIES: Entry[] = [
     date: "2026-06-10",
     title: "Email links now open your letter instantly",
     body:
-      "The \"Read the full letter\" button in your Sunday email now opens your letter directly — on any device, signed in or not. No more landing on an empty inbox when your session expired.",
+      "The \"Read the full letter\" button in your Sunday email now opens your letter directly. On any device, signed in or not. No more landing on an empty inbox when your session expired.",
     tag: "fixed",
   },
   {
     date: "2026-06-10",
     title: "New topic: Trading cards",
     body:
-      "Sports cards and TCGs — market moves, grading, releases, what collectors are chasing. That's 25 topics to pick from now.",
+      "Sports cards and TCGs: market moves, grading, releases, what collectors are chasing. That's 25 topics to pick from now.",
     tag: "new",
   },
   {
@@ -43,12 +43,12 @@ const ENTRIES: Entry[] = [
     date: "2026-05-24",
     title: "Hardened account + billing security",
     body:
-      "Tightened the database so plan tier, subscription status, and billing identity can only ever be changed by our payment system — never from the browser. Your profile fields (name, topics, theme) stay freely editable. Belt-and-suspenders work behind the scenes; nothing changes in how you use Alpha.",
+      "Tightened the database so plan tier, subscription status, and billing identity can only ever be changed by our payment system, never from the browser. Your profile fields (name, topics, theme) stay freely editable. Belt-and-suspenders work behind the scenes; nothing changes in how you use Alpha.",
     tag: "security",
   },
   {
     date: "2026-05-17",
-    title: "Topics are now stackable — $5 buys 5 topics, add more anytime",
+    title: "Topics are now stackable: $5 buys 5 topics, add more anytime",
     body:
       "Instead of a fixed five-topic plan, Alpha is now $5/mo for the base five topics with the option to add five-topic bundles for $5/mo each, up to 25 topics ($25/mo). Bump or drop tiers from Settings → Billing; Stripe prorates the change.",
     tag: "new",
@@ -57,14 +57,14 @@ const ENTRIES: Entry[] = [
     date: "2026-05-17",
     title: "Audio off by default",
     body:
-      "Sound effects (clicks, confirmations, the fanfare on first letter) now default to off. Flip them on from the speaker icon in the inbox header — your choice persists.",
+      "Sound effects (clicks, confirmations, the fanfare on first letter) now default to off. Flip them on from the speaker icon in the inbox header. Your choice persists.",
     tag: "improved",
   },
   {
     date: "2026-05-16",
     title: "Sign-in codes also come from alpha@youngalgy.com",
     body:
-      "The 6-digit code you enter at sign-in now arrives from the same branded address as the weekly letter. Consistent sender across every email Alpha sends — fewer junk-folder false positives and easier to recognize in your inbox.",
+      "The 6-digit code you enter at sign-in now arrives from the same branded address as the weekly letter. Consistent sender across every email Alpha sends. Fewer junk-folder false positives and easier to recognize in your inbox.",
     tag: "improved",
   },
   {
@@ -85,14 +85,14 @@ const ENTRIES: Entry[] = [
     date: "2026-05-14",
     title: "Sharper sources behind every section",
     body:
-      "Rewrote the search queries powering every topic area to anchor on named publishers, operators, and outlets the audience actually recognizes — primary sources over SEO listicles, with one query per topic intentionally specific so each section has texture instead of three near-duplicate result sets.",
+      "Rewrote the search queries powering every topic area to anchor on named publishers, operators, and outlets the audience actually recognizes. Primary sources over SEO listicles, with one query per topic intentionally specific so each section has texture instead of three near-duplicate result sets.",
     tag: "improved",
   },
   {
     date: "2026-05-14",
     title: "Admin operational state at a glance",
     body:
-      "The /settings/accounts admin page now opens with a stats panel — paying vs free-granted vs cancelled vs unsubscribed counts, the latest issue's week and how many shipped, SES production vs sandbox status with the daily cap, and the Sunday cron readiness. Catches \"is the pipeline actually running?\" without grep.",
+      "The /settings/accounts admin page now opens with a stats panel: paying vs free-granted vs cancelled vs unsubscribed counts, the latest issue's week and how many shipped, SES production vs sandbox status with the daily cap, and the Sunday cron readiness. Catches \"is the pipeline actually running?\" without grep.",
     tag: "new",
   },
   {
@@ -106,14 +106,14 @@ const ENTRIES: Entry[] = [
     date: "2026-05-14",
     title: "Cleaner copy on the city step",
     body:
-      "Tightened the onboarding city helper so it reads in one breath: \"Lets the letter know when something nearby is worth mentioning — local events, weather windows, regional news. Never shared.\"",
+      "Tightened the onboarding city helper so it reads in one breath: \"Lets the letter know when something nearby is worth mentioning: local events, weather windows, regional news. Never shared.\"",
     tag: "improved",
   },
   {
     date: "2026-05-14",
     title: "One-click unsubscribe in every letter",
     body:
-      "Every weekly email now carries a signed unsubscribe link plus the inbox-provider headers Gmail and Apple Mail use to render a one-click unsubscribe button next to the sender. Hits an endpoint, sets your account to unsubscribed, you're out — Stripe billing is separate and untouched.",
+      "Every weekly email now carries a signed unsubscribe link plus the inbox-provider headers Gmail and Apple Mail use to render a one-click unsubscribe button next to the sender. Hits an endpoint, sets your account to unsubscribed, you're out. Stripe billing is separate and untouched.",
     tag: "new",
   },
   {
@@ -134,7 +134,7 @@ const ENTRIES: Entry[] = [
     date: "2026-05-14",
     title: "Weekly letter actually ships every Sunday now",
     body:
-      "A Sunday-at-10am-ET cron loops every active subscriber, generates a fresh personalized letter from your topics, and emails it. Topic blurbs cache across subscribers each week so it's fast and consistent — the first subscriber on a given topic pays the Claude cost, everyone else reads the same well-edited section.",
+      "A Sunday-at-10am-ET cron loops every active subscriber, generates a fresh personalized letter from your topics, and emails it. Topic blurbs cache across subscribers each week so it's fast and consistent. The first subscriber on a given topic pays the Claude cost, everyone else reads the same well-edited section.",
     tag: "new",
   },
   {
@@ -148,7 +148,7 @@ const ENTRIES: Entry[] = [
     date: "2026-05-13",
     title: "Magic-link sign-in handles both flow types",
     body:
-      "The auth callback now recognizes both PKCE (?code=…) and implicit-flow (#access_token=…) magic links, so clicking the link in any letter — or returning from checkout — lands you signed in instead of dropping you on a sign-in error page.",
+      "The auth callback now recognizes both PKCE (?code=…) and implicit-flow (#access_token=…) magic links, so clicking the link in any letter, or returning from checkout, lands you signed in instead of dropping you on a sign-in error page.",
     tag: "fixed",
   },
   {
@@ -160,9 +160,9 @@ const ENTRIES: Entry[] = [
   },
   {
     date: "2026-05-13",
-    title: "Theme picks first — and applies to the whole app",
+    title: "Theme picks first, and applies to the whole app",
     body:
-      "Pick your look as step 2 of onboarding, before name and topics. The chosen theme now paints every page — onboarding, inbox, settings — not just the letter itself. Change it anytime from settings and the app re-paints instantly.",
+      "Pick your look as step 2 of onboarding, before name and topics. The chosen theme now paints every page (onboarding, inbox, settings), not just the letter itself. Change it anytime from settings and the app re-paints instantly.",
     tag: "new",
   },
   {
@@ -176,7 +176,7 @@ const ENTRIES: Entry[] = [
     date: "2026-05-13",
     title: "Sports & betting markets is now a topic",
     body:
-      "Edges, line movement, model-vs-market gaps — plus the games and storylines shaping the week. Pick it from /topics.",
+      "Edges, line movement, model-vs-market gaps, plus the games and storylines shaping the week. Pick it from /topics.",
     tag: "new",
   },
   {

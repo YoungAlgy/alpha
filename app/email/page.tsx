@@ -11,7 +11,7 @@ export default function EmailPage() {
         field="email"
         currentPath="email"
         question="Your email."
-        helper="Each letter goes here. To sign back in, we email you a 6-digit code — no password to remember."
+        helper="Each letter goes here. To sign back in, we email you a 6-digit code. No password to remember."
         placeholder="you@example.com"
         validate={emailError}
       />

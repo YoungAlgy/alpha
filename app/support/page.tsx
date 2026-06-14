@@ -5,7 +5,7 @@ import { SupportForm } from "./SupportForm";
 export const metadata = {
   title: "Support",
   description:
-    "Get help with alpha. — billing, topics, sign-in, or anything else. Send a message and a real person replies.",
+    "Get help with alpha. Billing, topics, sign-in, or anything else. Send a message and a real person replies.",
 };
 
 export default function SupportPage() {

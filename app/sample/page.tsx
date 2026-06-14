@@ -12,10 +12,10 @@ import { SAMPLE_ISSUE } from "@/lib/sample-issue";
 export const metadata: Metadata = {
   title: "A sample issue",
   description:
-    "See what a Sunday letter from alpha. looks like. A personal weekly letter on the five topics you care about — sourced, edited, and worth your time.",
+    "See what a Sunday letter from alpha. looks like. A personal weekly letter on the five topics you care about. Sourced, edited, and worth your time.",
   alternates: { canonical: "https://youngalgy.com/alpha/sample" },
   openGraph: {
-    title: "A sample issue — alpha.",
+    title: "A sample issue | alpha.",
     description:
       "See what a Sunday letter from alpha. looks like before you sign up.",
     url: "https://youngalgy.com/alpha/sample",
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   // the preview should match the sample everywhere.
   twitter: {
     card: "summary_large_image",
-    title: "A sample issue — alpha.",
+    title: "A sample issue | alpha.",
     description:
       "See what a Sunday letter from alpha. looks like before you sign up.",
     images: ["/alpha/og-image.png"],
@@ -90,7 +90,7 @@ export default function SamplePage() {
             <ShareButton
               context="sample"
               url="https://youngalgy.com/alpha/sample"
-              title="alpha. — a sample issue"
+              title="alpha. a sample issue"
               text="A weekly letter on the five topics you care about. Here's a sample:"
               label="Share this sample"
               className="alpha-ui text-base underline underline-offset-4"

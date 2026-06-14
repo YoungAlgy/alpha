@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Lost? — Alpha" };
+export const metadata = { title: "Lost? | Alpha" };
 
 export default function NotFound() {
   return (
@@ -19,7 +19,7 @@ export default function NotFound() {
           className="alpha-display text-lg leading-relaxed"
           style={{ color: "var(--ink-soft)" }}
         >
-          Maybe a stale link, or maybe a typo. Either way — come on home.
+          Maybe a stale link, or maybe a typo. Either way, come on home.
         </p>
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link href="/welcome" className="alpha-button">

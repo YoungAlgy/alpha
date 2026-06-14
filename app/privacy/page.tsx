@@ -12,7 +12,7 @@ export default function PrivacyPage() {
       <p>
         Alpha is a personal weekly newsletter service. We try to collect as little
         about you as we need to write you a good letter, and we don&apos;t sell or share
-        your data with advertisers — ever.
+        your data with advertisers. Ever.
       </p>
 
       <H2>What we collect</H2>
@@ -22,7 +22,7 @@ export default function PrivacyPage() {
           <strong>Account basics:</strong> your first name, email address, and city.
         </li>
         <li>
-          <strong>Your interests:</strong> the topics you picked (5–25 depending on
+          <strong>Your interests:</strong> the topics you picked (5-25 depending on
           your plan tier), your chosen theme, and any optional context you shared
           (what you do, what you&apos;re working on, a non-work interest).
         </li>
@@ -32,7 +32,7 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Usage signals:</strong> when you open the app, which letters you
-          read, and basic device info — used only to improve the product, never sold.
+          read, and basic device info. Used only to improve the product, never sold.
         </li>
       </ul>
 

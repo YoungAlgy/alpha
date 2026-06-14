@@ -149,7 +149,7 @@ export default function ThemePage() {
                     className="text-[7.5px] leading-snug mt-0.5 line-clamp-2"
                     style={{ color: sw.ink, opacity: 0.65 }}
                   >
-                    Two things pulling at me this week — the recruiting signals feel unusually live right now…
+                    Two things pulling at me this week. The recruiting signals feel unusually live right now…
                   </div>
                   <div
                     className="my-2"

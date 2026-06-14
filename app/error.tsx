@@ -34,7 +34,7 @@ export default function Error({
           className="alpha-display text-lg leading-relaxed"
           style={{ color: "var(--ink-soft)" }}
         >
-          A page failed to load — almost always a transient blip. Try again, or
+          A page failed to load. Almost always a transient blip. Try again, or
           head back to your inbox.
         </p>
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">

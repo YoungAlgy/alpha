@@ -11,7 +11,7 @@ export default function CityPage() {
         currentPath="city"
         question="Where are you?"
         placeholder="St. Petersburg, FL"
-        helper="Lets the letter know when something nearby is worth mentioning — local events, weather windows, regional news. Never shared."
+        helper="Lets the letter know when something nearby is worth mentioning: local events, weather windows, regional news. Never shared."
       />
     </StepShell>
   );

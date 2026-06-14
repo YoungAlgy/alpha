@@ -111,7 +111,7 @@ export function Digest({ issue }: DigestProps) {
         >
           That's the drop. See you next Sunday.
         </p>
-        <p className="alpha-display text-xl font-semibold">— Alpha</p>
+        <p className="alpha-display text-xl font-semibold">Alpha</p>
       </div>
     </article>
   );
@@ -184,7 +184,7 @@ function Item({ item }: { item: DigestItem }) {
                   <span>{ref.label} ↗</span>
                 </a>
                 {ref.note && (
-                  <span style={{ color: "var(--ink-soft)" }}> — {ref.note}</span>
+                  <span style={{ color: "var(--ink-soft)" }}> ({ref.note})</span>
                 )}
               </li>
             ))}

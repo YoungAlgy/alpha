@@ -33,6 +33,6 @@ export function emailError(value: string): string | null {
   const v = value.trim();
   if (!v) return "Enter your email so we know where to send the letter.";
   if (!isValidEmail(v))
-    return "That doesn't look quite right — check for a typo (a missing \".com\", an extra space).";
+    return "That doesn't look quite right. Check for a typo (a missing \".com\", an extra space).";
   return null;
 }

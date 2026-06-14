@@ -10,7 +10,7 @@ export default function FocusPage() {
         field="projectBlurb"
         currentPath="focus"
         question="What are you working on right now?"
-        helper="Optional — but the more you tell us, the more your letter feels written for you."
+        helper="Optional, but the more you tell us, the more your letter feels written for you."
         placeholder="scaling our agency to 5 people this year"
         multiline
         optional

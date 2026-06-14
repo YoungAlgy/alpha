@@ -80,8 +80,8 @@ export default function SettingsPage() {
         kind: "ok",
         text:
           direction === "up"
-            ? `Added — you're now on ${data.topicQuota} topics, $${dollars}/mo. Pick the new ones from Change topics.`
-            : `Dropped — you're now on ${data.topicQuota} topics, $${dollars}/mo.`,
+            ? `Added. You're now on ${data.topicQuota} topics, $${dollars}/mo. Pick the new ones from Change topics.`
+            : `Dropped. You're now on ${data.topicQuota} topics, $${dollars}/mo.`,
       });
     } catch (e) {
       setBillingMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't update plan." });
@@ -237,7 +237,7 @@ export default function SettingsPage() {
             Manage subscription →
           </button>
           <p className="alpha-ui text-xs mt-2" style={{ color: "var(--ink-soft)" }}>
-            Update card, cancel, see invoices — all in Stripe.
+            Update card, cancel, see invoices. All in Stripe.
           </p>
         </Section>
 
@@ -296,7 +296,7 @@ export default function SettingsPage() {
                 // deleted account can't reach the portal afterward — so warn
                 // them to cancel first or they'll keep being charged.
                 const confirmMsg = hasPaidSub
-                  ? `Delete your Alpha account?\n\nThis removes your letters and profile and can't be undone.\n\n⚠️ It does NOT cancel your $${monthlyDollars}/mo subscription — Stripe will keep charging you, and a deleted account can't cancel it. Cancel your subscription first via "Manage subscription" above, then delete.\n\nDelete anyway?`
+                  ? `Delete your Alpha account?\n\nThis removes your letters and profile and can't be undone.\n\n⚠️ It does NOT cancel your $${monthlyDollars}/mo subscription. Stripe will keep charging you, and a deleted account can't cancel it. Cancel your subscription first via "Manage subscription" above, then delete.\n\nDelete anyway?`
                   : "Delete your Alpha account? This removes your saved letters and profile. Can't be undone.";
                 if (!confirm(confirmMsg)) return;
                 const result = await deleteUserAccount();

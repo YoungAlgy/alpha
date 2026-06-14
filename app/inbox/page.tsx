@@ -111,8 +111,8 @@ export default function InboxPage() {
             className="alpha-display text-base md:text-lg leading-relaxed"
             style={{ color: "var(--ink-soft)" }}
           >
-            Already subscribed? Sign in and your letters will be right here —
-            we&apos;ll email you a 6-digit code, no password. New here? Set up
+            Already subscribed? Sign in and your letters will be right here.
+            We&apos;ll email you a 6-digit code, no password. New here? Set up
             your first letter in a couple of minutes.
           </p>
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -124,7 +124,7 @@ export default function InboxPage() {
               className="alpha-ui text-sm underline underline-offset-4"
               style={{ color: "var(--ink-soft)" }}
             >
-              I&apos;m new — start fresh
+              I&apos;m new, start fresh
             </Link>
           </div>
         </div>
@@ -206,7 +206,7 @@ export default function InboxPage() {
           <ShareButton
             context="inbox"
             url="https://youngalgy.com/alpha"
-            title="alpha. — your weekly alpha"
+            title="alpha. your weekly alpha"
             text="A weekly letter on the five topics you care about. Worth a look:"
             label="Tell a friend"
             className="underline underline-offset-4 hover:opacity-80"

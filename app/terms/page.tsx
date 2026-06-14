@@ -3,22 +3,21 @@ import { LegalLayout } from "@/components/LegalLayout";
 export const metadata = {
   title: "Terms",
   description:
-    "The terms of service for alpha. — a $5/month personal weekly letter. Billing, cancellation, refunds, and what you can expect from the service.",
+    "The terms of service for alpha. A $5/month personal weekly letter. Billing, cancellation, refunds, and what you can expect from the service.",
 };
 
 export default function TermsPage() {
   return (
     <LegalLayout title="Terms of Service" effectiveDate="May 13, 2026">
       <p>
-        These terms govern your use of Alpha — a personal weekly newsletter service
+        These terms govern your use of Alpha, a personal weekly newsletter service
         ("Alpha", "we", "us"). By subscribing, you agree to them.
       </p>
 
       <H2>The service</H2>
       <p>
         Alpha is a paid weekly email/web newsletter. You pick a set of topics, and
-        every Sunday we deliver a letter written for you by AI from real sources
-        — every link must come from a live web search made that week, a rule
+        every Sunday we deliver a letter written for you by AI from real sources. Every link must come from a live web search made that week, a rule
         enforced in code. We may add features over time. We may also remove or
         change features when it makes the product better.
       </p>
@@ -48,7 +47,7 @@ export default function TermsPage() {
       <p>
         Alpha is informational. It is not financial advice, medical advice, legal
         advice, or professional counsel. Items in your letter come from public
-        sources and we work hard to source carefully — but we can&apos;t guarantee
+        sources and we work hard to source carefully, but we can&apos;t guarantee
         that every fact, link, or recommendation is current or correct. Verify
         anything important before acting on it.
       </p>

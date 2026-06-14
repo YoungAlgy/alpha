@@ -10,7 +10,7 @@ export default function RolePage() {
         field="jobBlurb"
         currentPath="role"
         question="What do you do?"
-        placeholder="one sentence — the thing you'd say at a dinner party"
+        placeholder="one sentence, the thing you'd say at a dinner party"
       />
     </StepShell>
   );

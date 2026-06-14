@@ -90,7 +90,7 @@ export default function SigninPage() {
     // the typo here with a friendly message instead of a dead-end "couldn't
     // send the code."
     if (!isValidEmail(addr)) {
-      setErr("That doesn't look like an email — check for a typo.");
+      setErr("That doesn't look like an email. Check for a typo.");
       return;
     }
     setBusy(true);
@@ -283,7 +283,7 @@ export default function SigninPage() {
                   className="alpha-ui text-sm mt-6"
                   style={{ color: "var(--ink-soft)" }}
                 >
-                  New code sent ✓ — check your email.
+                  New code sent ✓. Check your email.
                 </p>
               )}
               <div

@@ -35,7 +35,7 @@ async function performUnsubscribe(token: string): Promise<
 
   if (error) {
     console.error("[unsubscribe] update failed:", error.message);
-    return { ok: false, status: 500, error: "Couldn't update — try again." };
+    return { ok: false, status: 500, error: "Couldn't update. Try again." };
   }
   if (!data) {
     return { ok: false, status: 404, error: "Account not found." };
@@ -58,7 +58,7 @@ export async function GET(req: Request) {
   return new NextResponse(
     htmlPage(
       "You're unsubscribed.",
-      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is unaffected — manage it from <a href="/alpha/settings">settings</a> if you also want to cancel billing.`
+      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is unaffected. Manage it from <a href="/alpha/settings">settings</a> if you also want to cancel billing.`
     ),
     {
       status: 200,
@@ -93,7 +93,7 @@ function htmlPage(title: string, bodyHtml: string): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(title)} — Alpha</title>
+<title>${escapeHtml(title)} | Alpha</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <style>

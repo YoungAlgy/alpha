@@ -207,7 +207,7 @@ export default function WritingPage() {
             >
               {done
                 ? "Opening it now."
-                : `Hi ${state.firstName}. Sit tight — about a minute.`}
+                : `Hi ${state.firstName}. Sit tight. About a minute.`}
             </p>
           )}
         </div>
@@ -272,7 +272,7 @@ export default function WritingPage() {
               className="alpha-ui text-sm leading-relaxed"
               style={{ color: "var(--ink-soft)" }}
             >
-              Your subscription is active — Stripe got the payment fine. The
+              Your subscription is active. Stripe got the payment fine. The
               engine just stumbled. You can try again now, or jump to your
               inbox and it'll show up there once the engine recovers (usually
               within a few minutes).
@@ -314,7 +314,7 @@ export default function WritingPage() {
             className="alpha-ui text-sm space-y-2"
             style={{ color: "var(--ink-soft)" }}
           >
-            <p>Taking longer than usual. The engine is still working in the background — your letter will appear on /inbox when it's ready.</p>
+            <p>Taking longer than usual. The engine is still working in the background. Your letter will appear on /inbox when it's ready.</p>
             <button
               type="button"
               onClick={() => router.push("/inbox" as never)}

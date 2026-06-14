@@ -161,7 +161,7 @@ export default function TopicsPage() {
           >
             {remaining > 0
               ? `Pick ${remaining} more`
-              : `${target} of ${target} — ready to continue`}
+              : `${target} of ${target}, ready to continue`}
           </span>
           <button
             type="button"

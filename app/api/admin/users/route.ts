@@ -152,7 +152,7 @@ export async function POST(req: Request) {
       .maybeSingle();
     if (row?.stripe_customer_id) {
       return NextResponse.json(
-        { error: "User has a real Stripe subscription — manage in Stripe." },
+        { error: "User has a real Stripe subscription. Manage in Stripe." },
         { status: 400 }
       );
     }
