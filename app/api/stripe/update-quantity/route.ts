@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 // Bump or shrink the user's Alpha subscription by a single $5/5-topic unit.
 // Base $5 = 5 topics. Each add-on +$5 = +5 topics. Max 5 add-ons (25 topics,
-// $25/mo) — there are 25 topics in the catalog so the max tier = "all topics."
+// $25/mo). Catalog has 27 topics; a subscriber picks up to 25 of them.
 //
 // Body: { direction: "up" | "down" }
 //   up   → quantity++   (capped at 5, i.e. 25 topics, $25/mo)

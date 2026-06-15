@@ -27,9 +27,9 @@ const ENTRIES: Entry[] = [
   },
   {
     date: "2026-06-10",
-    title: "New topic: Trading cards",
+    title: "Three new topics: Gardening, Sustainable living, Trading cards",
     body:
-      "Sports cards and TCGs: market moves, grading, releases, what collectors are chasing. That's 25 topics to pick from now.",
+      "Gardening & houseplants (grow guides, pollinators), Sustainable living (low-waste home, energy, repair), and Trading cards (sports cards + TCGs). 27 topics to pick from now.",
     tag: "new",
   },
   {

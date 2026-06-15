@@ -129,6 +129,16 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "Tampa Bay native plant society event sale",
     "Florida pollinator milkweed monarch garden",
   ],
+  "gardening-plants": [
+    "Epic Gardening houseplant vegetable garden tips",
+    "The Spruce indoor plant care propagation",
+    "Xerces Society pollinator garden native plants",
+  ],
+  "sustainable-living": [
+    "Treehugger low waste sustainable home",
+    "Grist climate solutions everyday",
+    "Wirecutter sustainable swaps energy efficiency",
+  ],
   "startups-vc": [
     "The Information Y Combinator a16z fundraise",
     "Stratechery Lenny startup operator essay",

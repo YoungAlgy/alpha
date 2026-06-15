@@ -32,6 +32,11 @@ export interface SendLetterParams {
    *  here so the letter opens with NO session — fixes the "No letter yet"
    *  dead end subscribers hit clicking the email on a signed-out device. */
   letterUrl?: string | null;
+  /** This subscriber's Nth letter (1-based). Drives "Issue N" in the subject
+   *  so it reads like a recognizable recurring newsletter (a reader nearly
+   *  skimmed past it when the subject led with a news headline). Omit → the
+   *  subject falls back to the week date instead of an issue number. */
+  issueNumber?: number;
   /** User id used to mint the signed one-click unsubscribe token. If omitted
    *  the email still sends but won't include unsubscribe links/headers — only
    *  use this for legacy callers that don't have a user id available. */
@@ -44,7 +49,12 @@ export interface SendLetterParams {
 export async function sendLetterNotification(params: SendLetterParams): Promise<{ id: string }> {
   if (!resendConfiguredInternal()) throw new Error("No email provider configured");
 
-  const subject = subjectFromIssue(params.issue);
+  // Subject reads like a newsletter the reader recognizes as theirs —
+  // "{first}'s weekly newsletter · Issue N" — NOT a news headline (a reader
+  // nearly skimmed past the headline-led version). The content hook moves to
+  // the preheader (inbox preview text), so we keep the click pull too.
+  const subject = subjectLine(params.firstName, params.issueNumber, params.issue.weekOf);
+  const preheader = previewFromIssue(params.issue);
   const teaser = params.issue.editorIntro.slice(0, 320).trim();
   const sectionList = params.issue.sections
     .map((s) => `• ${s.topicLabel}`)
@@ -60,6 +70,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     firstName: params.firstName,
     teaser,
     sectionList,
+    preheader,
     inboxUrl: params.inboxUrl,
     letterUrl: params.letterUrl ?? null,
     weekOf: params.issue.weekOf,
@@ -70,6 +81,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     firstName: params.firstName,
     teaser,
     sectionList,
+    preheader,
     inboxUrl: params.inboxUrl,
     letterUrl: params.letterUrl ?? null,
     weekOf: params.issue.weekOf,
@@ -101,27 +113,51 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   return { id: result.data?.id ?? "" };
 }
 
-function subjectFromIssue(issue: Issue): string {
-  // Lead with the first item's headline — most-likely-to-be-clicked thing —
-  // then bucket the topics as the second clause. Better preview text in Gmail
-  // / Apple Mail than a generic 'Your Sunday alpha · topics…'.
-  const lead = issue.sections[0]?.items?.[0]?.headline;
-  if (lead) {
-    const trimmed = lead.length > 70 ? lead.slice(0, 67).trimEnd() + "…" : lead;
-    // Count the OTHER topics accurately — quota can be 5–25 and a topic can
-    // drop in a thin week, so never hardcode "4 more".
-    const others = Math.max(0, issue.sections.length - 1);
-    if (others === 0) return trimmed;
-    return `${trimmed}, and ${others} more topic${others === 1 ? "" : "s"} this week`;
+// The subject. Personal + unmistakably a newsletter + an issue number so it
+// reads like a recurring publication the reader opted into. The brand is
+// carried by the From name ("Alpha"); the subject earns the open. Exported
+// for testing.
+export function subjectLine(firstName: string, issueNumber?: number, weekOf?: string): string {
+  const who = firstName?.trim() ? `${firstName.trim()}'s` : "Your";
+  if (typeof issueNumber === "number" && issueNumber > 0) {
+    return `${who} weekly newsletter · Issue ${issueNumber}`;
   }
-  const labels = issue.sections.slice(0, 3).map((s) => s.topicLabel.toLowerCase());
-  return `Your Sunday alpha · ${labels.join(", ")}`;
+  // No issue number available — anchor on the week instead of a wrong number.
+  const wk = weekOf ? shortWeek(weekOf) : "";
+  return wk ? `${who} weekly newsletter · ${wk}` : `${who} weekly newsletter`;
+}
+
+// Inbox preview text (preheader): the actual content hook — lead headline +
+// how many topics — so the open is still earned even though the subject is
+// the recognizable identity. This is what used to be the subject.
+function previewFromIssue(issue: Issue): string {
+  const lead = issue.sections[0]?.items?.[0]?.headline;
+  const others = Math.max(0, issue.sections.length - 1);
+  if (lead) {
+    const trimmed = lead.length > 90 ? lead.slice(0, 87).trimEnd() + "…" : lead;
+    if (others === 0) return trimmed;
+    return `${trimmed} — plus ${others} more topic${others === 1 ? "" : "s"}.`;
+  }
+  const labels = issue.sections.slice(0, 4).map((s) => s.topicLabel.toLowerCase());
+  return `This week on ${labels.join(", ")}.`;
+}
+
+// "June 8" from an ISO or long-form week_of string.
+function shortWeek(weekOf: string): string {
+  if (weekOf.includes(",")) {
+    const m = weekOf.match(/([A-Za-z]+\s+\d+)/);
+    if (m) return m[1];
+  }
+  const d = new Date(weekOf.length === 10 ? `${weekOf}T12:00:00Z` : weekOf);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
 }
 
 interface RenderArgs {
   firstName: string;
   teaser: string;
   sectionList: string;
+  preheader?: string;
   inboxUrl: string;
   letterUrl?: string | null;
   weekOf: string;
@@ -130,7 +166,7 @@ interface RenderArgs {
 
 // Exported (pure, no I/O) so the email can be previewed/snapshot-tested
 // without ever triggering a live send.
-export function renderHTML({ firstName, teaser, sectionList, inboxUrl, letterUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
+export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl, letterUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
   // CTA prefers the tokenized /letter URL — it opens the letter directly with
   // no session, on any device (the view-in-browser pattern). Falls back to
   // /inbox for legacy callers without a letter token.
@@ -148,7 +184,7 @@ export function renderHTML({ firstName, teaser, sectionList, inboxUrl, letterUrl
          auto-invert it in dark mode, which otherwise mangles the palette. -->
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
-    <title>Your Sunday alpha</title>
+    <title>Your weekly newsletter</title>
     <style>
       /* Tighter gutters on phones (supported in Apple Mail, Gmail app, etc.;
          degrades gracefully where <style> is stripped). */
@@ -158,6 +194,13 @@ export function renderHTML({ firstName, teaser, sectionList, inboxUrl, letterUrl
     </style>
   </head>
   <body style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
+    <!-- Preheader: the inbox preview text. Hidden in the body, but it's the
+         first text mail clients pull for the snippet next to the subject. The
+         trailing whitespace stops the client from spilling later body text
+         into the preview. -->
+    <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F4EFE0;opacity:0;">
+      ${escapeHtml(preheader || "")}${"&nbsp;&zwnj;".repeat(60)}
+    </div>
     <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
       <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
         ${escapeHtml(weekOf.toUpperCase())}

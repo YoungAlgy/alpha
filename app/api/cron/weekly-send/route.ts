@@ -120,6 +120,20 @@ export async function GET(req: Request) {
     }
   }
 
+  // Prefetch each subscriber's PRIOR issue count (weeks strictly before this
+  // one) in ONE query → "Issue N" in the email subject is this reader's Nth
+  // letter (issueNumber = priorCount + 1), accurate on re-runs too.
+  const priorIssueCount = new Map<string, number>();
+  {
+    const { data: priors } = await sb
+      .from("issues")
+      .select("user_id")
+      .lt("week_of", weekOf);
+    for (const p of (priors ?? []) as Array<{ user_id: string }>) {
+      priorIssueCount.set(p.user_id, (priorIssueCount.get(p.user_id) ?? 0) + 1);
+    }
+  }
+
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
   // total Claude time is bounded by topics-this-week, not users × topics.
   // NOTE for scale: at ~100+ subscribers the per-user generation time will
@@ -195,6 +209,7 @@ export async function GET(req: Request) {
           // Tokenized view-in-browser link: the CTA opens the letter directly
           // with no session — no more "No letter yet" on a signed-out device.
           letterUrl: buildLetterUrl(row.id, origin),
+          issueNumber: (priorIssueCount.get(row.id) ?? 0) + 1,
           userId: row.id,
         });
         // Stamp delivered_at so future runs of the cron skip this user this

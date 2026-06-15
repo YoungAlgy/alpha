@@ -678,6 +678,38 @@ NEWS / ANALYSIS:
 - PokéBeach — the longest-running Pokémon TCG news site: set reveals, English release dates, translations. (https://www.pokebeach.com)
 `,
   },
+  {
+    topicId: "gardening-plants",
+    weekOf: WEEK_OF,
+    context: `
+This week in gardening & houseplants (week of May 17, 2026). URLs below are real — cite them, never invent:
+
+GROW / HOW-TO:
+- Epic Gardening — practical houseplant, raised-bed, and vegetable guides from Kevin Espiritu's team; seasonal what-to-plant. (https://www.epicgardening.com)
+- The Spruce — deep, evergreen plant-care and propagation references for indoor and outdoor plants. (https://www.thespruce.com)
+- The Old Farmer's Almanac — planting calendars by zip/zone, frost dates, and companion-planting guides. (https://www.almanac.com)
+
+POLLINATORS / NATIVE:
+- Xerces Society — the authority on pollinator conservation: native-plant lists by region and pollinator-garden how-tos. (https://www.xerces.org)
+- Royal Horticultural Society (RHS) — plant-finder, pest/disease ID, and grow guides used worldwide. (https://www.rhs.org.uk)
+`,
+  },
+  {
+    topicId: "sustainable-living",
+    weekOf: WEEK_OF,
+    context: `
+This week in sustainable living (week of May 17, 2026). URLs below are real — cite them, never invent:
+
+EVERYDAY / HOME:
+- Treehugger — practical low-waste home, energy, and repair guides plus sustainability news. (https://www.treehugger.com)
+- NYT Wirecutter — tested recommendations, including durable, repairable, energy-efficient picks. (https://www.nytimes.com/wirecutter)
+- The Cool Down — accessible daily climate-solutions and money-saving green-swap coverage. (https://www.thecooldown.com)
+
+BIG PICTURE / DATA:
+- Grist — independent climate-and-solutions journalism. (https://grist.org)
+- Project Drawdown — the ranked, evidence-based catalog of climate solutions that actually scale. (https://drawdown.org)
+`,
+  },
 ];
 
 export function getSignal(topicId: string, weekOf?: string): TopicSignal | undefined {

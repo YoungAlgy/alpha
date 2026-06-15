@@ -34,6 +34,8 @@ export type TopicId =
   | "ai-news"
   | "web3-updates"
   | "fl-gardening"
+  | "gardening-plants"
+  | "sustainable-living"
   | "startups-vc"
   | "faith-meaning";
 

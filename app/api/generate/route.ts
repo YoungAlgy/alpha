@@ -156,6 +156,7 @@ export async function POST(req: Request) {
     let emailSent = false;
     if (profile.email && resendConfigured()) {
       let alreadyDelivered = false;
+      let issueNumber = 1; // this reader's Nth letter (drives "Issue N" subject)
       if (persistence?.userId) {
         try {
           const sb = await supabaseServiceClient();
@@ -166,9 +167,16 @@ export async function POST(req: Request) {
             .eq("week_of", weekOf)
             .maybeSingle();
           alreadyDelivered = !!existing?.delivered_at;
+          // Issue number = prior letters (weeks before this one) + 1.
+          const { data: priors } = await sb
+            .from("issues")
+            .select("week_of")
+            .eq("user_id", persistence.userId)
+            .lt("week_of", weekOf);
+          issueNumber = (priors?.length ?? 0) + 1;
         } catch (e) {
           console.warn(
-            "[generate] delivered_at lookup failed (will attempt send):",
+            "[generate] delivered_at/issue-number lookup failed (will attempt send):",
             e instanceof Error ? e.message : e
           );
         }
@@ -188,6 +196,7 @@ export async function POST(req: Request) {
             letterUrl: persistence?.userId
               ? buildLetterUrl(persistence.userId, inboxUrl.replace(/\/alpha\/inbox$/, ""))
               : null,
+            issueNumber,
             userId: persistence?.userId ?? null,
           });
           emailSent = true;

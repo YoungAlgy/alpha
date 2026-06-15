@@ -49,6 +49,8 @@ export const TOPICS: TopicMeta[] = [
   { id: "web3-updates", label: "Web3 updates", bucket: "Tech", tier: "A", blurb: "Protocol moves, on-chain data, institutional flows. No shilling." , emoji: "⛓️" },
   // B-tier
   { id: "fl-gardening", label: "Florida gardening & pollinators", bucket: "Home", tier: "B", blurb: "FL-Friendly Landscaping, native plants, pollinators, seasonal.", emoji: "🌻" },
+  { id: "gardening-plants", label: "Gardening & houseplants", bucket: "Home", tier: "A", blurb: "Houseplants, veg gardens, pollinator gardens — what to plant, grow, and fix, anywhere.", emoji: "🪴" },
+  { id: "sustainable-living", label: "Sustainable living", bucket: "Home", tier: "A", blurb: "Low-waste home, energy, repair-not-replace, climate-smart everyday choices.", emoji: "♻️" },
   { id: "startups-vc", label: "Startups & VC", bucket: "Work", tier: "B", blurb: "Fundraises that matter, GTM playbooks, deal flow signal.", emoji: "🚀" },
   { id: "faith-meaning", label: "Faith & meaning", bucket: "Mind", tier: "B", blurb: "Christianity, theology, practice. Thoughtful, not preachy.", emoji: "🕊️" },
 ];
