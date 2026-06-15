@@ -225,7 +225,17 @@ export default function Landing() {
                 {t.emoji} {t.label}
               </span>
             ))}
+            <span
+              className="alpha-ui text-sm px-3 py-1.5 rounded-full"
+              style={{ background: "transparent", color: "var(--accent-ink)", border: "1.5px solid var(--accent)" }}
+            >
+              ✨ or add your own
+            </span>
           </div>
+          <p className="alpha-ui text-sm mt-8 leading-relaxed max-w-xl mx-auto" style={{ color: "var(--ink-soft)" }}>
+            Want something hyper-specific? Type your own, like &ldquo;crypto regulation in Asia&rdquo;
+            or &ldquo;AI in radiology,&rdquo; and we&apos;ll hunt the real signal on it every week.
+          </p>
         </div>
       </section>
 
