@@ -98,3 +98,13 @@ export function topicEmoji(id: string): string {
   if (isCustomTopic(id)) return "✨";
   return TOPIC_BY_ID[id as FixedTopicId]?.emoji ?? "•";
 }
+
+/** A valid, stable HTML id / scroll anchor for a topic's letter section.
+ *  Custom ids carry spaces and a colon ("custom:crypto trends in asia") — an
+ *  id with whitespace is invalid HTML and breaks CSS/`#fragment` paths — so
+ *  slugify. Catalog ids (already kebab-case) are unchanged. Use this in BOTH
+ *  the section element and the TOC jump so they always match. */
+export function topicAnchor(id: string): string {
+  const slug = id.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+  return `s-${slug}`;
+}

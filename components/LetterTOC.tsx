@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { topicEmoji } from "@/lib/topics";
+import { topicEmoji, topicAnchor } from "@/lib/topics";
 import type { Issue } from "@/lib/types";
 
 interface LetterTOCProps {
@@ -17,7 +17,7 @@ export function LetterTOC({ issue }: LetterTOCProps) {
     function onScroll() {
       let pick: string | null = null;
       for (const s of issue.sections) {
-        const el = document.getElementById(`s-${s.topicId}`);
+        const el = document.getElementById(topicAnchor(s.topicId));
         if (!el) continue;
         const r = el.getBoundingClientRect();
         if (r.top < window.innerHeight * 0.35) {
@@ -32,7 +32,7 @@ export function LetterTOC({ issue }: LetterTOCProps) {
   }, [issue]);
 
   function jump(topicId: string) {
-    const el = document.getElementById(`s-${topicId}`);
+    const el = document.getElementById(topicAnchor(topicId));
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 

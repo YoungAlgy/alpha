@@ -1,6 +1,6 @@
 // Verify the custom-topic helpers (encoding, labels, validation). Pure, fast.
 // Run: npx tsx scripts/verify-custom-topic.mts
-const { isCustomTopic, customTopicText, makeCustomTopic, topicLabel, topicEmoji, CUSTOM_PREFIX } =
+const { isCustomTopic, customTopicText, makeCustomTopic, topicLabel, topicEmoji, topicAnchor, CUSTOM_PREFIX } =
   await import("../lib/topics.ts");
 
 let pass = 0,
@@ -32,6 +32,11 @@ check("topicLabel unknown catalog id falls back to id", topicLabel("not-a-topic"
 // emoji
 check("topicEmoji custom = sparkle", topicEmoji("custom:anything") === "✨");
 check("topicEmoji catalog resolves registry", topicEmoji("trading-cards") === "🃏");
+
+// anchor (valid HTML id, consistent for section + TOC jump)
+check("topicAnchor catalog unchanged", topicAnchor("ai-news") === "s-ai-news");
+check("topicAnchor custom is slugified (no spaces/colons)", topicAnchor("custom:crypto trends in Asia") === "s-custom-crypto-trends-in-asia");
+check("topicAnchor produces a valid id (no whitespace)", !/\s/.test(topicAnchor("custom:a b c")));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

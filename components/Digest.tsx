@@ -1,11 +1,6 @@
 import type { Issue, DigestItem, ItemKind } from "@/lib/types";
 import { ScrollFadeIn } from "./ScrollFadeIn";
-import { topicEmoji } from "@/lib/topics";
-
-function sectionAnchor(topicId: string): string {
-  return `s-${topicId}`;
-}
-// touched 2026-05-13 — invalidate stale turbopack cache
+import { topicEmoji, topicAnchor } from "@/lib/topics";
 
 interface DigestProps {
   issue: Issue;
@@ -70,7 +65,7 @@ export function Digest({ issue }: DigestProps) {
         const emoji = topicEmoji(section.topicId);
         return (
         <ScrollFadeIn key={section.topicId} className="mb-16">
-        <section id={sectionAnchor(section.topicId)}>
+        <section id={topicAnchor(section.topicId)}>
           <div
             className="border-t mb-10"
             style={{ borderColor: "var(--rule)" }}
