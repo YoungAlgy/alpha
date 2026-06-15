@@ -125,9 +125,17 @@ export async function POST(req: Request) {
 
   // Apply the change. Default proration_behavior is "create_prorations"
   // which charges/credits proportionally on the next invoice — what we want.
-  await stripe.subscriptions.update(sub.id, {
-    items: [{ id: item.id, quantity: nextQty }],
-  });
+  // Idempotency key so a network retry (or a double-submit that slips past the
+  // UI guard) doesn't fire a second subscription.update + a second webhook. The
+  // 30s time bucket scopes it to rapid retries of THIS action: a deliberate
+  // same-transition change later (e.g. up then down then up) lands in a new
+  // bucket and still applies, rather than being deduped against Stripe's 24h key cache.
+  const idemKey = `alpha-qty-${sub.id}-${currentQty}-${nextQty}-${Math.floor(Date.now() / 30000)}`;
+  await stripe.subscriptions.update(
+    sub.id,
+    { items: [{ id: item.id, quantity: nextQty }] },
+    { idempotencyKey: idemKey }
+  );
 
   // Write through to public.users immediately so the UI reflects without
   // waiting on the webhook round-trip. Surface a failed write instead of

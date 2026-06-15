@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { topicLabel, topicEmoji } from "@/lib/topics";
 import { Footer } from "@/components/Footer";
@@ -28,6 +28,10 @@ export default function SettingsPage() {
   // panel instead of a native confirm() dialog (which reads as a browser alert,
   // off-brand for a paid change). null = no panel open.
   const [confirmingTier, setConfirmingTier] = useState<"up" | "down" | null>(null);
+  // Synchronous re-entrancy latch for confirmTier(). busyTier is React state, so
+  // a sub-16ms double-click can invoke confirmTier twice before the state flush
+  // disables/unmounts the button — a ref flips synchronously and blocks the second.
+  const confirmInFlight = useRef(false);
   // After a successful add, surface a "pick your new topics" CTA so the flow
   // finishes where the reader actually uses the topics they just bought.
   const [justAdded, setJustAdded] = useState(false);
@@ -85,7 +89,8 @@ export default function SettingsPage() {
   // Run the tier change after the reader confirms in the panel.
   async function confirmTier() {
     const direction = confirmingTier;
-    if (!direction) return;
+    if (!direction || confirmInFlight.current) return;
+    confirmInFlight.current = true;
     setConfirmingTier(null);
     setBusyTier(direction);
     setBillingMsg(null);
@@ -109,6 +114,7 @@ export default function SettingsPage() {
       setBillingMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't update plan." });
     } finally {
       setBusyTier(null);
+      confirmInFlight.current = false;
     }
   }
 
@@ -279,6 +285,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={confirmTier}
+                  disabled={busyTier !== null}
                   className="alpha-button alpha-button-accent text-sm"
                 >
                   {confirmingTier === "up" ? "Add 5 topics" : "Drop 5 topics"}

@@ -193,9 +193,8 @@ export async function GET(req: Request) {
 
       // Upsert the issue so re-runs are idempotent on (user_id, week_of).
       // THROW on failure (caught by the per-user catch below) — if this row
-      // doesn't exist, the email must NOT go out: the delivered_at stamp after
-      // the send would no-op against a missing row, and the next cron run
-      // would regenerate AND RESEND — a duplicate email to the subscriber.
+      // doesn't exist, the email must NOT go out: the delivered_at CLAIM below
+      // targets this exact row, so a missing row means no claim and no send.
       // Skipping the send means the next run retries the whole user cleanly.
       const { error: issueUpsertErr } = await sb.from("issues").upsert(
         {
@@ -214,42 +213,95 @@ export async function GET(req: Request) {
 
       // Send the letter via Resend (lib/email.ts).
       if (resendConfigured()) {
+        // ATOMIC delivered_at CLAIM — the race-safe idempotency guard. The
+        // prefetch Set above is a cheap fast-path for the common SEQUENTIAL
+        // rerun; it does NOT stop two OVERLAPPING invocations (a Vercel retry
+        // racing the scheduled run, or a manual run racing the cron) from both
+        // seeing the user as undelivered and both sending a duplicate. This
+        // UPDATE ... WHERE delivered_at IS NULL is an atomic compare-and-swap:
+        // Postgres row-locks the issue so exactly ONE concurrent invocation
+        // flips the stamp and proceeds; the loser updates 0 rows and skips. We
+        // stamp BEFORE the send (was: best-effort stamp after) and roll back on
+        // send failure — trading the old "stamp-fail/crash -> DUPLICATE" for a
+        // far rarer "hard crash between claim and send -> missed once". A missed
+        // letter is less harmful than a duplicate. ?force=1 bypasses the claim.
+        if (!force) {
+          const { data: claimRows, error: claimErr } = await sb
+            .from("issues")
+            .update({ delivered_at: new Date().toISOString() })
+            .eq("user_id", row.id)
+            .eq("week_of", weekOf)
+            .is("delivered_at", null)
+            .select("user_id");
+          if (claimErr) {
+            throw new Error(`delivered_at claim failed: ${claimErr.message}`);
+          }
+          if ((claimRows?.length ?? 0) === 0) {
+            skippedAlreadyDelivered++;
+            console.log(`[cron/weekly-send] skipped (claimed by a concurrent run) → ${row.email}`);
+            continue;
+          }
+        }
+
         const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
         const inboxUrl = `${origin}/alpha/inbox`;
-        await sendLetterNotification({
-          to: row.email,
-          firstName: row.first_name,
-          issue,
-          inboxUrl,
-          // Tokenized view-in-browser link: the CTA opens the letter directly
-          // with no session — no more "No letter yet" on a signed-out device.
-          letterUrl: buildLetterUrl(row.id, origin),
-          issueNumber: (priorIssueCount.get(row.id) ?? 0) + 1,
-          userId: row.id,
-        });
-        // Stamp delivered_at so future runs of the cron skip this user this
-        // week. Best-effort — if the update errors we still consider the send
-        // successful (the email went out), we just log so we know to watch.
-        const { error: stampErr } = await sb
-          .from("issues")
-          .update({ delivered_at: new Date().toISOString() })
-          .eq("user_id", row.id)
-          .eq("week_of", weekOf);
-        if (stampErr) {
-          console.warn(
-            `[cron/weekly-send] sent but delivered_at stamp failed for ${row.email}: ${stampErr.message}`
-          );
+        try {
+          await sendLetterNotification({
+            to: row.email,
+            firstName: row.first_name,
+            issue,
+            inboxUrl,
+            // Tokenized view-in-browser link: the CTA opens the letter directly
+            // with no session — no more "No letter yet" on a signed-out device.
+            letterUrl: buildLetterUrl(row.id, origin),
+            issueNumber: (priorIssueCount.get(row.id) ?? 0) + 1,
+            userId: row.id,
+          });
+        } catch (sendErr) {
+          if (!force) {
+            // Release the claim so the next run retries this user cleanly.
+            const { error: rollbackErr } = await sb
+              .from("issues")
+              .update({ delivered_at: null })
+              .eq("user_id", row.id)
+              .eq("week_of", weekOf);
+            if (rollbackErr) {
+              console.warn(
+                `[cron/weekly-send] send failed AND claim rollback failed for ${row.email}: ${rollbackErr.message} — may be skipped (missed) next run.`
+              );
+            }
+          }
+          throw sendErr;
         }
-      }
 
-      sent++;
-      // Log the sections that actually made the letter (top fresh topics +
-      // any backfill), not the whole pool.
-      const labels = issue.sections
-        .map((s) => s.topicLabel)
-        .filter(Boolean)
-        .join(" · ");
-      console.log(`[cron/weekly-send] sent → ${row.email} (${labels})`);
+        if (force) {
+          // The force path skipped the claim; stamp after a successful resend so
+          // a later normal run doesn't treat this user as undelivered and send
+          // again. Best-effort — force is an admin-driven one-off.
+          const { error: stampErr } = await sb
+            .from("issues")
+            .update({ delivered_at: new Date().toISOString() })
+            .eq("user_id", row.id)
+            .eq("week_of", weekOf);
+          if (stampErr) {
+            console.warn(
+              `[cron/weekly-send] force resend sent but delivered_at stamp failed for ${row.email}: ${stampErr.message}`
+            );
+          }
+        }
+
+        // Count + log only on an ACTUAL send — inside the resendConfigured()
+        // block so a dev/misconfig run with Resend unset doesn't over-report
+        // `sent` for letters that never went out.
+        sent++;
+        // Log the sections that actually made the letter (top fresh topics +
+        // any backfill), not the whole pool.
+        const labels = issue.sections
+          .map((s) => s.topicLabel)
+          .filter(Boolean)
+          .join(" · ");
+        console.log(`[cron/weekly-send] sent → ${row.email} (${labels})`);
+      }
     } catch (e) {
       failed++;
       const msg = e instanceof Error ? e.message : "unknown";
