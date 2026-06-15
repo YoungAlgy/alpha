@@ -7,6 +7,7 @@ import { useOnboarding } from "@/lib/onboarding-state";
 import { THEMES } from "@/lib/themes";
 import { chime, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { setTheme } from "@/lib/theme";
 import type { ThemeId } from "@/lib/types";
 
 // Display-only swatch for each theme. Matches the palette in globals.css.
@@ -25,7 +26,7 @@ const SWATCHES: Record<ThemeId, { paper: string; ink: string; accent: string }> 
 
 export default function ThemePage() {
   const router = useRouter();
-  const { state, update, loaded } = useOnboarding();
+  const { state, loaded } = useOnboarding();
   const [picked, setPicked] = useState<ThemeId>("forest");
   const [signedIn, setSignedIn] = useState(false);
 
@@ -50,13 +51,10 @@ export default function ThemePage() {
 
   function pickTheme(id: ThemeId) {
     setPicked(id);
+    // Apply + persist (account + localStorage) + broadcast immediately, so the
+    // pick sticks the moment you tap it — no "Continue" required to save.
+    setTheme(id);
     chime();
-    // Broadcast so ThemeApplier re-paints the page immediately.
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent("alpha-theme-change", { detail: { theme: id } })
-      );
-    }
   }
 
   function hoverTheme() {
@@ -64,25 +62,13 @@ export default function ThemePage() {
     chime();
   }
 
-  async function submit() {
+  function submit() {
     confirm();
-    update({ theme: picked });
-    // Signed-in user editing settings → persist to DB and return to /settings.
-    // New user in onboarding funnel → continue to /fun.
-    if (signedIn && supabaseConfigured()) {
-      try {
-        const sb = supabaseClient();
-        const { data: { user } } = await sb.auth.getUser();
-        if (user) {
-          await sb.from("users").update({ theme: picked }).eq("id", user.id);
-        }
-      } catch {
-        // best-effort — onboarding-state update already happened
-      }
-      router.push("/settings" as never);
-      return;
-    }
-    router.push("/name" as never);
+    // Guarantee the final pick is saved (idempotent if pickTheme already did).
+    setTheme(picked);
+    // Signed-in user editing settings → back to /settings. New user in the
+    // onboarding funnel → continue to /name.
+    router.push((signedIn ? "/settings" : "/name") as never);
   }
 
   const firstName = state.firstName || "friend";

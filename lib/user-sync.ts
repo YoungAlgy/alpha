@@ -12,13 +12,17 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
     const sb = supabaseClient();
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return; // unauth = no sync, localStorage is the source of truth
+    // NOTE: theme is deliberately NOT synced here. It's owned by setTheme()
+    // (live changes write the DB directly) and by persist() at checkout. If we
+    // wrote it from this in-memory state too, a later update() (e.g. saving
+    // topics) would clobber a just-changed theme back to a stale value — the
+    // exact "theme doesn't stick" bug.
     const updates = {
       first_name: state.firstName ?? null,
       city: state.city ?? null,
       job_blurb: state.jobBlurb ?? null,
       project_blurb: state.projectBlurb ?? null,
       fun_blurb: state.funBlurb ?? null,
-      theme: state.theme ?? "forest",
       topics: state.topics ?? [],
     };
     const { error } = await sb

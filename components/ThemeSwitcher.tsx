@@ -3,26 +3,31 @@
 import { useEffect, useState } from "react";
 import { THEMES } from "@/lib/themes";
 import { chime, tap } from "@/lib/audio";
+import { setTheme, getCurrentTheme } from "@/lib/theme";
 import type { ThemeId } from "@/lib/types";
-
-const STORAGE_KEY = "alpha-theme";
 
 export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
   const [active, setActive] = useState<ThemeId>("forest");
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const saved = (typeof window !== "undefined" &&
-      (localStorage.getItem(STORAGE_KEY) as ThemeId | null)) ||
-      "forest";
-    setActive(saved);
-    document.documentElement.setAttribute("data-theme", saved);
+    // Read the theme actually applied to the page (ThemeApplier has already
+    // resolved the account row for signed-in users) — not a bare localStorage
+    // key, which would show "forest" on a fresh device.
+    setActive(getCurrentTheme());
+    // Keep the label in sync when the theme is changed elsewhere (settings,
+    // the /theme picker, another tab).
+    function onChange(e: Event) {
+      const detail = (e as CustomEvent<{ theme?: ThemeId }>).detail;
+      if (detail?.theme) setActive(detail.theme);
+    }
+    window.addEventListener("alpha-theme-change", onChange);
+    return () => window.removeEventListener("alpha-theme-change", onChange);
   }, []);
 
   function pick(id: ThemeId) {
     setActive(id);
-    document.documentElement.setAttribute("data-theme", id);
-    localStorage.setItem(STORAGE_KEY, id);
+    setTheme(id); // applies + persists everywhere (localStorage + account) + broadcasts
     setOpen(false);
     chime();
   }

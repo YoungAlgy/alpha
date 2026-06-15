@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { topicLabel, topicEmoji } from "@/lib/topics";
-import { THEMES } from "@/lib/themes";
 import { Footer } from "@/components/Footer";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { hasActiveAccess } from "@/lib/access";
@@ -14,9 +14,6 @@ const ADMIN_EMAIL = "youngalgy@gmail.com";
 
 export default function SettingsPage() {
   const { state, reset } = useOnboarding();
-  const themeLabel = state.theme
-    ? THEMES.find((t) => t.id === state.theme)?.label
-    : "Forest";
   const [isAdmin, setIsAdmin] = useState(false);
   // Topic-quota state: quota = max topics they can pick (5/10/15/20/25),
   // priceCents = current monthly bill in cents. Both come from public.users
@@ -147,16 +144,20 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Theme">
-          <p className="alpha-display text-base mb-3">
-            {themeLabel}
+          <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+            Your whole experience in this look. Changes apply everywhere
+            instantly.
           </p>
-          <Link
-            href="/theme"
-            className="alpha-ui text-sm underline underline-offset-4"
-            style={{ color: "var(--accent-ink)" }}
-          >
-            Change theme →
-          </Link>
+          <div className="flex items-center gap-4 flex-wrap">
+            <ThemeSwitcher />
+            <Link
+              href="/theme"
+              className="alpha-ui text-sm underline underline-offset-4"
+              style={{ color: "var(--accent-ink)" }}
+            >
+              See all looks →
+            </Link>
+          </div>
         </Section>
 
         <Section title="Email">
