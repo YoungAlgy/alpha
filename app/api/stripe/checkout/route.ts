@@ -46,6 +46,10 @@ export async function POST(req: Request) {
       payment_method_types: ["card"],
       line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
       customer_email: body.email,
+      // Only ask for a card when payment is actually due. A 100%-off promo
+      // code (our free-trial / comp codes) makes the first invoice $0, so
+      // testers get in with NO card. Normal $5 signups still collect a card.
+      payment_method_collection: "if_required",
       // Session-level metadata so the webhook can read it from the Session
       // event directly. (subscription_data.metadata also gets set on the
       // resulting Subscription for downstream sub events.)
