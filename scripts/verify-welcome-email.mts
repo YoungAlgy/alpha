@@ -15,10 +15,10 @@ const check = (label: string, cond: boolean) => {
   cond ? pass++ : fail++;
 };
 
-check("greets the recipient by name", html.includes("You&rsquo;re in, Sam."));
+check("greets the recipient by name", html.includes("You're in, Sam."));
 check("links to the first letter (inbox)", html.includes('href="https://youngalgy.com/alpha/inbox"'));
 check("sign-in fallback points at /signin", html.includes('href="https://youngalgy.com/alpha/signin"'));
-check("sets the Sunday cadence", /every Sunday/i.test(html));
+check("sets the 3x cadence (Sun/Tue/Thu)", /three times a week/i.test(html) && /Sunday, Tuesday, and Thursday/i.test(html));
 check("has the read-first-letter CTA", html.includes("Read your first letter"));
 check("signed by Algy", html.includes("Algy"));
 check("dark-mode guard present (color-scheme light)", html.includes('name="color-scheme" content="light"'));
