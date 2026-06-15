@@ -13,6 +13,7 @@ import { LetterTOC } from "@/components/LetterTOC";
 import { ShareButton } from "@/components/ShareButton";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { useOnboarding } from "@/lib/onboarding-state";
+import { nextSendIso } from "@/lib/cadence";
 import { fanfare } from "@/lib/audio";
 import type { Issue } from "@/lib/types";
 
@@ -193,7 +194,7 @@ export default function InboxPage() {
           className="max-w-5xl mx-auto px-6 pb-3 alpha-mono text-center"
           style={{ color: "var(--accent-ink)" }}
         >
-          {weekLabel(issue.weekOf).toUpperCase()} · {minutes} MIN READ · NEXT ONE SHIPS {nextSundayLabel().toUpperCase()}
+          {weekLabel(issue.weekOf).toUpperCase()} · {minutes} MIN READ · NEXT ONE SHIPS {nextSendLabel().toUpperCase()}
         </div>
         <div
           className="max-w-5xl mx-auto px-6 pb-3 alpha-ui text-center text-xs flex items-center justify-center gap-4"
@@ -235,13 +236,10 @@ function weekLabel(weekOf: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-// "Next one ships May 24" — finds the upcoming Sunday from today (UTC).
-function nextSundayLabel(): string {
-  const d = new Date();
-  const day = d.getUTCDay(); // 0 = Sunday
-  const daysAhead = day === 0 ? 7 : 7 - day;
-  d.setUTCDate(d.getUTCDate() + daysAhead);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+// "Next one ships May 24" — the upcoming send in the Sun/Tue/Thu cadence.
+function nextSendLabel(): string {
+  const d = new Date(`${nextSendIso()}T12:00:00Z`);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 function computeWordCount(issue: Issue): number {

@@ -16,6 +16,11 @@ export async function generateIssue(
   // whole pool (every caller that doesn't rank a deeper pool gets today's
   // behavior: every topic generated, in order).
   letterSize?: number,
+  // Recency window for the live search. Defaults to past-week (the single
+  // weekly letter). The multi-send cadence passes a "since the last letter"
+  // date range so a topic with no NEW info reads as empty and gets backfilled
+  // from a fresher one instead of repeating the same news across sends.
+  freshness?: import("@/lib/brave").BraveSearchOptions["freshness"],
 ): Promise<Issue> {
   const pool = user.topics;
   const size = Math.max(1, letterSize ?? pool.length);
@@ -29,7 +34,7 @@ export async function generateIssue(
     const id = topicId as TopicId;
     const cached = await getCachedBlurb(id, weekOf);
     if (cached) return { ...cached, topicLabel: topicLabel(id) };
-    const signal = await resolveTopicSignal(id, weekOf, { liveOnly: true });
+    const signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness });
     if (!signal) return null; // no fresh signal — skip, no model call
     const blurb = await generateTopicBlurb(id, weekOf, signal);
     setCachedBlurb(blurb).catch(() => undefined);
@@ -39,6 +44,14 @@ export async function generateIssue(
 
   // Last-resort filler from the curated mock (catalog topics only) — keeps the
   // letter full when the whole ranked pool was quiet this period.
+  //
+  // NOTE: mock blurbs are intentionally NOT written to the shared cache. The
+  // cache is the "live, fresh this period" store that genLive reads first; if a
+  // mock blurb landed there, the NEXT subscriber's genLive would read it back
+  // and treat evergreen filler as fresh signal (so that topic would never
+  // backfill for anyone after the first dry user). Generating mock per-user is
+  // cheap and rare (only fires when a reader's WHOLE pool is dry) and keeps
+  // every reader's "thin topic -> fresher backup" behavior independent.
   async function genFiller(topicId: string): Promise<TopicBlurb | null> {
     const id = topicId as TopicId;
     const cached = await getCachedBlurb(id, weekOf);
@@ -46,7 +59,6 @@ export async function generateIssue(
     const signal = resolveMockSignal(id, weekOf);
     if (!signal) return null;
     const blurb = await generateTopicBlurb(id, weekOf, signal);
-    setCachedBlurb(blurb).catch(() => undefined);
     return blurb.items.length > 0 ? blurb : null;
   }
 

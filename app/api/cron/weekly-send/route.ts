@@ -5,6 +5,7 @@ import { generateIssue } from "@/lib/engine/assemble";
 import { poolCap } from "@/lib/engine/select-sections";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
+import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { topicLabel } from "@/lib/topics";
 import type { UserProfile, TopicId, ThemeId } from "@/lib/types";
 
@@ -34,20 +35,25 @@ interface SubscriberRow {
   topic_quota: number | null;
 }
 
-// Sundays-at-10am-ET cron entrypoint. Vercel Cron sends an Authorization
-// header of `Bearer ${CRON_SECRET}` automatically when the env var is set.
-// We refuse anything else, so this can't be hit manually from the open web.
+// Multi-send cadence entrypoint (Sun + Tue + Thu). Vercel Cron sends an
+// Authorization header of `Bearer ${CRON_SECRET}` automatically when the env
+// var is set. We refuse anything else, so this can't be hit from the open web.
 //
 // Behavior:
 //   1. Find all users where subscribed_at IS NOT NULL AND access is still live
 //      (cancelled_at IS NULL or still in the future) AND unsubscribed_at IS NULL
-//   2. For each, generate this Sunday's Issue via the same engine /api/generate
+//   2. For each, generate this send's Issue via the same engine /api/generate
 //      uses (Brave + Claude + per-topic cache), persist via upsert on (user_id,
-//      week_of), and send the letter email via Resend.
-//   3. Topic blurbs are cached per (topic_id, week_of) so the first user pays
+//      week_of), and send the letter email via Resend. The `week_of` column now
+//      holds the SEND DATE (one row per send), so each Sun/Tue/Thu letter is its
+//      own period: distinct idempotency key, distinct blurb cache, no collision.
+//   3. The live search uses a "since the last send" window, so a topic with no
+//      NEW info that period comes back empty and the ranked-pool selector
+//      backfills it from a fresher topic instead of repeating stale news.
+//   4. Topic blurbs are cached per (topic_id, send_date) so the first user pays
 //      the Claude cost and the rest reuse — order-of-N-topics calls, not
 //      N-users × N-topics.
-//   4. Per-user failures are caught and counted; the cron always returns 200
+//   5. Per-user failures are caught and counted; the cron always returns 200
 //      so Vercel doesn't keep retrying — failures surface in the response
 //      summary and runtime logs.
 export async function GET(req: Request) {
@@ -59,13 +65,17 @@ export async function GET(req: Request) {
   }
 
   // Allow ?weekOf=YYYY-MM-DD override (useful for backfills + admin testing
-  // when the schedule hasn't fired yet). Defaults to most-recent-Sunday-UTC.
+  // when the schedule hasn't fired yet). Defaults to today (the send date).
   const url = new URL(req.url);
   const weekOfOverride = url.searchParams.get("weekOf");
   const weekOf =
     weekOfOverride && /^\d{4}-\d{2}-\d{2}$/.test(weekOfOverride)
       ? weekOfOverride
-      : currentSundayIso();
+      : currentPeriodIso();
+  // Search window for this send: everything new since the previous send in the
+  // cadence (Thu->Sun is 3 days, Sun->Tue and Tue->Thu are 2). A topic with
+  // nothing new in that window reads as empty and gets backfilled.
+  const freshness = sinceLastSendWindow(weekOf);
   const sb = await supabaseServiceClient();
 
   // Access runs through the end of the paid period. The webhook stores
@@ -175,7 +185,7 @@ export async function GET(req: Request) {
     };
 
     try {
-      const issue = await generateIssue(profile, weekOf, letterSize);
+      const issue = await generateIssue(profile, weekOf, letterSize, freshness);
 
       // Upsert the issue so re-runs are idempotent on (user_id, week_of).
       // THROW on failure (caught by the per-user catch below) — if this row
@@ -259,13 +269,3 @@ export async function GET(req: Request) {
   return NextResponse.json(summary);
 }
 
-// Round-to-most-recent-Sunday-in-UTC, formatted as YYYY-MM-DD. The cron fires
-// at 14:00 UTC on Sundays, so `today` will already be Sunday — the floor()
-// just normalizes off-by-one timezone weirdness if anyone manually triggers
-// the endpoint earlier in the week.
-function currentSundayIso(): string {
-  const d = new Date();
-  const day = d.getUTCDay(); // 0 = Sunday
-  d.setUTCDate(d.getUTCDate() - day);
-  return d.toISOString().slice(0, 10);
-}

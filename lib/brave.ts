@@ -13,7 +13,10 @@ export interface BraveResult {
 
 export interface BraveSearchOptions {
   count?: number;
-  freshness?: "pd" | "pw" | "pm" | "py"; // past day/week/month/year
+  // past day/week/month/year, OR a discovery date range "YYYY-MM-DDtoYYYY-MM-DD"
+  // (Brave accepts both). The range is how the multi-send cadence asks for
+  // "only what's new since the last letter" so stale topics read as empty.
+  freshness?: "pd" | "pw" | "pm" | "py" | `${string}to${string}`;
   country?: string;
   safesearch?: "off" | "moderate" | "strict";
 }

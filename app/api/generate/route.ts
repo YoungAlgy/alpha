@@ -235,11 +235,10 @@ export async function POST(req: Request) {
 }
 
 function defaultWeekOf(): string {
-  // Round to most recent Sunday in ISO yyyy-mm-dd. UTC throughout — matches
-  // the weekly cron's currentSundayIso() so the same week never gets two keys
-  // (the old version mixed local getDay/setDate with UTC toISOString).
-  const now = new Date();
-  const day = now.getUTCDay(); // 0 = Sunday
-  now.setUTCDate(now.getUTCDate() - day);
-  return now.toISOString().slice(0, 10);
+  // The first letter's period key = TODAY's UTC date (the send date), matching
+  // the cron's currentPeriodIso() under the multi-send cadence. This keeps the
+  // (user, week_of) idempotency key and the (topic, week_of) blurb cache aligned
+  // between the onboarding first-letter path and the Sun/Tue/Thu cron, so a
+  // first letter and a same-day cron send share one period instead of two keys.
+  return new Date().toISOString().slice(0, 10);
 }

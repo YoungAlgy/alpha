@@ -50,7 +50,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   if (!resendConfiguredInternal()) throw new Error("No email provider configured");
 
   // Subject reads like a newsletter the reader recognizes as theirs —
-  // "{first}'s weekly newsletter · Issue N" — NOT a news headline (a reader
+  // "{first}'s newsletter · Issue N" — NOT a news headline (a reader
   // nearly skimmed past the headline-led version). The content hook moves to
   // the preheader (inbox preview text), so we keep the click pull too.
   const subject = subjectLine(params.firstName, params.issueNumber, params.issue.weekOf);
@@ -120,11 +120,11 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
 export function subjectLine(firstName: string, issueNumber?: number, weekOf?: string): string {
   const who = firstName?.trim() ? `${firstName.trim()}'s` : "Your";
   if (typeof issueNumber === "number" && issueNumber > 0) {
-    return `${who} weekly newsletter · Issue ${issueNumber}`;
+    return `${who} newsletter · Issue ${issueNumber}`;
   }
-  // No issue number available — anchor on the week instead of a wrong number.
+  // No issue number available — anchor on the date instead of a wrong number.
   const wk = weekOf ? shortWeek(weekOf) : "";
-  return wk ? `${who} weekly newsletter · ${wk}` : `${who} weekly newsletter`;
+  return wk ? `${who} newsletter · ${wk}` : `${who} newsletter`;
 }
 
 // Inbox preview text (preheader): the actual content hook — lead headline +
@@ -139,7 +139,7 @@ function previewFromIssue(issue: Issue): string {
     return `${trimmed}, plus ${others} more topic${others === 1 ? "" : "s"}.`;
   }
   const labels = issue.sections.slice(0, 4).map((s) => s.topicLabel.toLowerCase());
-  return `This week on ${labels.join(", ")}.`;
+  return `Latest on ${labels.join(", ")}.`;
 }
 
 // "June 8" from an ISO or long-form week_of string.
@@ -184,7 +184,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
          auto-invert it in dark mode, which otherwise mangles the palette. -->
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
-    <title>Your weekly newsletter</title>
+    <title>Your newsletter</title>
     <style>
       /* Tighter gutters on phones (supported in Apple Mail, Gmail app, etc.;
          degrades gracefully where <style> is stripped). */
@@ -212,7 +212,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
         ${escapeHtml(teaser)}…
       </p>
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;margin:0 0 8px;">
-        THIS WEEK
+        IN THIS ISSUE
       </p>
       <pre style="font-family:Georgia,serif;font-size:16px;line-height:1.7;margin:0 0 36px;color:#1F3D2E;white-space:pre-wrap;">${escapeHtml(sectionList)}</pre>
       <div style="margin:40px 0;">
@@ -228,7 +228,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        ${unsubLine}ALPHA · A WEEKLY LETTER · ${new Date().getFullYear()}
+        ${unsubLine}ALPHA · A PERSONAL LETTER · ${new Date().getFullYear()}
       </p>
     </div>
   </body>
@@ -243,7 +243,7 @@ Hi ${firstName},
 
 ${teaser}…
 
-THIS WEEK
+IN THIS ISSUE
 ${sectionList}
 
 Read the full letter:
@@ -343,9 +343,9 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
         </a>
       </div>
       <p style="font-size:16px;line-height:1.7;margin:0 0 12px;">
-        From here on, a new letter lands <strong>every Sunday</strong>, in
-        your inbox and on the web. No feeds, no firehose. Just the things you
-        care about.
+        From here on, new letters land <strong>three times a week</strong>, on
+        Sunday, Tuesday, and Thursday, in your inbox and on the web. No feeds,
+        no firehose. Just the things you care about.
       </p>
       <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
         Signed out when you click through? We'll email you a 6-digit code.
@@ -357,7 +357,7 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        ALPHA · A WEEKLY LETTER · ${new Date().getFullYear()}
+        ALPHA · A PERSONAL LETTER · ${new Date().getFullYear()}
       </p>
     </div>
   </body>
@@ -374,7 +374,7 @@ Thanks for subscribing. Your first letter is being written for you right now, bu
 Read your first letter:
 ${inboxUrl}
 
-From here on, a new letter lands every Sunday, in your inbox and on the web. No feeds, no firehose. Just the things you care about.
+From here on, new letters land three times a week, on Sunday, Tuesday, and Thursday, in your inbox and on the web. No feeds, no firehose. Just the things you care about.
 
 (Signed out when you click through? We'll email you a 6-digit code at ${inboxUrl.replace("/inbox", "/signin")}. No password to remember.)
 

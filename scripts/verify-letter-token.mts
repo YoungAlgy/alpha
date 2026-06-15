@@ -74,10 +74,10 @@ const legacy = renderHTML({
 check("no token → CTA falls back to /inbox", legacy.includes('href="https://youngalgy.com/alpha/inbox"'));
 
 // (8) Subject reads like a recognizable newsletter (Ally's feedback)
-check("subject is personal + says newsletter + issue number", subjectLine("Ally", 1) === "Ally's weekly newsletter · Issue 1");
-check("subject pluralizes issue number", subjectLine("Sam", 7) === "Sam's weekly newsletter · Issue 7");
-check("no name → 'Your weekly newsletter'", subjectLine("", 3) === "Your weekly newsletter · Issue 3");
-check("no issue number → falls back to the week date", subjectLine("Ally", undefined, "2026-06-07") === "Ally's weekly newsletter · June 7");
+check("subject is personal + says newsletter + issue number", subjectLine("Ally", 1) === "Ally's newsletter · Issue 1");
+check("subject pluralizes issue number", subjectLine("Sam", 7) === "Sam's newsletter · Issue 7");
+check("no name → 'Your newsletter'", subjectLine("", 3) === "Your newsletter · Issue 3");
+check("no issue number → falls back to the date", subjectLine("Ally", undefined, "2026-06-07") === "Ally's newsletter · June 7");
 check("subject never leads with a raw news headline", !subjectLine("Ally", 1).includes("Healthcare"));
 
 console.log(`\n${pass} passed, ${fail} failed`);

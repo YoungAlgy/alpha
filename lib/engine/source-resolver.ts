@@ -1,4 +1,4 @@
-import { braveConfigured, braveSearch, formatAsSignal } from "@/lib/brave";
+import { braveConfigured, braveSearch, formatAsSignal, type BraveSearchOptions } from "@/lib/brave";
 import { TOPIC_QUERIES } from "./topic-queries";
 import { getSignal } from "./mock-signals";
 import { extractSignalUrls } from "./url-guard";
@@ -22,14 +22,14 @@ function customQueries(topicId: string): string[] {
 export async function resolveTopicSignal(
   topicId: TopicId,
   weekOf: string,
-  opts?: { liveOnly?: boolean }
+  opts?: { liveOnly?: boolean; freshness?: BraveSearchOptions["freshness"] }
 ): Promise<TopicSignal | undefined> {
   const custom = isCustomTopic(topicId);
   const queries = custom ? customQueries(topicId) : TOPIC_QUERIES[topicId as FixedTopicId];
 
   if (braveConfigured() && queries && queries.length > 0) {
     try {
-      const live = await fetchLiveSignal(topicId, queries, weekOf);
+      const live = await fetchLiveSignal(topicId, queries, weekOf, opts?.freshness);
       if (live) return live;
     } catch (e) {
       console.warn(`[source-resolver] Brave failed for ${topicId}:`, e);
@@ -57,7 +57,12 @@ export function resolveMockSignal(topicId: TopicId, weekOf: string): TopicSignal
 async function fetchLiveSignal(
   topicId: string,
   queries: string[],
-  weekOf: string
+  weekOf: string,
+  // Recency window. Defaults to past-week (the single weekly letter). The
+  // multi-send cadence passes a "since the last letter" date range so a topic
+  // with nothing NEW in the last few days comes back empty and the ranked-pool
+  // selector backfills it from a fresher topic instead of repeating stale news.
+  freshness: BraveSearchOptions["freshness"] = "pw"
 ): Promise<TopicSignal | undefined> {
   if (!queries || queries.length === 0) return undefined;
 
@@ -65,7 +70,7 @@ async function fetchLiveSignal(
   const blocks = await Promise.all(
     queries.map(async (q) => {
       try {
-        const results = await braveSearch(q, { count: 6, freshness: "pw" });
+        const results = await braveSearch(q, { count: 6, freshness });
         return `QUERY: ${q}\n${formatAsSignal(q, results)}`;
       } catch (e) {
         return `QUERY: ${q}\n(no results: ${e instanceof Error ? e.message : "error"})`;
@@ -74,10 +79,10 @@ async function fetchLiveSignal(
   );
 
   const subject = isCustomTopic(topicId) ? customTopicText(topicId) : topicId;
-  const context = `This week's signal for ${subject} (week of ${weekOf}), gathered live from Brave Search:\n\n${blocks.join("\n\n---\n\n")}\n\nURLs above are real. You may cite them. Do not invent URLs.`;
+  const context = `Recent signal for ${subject} (as of ${weekOf}), gathered live from Brave Search:\n\n${blocks.join("\n\n---\n\n")}\n\nURLs above are real. You may cite them. Do not invent URLs.`;
 
   // If the live signal carries NO real URLs (every Brave query came back empty
-  // this week), treat it as "no live signal" so the caller falls back to the
+  // this period), treat it as "no live signal" so the caller falls back to the
   // curated mock — which always has real URLs. Without this, the strict URL
   // guard would drop every link the model cites and ship a link-less section.
   if (extractSignalUrls(context).size === 0) {

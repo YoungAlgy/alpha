@@ -1,8 +1,12 @@
 {
   "crons": [
     {
-      "path": "/alpha/api/cron/weekly-send",
+      "path": "/alpha/api/cron/weekly-send?slot=sunday",
       "schedule": "0 14 * * 0"
+    },
+    {
+      "path": "/alpha/api/cron/weekly-send?slot=midweek",
+      "schedule": "0 12 * * 2,4"
     }
   ]
 }
