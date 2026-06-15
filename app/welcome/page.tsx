@@ -33,7 +33,7 @@ export default function WelcomePage() {
         </span>
         <div className="relative z-10 text-center space-y-10">
           <h1 className="alpha-display alpha-hero text-5xl md:text-7xl font-bold tracking-tight leading-[1.05]">
-            Your weekly{" "}
+            Your{" "}
             <em style={{ color: "var(--accent-ink)", fontStyle: "italic" }}>
               alpha.
             </em>
@@ -42,7 +42,7 @@ export default function WelcomePage() {
             className="alpha-display text-xl md:text-2xl leading-relaxed max-w-lg mx-auto"
             style={{ color: "var(--ink-soft)" }}
           >
-            A personal letter on what matters to you, every Sunday.
+            A personal letter on what matters to you, three times a week.
           </p>
           <div className="pt-4">
             <Link href="/theme" className="alpha-button text-base">

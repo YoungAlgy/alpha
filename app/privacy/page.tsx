@@ -10,7 +10,7 @@ export default function PrivacyPage() {
   return (
     <LegalLayout title="Privacy" effectiveDate="May 13, 2026">
       <p>
-        Alpha is a personal weekly newsletter service. We try to collect as little
+        Alpha is a personal newsletter service. We try to collect as little
         about you as we need to write you a good letter, and we don&apos;t sell or share
         your data with advertisers. Ever.
       </p>
@@ -27,7 +27,7 @@ export default function PrivacyPage() {
           (what you do, what you&apos;re working on, a non-work interest).
         </li>
         <li>
-          <strong>Letters we write you:</strong> a copy of each weekly letter is saved
+          <strong>Letters we write you:</strong> a copy of each letter is saved
           to your account so you can re-read past issues.
         </li>
         <li>
@@ -38,7 +38,7 @@ export default function PrivacyPage() {
 
       <H2>How we use it</H2>
       <p>
-        We use your data only to (a) generate and deliver your weekly letter,
+        We use your data only to (a) generate and deliver your letters,
         (b) bill your subscription, and (c) improve Alpha. We don&apos;t use it to
         train external machine-learning models, and we don&apos;t share it with
         advertisers.

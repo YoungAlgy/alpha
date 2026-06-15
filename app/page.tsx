@@ -9,9 +9,9 @@ import { TOPICS } from "@/lib/topics";
 // device. Warm visitors are one click from starting; cold visitors get the
 // context they need first. Static + indexable (this is the SEO/share surface).
 export const metadata: Metadata = {
-  title: { absolute: "alpha. your weekly alpha" },
+  title: { absolute: "alpha. your alpha" },
   description:
-    "A personal weekly letter on the five topics you care about. Sourced and edited so it's worth your time. $5 a month, every Sunday.",
+    "A personal letter on the five topics you care about. Sourced and edited so it's worth your time. $5 a month, three times a week.",
   alternates: { canonical: "https://youngalgy.com/alpha" },
 };
 
@@ -24,7 +24,7 @@ const HOW = [
   {
     n: "2",
     t: "We read the week for you",
-    d: "Every Sunday we pull the signal on your topics from real sources, then edit it into something you'll actually finish.",
+    d: "Three times a week we pull the signal on your topics from real sources, then edit it into something you'll actually finish.",
   },
   {
     n: "3",
@@ -36,7 +36,7 @@ const HOW = [
 const WHY = [
   {
     t: "No doomscroll",
-    d: "You don't have to hunt across ten apps and a hundred tabs. The good stuff comes to you, once a week.",
+    d: "You don't have to hunt across ten apps and a hundred tabs. The good stuff comes to you, three times a week.",
   },
   {
     t: "Real sources, enforced in code",
@@ -63,7 +63,7 @@ const FAQ = [
   },
   {
     q: "When does it arrive?",
-    a: "Every Sunday. One letter, in your inbox and on the web. Read it whenever your Sunday is.",
+    a: "Sunday, Tuesday, and Thursday. In your inbox and on the web. Read each one whenever you like.",
   },
 ];
 
@@ -90,9 +90,9 @@ const JSON_LD = {
     },
     {
       "@type": "Product",
-      name: "alpha. A weekly personal letter",
+      name: "alpha. A personal letter",
       description:
-        "A personal weekly letter on the five topics you choose, sourced and edited so it's worth your time. Every Sunday.",
+        "A personal letter on the five topics you choose, sourced and edited so it's worth your time. Three times a week.",
       brand: { "@id": "https://youngalgy.com/alpha#org" },
       url: "https://youngalgy.com/alpha",
       offers: {
@@ -142,7 +142,7 @@ export default function Landing() {
         </span>
         <div className="relative z-10 max-w-2xl mx-auto text-center space-y-8">
           <h1 className="alpha-display alpha-hero text-5xl md:text-7xl font-bold tracking-tight leading-[1.05]">
-            Your weekly{" "}
+            Your{" "}
             <em style={{ color: "var(--accent-ink)", fontStyle: "italic" }}>
               alpha.
             </em>
@@ -152,7 +152,7 @@ export default function Landing() {
             style={{ color: "var(--ink-soft)" }}
           >
             A personal letter on the five topics you care about. Sourced,
-            edited, and worth your time. Every Sunday.
+            edited, and worth your time. Three times a week.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <Link href="/welcome" className="alpha-button alpha-button-accent text-base">
@@ -234,7 +234,7 @@ export default function Landing() {
           </div>
           <p className="alpha-ui text-sm mt-8 leading-relaxed max-w-xl mx-auto" style={{ color: "var(--ink-soft)" }}>
             Want something hyper-specific? Type your own, like &ldquo;crypto regulation in Asia&rdquo;
-            or &ldquo;AI in radiology,&rdquo; and we&apos;ll hunt the real signal on it every week.
+            or &ldquo;AI in radiology,&rdquo; and we&apos;ll hunt the real signal on it three times a week.
           </p>
         </div>
       </section>

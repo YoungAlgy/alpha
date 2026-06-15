@@ -12,12 +12,12 @@ import { SAMPLE_ISSUE } from "@/lib/sample-issue";
 export const metadata: Metadata = {
   title: "A sample issue",
   description:
-    "See what a Sunday letter from alpha. looks like. A personal weekly letter on the five topics you care about. Sourced, edited, and worth your time.",
+    "See what a letter from alpha. looks like. A personal letter on the five topics you care about. Sourced, edited, and worth your time.",
   alternates: { canonical: "https://youngalgy.com/alpha/sample" },
   openGraph: {
     title: "A sample issue | alpha.",
     description:
-      "See what a Sunday letter from alpha. looks like before you sign up.",
+      "See what a letter from alpha. looks like before you sign up.",
     url: "https://youngalgy.com/alpha/sample",
     type: "article",
     images: ["/alpha/og-image.png"],
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "A sample issue | alpha.",
     description:
-      "See what a Sunday letter from alpha. looks like before you sign up.",
+      "See what a letter from alpha. looks like before you sign up.",
     images: ["/alpha/og-image.png"],
   },
 };
@@ -74,7 +74,7 @@ export default function SamplePage() {
       >
         <div className="max-w-2xl mx-auto px-6 py-16 md:py-20 text-center space-y-6">
           <h2 className="alpha-display text-3xl md:text-4xl font-bold tracking-tight">
-            Want one of these every Sunday?
+            Want one of these three times a week?
           </h2>
           <p
             className="alpha-display text-lg md:text-xl leading-relaxed max-w-lg mx-auto"
@@ -91,7 +91,7 @@ export default function SamplePage() {
               context="sample"
               url="https://youngalgy.com/alpha/sample"
               title="alpha. a sample issue"
-              text="A weekly letter on the five topics you care about. Here's a sample:"
+              text="A personal letter on the five topics you care about, three times a week. Here's a sample:"
               label="Share this sample"
               className="alpha-ui text-base underline underline-offset-4"
               style={{ color: "var(--accent-ink)" }}

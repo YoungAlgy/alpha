@@ -13,8 +13,8 @@ import type { Issue } from "@/lib/types";
 //   - No fabricated stats. Describe what a source does and why it's worth your
 //     time; don't invent numbers.
 //
-// The real letters are fresh every Sunday and built around the reader's five
-// chosen topics; the /sample page says so explicitly.
+// The real letters are fresh on every send (Sun/Tue/Thu) and built around the
+// reader's five chosen topics; the /sample page says so explicitly.
 
 export const SAMPLE_ISSUE: Issue = {
   id: "sample",
@@ -24,7 +24,7 @@ export const SAMPLE_ISSUE: Issue = {
   recipientFirstName: "there",
   recipientCity: "",
   editorIntro:
-    "This is a taste. The shape of a Sunday letter and the kind of sources it pulls from. Your real letters are fresh each week and built around the five topics you pick, so they'll read like they were written for you, because they were. Here are five I'd hand someone curious about what lands in their inbox.",
+    "This is a taste. The shape of a real letter and the kind of sources it pulls from. Your real letters are fresh on every send and built around the five topics you pick, so they'll read like they were written for you, because they were. Here are five I'd hand someone curious about what lands in their inbox.",
   sections: [
     {
       topicId: "ai-news",

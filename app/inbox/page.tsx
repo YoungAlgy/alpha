@@ -207,8 +207,8 @@ export default function InboxPage() {
           <ShareButton
             context="inbox"
             url="https://youngalgy.com/alpha"
-            title="alpha. your weekly alpha"
-            text="A weekly letter on the five topics you care about. Worth a look:"
+            title="alpha. your alpha"
+            text="A personal letter on the five topics you care about, three times a week. Worth a look:"
             label="Tell a friend"
             className="underline underline-offset-4 hover:opacity-80"
           />

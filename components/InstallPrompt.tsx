@@ -64,7 +64,7 @@ export function InstallPrompt() {
           className="alpha-ui text-xs leading-snug"
           style={{ color: "var(--ink-soft)" }}
         >
-          Open Sunday letters in one tap.
+          Open your letters in one tap.
         </p>
       </div>
       <button

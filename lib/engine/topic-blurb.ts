@@ -9,9 +9,9 @@ function narrowKind(k: string | undefined): BlurbItemKind {
   return VALID_KINDS.includes(k as BlurbItemKind) ? (k as BlurbItemKind) : "note";
 }
 
-const SYSTEM_PROMPT = `You are the editor of Alpha, a personal weekly letter that helps a curious, intelligent reader learn and stay sharp on the topics they care about.
+const SYSTEM_PROMPT = `You are the editor of Alpha, a personal letter that helps a curious, intelligent reader learn and stay sharp on the topics they care about.
 
-Your job: write a weekly section for ONE topic, made of 3 items.
+Your job: write a section for ONE topic, made of 3 items.
 
 The voice:
 - Intellectual and educational, but never academic or jargon-y

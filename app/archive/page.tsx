@@ -125,7 +125,7 @@ export default function ArchivePage() {
         {state === "ready" && items.length === 0 && (
           <div className="space-y-5">
             <p className="alpha-display text-lg" style={{ color: "var(--ink-soft)" }}>
-              No letters yet. Your first one ships the Sunday after you subscribe.
+              No letters yet. Your first one lands right after you subscribe.
             </p>
             <Link href="/inbox" className="alpha-button">
               Go to your inbox →

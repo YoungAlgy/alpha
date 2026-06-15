@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Start your letter",
   description:
-    "Set up your alpha. in a couple of minutes: pick your topics, choose a look, and get your first personal letter this Sunday. $5 a month.",
+    "Set up your alpha. in a couple of minutes: pick your topics, choose a look, and get your first personal letter on the spot. $5 a month.",
 };
 
 export default function WelcomeLayout({ children }: { children: React.ReactNode }) {

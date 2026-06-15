@@ -1,7 +1,7 @@
 {
   "name": "alpha.",
   "short_name": "alpha",
-  "description": "Your weekly alpha — a personal letter on what matters to you.",
+  "description": "Your alpha. A personal letter on what matters to you, three times a week.",
   "start_url": "/alpha/inbox",
   "scope": "/alpha/",
   "display": "standalone",

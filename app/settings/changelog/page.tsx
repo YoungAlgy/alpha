@@ -19,6 +19,20 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-06-15",
+    title: "Letters now come three times a week",
+    body:
+      "Alpha used to land once a week. Now it comes Sunday, Tuesday, and Thursday. Each one only pulls what's new since the last letter, so you get fresh picks every time instead of the same stories repeated. If one of your topics is quiet that day, we fill the slot with one of your other topics that has something worth reading.",
+    tag: "new",
+  },
+  {
+    date: "2026-06-15",
+    title: "Rank your topics and add free backups",
+    body:
+      "In Change topics you can now pick more topics than your letter holds, rank them, and let the top ones fill each letter. The extras ride along as backups. If a favorite has no fresh news that day, a backup with something good takes its place, so your letter stays full and fresh. Backups are free.",
+    tag: "new",
+  },
+  {
     date: "2026-06-10",
     title: "Email links now open your letter instantly",
     body:

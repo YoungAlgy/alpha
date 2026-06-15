@@ -154,9 +154,9 @@ export default function AdminAccountsPage() {
                 sub="alpha@youngalgy.com"
               />
               <Stat
-                label="Sunday cron"
+                label="Send cron"
                 value="armed"
-                sub="14:00 UTC weekly"
+                sub="Sun/Tue/Thu"
               />
               <Stat label="Total users" value={stats.totalUsers} />
             </div>
