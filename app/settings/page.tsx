@@ -30,6 +30,11 @@ export default function SettingsPage() {
   // endpoint can't, and the cancelled account can't reach the portal after) —
   // so we warn paying users to cancel first or keep getting charged.
   const [hasPaidSub, setHasPaidSub] = useState(false);
+  // The signed-in user's real email (auth session = source of truth). The
+  // onboarding-state email in localStorage is only present for users who came
+  // through the funnel on this device — admin-granted / fresh-device sign-ins
+  // have none, which showed a bare "—" here.
+  const [authEmail, setAuthEmail] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabaseConfigured()) return;
@@ -38,6 +43,7 @@ export default function SettingsPage() {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
         if (!user) return;
+        setAuthEmail(user.email ?? null);
         if (user.email === ADMIN_EMAIL) setIsAdmin(true);
         const { data: row } = await sb
           .from("users")
@@ -154,7 +160,7 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Email">
-          <p className="alpha-display text-base mb-3">{state.email || "—"}</p>
+          <p className="alpha-display text-base mb-3">{authEmail || state.email || "—"}</p>
           <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
             Your letters and sign-in code go here. Need to change it?{" "}
             <Link
