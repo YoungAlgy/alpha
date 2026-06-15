@@ -134,6 +134,12 @@ export async function POST(req: Request) {
     // happens implicitly via the engine's TOPIC_BY_ID lookup (unknown topics
     // throw clearly inside resolveTopicSignal).
     const profile = body.profile as Parameters<typeof generateIssue>[0];
+    // No letterSize passed on purpose: this is the onboarding first letter,
+    // where the reader picked exactly their quota of topics (pool == quota), so
+    // generating the whole pool == generating their letterSize. If a future
+    // re-generate path lets an existing reader with a DEEPER ranked pool hit
+    // this endpoint, pass their topic_quota as letterSize here (as the cron
+    // does) so it respects favorites/backups instead of generating the pool.
     const issue = await generateIssue(profile, weekOf);
 
     // Best-effort persistence (doesn't block on failure)

@@ -33,13 +33,21 @@ export async function generateIssue(
   async function genLive(topicId: string): Promise<TopicBlurb | null> {
     const id = topicId as TopicId;
     const cached = await getCachedBlurb(id, weekOf);
-    if (cached) return { ...cached, topicLabel: topicLabel(id) };
+    // Treat a cached blurb with no items as a miss. A section whose links all
+    // got guard-dropped when it was generated isn't worth a slot, so it must
+    // never be served (to this reader or any later one) and the topic should
+    // backfill instead.
+    if (cached && cached.items.length > 0) return { ...cached, topicLabel: topicLabel(id) };
     const signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness });
     if (!signal) return null; // no fresh signal — skip, no model call
     const blurb = await generateTopicBlurb(id, weekOf, signal);
+    // Only cache a real section. If the guard dropped every link (0 items),
+    // don't cache the empty result — otherwise every later subscriber to this
+    // topic would read the empty blurb back as a "hit" and ship a link-less
+    // section. Return null so the selector backfills this topic instead.
+    if (blurb.items.length === 0) return null;
     setCachedBlurb(blurb).catch(() => undefined);
-    // A section whose links all got dropped by the guard isn't worth a slot.
-    return blurb.items.length > 0 ? blurb : null;
+    return blurb;
   }
 
   // Last-resort filler from the curated mock (catalog topics only) — keeps the
@@ -54,8 +62,9 @@ export async function generateIssue(
   // every reader's "thin topic -> fresher backup" behavior independent.
   async function genFiller(topicId: string): Promise<TopicBlurb | null> {
     const id = topicId as TopicId;
-    const cached = await getCachedBlurb(id, weekOf);
-    if (cached) return { ...cached, topicLabel: topicLabel(id) };
+    // No cache read: genFiller only runs when genLive already returned null (no
+    // live blurb cached this period), so a lookup here always misses. Mock
+    // blurbs are deliberately never cached (see the note above), so generate it.
     const signal = resolveMockSignal(id, weekOf);
     if (!signal) return null;
     const blurb = await generateTopicBlurb(id, weekOf, signal);

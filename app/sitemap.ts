@@ -8,7 +8,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     {
       url: BASE,
       lastModified: now,
-      changeFrequency: "weekly",
+      changeFrequency: "monthly",
       priority: 1.0,
     },
     {
@@ -20,7 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     {
       url: `${BASE}/welcome`,
       lastModified: now,
-      changeFrequency: "weekly",
+      changeFrequency: "monthly",
       priority: 0.8,
     },
     {

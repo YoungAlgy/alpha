@@ -23,6 +23,10 @@ export default function TopicsPage() {
   // "Your own thing" — free-text custom topics (stored as custom:<text>).
   const [customText, setCustomText] = useState("");
   const [customErr, setCustomErr] = useState<string | null>(null);
+  // Saving the pool to the DB (signed-in editors). Surface failures instead of
+  // navigating away as if it saved.
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (loaded && state.topics) setPicked(state.topics);
@@ -132,22 +136,33 @@ export default function TopicsPage() {
     // Onboarding picks exactly the quota; signed-in editors must at least fill
     // their favorites (backups are optional extras).
     const ready = signedIn ? picked.length >= quota : picked.length === quota;
-    if (!ready) return;
-    confirm();
-    update({ topics: picked });
+    if (!ready || saving) return;
+    setSaveError(null);
     if (signedIn && supabaseConfigured()) {
+      // Persist the ranked pool to the DB FIRST. If the write fails, stay on the
+      // page with an error instead of navigating away as if it saved (the
+      // letter reads topics from the DB, so a silent failure would lose the
+      // change). Only mirror to local state + leave once the DB write lands.
+      setSaving(true);
       try {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
         if (user) {
-          await sb.from("users").update({ topics: picked }).eq("id", user.id);
+          const { error } = await sb.from("users").update({ topics: picked }).eq("id", user.id);
+          if (error) throw new Error(error.message);
         }
       } catch {
-        // best-effort
+        setSaving(false);
+        setSaveError("Couldn't save your topics. Check your connection and try again.");
+        return;
       }
+      confirm();
+      update({ topics: picked });
       router.push("/settings" as never);
       return;
     }
+    confirm();
+    update({ topics: picked });
     router.push("/fun" as never);
   }
 
@@ -401,27 +416,29 @@ export default function TopicsPage() {
             role="status"
             aria-live="polite"
             className="alpha-ui text-sm"
-            style={{ color: "var(--ink-soft)" }}
+            style={{ color: saveError ? "var(--accent-ink)" : "var(--ink-soft)" }}
           >
-            {signedIn
-              ? favRemaining > 0
-                ? `Pick ${favRemaining} more to fill your letter`
-                : `${quota} favorites${backupCount > 0 ? ` · ${backupCount} backup${backupCount > 1 ? "s" : ""}` : ""} · ready`
-              : onbRemaining > 0
-                ? `Pick ${onbRemaining} more`
-                : `${quota} of ${quota}, ready to continue`}
+            {saveError
+              ? saveError
+              : signedIn
+                ? favRemaining > 0
+                  ? `Pick ${favRemaining} more to fill your letter`
+                  : `${quota} favorites${backupCount > 0 ? ` · ${backupCount} backup${backupCount > 1 ? "s" : ""}` : ""} · ready`
+                : onbRemaining > 0
+                  ? `Pick ${onbRemaining} more`
+                  : `${quota} of ${quota}, ready to continue`}
           </span>
           <button
             type="button"
             onClick={submit}
-            disabled={!ready}
+            disabled={!ready || saving}
             className="alpha-button"
             style={{
-              opacity: ready ? 1 : 0.3,
-              cursor: ready ? "pointer" : "not-allowed",
+              opacity: ready && !saving ? 1 : 0.3,
+              cursor: ready && !saving ? "pointer" : "not-allowed",
             }}
           >
-            {signedIn ? "Save" : "Continue →"}
+            {saving ? "Saving…" : signedIn ? "Save" : "Continue →"}
           </button>
         </div>
       </div>

@@ -88,12 +88,16 @@ export async function selectLetterSections<T>(
  *  (not double them). */
 export const BACKUP_SLOTS = 5;
 
+/** Hard ceiling on the topic pool — the max quota tier (5 bundles). Bounds
+ *  generation cost and the size of a topics array written straight to the DB. */
+export const CATALOG_MAX = 25;
+
 /** The bounded topic pool: the letter size plus a fixed 5 backups, never more
  *  than the catalog max. Bounds generation cost + guards against a topics array
  *  written straight to the DB (the RLS trigger allows the column).
  *  e.g. quota 5 -> 10, quota 10 -> 15, quota 20 -> 25 (quota 25 caps at the
  *  catalog max, so the top tier carries no backups). */
-export function poolCap(letterSize: number, catalogMax = 25): number {
+export function poolCap(letterSize: number, catalogMax = CATALOG_MAX): number {
   const size = Math.max(1, Math.floor(letterSize));
   return Math.min(catalogMax, size + BACKUP_SLOTS);
 }

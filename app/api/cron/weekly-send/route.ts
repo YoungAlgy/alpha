@@ -66,6 +66,10 @@ export async function GET(req: Request) {
 
   // Allow ?weekOf=YYYY-MM-DD override (useful for backfills + admin testing
   // when the schedule hasn't fired yet). Defaults to today (the send date).
+  // NOTE: vercel.json appends a ?slot=sunday|midweek to the two cron paths so
+  // Vercel registers them as two distinct jobs (same path = deduped to one).
+  // We never read ?slot here — the send date alone drives behavior — so don't
+  // "clean it up" out of vercel.json or the Tue/Thu schedule disappears.
   const url = new URL(req.url);
   const weekOfOverride = url.searchParams.get("weekOf");
   const weekOf =
