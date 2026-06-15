@@ -66,7 +66,7 @@ export default function TopicsPage() {
   function addCustom() {
     const id = makeCustomTopic(customText);
     if (!id) {
-      setCustomErr("Give it a couple of words — the more specific, the better.");
+      setCustomErr("Give it a couple of words. The more specific, the better.");
       return;
     }
     const wanted = customTopicText(id).toLowerCase();

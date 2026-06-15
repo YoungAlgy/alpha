@@ -136,7 +136,7 @@ function previewFromIssue(issue: Issue): string {
   if (lead) {
     const trimmed = lead.length > 90 ? lead.slice(0, 87).trimEnd() + "…" : lead;
     if (others === 0) return trimmed;
-    return `${trimmed} — plus ${others} more topic${others === 1 ? "" : "s"}.`;
+    return `${trimmed}, plus ${others} more topic${others === 1 ? "" : "s"}.`;
   }
   const labels = issue.sections.slice(0, 4).map((s) => s.topicLabel.toLowerCase());
   return `This week on ${labels.join(", ")}.`;
