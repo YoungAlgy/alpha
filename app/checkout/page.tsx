@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicLabel, topicEmoji } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { track } from "@/lib/analytics";
 import type { ThemeId } from "@/lib/types";
@@ -140,22 +140,18 @@ export default function CheckoutPage() {
                 YOUR TOPICS
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {(state.topics || []).map((id) => {
-                  const t = TOPIC_BY_ID[id];
-                  if (!t) return null;
-                  return (
-                    <span
-                      key={id}
-                      className="alpha-ui text-xs px-2 py-1 rounded-full"
-                      style={{
-                        background: "var(--callout-bg)",
-                        color: "var(--ink)",
-                      }}
-                    >
-                      {t.emoji} {t.label}
-                    </span>
-                  );
-                })}
+                {(state.topics || []).map((id) => (
+                  <span
+                    key={id}
+                    className="alpha-ui text-xs px-2 py-1 rounded-full"
+                    style={{
+                      background: "var(--callout-bg)",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {topicEmoji(id)} {topicLabel(id)}
+                  </span>
+                ))}
               </div>
             </div>
             {state.city && <MiniRow label="City" value={state.city} />}

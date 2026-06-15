@@ -2,7 +2,7 @@ import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
 import { resolveTopicSignal } from "./source-resolver";
 import { getCachedBlurb, setCachedBlurb } from "./blurb-cache";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicLabel } from "@/lib/topics";
 import type { Issue, UserProfile } from "@/lib/types";
 
 export async function generateIssue(
@@ -16,9 +16,9 @@ export async function generateIssue(
   const blurbPromises = user.topics.map(async (topicId) => {
     const cached = await getCachedBlurb(topicId, weekOf);
     if (cached) {
-      // Fill the label from the topic registry (we don't store it in DB)
-      const label = TOPIC_BY_ID[topicId]?.label || topicId;
-      return { ...cached, topicLabel: label };
+      // Fill the label from the registry (catalog) or the custom text — we
+      // don't store the label in the cache row.
+      return { ...cached, topicLabel: topicLabel(topicId) };
     }
     const signal = await resolveTopicSignal(topicId, weekOf);
     if (!signal) {

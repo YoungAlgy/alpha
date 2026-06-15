@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Footer } from "@/components/Footer";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicLabel } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 
 interface AdminUserRow {
@@ -187,7 +187,7 @@ export default function AdminAccountsPage() {
               const status = statusLabel(u);
               const theme = u.theme ? THEMES.find((t) => t.id === u.theme)?.label || u.theme : "—";
               const topics = (u.topics || [])
-                .map((id) => TOPIC_BY_ID[id as keyof typeof TOPIC_BY_ID]?.label)
+                .map((id) => topicLabel(id))
                 .filter(Boolean)
                 .join(" · ");
               const created = new Date(u.created_at).toLocaleDateString();

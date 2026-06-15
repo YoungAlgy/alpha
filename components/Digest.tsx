@@ -1,6 +1,6 @@
 import type { Issue, DigestItem, ItemKind } from "@/lib/types";
 import { ScrollFadeIn } from "./ScrollFadeIn";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicEmoji } from "@/lib/topics";
 
 function sectionAnchor(topicId: string): string {
   return `s-${topicId}`;
@@ -67,7 +67,7 @@ export function Digest({ issue }: DigestProps) {
       </p>
 
       {issue.sections.map((section) => {
-        const meta = TOPIC_BY_ID[section.topicId];
+        const emoji = topicEmoji(section.topicId);
         return (
         <ScrollFadeIn key={section.topicId} className="mb-16">
         <section id={sectionAnchor(section.topicId)}>
@@ -76,9 +76,9 @@ export function Digest({ issue }: DigestProps) {
             style={{ borderColor: "var(--rule)" }}
           />
           <h2 className="alpha-display text-3xl md:text-4xl font-bold mb-3 tracking-tight flex items-baseline gap-3">
-            {meta?.emoji && (
+            {emoji && (
               <span aria-hidden className="text-2xl md:text-3xl" style={{ opacity: 0.85 }}>
-                {meta.emoji}
+                {emoji}
               </span>
             )}
             <span>{section.topicLabel}</span>

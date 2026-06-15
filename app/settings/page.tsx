@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicLabel, topicEmoji } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { Footer } from "@/components/Footer";
 import { deleteUserAccount } from "@/lib/user-sync";
@@ -125,14 +125,11 @@ export default function SettingsPage() {
               : `The ${topicQuota} things your letter focuses on each week.`}
           </p>
           <ul className="space-y-1 mb-3">
-            {(state.topics || []).map((id) => {
-              const t = TOPIC_BY_ID[id];
-              return (
-                <li key={id} className="alpha-display text-base">
-                  {t ? `${t.emoji} ${t.label}` : id}
-                </li>
-              );
-            })}
+            {(state.topics || []).map((id) => (
+              <li key={id} className="alpha-display text-base">
+                {topicEmoji(id)} {topicLabel(id)}
+              </li>
+            ))}
           </ul>
           <Link
             href="/topics"

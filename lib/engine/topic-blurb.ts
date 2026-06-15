@@ -1,5 +1,5 @@
 import { anthropicClient, MODEL } from "./client";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicLabel } from "@/lib/topics";
 import { extractSignalUrls, enforceSignalUrls } from "./url-guard";
 import type { TopicId } from "@/lib/types";
 import type { TopicBlurb, TopicSignal, BlurbItemKind } from "./types";
@@ -65,17 +65,18 @@ export async function generateTopicBlurb(
   weekOf: string,
   signal: TopicSignal
 ): Promise<TopicBlurb> {
-  const topic = TOPIC_BY_ID[topicId];
-  if (!topic) throw new Error(`Unknown topic: ${topicId}`);
+  // Catalog label, or the user's own text for a custom topic (never throws —
+  // a custom "your own thing" topic must generate, not be skipped).
+  const label = topicLabel(topicId);
 
-  const userPrompt = `Topic: ${topic.label}
+  const userPrompt = `Topic: ${label}
 Week: ${weekOf}
 
 Raw signal for this week (URLs here are real, you may use them. Do NOT invent new ones):
 
 ${signal.context.trim()}
 
-Write this week's ${topic.label} section. Return JSON in this exact shape:
+Write this week's ${label} section. Return JSON in this exact shape:
 
 {
   "intro": "1-2 sentence intro that sets up the section's theme this week",
@@ -146,7 +147,7 @@ Three items exactly. VARY the kinds across them. Include URLs only from the sign
 
   return {
     topicId,
-    topicLabel: topic.label,
+    topicLabel: label,
     weekOf,
     intro: parsed.intro,
     items,

@@ -1,7 +1,7 @@
-import type { TopicId } from "./types";
+import type { TopicId, FixedTopicId } from "./types";
 
 export interface TopicMeta {
-  id: TopicId;
+  id: FixedTopicId;
   label: string;
   bucket: TopicBucket;
   tier: "A" | "B";
@@ -55,6 +55,46 @@ export const TOPICS: TopicMeta[] = [
   { id: "faith-meaning", label: "Faith & meaning", bucket: "Mind", tier: "B", blurb: "Christianity, theology, practice. Thoughtful, not preachy.", emoji: "🕊️" },
 ];
 
-export const TOPIC_BY_ID: Record<TopicId, TopicMeta> = Object.fromEntries(
+export const TOPIC_BY_ID: Record<FixedTopicId, TopicMeta> = Object.fromEntries(
   TOPICS.map((t) => [t.id, t])
-) as Record<TopicId, TopicMeta>;
+) as Record<FixedTopicId, TopicMeta>;
+
+// ─── Custom ("your own thing") topics ───────────────────────────────────────
+// Encoded in the existing topics text[] as `custom:<text>` — no schema change.
+// Always resolve a topic's display label/emoji through these helpers; custom
+// ids are not keys in TOPIC_BY_ID.
+
+export const CUSTOM_PREFIX = "custom:";
+export const MAX_CUSTOM_TOPIC_LEN = 80;
+
+export function isCustomTopic(id: string): boolean {
+  return id.startsWith(CUSTOM_PREFIX);
+}
+
+/** The raw free text a user typed for a custom topic (no prefix). */
+export function customTopicText(id: string): string {
+  return id.slice(CUSTOM_PREFIX.length).trim();
+}
+
+/** Build a custom topic id from free text. Returns null if it's empty/too long
+ *  or collides with a catalog id. Normalizes whitespace; preserves the words. */
+export function makeCustomTopic(text: string): `custom:${string}` | null {
+  const clean = text.replace(/\s+/g, " ").trim().slice(0, MAX_CUSTOM_TOPIC_LEN).trim();
+  if (clean.length < 2) return null;
+  return `${CUSTOM_PREFIX}${clean}`;
+}
+
+/** Display label for any topic id (catalog or custom). */
+export function topicLabel(id: string): string {
+  if (isCustomTopic(id)) {
+    const t = customTopicText(id);
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Your topic";
+  }
+  return TOPIC_BY_ID[id as FixedTopicId]?.label ?? id;
+}
+
+/** Display emoji for any topic id. Custom topics get a "personalized" sparkle. */
+export function topicEmoji(id: string): string {
+  if (isCustomTopic(id)) return "✨";
+  return TOPIC_BY_ID[id as FixedTopicId]?.emoji ?? "•";
+}

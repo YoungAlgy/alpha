@@ -2,35 +2,50 @@ import { braveConfigured, braveSearch, formatAsSignal } from "@/lib/brave";
 import { TOPIC_QUERIES } from "./topic-queries";
 import { getSignal } from "./mock-signals";
 import { extractSignalUrls } from "./url-guard";
-import type { TopicId } from "@/lib/types";
+import { isCustomTopic, customTopicText } from "@/lib/topics";
+import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
 
 // Resolves a TopicSignal for (topicId, weekOf). Tries Brave Search first
 // when configured, falls back to hand-written mock signals otherwise.
-// Cache-friendly: in V1 these get persisted to topic_blurbs in Supabase so
-// every subscriber to a topic shares the same generation cost.
+// Cache-friendly: blurbs persist to topic_blurbs so every subscriber to a
+// topic (including identical custom text) shares the generation cost.
+
+// A custom ("your own thing") topic has no catalog query set — derive a few
+// from the user's free text. freshness:"pw" at the call site handles recency.
+function customQueries(topicId: string): string[] {
+  const t = customTopicText(topicId);
+  if (!t) return [];
+  return [t, `${t} news`, `${t} latest`];
+}
 
 export async function resolveTopicSignal(
   topicId: TopicId,
   weekOf: string
 ): Promise<TopicSignal | undefined> {
-  if (braveConfigured()) {
+  const custom = isCustomTopic(topicId);
+  const queries = custom ? customQueries(topicId) : TOPIC_QUERIES[topicId as FixedTopicId];
+
+  if (braveConfigured() && queries && queries.length > 0) {
     try {
-      const live = await fetchLiveSignal(topicId, weekOf);
+      const live = await fetchLiveSignal(topicId, queries, weekOf);
       if (live) return live;
     } catch (e) {
       console.warn(`[source-resolver] Brave failed for ${topicId}:`, e);
-      // fall through to mock
+      // fall through to mock (fixed topics only)
     }
   }
+  // Custom topics have no curated mock — if Brave gave nothing, return
+  // undefined so assemble drops just this section (the letter still ships).
+  if (custom) return undefined;
   return getSignal(topicId, weekOf) || getSignal(topicId);
 }
 
 async function fetchLiveSignal(
-  topicId: TopicId,
+  topicId: string,
+  queries: string[],
   weekOf: string
 ): Promise<TopicSignal | undefined> {
-  const queries = TOPIC_QUERIES[topicId];
   if (!queries || queries.length === 0) return undefined;
 
   // Run queries in parallel — Brave handles 1 req/sec per key but bursts are fine.
@@ -45,7 +60,8 @@ async function fetchLiveSignal(
     })
   );
 
-  const context = `This week's signal for ${topicId} (week of ${weekOf}), gathered live from Brave Search:\n\n${blocks.join("\n\n---\n\n")}\n\nURLs above are real. You may cite them. Do not invent URLs.`;
+  const subject = isCustomTopic(topicId) ? customTopicText(topicId) : topicId;
+  const context = `This week's signal for ${subject} (week of ${weekOf}), gathered live from Brave Search:\n\n${blocks.join("\n\n---\n\n")}\n\nURLs above are real. You may cite them. Do not invent URLs.`;
 
   // If the live signal carries NO real URLs (every Brave query came back empty
   // this week), treat it as "no live signal" so the caller falls back to the
@@ -56,5 +72,5 @@ async function fetchLiveSignal(
     return undefined;
   }
 
-  return { topicId, weekOf, context };
+  return { topicId: topicId as TopicId, weekOf, context };
 }

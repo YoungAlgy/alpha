@@ -10,7 +10,11 @@ export type ThemeId =
   | "mono"
   | "sunset";
 
-export type TopicId =
+// The fixed catalog ids. TopicId additionally allows `custom:<text>` so a
+// subscriber can add their own hyper-specific topic ("custom:crypto trends in
+// Asia"). Custom ids are NOT keys in TOPIC_BY_ID — always resolve labels via
+// the topicLabel()/topicEmoji() helpers in lib/topics, never by indexing.
+export type FixedTopicId =
   | "healthcare-recruiting"
   | "sales-persuasion"
   | "founder-operator"
@@ -38,6 +42,9 @@ export type TopicId =
   | "sustainable-living"
   | "startups-vc"
   | "faith-meaning";
+
+/** A catalog topic, or a user's own free-text topic encoded as `custom:<text>`. */
+export type TopicId = FixedTopicId | `custom:${string}`;
 
 export type ItemKind =
   | "read"     // article, essay, news

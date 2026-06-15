@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicEmoji } from "@/lib/topics";
 import type { Issue } from "@/lib/types";
 
 interface LetterTOCProps {
@@ -47,7 +47,7 @@ export function LetterTOC({ issue }: LetterTOCProps) {
       </div>
       <ul className="space-y-2">
         {issue.sections.map((s) => {
-          const meta = TOPIC_BY_ID[s.topicId];
+          const emoji = topicEmoji(s.topicId);
           const isActive = active === s.topicId;
           return (
             <li key={s.topicId}>
@@ -70,7 +70,7 @@ export function LetterTOC({ issue }: LetterTOCProps) {
                     transition: "width 200ms ease, background 200ms ease",
                   }}
                 />
-                {meta?.emoji && <span aria-hidden style={{ opacity: 0.85 }}>{meta.emoji}</span>}
+                {emoji && <span aria-hidden style={{ opacity: 0.85 }}>{emoji}</span>}
                 <span>{s.topicLabel}</span>
               </button>
             </li>

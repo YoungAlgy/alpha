@@ -4,7 +4,7 @@ import { supabaseServiceClient } from "@/lib/supabase/server";
 import { generateIssue } from "@/lib/engine/assemble";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicLabel } from "@/lib/topics";
 import type { UserProfile, TopicId, ThemeId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -230,7 +230,7 @@ export async function GET(req: Request) {
       sent++;
       // Log topic labels too so the runtime log is useful for content debugging
       const labels = topics
-        .map((id) => TOPIC_BY_ID[id]?.label)
+        .map((id) => topicLabel(id))
         .filter(Boolean)
         .join(" · ");
       console.log(`[cron/weekly-send] sent → ${row.email} (${labels})`);

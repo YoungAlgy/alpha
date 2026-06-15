@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { stepDone, fanfare } from "@/lib/audio";
 import { track } from "@/lib/analytics";
-import { TOPIC_BY_ID } from "@/lib/topics";
+import { topicLabel } from "@/lib/topics";
 import { THEME_BY_ID } from "@/lib/themes";
 import type { Issue, UserProfile, TopicId, ThemeId } from "@/lib/types";
 
@@ -15,7 +15,7 @@ function personalizedSteps(
   firstName: string | undefined
 ): string[] {
   const topicLabels = (topics || [])
-    .map((id) => TOPIC_BY_ID[id]?.label)
+    .map((id) => topicLabel(id))
     .filter(Boolean) as string[];
   const themeLabel = theme ? THEME_BY_ID[theme]?.label : "Forest";
   // One "reading" beat per chosen topic (named, so it feels like real work on
