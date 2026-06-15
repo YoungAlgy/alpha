@@ -1,48 +1,66 @@
 import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
-import { resolveTopicSignal } from "./source-resolver";
+import { resolveTopicSignal, resolveMockSignal } from "./source-resolver";
 import { getCachedBlurb, setCachedBlurb } from "./blurb-cache";
+import { selectLetterSections } from "./select-sections";
 import { topicLabel } from "@/lib/topics";
-import type { Issue, UserProfile } from "@/lib/types";
+import type { Issue, UserProfile, TopicId } from "@/lib/types";
+import type { TopicBlurb } from "./types";
 
 export async function generateIssue(
   user: UserProfile,
   weekOf: string,
+  // How many sections the reader's letter holds (what they pay for). Their
+  // `topics` is the ranked POOL — we fill the letter with the top topics that
+  // have fresh info and use backups for any that are quiet. Defaults to the
+  // whole pool (every caller that doesn't rank a deeper pool gets today's
+  // behavior: every topic generated, in order).
+  letterSize?: number,
 ): Promise<Issue> {
-  // Step 1 — for each topic, check the per-(topic, week_of) cache in Supabase.
-  // Cache hit → reuse the shared blurb. Cache miss → resolve signal (Brave or
-  // mock), synthesize via Claude, write back to cache for future subscribers.
-  // This is the cost unlock: 1 generation per topic-week instead of per user.
-  const blurbPromises = user.topics.map(async (topicId) => {
-    const cached = await getCachedBlurb(topicId, weekOf);
-    if (cached) {
-      // Fill the label from the registry (catalog) or the custom text — we
-      // don't store the label in the cache row.
-      return { ...cached, topicLabel: topicLabel(topicId) };
-    }
-    const signal = await resolveTopicSignal(topicId, weekOf);
-    if (!signal) {
-      throw new Error(`No signal available for topic: ${topicId}`);
-    }
-    const blurb = await generateTopicBlurb(topicId, weekOf, signal);
-    // Fire-and-forget cache write — doesn't block the response
-    setCachedBlurb(blurb).catch(() => undefined);
-    return blurb;
-  });
+  const pool = user.topics;
+  const size = Math.max(1, letterSize ?? pool.length);
 
-  // Resilient fan-out: a transient Brave/Claude failure on ONE topic must not
-  // sink the whole letter. Keep the sections that succeeded (in the user's
-  // chosen order); only fail outright if EVERY topic failed. The failed topic
-  // retries on the next generation (cache miss).
-  const settled = await Promise.allSettled(blurbPromises);
-  const blurbs = settled
-    .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof generateTopicBlurb>>> => r.status === "fulfilled")
-    .map((r) => r.value);
-  settled.forEach((r, i) => {
-    if (r.status === "rejected") {
-      console.warn(`[assemble] topic "${user.topics[i]}" failed, skipping section: ${r.reason}`);
-    }
-  });
+  // Generate a topic's section from FRESH live signal. Returns null WITHOUT a
+  // model call when the topic has nothing new this period, so the selector can
+  // skip it and reach for a backup. A cache hit = already generated this
+  // period = include it. The per-(topic, week_of) cache is the cost unlock:
+  // one generation per topic-week, shared across every subscriber to it.
+  async function genLive(topicId: string): Promise<TopicBlurb | null> {
+    const id = topicId as TopicId;
+    const cached = await getCachedBlurb(id, weekOf);
+    if (cached) return { ...cached, topicLabel: topicLabel(id) };
+    const signal = await resolveTopicSignal(id, weekOf, { liveOnly: true });
+    if (!signal) return null; // no fresh signal — skip, no model call
+    const blurb = await generateTopicBlurb(id, weekOf, signal);
+    setCachedBlurb(blurb).catch(() => undefined);
+    // A section whose links all got dropped by the guard isn't worth a slot.
+    return blurb.items.length > 0 ? blurb : null;
+  }
+
+  // Last-resort filler from the curated mock (catalog topics only) — keeps the
+  // letter full when the whole ranked pool was quiet this period.
+  async function genFiller(topicId: string): Promise<TopicBlurb | null> {
+    const id = topicId as TopicId;
+    const cached = await getCachedBlurb(id, weekOf);
+    if (cached) return { ...cached, topicLabel: topicLabel(id) };
+    const signal = resolveMockSignal(id, weekOf);
+    if (!signal) return null;
+    const blurb = await generateTopicBlurb(id, weekOf, signal);
+    setCachedBlurb(blurb).catch(() => undefined);
+    return blurb.items.length > 0 ? blurb : null;
+  }
+
+  // Pick the letter's sections from the ranked pool: top fresh topics first,
+  // backups for the quiet ones, filler only as a last resort. Each generator
+  // is individually error-trapped inside the selector, so one failed topic is
+  // treated as "quiet" and backfilled rather than sinking the whole letter.
+  const selection = await selectLetterSections(pool, size, genLive, genFiller);
+  const blurbs = selection.chosen.map((c) => c.value);
+  if (selection.skippedDry.length > 0) {
+    console.warn(
+      `[assemble] ${weekOf}: skipped ${selection.skippedDry.length} quiet topic(s): ${selection.skippedDry.join(", ")}`
+    );
+  }
   if (blurbs.length === 0) {
     throw new Error("All topic sections failed to generate");
   }

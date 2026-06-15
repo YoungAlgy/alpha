@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { generateIssue } from "@/lib/engine/assemble";
+import { poolCap } from "@/lib/engine/select-sections";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { topicLabel } from "@/lib/topics";
@@ -140,14 +141,14 @@ export async function GET(req: Request) {
   // press against maxDuration — the path is chunked sends (cursor param +
   // multiple cron slots), not parallelism (Claude rate limits bind first).
   for (const row of rows) {
-    // Clamp to the number of topics they're paid up for. Defends against a
-    // topics array written directly to the DB (the RLS trigger permits the
-    // topics column) that exceeds quota — both a billing bypass (more
-    // sections than paid for) and a cost/timeout vector (a huge array would
-    // fan out into that many Claude calls).
-    const quota = Math.max(5, Math.min(25, row.topic_quota ?? 5));
-    const topics = ((row.topics ?? []) as TopicId[]).slice(0, quota);
-    if (!row.first_name || topics.length === 0) {
+    // letterSize = sections they pay for. The topics array is their ranked
+    // POOL — clamp it to poolCap (letterSize + backups, ≤25) so generation
+    // stays bounded and a topics array written straight to the DB (the RLS
+    // trigger permits the column) can't blow up cost. generateIssue fills the
+    // letter with the top fresh topics and backfills from the rest.
+    const letterSize = Math.max(5, Math.min(25, row.topic_quota ?? 5));
+    const pool = ((row.topics ?? []) as TopicId[]).slice(0, poolCap(letterSize));
+    if (!row.first_name || pool.length === 0) {
       skippedNoTopics++;
       continue;
     }
@@ -168,13 +169,13 @@ export async function GET(req: Request) {
       jobBlurb: row.job_blurb ?? undefined,
       projectBlurb: row.project_blurb ?? undefined,
       funBlurb: row.fun_blurb ?? undefined,
-      topics,
+      topics: pool,
       theme: ((row.theme as ThemeId) ?? "forest"),
       email: row.email,
     };
 
     try {
-      const issue = await generateIssue(profile, weekOf);
+      const issue = await generateIssue(profile, weekOf, letterSize);
 
       // Upsert the issue so re-runs are idempotent on (user_id, week_of).
       // THROW on failure (caught by the per-user catch below) — if this row
@@ -228,9 +229,10 @@ export async function GET(req: Request) {
       }
 
       sent++;
-      // Log topic labels too so the runtime log is useful for content debugging
-      const labels = topics
-        .map((id) => topicLabel(id))
+      // Log the sections that actually made the letter (top fresh topics +
+      // any backfill), not the whole pool.
+      const labels = issue.sections
+        .map((s) => s.topicLabel)
         .filter(Boolean)
         .join(" · ");
       console.log(`[cron/weekly-send] sent → ${row.email} (${labels})`);

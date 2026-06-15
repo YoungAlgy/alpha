@@ -21,7 +21,8 @@ function customQueries(topicId: string): string[] {
 
 export async function resolveTopicSignal(
   topicId: TopicId,
-  weekOf: string
+  weekOf: string,
+  opts?: { liveOnly?: boolean }
 ): Promise<TopicSignal | undefined> {
   const custom = isCustomTopic(topicId);
   const queries = custom ? customQueries(topicId) : TOPIC_QUERIES[topicId as FixedTopicId];
@@ -35,9 +36,21 @@ export async function resolveTopicSignal(
       // fall through to mock (fixed topics only)
     }
   }
+  // liveOnly: caller wants to know if this topic has FRESH signal this period
+  // (the ranked-pool selector skips topics with nothing new and backfills from
+  // a backup that does). Return undefined when there's no live signal.
+  if (opts?.liveOnly) return undefined;
   // Custom topics have no curated mock — if Brave gave nothing, return
   // undefined so assemble drops just this section (the letter still ships).
   if (custom) return undefined;
+  return getSignal(topicId, weekOf) || getSignal(topicId);
+}
+
+// Last-resort filler for a topic with no fresh live signal (catalog topics
+// only — customs have no mock). Used to keep a letter full when the whole
+// ranked pool was quiet that period.
+export function resolveMockSignal(topicId: TopicId, weekOf: string): TopicSignal | undefined {
+  if (isCustomTopic(topicId)) return undefined;
   return getSignal(topicId, weekOf) || getSignal(topicId);
 }
 
