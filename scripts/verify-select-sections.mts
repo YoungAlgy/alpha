@@ -80,10 +80,12 @@ const ids = (r: { chosen: { topicId: string }[] }) => r.chosen.map((c) => c.topi
   check("(7) rank order even if 'a' resolves last", ids(r) === "a,b,c");
 }
 
-// (8) poolCap: letterSize + backups, capped at the catalog max.
-check("(8) poolCap(5) = 10", poolCap(5) === 10);
-check("(8) poolCap(13) caps at 25", poolCap(13) === 25);
-check("(8) poolCap(1) = 2", poolCap(1) === 2);
+// (8) poolCap: letterSize + a fixed 5 backups, capped at the catalog max.
+check("(8) poolCap(5) = 10 (5 favorites + 5 backups)", poolCap(5) === 10);
+check("(8) poolCap(10) = 15 (add a bundle, still 5 backups)", poolCap(10) === 15);
+check("(8) poolCap(20) = 25", poolCap(20) === 25);
+check("(8) poolCap(25) = 25 (top tier capped, no backups)", poolCap(25) === 25);
+check("(8) poolCap(1) = 6", poolCap(1) === 6);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

@@ -24,6 +24,13 @@ export default function SettingsPage() {
   // Falls back to onboarding localStorage when the DB row hasn't loaded.
   const [topics, setTopics] = useState<string[] | null>(null);
   const [busyTier, setBusyTier] = useState<"up" | "down" | null>(null);
+  // Which tier change the reader is being asked to confirm, shown as an in-app
+  // panel instead of a native confirm() dialog (which reads as a browser alert,
+  // off-brand for a paid change). null = no panel open.
+  const [confirmingTier, setConfirmingTier] = useState<"up" | "down" | null>(null);
+  // After a successful add, surface a "pick your new topics" CTA so the flow
+  // finishes where the reader actually uses the topics they just bought.
+  const [justAdded, setJustAdded] = useState(false);
   // In-page billing feedback (replaces jarring/off-brand alert() dialogs).
   const [billingMsg, setBillingMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   // Whether the user has an active PAID Stripe subscription. Account deletion
@@ -68,12 +75,18 @@ export default function SettingsPage() {
     })();
   }, []);
 
-  async function changeTier(direction: "up" | "down") {
-    const confirmMsg =
-      direction === "up"
-        ? `Add 5 more topics? Your bill goes up $5/mo (prorated this cycle).`
-        : `Drop 5 topics? Your bill goes down $5/mo. Your letter covers 5 fewer each week. Extra picks stay on as free backups.`;
-    if (!confirm(confirmMsg)) return;
+  // Open the in-app confirm panel for an add/drop. No network call yet.
+  function requestTier(direction: "up" | "down") {
+    setBillingMsg(null);
+    setJustAdded(false);
+    setConfirmingTier(direction);
+  }
+
+  // Run the tier change after the reader confirms in the panel.
+  async function confirmTier() {
+    const direction = confirmingTier;
+    if (!direction) return;
+    setConfirmingTier(null);
     setBusyTier(direction);
     setBillingMsg(null);
     try {
@@ -86,13 +99,12 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setTopicQuota(data.topicQuota);
       const dollars = (data.topicQuota / 5) * 5;
-      setBillingMsg({
-        kind: "ok",
-        text:
-          direction === "up"
-            ? `Added. You're now on ${data.topicQuota} topics, $${dollars}/mo. Pick the new ones from Change topics.`
-            : `Dropped. You're now on ${data.topicQuota} topics, $${dollars}/mo.`,
-      });
+      if (direction === "up") {
+        setJustAdded(true);
+        setBillingMsg({ kind: "ok", text: `Added. You're on ${data.topicQuota} topics, $${dollars}/mo.` });
+      } else {
+        setBillingMsg({ kind: "ok", text: `Dropped. You're on ${data.topicQuota} topics, $${dollars}/mo.` });
+      }
     } catch (e) {
       setBillingMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't update plan." });
     } finally {
@@ -103,6 +115,9 @@ export default function SettingsPage() {
   const monthlyDollars = (topicQuota / 5) * 5;
   const canAdd = topicQuota < 25;
   const canRemove = topicQuota > 5;
+  // The quota + price the open confirm panel would move the reader to.
+  const pendingQuota = confirmingTier === "up" ? topicQuota + 5 : topicQuota - 5;
+  const pendingDollars = (pendingQuota / 5) * 5;
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -214,36 +229,72 @@ export default function SettingsPage() {
           <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
             {topicQuota} topics this cycle
           </p>
-          <div className="flex flex-wrap gap-4 mb-3">
-            {canAdd && (
-              <button
-                type="button"
-                disabled={busyTier !== null}
-                onClick={() => changeTier("up")}
-                className="alpha-ui text-sm underline underline-offset-4"
-                style={{
-                  color: "var(--accent-ink)",
-                  opacity: busyTier ? 0.4 : 1,
-                }}
-              >
-                {busyTier === "up" ? "Adding…" : "Add 5 more topics (+$5/mo) →"}
-              </button>
-            )}
-            {canRemove && (
-              <button
-                type="button"
-                disabled={busyTier !== null}
-                onClick={() => changeTier("down")}
-                className="alpha-ui text-sm underline underline-offset-4"
-                style={{
-                  color: "var(--ink-soft)",
-                  opacity: busyTier ? 0.4 : 1,
-                }}
-              >
-                {busyTier === "down" ? "Dropping…" : "Drop 5 topics (−$5/mo)"}
-              </button>
-            )}
-          </div>
+          {!confirmingTier && (
+            <div className="flex flex-wrap gap-4 mb-3">
+              {canAdd && (
+                <button
+                  type="button"
+                  disabled={busyTier !== null}
+                  onClick={() => requestTier("up")}
+                  className="alpha-ui text-sm underline underline-offset-4"
+                  style={{
+                    color: "var(--accent-ink)",
+                    opacity: busyTier ? 0.4 : 1,
+                  }}
+                >
+                  {busyTier === "up" ? "Adding…" : "Add 5 more topics (+$5/mo) →"}
+                </button>
+              )}
+              {canRemove && (
+                <button
+                  type="button"
+                  disabled={busyTier !== null}
+                  onClick={() => requestTier("down")}
+                  className="alpha-ui text-sm underline underline-offset-4"
+                  style={{
+                    color: "var(--ink-soft)",
+                    opacity: busyTier ? 0.4 : 1,
+                  }}
+                >
+                  {busyTier === "down" ? "Dropping…" : "Drop 5 topics (−$5/mo)"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {confirmingTier && (
+            <div
+              className="mb-4 p-4 rounded-lg"
+              style={{ background: "var(--callout-bg)", border: "1.5px solid var(--accent)" }}
+            >
+              <p className="alpha-display text-base font-semibold mb-1">
+                {confirmingTier === "up" ? "Add 5 topics?" : "Drop 5 topics?"}
+              </p>
+              <p className="alpha-ui text-sm mb-4" style={{ color: "var(--ink-soft)" }}>
+                {confirmingTier === "up"
+                  ? `You'll move to ${pendingQuota} topics at $${pendingDollars}/mo. The extra is prorated for the rest of this cycle and charged to your card on file. Then you'll pick the new ones.`
+                  : `You'll move to ${pendingQuota} topics at $${pendingDollars}/mo, $5 less. Your letter covers 5 fewer, and any extra picks become free backups.`}
+              </p>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={confirmTier}
+                  className="alpha-button alpha-button-accent text-sm"
+                >
+                  {confirmingTier === "up" ? "Add 5 topics" : "Drop 5 topics"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingTier(null)}
+                  className="alpha-ui text-sm underline underline-offset-4"
+                  style={{ color: "var(--ink-soft)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {billingMsg && (
             <p
               role="status"
@@ -252,6 +303,17 @@ export default function SettingsPage() {
               style={{ color: billingMsg.kind === "err" ? "var(--accent-ink)" : "var(--ink-soft)" }}
             >
               {billingMsg.text}
+            </p>
+          )}
+          {justAdded && (
+            <p className="mb-3">
+              <Link
+                href="/topics"
+                className="alpha-ui text-sm underline underline-offset-4 font-semibold"
+                style={{ color: "var(--accent-ink)" }}
+              >
+                Pick your new topics →
+              </Link>
             </p>
           )}
           <button

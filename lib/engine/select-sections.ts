@@ -83,10 +83,17 @@ export async function selectLetterSections<T>(
   };
 }
 
-/** The bounded topic pool: the letter size plus up to that many backups, never
- *  more than the catalog max. Bounds generation cost + guards against a topics
- *  array written straight to the DB (the RLS trigger allows the column). */
+/** How many free backup topics a reader can rank below their favorites. Fixed,
+ *  so buying a 5-topic bundle adds 5 favorites and keeps the same 5 backups
+ *  (not double them). */
+export const BACKUP_SLOTS = 5;
+
+/** The bounded topic pool: the letter size plus a fixed 5 backups, never more
+ *  than the catalog max. Bounds generation cost + guards against a topics array
+ *  written straight to the DB (the RLS trigger allows the column).
+ *  e.g. quota 5 -> 10, quota 10 -> 15, quota 20 -> 25 (quota 25 caps at the
+ *  catalog max, so the top tier carries no backups). */
 export function poolCap(letterSize: number, catalogMax = 25): number {
   const size = Math.max(1, Math.floor(letterSize));
-  return Math.min(catalogMax, size * 2);
+  return Math.min(catalogMax, size + BACKUP_SLOTS);
 }
