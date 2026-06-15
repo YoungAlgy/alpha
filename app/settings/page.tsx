@@ -156,7 +156,15 @@ export default function SettingsPage() {
         <Section title="Email">
           <p className="alpha-display text-base mb-3">{state.email || "—"}</p>
           <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
-            Email change requires verification. Coming soon.
+            Your letters and sign-in code go here. Need to change it?{" "}
+            <Link
+              href="/support"
+              className="underline underline-offset-4"
+              style={{ color: "var(--accent-ink)" }}
+            >
+              Send us a note
+            </Link>{" "}
+            and we&apos;ll move your subscription over.
           </p>
         </Section>
 
