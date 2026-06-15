@@ -19,6 +19,10 @@ export default function SettingsPage() {
   // priceCents = current monthly bill in cents. Both come from public.users
   // (mirror of Stripe subscription quantity × $5).
   const [topicQuota, setTopicQuota] = useState<number>(5);
+  // The reader's ranked topic POOL from the DB (source of truth). The top
+  // `topicQuota` are favorites that fill the letter; the rest are free backups.
+  // Falls back to onboarding localStorage when the DB row hasn't loaded.
+  const [topics, setTopics] = useState<string[] | null>(null);
   const [busyTier, setBusyTier] = useState<"up" | "down" | null>(null);
   // In-page billing feedback (replaces jarring/off-brand alert() dialogs).
   const [billingMsg, setBillingMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -44,11 +48,14 @@ export default function SettingsPage() {
         if (user.email === ADMIN_EMAIL) setIsAdmin(true);
         const { data: row } = await sb
           .from("users")
-          .select("topic_quota, subscribed_at, cancelled_at, stripe_customer_id")
+          .select("topic_quota, topics, subscribed_at, cancelled_at, stripe_customer_id")
           .eq("id", user.id)
           .maybeSingle();
         if (row?.topic_quota && typeof row.topic_quota === "number") {
           setTopicQuota(Math.max(5, Math.min(25, row.topic_quota)));
+        }
+        if (Array.isArray(row?.topics) && row.topics.length > 0) {
+          setTopics(row.topics as string[]);
         }
         // Paid + active = subscribed, has a Stripe customer, and not past a
         // cancellation date. (Free admin-granted accounts have no customer id.)
@@ -65,7 +72,7 @@ export default function SettingsPage() {
     const confirmMsg =
       direction === "up"
         ? `Add 5 more topics? Your bill goes up $5/mo (prorated this cycle).`
-        : `Drop 5 topics? Your bill goes down $5/mo. Already-selected topics over the new cap will need to be unpicked next time you visit Topics.`;
+        : `Drop 5 topics? Your bill goes down $5/mo. Your letter covers 5 fewer each week. Extra picks stay on as free backups.`;
     if (!confirm(confirmMsg)) return;
     setBusyTier(direction);
     setBillingMsg(null);
@@ -122,25 +129,50 @@ export default function SettingsPage() {
         </h1>
 
         <Section title="Your topics">
-          <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
-            {topicQuota === 5
-              ? "The five things your letter focuses on each week."
-              : `The ${topicQuota} things your letter focuses on each week.`}
-          </p>
-          <ul className="space-y-1 mb-3">
-            {(state.topics || []).map((id) => (
-              <li key={id} className="alpha-display text-base">
-                {topicEmoji(id)} {topicLabel(id)}
-              </li>
-            ))}
-          </ul>
-          <Link
-            href="/topics"
-            className="alpha-ui text-sm underline underline-offset-4"
-            style={{ color: "var(--accent-ink)" }}
-          >
-            Change topics →
-          </Link>
+          {(() => {
+            const all = topics ?? state.topics ?? [];
+            const favorites = all.slice(0, topicQuota);
+            const backups = all.slice(topicQuota);
+            return (
+              <>
+                <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+                  {backups.length > 0
+                    ? `The ${topicQuota} things your letter focuses on each week, plus ${backups.length} backup${backups.length > 1 ? "s" : ""} we swap in when a favorite is quiet.`
+                    : topicQuota === 5
+                      ? "The five things your letter focuses on each week."
+                      : `The ${topicQuota} things your letter focuses on each week.`}
+                </p>
+                <ul className="space-y-1 mb-3">
+                  {favorites.map((id) => (
+                    <li key={id} className="alpha-display text-base">
+                      {topicEmoji(id)} {topicLabel(id)}
+                    </li>
+                  ))}
+                </ul>
+                {backups.length > 0 && (
+                  <>
+                    <p className="alpha-mono text-xs mb-2" style={{ color: "var(--ink-soft)" }}>
+                      BACKUPS
+                    </p>
+                    <ul className="space-y-1 mb-3">
+                      {backups.map((id) => (
+                        <li key={id} className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
+                          {topicEmoji(id)} {topicLabel(id)}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                <Link
+                  href="/topics"
+                  className="alpha-ui text-sm underline underline-offset-4"
+                  style={{ color: "var(--accent-ink)" }}
+                >
+                  Change topics →
+                </Link>
+              </>
+            );
+          })()}
         </Section>
 
         <Section title="Theme">

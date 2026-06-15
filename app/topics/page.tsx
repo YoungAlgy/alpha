@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { TOPICS, makeCustomTopic, isCustomTopic, customTopicText, topicLabel } from "@/lib/topics";
+import { TOPICS, makeCustomTopic, isCustomTopic, customTopicText, topicLabel, topicEmoji } from "@/lib/topics";
+import { poolCap } from "@/lib/engine/select-sections";
 import { tap, unselect, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { TopicId } from "@/lib/types";
@@ -39,11 +40,16 @@ export default function TopicsPage() {
         setSignedIn(true);
         const { data: row } = await sb
           .from("users")
-          .select("topic_quota")
+          .select("topic_quota, topics")
           .eq("id", session.user.id)
           .maybeSingle();
         if (row?.topic_quota && typeof row.topic_quota === "number") {
           setTarget(Math.max(5, Math.min(25, row.topic_quota)));
+        }
+        // Prefer the DB's saved order (the user's ranking) over whatever
+        // onboarding localStorage happens to hold on this device.
+        if (Array.isArray(row?.topics) && row.topics.length > 0) {
+          setPicked(row.topics as TopicId[]);
         }
       } catch {
         // ignore — keep default target
@@ -51,13 +57,23 @@ export default function TopicsPage() {
     })();
   }, []);
 
+  // The pool a reader may build. Signed-in users rank a deeper pool: the top
+  // `target` are favorites (they fill the letter), the rest are free backups
+  // that get swapped in when a favorite has no fresh news. Onboarding stays a
+  // clean pick-your-N. Cap matches the engine's poolCap so generation + the DB
+  // never see more than we'll ever use.
+  const quota = target;
+  const poolMax = signedIn ? poolCap(quota) : quota;
+  const favCount = Math.min(picked.length, quota);
+  const backupCount = Math.max(0, picked.length - quota);
+
   function toggle(id: TopicId) {
     setPicked((prev) => {
       if (prev.includes(id)) {
         unselect();
         return prev.filter((t) => t !== id);
       }
-      if (prev.length >= target) return prev;
+      if (prev.length >= poolMax) return prev;
       tap();
       return [...prev, id];
     });
@@ -77,8 +93,12 @@ export default function TopicsPage() {
       setCustomErr("You've already got that one.");
       return;
     }
-    if (picked.length >= target) {
-      setCustomErr(`You've picked your ${target}. Remove one to add this.`);
+    if (picked.length >= poolMax) {
+      setCustomErr(
+        signedIn
+          ? `That's your max of ${poolMax}. Remove one to add this.`
+          : `You've picked your ${quota}. Remove one to add this.`
+      );
       return;
     }
     tap();
@@ -87,15 +107,32 @@ export default function TopicsPage() {
     setCustomErr(null);
   }
 
-  function removeCustom(id: TopicId) {
+  function removeAt(id: TopicId) {
     unselect();
     setPicked((prev) => prev.filter((t) => t !== id));
+  }
+
+  // Reorder the pool — order IS the ranking (index 0 = top). Moving an item
+  // across the favorites/backups line just changes whether it fills the letter.
+  function move(from: number, dir: -1 | 1) {
+    const to = from + dir;
+    setPicked((prev) => {
+      if (to < 0 || to >= prev.length) return prev;
+      const next = prev.slice();
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+    tap();
   }
 
   const customPicks = picked.filter(isCustomTopic);
 
   async function submit() {
-    if (picked.length !== target) return;
+    // Onboarding picks exactly the quota; signed-in editors must at least fill
+    // their favorites (backups are optional extras).
+    const ready = signedIn ? picked.length >= quota : picked.length === quota;
+    if (!ready) return;
     confirm();
     update({ topics: picked });
     if (signedIn && supabaseConfigured()) {
@@ -114,33 +151,39 @@ export default function TopicsPage() {
     router.push("/fun" as never);
   }
 
-  const remaining = target - picked.length;
+  const onbRemaining = quota - picked.length;
+  const favRemaining = quota - favCount;
+  const ready = signedIn ? picked.length >= quota : picked.length === quota;
 
   return (
     <StepShell stepIndex={7} prevPath="focus">
       <div className="space-y-8">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
-            {target === DEFAULT_TARGET
+            {!signedIn && quota === DEFAULT_TARGET
               ? "Pick five things you want to stay sharp on."
-              : `Pick ${target} things you want to stay sharp on.`}
+              : signedIn
+                ? "Rank what you want to stay sharp on."
+                : `Pick ${quota} things you want to stay sharp on.`}
           </h1>
           <p
             className="alpha-ui text-sm md:text-base"
             style={{ color: "var(--ink-soft)" }}
           >
-            You can swap any of these later, anytime.
+            {signedIn
+              ? `Your top ${quota} fill your letter each week. Add backups below them — we swap one in when a favorite has no fresh news that week.`
+              : "You can swap any of these later, anytime."}
           </p>
         </div>
 
         <div
           role="group"
-          aria-label={`Choose ${target} topics`}
+          aria-label={signedIn ? `Choose up to ${poolMax} topics` : `Choose ${quota} topics`}
           className="grid grid-cols-2 md:grid-cols-3 gap-3"
         >
           {TOPICS.map((t) => {
             const isPicked = picked.includes(t.id);
-            const atLimit = picked.length >= target && !isPicked;
+            const atLimit = picked.length >= poolMax && !isPicked;
             return (
               <button
                 key={t.id}
@@ -207,7 +250,7 @@ export default function TopicsPage() {
                   ✨ {topicLabel(id)}
                   <button
                     type="button"
-                    onClick={() => removeCustom(id)}
+                    onClick={() => removeAt(id)}
                     aria-label={`Remove ${topicLabel(id)}`}
                     className="alpha-mono leading-none"
                     style={{ color: "var(--accent-ink)" }}
@@ -234,19 +277,19 @@ export default function TopicsPage() {
               }}
               maxLength={80}
               placeholder="e.g. crypto trends in Asia"
-              disabled={picked.length >= target}
+              disabled={picked.length >= poolMax}
               aria-label="Add your own topic"
               className="flex-1 alpha-ui text-base bg-transparent border-b py-2 focus:outline-none focus:border-current placeholder:opacity-40"
               style={{ color: "var(--ink)", borderColor: "var(--rule)" }}
             />
             <button
               type="submit"
-              disabled={picked.length >= target || !customText.trim()}
+              disabled={picked.length >= poolMax || !customText.trim()}
               className="alpha-ui text-sm underline underline-offset-4"
               style={{
                 color: "var(--accent-ink)",
-                opacity: picked.length >= target || !customText.trim() ? 0.4 : 1,
-                cursor: picked.length >= target || !customText.trim() ? "not-allowed" : "pointer",
+                opacity: picked.length >= poolMax || !customText.trim() ? 0.4 : 1,
+                cursor: picked.length >= poolMax || !customText.trim() ? "not-allowed" : "pointer",
               }}
             >
               Add
@@ -259,6 +302,100 @@ export default function TopicsPage() {
           )}
         </div>
 
+        {/* Your lineup — ranked favorites + backups (signed-in editing only) */}
+        {signedIn && picked.length > 0 && (
+          <div className="space-y-3 pt-2">
+            <div>
+              <h2 className="alpha-display text-lg font-semibold">Your lineup</h2>
+              <p className="alpha-ui text-xs leading-snug" style={{ color: "var(--ink-soft)" }}>
+                Order is the ranking. Move things up or down. The top {quota} fill
+                your letter; anything below the line is a backup.
+              </p>
+            </div>
+
+            <div role="list" className="space-y-2">
+              {picked.map((id, i) => {
+                const isFav = i < quota;
+                const showLine = i === quota; // first backup row
+                return (
+                  <div key={id}>
+                    {showLine && (
+                      <div className="flex items-center gap-3 py-2" aria-hidden="true">
+                        <div className="flex-1 border-t" style={{ borderColor: "var(--rule)" }} />
+                        <span
+                          className="alpha-ui text-[11px] uppercase tracking-wide"
+                          style={{ color: "var(--ink-soft)" }}
+                        >
+                          Backups
+                        </span>
+                        <div className="flex-1 border-t" style={{ borderColor: "var(--rule)" }} />
+                      </div>
+                    )}
+                    <div
+                      role="listitem"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg"
+                      style={{
+                        background: isFav ? "var(--callout-bg)" : "transparent",
+                        border: `1.5px solid ${isFav ? "var(--accent)" : "var(--rule)"}`,
+                        opacity: isFav ? 1 : 0.85,
+                      }}
+                    >
+                      <span
+                        className="alpha-mono text-xs w-5 text-center shrink-0"
+                        style={{ color: isFav ? "var(--accent-ink)" : "var(--ink-soft)" }}
+                        aria-hidden="true"
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="alpha-display text-sm font-semibold flex-1 min-w-0 truncate">
+                        {topicEmoji(id)} {topicLabel(id)}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => move(i, -1)}
+                          disabled={i === 0}
+                          aria-label={`Move ${topicLabel(id)} up`}
+                          className="alpha-mono text-sm px-1.5 leading-none"
+                          style={{ color: "var(--ink-soft)", opacity: i === 0 ? 0.25 : 1, cursor: i === 0 ? "default" : "pointer" }}
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => move(i, 1)}
+                          disabled={i === picked.length - 1}
+                          aria-label={`Move ${topicLabel(id)} down`}
+                          className="alpha-mono text-sm px-1.5 leading-none"
+                          style={{ color: "var(--ink-soft)", opacity: i === picked.length - 1 ? 0.25 : 1, cursor: i === picked.length - 1 ? "default" : "pointer" }}
+                        >
+                          ▼
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeAt(id)}
+                          aria-label={`Remove ${topicLabel(id)}`}
+                          className="alpha-mono text-sm px-1.5 leading-none"
+                          style={{ color: "var(--accent-ink)" }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {backupCount === 0 && favRemaining === 0 && picked.length < poolMax && (
+              <p className="alpha-ui text-xs leading-snug" style={{ color: "var(--ink-soft)" }}>
+                Want a safety net? Add a few more above and they become backups,
+                free. We only ever send you {quota}.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="sticky bottom-4 flex items-center justify-between gap-4 pt-4">
           <span
             role="status"
@@ -266,21 +403,25 @@ export default function TopicsPage() {
             className="alpha-ui text-sm"
             style={{ color: "var(--ink-soft)" }}
           >
-            {remaining > 0
-              ? `Pick ${remaining} more`
-              : `${target} of ${target}, ready to continue`}
+            {signedIn
+              ? favRemaining > 0
+                ? `Pick ${favRemaining} more to fill your letter`
+                : `${quota} favorites${backupCount > 0 ? ` · ${backupCount} backup${backupCount > 1 ? "s" : ""}` : ""} · ready`
+              : onbRemaining > 0
+                ? `Pick ${onbRemaining} more`
+                : `${quota} of ${quota}, ready to continue`}
           </span>
           <button
             type="button"
             onClick={submit}
-            disabled={picked.length !== target}
+            disabled={!ready}
             className="alpha-button"
             style={{
-              opacity: picked.length === target ? 1 : 0.3,
-              cursor: picked.length === target ? "pointer" : "not-allowed",
+              opacity: ready ? 1 : 0.3,
+              cursor: ready ? "pointer" : "not-allowed",
             }}
           >
-            Continue →
+            {signedIn ? "Save" : "Continue →"}
           </button>
         </div>
       </div>
