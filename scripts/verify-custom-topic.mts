@@ -11,9 +11,13 @@ const check = (label: string, cond: boolean) => {
 };
 
 // make + encode
-check("makeCustomTopic encodes with prefix", makeCustomTopic("crypto trends in Asia") === `${CUSTOM_PREFIX}crypto trends in Asia`);
-check("makeCustomTopic trims + collapses whitespace", makeCustomTopic("  F1   aero  ") === `${CUSTOM_PREFIX}F1 aero`);
+check("makeCustomTopic encodes with prefix + lowercases", makeCustomTopic("crypto trends in Asia") === `${CUSTOM_PREFIX}crypto trends in asia`);
+check("makeCustomTopic trims + collapses whitespace + lowercases", makeCustomTopic("  F1   aero  ") === `${CUSTOM_PREFIX}f1 aero`);
 check("makeCustomTopic rejects empty", makeCustomTopic("   ") === null);
+// The whole point of normalizing: same words in any case = the SAME shared id,
+// so two readers share one cached generation instead of paying for two.
+check("makeCustomTopic: EDM and edm share one id", makeCustomTopic("EDM") === makeCustomTopic("edm") && makeCustomTopic("EDM") === `${CUSTOM_PREFIX}edm`);
+check("makeCustomTopic: 'EDM music' and 'edm  music' share one id", makeCustomTopic("EDM music") === makeCustomTopic("edm  music"));
 check("makeCustomTopic rejects 1 char", makeCustomTopic("a") === null);
 check("makeCustomTopic truncates to 80 chars", (makeCustomTopic("x".repeat(120)) ?? "").length === CUSTOM_PREFIX.length + 80);
 

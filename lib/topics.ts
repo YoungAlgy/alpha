@@ -76,10 +76,14 @@ export function customTopicText(id: string): string {
   return id.slice(CUSTOM_PREFIX.length).trim();
 }
 
-/** Build a custom topic id from free text. Returns null if it's empty/too long
- *  or collides with a catalog id. Normalizes whitespace; preserves the words. */
+/** Build a custom topic id from free text. Returns null if it's empty/too long.
+ *  Lowercases + collapses whitespace so two readers who type the same thing in
+ *  different case or spacing ("EDM" / "edm" / "  edm ") land on the SAME id, and
+ *  thus SHARE one cached generation instead of each paying for their own. The id
+ *  is the cache key (topic_blurbs.topic_id), so a stable normalized string is
+ *  what keeps custom topics cheap. */
 export function makeCustomTopic(text: string): `custom:${string}` | null {
-  const clean = text.replace(/\s+/g, " ").trim().slice(0, MAX_CUSTOM_TOPIC_LEN).trim();
+  const clean = text.replace(/\s+/g, " ").trim().toLowerCase().slice(0, MAX_CUSTOM_TOPIC_LEN).trim();
   if (clean.length < 2) return null;
   return `${CUSTOM_PREFIX}${clean}`;
 }
