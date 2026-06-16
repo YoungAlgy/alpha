@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { TOPICS, makeCustomTopic, isCustomTopic, customTopicText, topicLabel, topicEmoji } from "@/lib/topics";
+import { TOPICS, SUBTOPICS, PARENT_TOPIC, makeCustomTopic, isCustomTopic, customTopicText, topicLabel, topicEmoji } from "@/lib/topics";
+import type { FixedTopicId } from "@/lib/types";
 import { poolCap } from "@/lib/engine/select-sections";
 import { tap, unselect, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
@@ -23,6 +24,9 @@ export default function TopicsPage() {
   // "Your own thing" — free-text custom topics (stored as custom:<text>).
   const [customText, setCustomText] = useState("");
   const [customErr, setCustomErr] = useState<string | null>(null);
+  // Which broad topic's sub-genre chips are expanded in the picker (e.g. tapping
+  // Music opens EDM / hip-hop / indie / country). One open at a time.
+  const [expandedParent, setExpandedParent] = useState<string | null>(null);
   // Saving the pool to the DB (signed-in editors). Surface failures instead of
   // navigating away as if it saved.
   const [saving, setSaving] = useState(false);
@@ -196,50 +200,89 @@ export default function TopicsPage() {
           aria-label={signedIn ? `Choose up to ${poolMax} topics` : `Choose ${quota} topics`}
           className="grid grid-cols-2 md:grid-cols-3 gap-3"
         >
-          {TOPICS.map((t) => {
-            const isPicked = picked.includes(t.id);
-            const atLimit = picked.length >= poolMax && !isPicked;
+          {/* Child sub-genres don't get their own card; they appear as chips
+              under their parent (e.g. EDM lives under Music). */}
+          {TOPICS.filter((t) => !PARENT_TOPIC[t.id]).map((t) => {
+            const childIds = (SUBTOPICS[t.id] ?? []) as FixedTopicId[];
+            const hasSub = childIds.length > 0;
+            const groupIds = [t.id, ...childIds];
+            const groupPicked = groupIds.filter((id) => picked.includes(id as TopicId)).length;
+            const isPicked = hasSub ? groupPicked > 0 : picked.includes(t.id);
+            const isExpanded = expandedParent === t.id;
+            // The broad-parent card only opens chips; it isn't itself a pick, so
+            // it never hits the limit. Normal cards do.
+            const atLimit = !hasSub && picked.length >= poolMax && !isPicked;
             return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => toggle(t.id)}
-                disabled={atLimit}
-                aria-pressed={isPicked}
-                aria-label={t.label}
-                className="topic-card text-left p-4 rounded-lg"
-                data-picked={isPicked}
-                data-at-limit={atLimit}
-                style={{
-                  background: isPicked ? "var(--callout-bg)" : "transparent",
-                  border: `1.5px solid ${
-                    isPicked ? "var(--accent)" : "var(--rule)"
-                  }`,
-                  opacity: atLimit ? 0.4 : 1,
-                  cursor: atLimit ? "not-allowed" : "pointer",
-                  color: "var(--ink)",
-                }}
-              >
-                <div className="flex items-baseline justify-between gap-2 mb-1">
-                  <span className="alpha-display text-base font-semibold leading-tight">
-                    {t.emoji} {t.label}
-                  </span>
-                  {isPicked && (
-                    <span
-                      className="alpha-mono"
-                      style={{ color: "var(--accent-ink)" }}
-                    >
-                      ✓
-                    </span>
-                  )}
-                </div>
-                <p
-                  className="alpha-ui text-xs leading-snug"
-                  style={{ color: "var(--ink-soft)" }}
+              <Fragment key={t.id}>
+                <button
+                  type="button"
+                  onClick={() => (hasSub ? setExpandedParent(isExpanded ? null : t.id) : toggle(t.id))}
+                  disabled={atLimit}
+                  aria-pressed={hasSub ? undefined : isPicked}
+                  aria-expanded={hasSub ? isExpanded : undefined}
+                  aria-label={hasSub ? `${t.label}, refine into a style` : t.label}
+                  className="topic-card text-left p-4 rounded-lg"
+                  data-picked={isPicked}
+                  data-at-limit={atLimit}
+                  style={{
+                    background: isPicked ? "var(--callout-bg)" : "transparent",
+                    border: `1.5px solid ${isPicked ? "var(--accent)" : "var(--rule)"}`,
+                    opacity: atLimit ? 0.4 : 1,
+                    cursor: atLimit ? "not-allowed" : "pointer",
+                    color: "var(--ink)",
+                  }}
                 >
-                  {t.blurb}
-                </p>
-              </button>
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <span className="alpha-display text-base font-semibold leading-tight">
+                      {t.emoji} {t.label}
+                    </span>
+                    <span className="alpha-mono shrink-0" style={{ color: "var(--accent-ink)" }}>
+                      {hasSub ? `${groupPicked > 0 ? `${groupPicked} ` : ""}${isExpanded ? "▴" : "▾"}` : isPicked ? "✓" : ""}
+                    </span>
+                  </div>
+                  <p className="alpha-ui text-xs leading-snug" style={{ color: "var(--ink-soft)" }}>
+                    {hasSub ? "Pick your style, or all of it." : t.blurb}
+                  </p>
+                </button>
+
+                {hasSub && isExpanded && (
+                  <div
+                    className="col-span-full -mt-1 mb-1 p-3 rounded-lg"
+                    style={{ background: "var(--paper-deep)", border: "1px solid var(--rule)" }}
+                  >
+                    <p className="alpha-ui text-xs mb-2" style={{ color: "var(--ink-soft)" }}>
+                      Each counts as one topic. &ldquo;All {t.label.toLowerCase()}&rdquo; gives you the whole category.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {groupIds.map((id) => {
+                        const chipPicked = picked.includes(id as TopicId);
+                        const chipLabel = id === t.id ? `All ${t.label.toLowerCase()}` : topicLabel(id);
+                        const chipAtLimit = picked.length >= poolMax && !chipPicked;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => toggle(id as TopicId)}
+                            disabled={chipAtLimit}
+                            aria-pressed={chipPicked}
+                            className="alpha-ui text-sm px-3 py-1.5 rounded-full inline-flex items-center gap-1.5"
+                            style={{
+                              background: chipPicked ? "var(--callout-bg)" : "transparent",
+                              border: `1.5px solid ${chipPicked ? "var(--accent)" : "var(--rule)"}`,
+                              color: "var(--ink)",
+                              opacity: chipAtLimit ? 0.4 : 1,
+                              cursor: chipAtLimit ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {id === t.id ? "" : `${topicEmoji(id)} `}{chipLabel}
+                            {chipPicked && <span style={{ color: "var(--accent-ink)" }}>✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </Fragment>
             );
           })}
         </div>

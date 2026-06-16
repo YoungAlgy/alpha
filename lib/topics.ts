@@ -41,6 +41,10 @@ export const TOPICS: TopicMeta[] = [
   { id: "inspiring-people", label: "Inspiring people", bucket: "Culture", tier: "A", blurb: "Profiles of operators, artists, founders doing the work.", emoji: "✨" },
   { id: "movies-tv", label: "Movies & TV", bucket: "Culture", tier: "A", blurb: "What's worth watching, who's making it, where it's going.", emoji: "🎬" },
   { id: "music", label: "Music", bucket: "Culture", tier: "A", blurb: "Releases that matter, industry shifts, who to know.", emoji: "🎵" },
+  { id: "music-edm", label: "EDM & electronic", bucket: "Culture", tier: "A", blurb: "New EDM and electronic releases, festival news, the producers and labels worth following.", emoji: "🎧" },
+  { id: "music-hiphop", label: "Hip-hop & rap", bucket: "Culture", tier: "A", blurb: "New hip-hop and rap drops, the verses people are talking about, who's rising.", emoji: "🎤" },
+  { id: "music-indie", label: "Indie & alternative", bucket: "Culture", tier: "A", blurb: "Indie and alternative releases worth your ears, the bands breaking out, the scene.", emoji: "🎸" },
+  { id: "music-country", label: "Country", bucket: "Culture", tier: "A", blurb: "New country releases, the songwriters and artists shaping it, what's climbing.", emoji: "🤠" },
   { id: "style-fashion", label: "Style & fashion", bucket: "Culture", tier: "A", blurb: "What's good, what's coming, what the cool kids actually wear.", emoji: "👔" },
   { id: "sports-betting", label: "Sports & betting markets", bucket: "Culture", tier: "A", blurb: "Edges, line movement, model-vs-market gaps, plus the games and stories shaping the week.", emoji: "🏈" },
   { id: "trading-cards", label: "Trading cards", bucket: "Culture", tier: "A", blurb: "Sports cards and TCGs: market moves, grading, releases, what collectors are chasing.", emoji: "🃏" },
@@ -58,6 +62,23 @@ export const TOPICS: TopicMeta[] = [
 export const TOPIC_BY_ID: Record<FixedTopicId, TopicMeta> = Object.fromEntries(
   TOPICS.map((t) => [t.id, t])
 ) as Record<FixedTopicId, TopicMeta>;
+
+/** Broad parent topics that expand into specific sub-topic chips in the picker.
+ *  Each child is a real catalog id (hand-written queries + curated mock), so
+ *  everyone who taps "EDM" lands on the SAME shared id and shares one cached
+ *  section. This is how "more personal" stays cheap: specific-but-shared, not
+ *  per-user. The broad parent stays a valid one-tap pick for people who want
+ *  the whole category. */
+export const SUBTOPICS: Partial<Record<FixedTopicId, FixedTopicId[]>> = {
+  music: ["music-edm", "music-hiphop", "music-indie", "music-country"],
+};
+
+/** The parent broad topic for a sub-topic chip, if any (e.g. music-edm -> music). */
+export const PARENT_TOPIC: Partial<Record<FixedTopicId, FixedTopicId>> = Object.fromEntries(
+  Object.entries(SUBTOPICS).flatMap(([parent, kids]) =>
+    (kids ?? []).map((k) => [k, parent as FixedTopicId])
+  )
+) as Partial<Record<FixedTopicId, FixedTopicId>>;
 
 // ─── Custom ("your own thing") topics ───────────────────────────────────────
 // Encoded in the existing topics text[] as `custom:<text>` — no schema change.

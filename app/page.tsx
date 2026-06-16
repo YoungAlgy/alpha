@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
-import { TOPICS } from "@/lib/topics";
+import { TOPICS, PARENT_TOPIC } from "@/lib/topics";
 
 // The landing page for cold traffic. Sits in FRONT of the onboarding funnel:
 // it sells (pitch, sample, price, how-it-works), then the CTA drops visitors
@@ -216,7 +216,9 @@ export default function Landing() {
             Whatever you want to stay sharp on, there&apos;s almost certainly a lane for it.
           </p>
           <div className="flex flex-wrap justify-center gap-2">
-            {TOPICS.map((t) => (
+            {/* Broad topics only — sub-genre chips (EDM under Music, etc.) live
+                in the picker, not the marketing cloud. Keeps this at 27. */}
+            {TOPICS.filter((t) => !PARENT_TOPIC[t.id]).map((t) => (
               <span
                 key={t.id}
                 className="alpha-ui text-sm px-3 py-1.5 rounded-full"

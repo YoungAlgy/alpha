@@ -255,6 +255,68 @@ LISTEN:
 `,
   },
   {
+    topicId: "music-edm",
+    weekOf: WEEK_OF,
+    context: `
+A snapshot of EDM and electronic music. Reliable sources to check for what's new:
+
+WHERE THE NEWS BREAKS:
+- Dancing Astronaut, releases and festival news. (https://dancingastronaut.com)
+- EDM.com, new tracks and premieres. (https://edm.com)
+- Mixmag, culture and the underground. (https://mixmag.net)
+- Resident Advisor, events and electronic music in depth. (https://ra.co)
+
+CHARTS / RELEASES:
+- Beatport, the dance-music chart and store. (https://www.beatport.com)
+`,
+  },
+  {
+    topicId: "music-hiphop",
+    weekOf: WEEK_OF,
+    context: `
+A snapshot of hip-hop and rap. Reliable sources for new drops and the conversation:
+
+WHERE THE NEWS BREAKS:
+- Complex, releases and culture. (https://www.complex.com)
+- HotNewHipHop, new songs and project drops. (https://www.hotnewhiphop.com)
+- XXL, features and the Freshman class. (https://www.xxlmag.com)
+- Pitchfork, reviews with weight. (https://pitchfork.com)
+
+LYRICS / CONTEXT:
+- Genius, the story behind the bars. (https://genius.com)
+`,
+  },
+  {
+    topicId: "music-indie",
+    weekOf: WEEK_OF,
+    context: `
+A snapshot of indie and alternative music. Reliable sources for new bands and releases:
+
+WHERE THE NEWS BREAKS:
+- Pitchfork, reviews and best new tracks. (https://pitchfork.com)
+- Stereogum, premieres and the scene. (https://www.stereogum.com)
+- Brooklyn Vegan, shows and discovery. (https://www.brooklynvegan.com)
+- Paste, features and new-band coverage. (https://www.pastemagazine.com)
+
+DISCOVERY:
+- Gorilla vs. Bear for early picks. (https://www.gorillavsbear.net)
+- Bandcamp for supporting artists directly. (https://bandcamp.com)
+`,
+  },
+  {
+    topicId: "music-country",
+    weekOf: WEEK_OF,
+    context: `
+A snapshot of country music. Reliable sources for new releases and what's climbing:
+
+WHERE THE NEWS BREAKS:
+- Saving Country Music, independent and opinionated. (https://www.savingcountrymusic.com)
+- Whiskey Riff, releases and the culture. (https://www.whiskeyriff.com)
+- Billboard, the country charts and industry. (https://www.billboard.com)
+- Rolling Stone, country features and reviews. (https://www.rollingstone.com)
+`,
+  },
+  {
     topicId: "movies-tv",
     weekOf: WEEK_OF,
     context: `

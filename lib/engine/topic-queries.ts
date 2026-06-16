@@ -99,6 +99,26 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "Pitchfork Stereogum new album release",
     "Spotify Bandcamp Tidal artist economics",
   ],
+  "music-edm": [
+    "Dancing Astronaut EDM.com new release",
+    "Beatport Mixmag electronic music chart",
+    "Resident Advisor festival lineup news",
+  ],
+  "music-hiphop": [
+    "Complex HotNewHipHop new release",
+    "Pitchfork XXL rap album review",
+    "Genius Billboard hip hop chart",
+  ],
+  "music-indie": [
+    "Pitchfork Stereogum indie album release",
+    "Paste Brooklyn Vegan new band",
+    "Gorilla vs Bear indie rock",
+  ],
+  "music-country": [
+    "Saving Country Music new release",
+    "Billboard country chart",
+    "Whiskey Riff Rolling Stone Country",
+  ],
   "style-fashion": [
     "Highsnobiety Business of Fashion style trends",
     "Vogue Who What Wear womenswear trends",
