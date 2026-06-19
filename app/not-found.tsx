@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Lost? | Alpha" };
+export const metadata = { title: "Lost? | alpha." };
 
 export default function NotFound() {
   return (

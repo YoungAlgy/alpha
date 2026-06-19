@@ -83,7 +83,7 @@ export const metadata: Metadata = {
     title: "alpha. your alpha",
     description: "A personal letter on what matters to you, three times a week.",
     type: "website",
-    siteName: "Alpha",
+    siteName: "alpha.",
     url: "https://youngalgy.com/alpha",
     images: [
       {
