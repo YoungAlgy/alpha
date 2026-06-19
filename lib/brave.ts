@@ -40,13 +40,24 @@ export async function braveSearch(
   if (opts.freshness) params.set("freshness", opts.freshness);
   if (opts.country) params.set("country", opts.country);
 
-  const res = await fetch(`${ENDPOINT}?${params}`, {
-    headers: {
-      Accept: "application/json",
-      "Accept-Encoding": "gzip",
-      "X-Subscription-Token": key,
-    },
-  });
+  // Bound the request (no AbortController = a hung Brave call could stall the
+  // whole letter). On abort the throw is caught per-query in the source-resolver
+  // and degrades to an empty result set for that query.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  let res: Response;
+  try {
+    res = await fetch(`${ENDPOINT}?${params}`, {
+      headers: {
+        Accept: "application/json",
+        "Accept-Encoding": "gzip",
+        "X-Subscription-Token": key,
+      },
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");

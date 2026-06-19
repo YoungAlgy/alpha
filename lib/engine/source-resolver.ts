@@ -1,10 +1,23 @@
-import { braveConfigured, braveSearch, formatAsSignal, type BraveSearchOptions } from "@/lib/brave";
+import { braveConfigured, braveSearch, type BraveSearchOptions } from "@/lib/brave";
+import { rankAndDedup } from "./source-rank";
+import { fetchArticleText, deepReadEnabled } from "./fetch-content";
 import { TOPIC_QUERIES } from "./topic-queries";
 import { getSignal } from "./mock-signals";
 import { extractSignalUrls } from "./url-guard";
 import { isCustomTopic, customTopicText } from "@/lib/topics";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
+
+// How many top sources we fetch in FULL per topic (the deep read), how many
+// more we include as headline+link breadth, and how many raw candidates we pull
+// per query before ranking down. Deep reads run in parallel and are best-effort.
+const DEEP_READ_N = 5;
+const MORE_HEADLINES_N = 6;
+const PER_QUERY_COUNT = 10;
+
+function stripTags(s: string): string {
+  return s.replace(/<[^>]+>/g, "").trim();
+}
 
 // Resolves a TopicSignal for (topicId, weekOf). Tries Brave Search first
 // when configured, falls back to hand-written mock signals otherwise.
@@ -66,25 +79,82 @@ async function fetchLiveSignal(
 ): Promise<TopicSignal | undefined> {
   if (!queries || queries.length === 0) return undefined;
 
-  // Run queries in parallel — Brave handles 1 req/sec per key but bursts are fine.
-  const blocks = await Promise.all(
+  // 1. Cast a wide net — every query in parallel, more candidates than we'll
+  //    use, so the ranker has something to choose from. Brave allows bursts.
+  const perQuery = await Promise.all(
     queries.map(async (q) => {
       try {
-        const results = await braveSearch(q, { count: 6, freshness });
-        return `QUERY: ${q}\n${formatAsSignal(q, results)}`;
+        return await braveSearch(q, { count: PER_QUERY_COUNT, freshness });
       } catch (e) {
-        return `QUERY: ${q}\n(no results: ${e instanceof Error ? e.message : "error"})`;
+        console.warn(
+          `[source-resolver] brave query failed (${topicId}): "${q}": ${e instanceof Error ? e.message : e}`
+        );
+        return [];
       }
     })
   );
 
-  const subject = isCustomTopic(topicId) ? customTopicText(topicId) : topicId;
-  const context = `Recent signal for ${subject} (as of ${weekOf}), gathered live from Brave Search:\n\n${blocks.join("\n\n---\n\n")}\n\nURLs above are real. You may cite them. Do not invent URLs.`;
+  // 2. Dedup + diversity-rank into a shortlist (freshest first, capped per host
+  //    so we don't deep-read five near-duplicates from one aggregator).
+  const ranked = rankAndDedup(perQuery.flat());
+  if (ranked.length === 0) {
+    console.warn(`[source-resolver] live signal for ${topicId} had 0 results — falling back to mock`);
+    return undefined;
+  }
+  // Deep-read TRUSTED sources only — reading an unknown/neutral domain risks
+  // amplifying junk (a confident write-up of an unreliable page is the worst
+  // failure mode for a "get ahead of the curve" letter). Neutral sources still
+  // appear as citable headlines below and the model writes about them from
+  // snippets, which is safe. If no trusted source is fresh this period, the
+  // section degrades to snippet-only — the old, safe behavior.
+  const deep = ranked.filter((s) => s.tier === "trusted").slice(0, DEEP_READ_N);
+  const deepUrls = new Set(deep.map((s) => s.url));
+  const more = ranked.filter((s) => !deepUrls.has(s.url)).slice(0, MORE_HEADLINES_N);
 
-  // If the live signal carries NO real URLs (every Brave query came back empty
-  // this period), treat it as "no live signal" so the caller falls back to the
-  // curated mock — which always has real URLs. Without this, the strict URL
-  // guard would drop every link the model cites and ship a link-less section.
+  // 3. Read the top trusted sources IN FULL (parallel, best-effort). A failed /
+  //    timed-out / non-article fetch falls back to that source's snippet, so the
+  //    letter is written from real article text where possible and never blocks.
+  const contents = deepReadEnabled()
+    ? await Promise.all(deep.map((s) => fetchArticleText(s.url).catch(() => null)))
+    : deep.map(() => null);
+  const readCount = contents.filter(Boolean).length;
+
+  // 4. Build the signal: full-text trusted sources + a breadth list of headlines.
+  //    The url-guard scans this whole string for citable URLs, so only the
+  //    explicit SOURCE / headline links (all real) are citable — fetched bodies
+  //    have every URL stripped (see fetch-content).
+  const deepBlocks = deep.map((s, i) => {
+    const host = s.host || s.meta_url?.hostname || "";
+    const age = s.age ? ` · ${s.age}` : "";
+    const body = contents[i] || `(full text unavailable — snippet: ${stripTags(s.description)})`;
+    return `[${i + 1}] ${s.title}\n    ${host}${age}\n    SOURCE: ${s.url}\n\n${body}`;
+  });
+  const moreBlocks = more.map((s) => {
+    const host = s.host || s.meta_url?.hostname || "";
+    const age = s.age ? `, ${s.age}` : "";
+    return `- ${s.title} (${host}${age}) — ${s.url}\n  ${stripTags(s.description)}`;
+  });
+
+  const subject = isCustomTopic(topicId) ? customTopicText(topicId) : topicId;
+  const parts: string[] = [];
+  if (deepBlocks.length > 0) {
+    parts.push(
+      `=== TOP SOURCES (full text — read these and surface the real insight) ===\n\n${deepBlocks.join("\n\n----------\n\n")}`
+    );
+  }
+  parts.push(
+    `=== ${deepBlocks.length > 0 ? "MORE THIS WEEK" : "THIS WEEK"} (headlines + links) ===\n\n${moreBlocks.join("\n\n") || "(none)"}`
+  );
+  const header =
+    deep.length > 0
+      ? `Recent signal for ${subject} (as of ${weekOf}), gathered live and READ IN FULL where possible (${readCount}/${deep.length} trusted sources fetched). You have the ACTUAL article text for the top sources below — read it and surface the real insight, do not just paraphrase a headline.`
+      : `Recent signal for ${subject} (as of ${weekOf}), gathered live from Brave Search. Headlines and snippets only this period.`;
+  const context = `${header}\n\n${parts.join("\n\n")}\n\nAll URLs labeled SOURCE or listed above are real and citable. Do NOT invent URLs.`;
+
+  // If the live signal carries NO real URLs, treat it as "no live signal" so
+  // the caller falls back to the curated mock (which always has real URLs).
+  // Without this the strict URL guard would drop every link and ship a
+  // link-less section.
   if (extractSignalUrls(context).size === 0) {
     console.warn(`[source-resolver] live signal for ${topicId} had 0 URLs — falling back to mock`);
     return undefined;
