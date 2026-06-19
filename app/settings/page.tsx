@@ -47,6 +47,14 @@ export default function SettingsPage() {
   // through the funnel on this device — admin-granted / fresh-device sign-ins
   // have none, which showed a bare "—" here.
   const [authEmail, setAuthEmail] = useState<string | null>(null);
+  // Letters are PAUSED (unsubscribed_at set) but the reader still has live
+  // access — i.e. they're paying (or comped) and getting nothing, usually from
+  // hitting the inbox provider's one-click unsubscribe. Drives a self-serve
+  // "Resume my letters" control so they don't have to email support.
+  const [showResume, setShowResume] = useState(false);
+  const [resumed, setResumed] = useState(false);
+  const [resumeBusy, setResumeBusy] = useState(false);
+  const [resumeErr, setResumeErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabaseConfigured()) return;
@@ -59,7 +67,7 @@ export default function SettingsPage() {
         if (user.email === ADMIN_EMAIL) setIsAdmin(true);
         const { data: row } = await sb
           .from("users")
-          .select("topic_quota, topics, subscribed_at, cancelled_at, stripe_customer_id")
+          .select("topic_quota, topics, subscribed_at, cancelled_at, stripe_customer_id, unsubscribed_at")
           .eq("id", user.id)
           .maybeSingle();
         if (row?.topic_quota && typeof row.topic_quota === "number") {
@@ -73,11 +81,37 @@ export default function SettingsPage() {
         if (row?.subscribed_at && row?.stripe_customer_id && hasActiveAccess(row.cancelled_at)) {
           setHasPaidSub(true);
         }
+        // Show "Resume my letters" only when they're paused AND would actually
+        // get letters back if they resumed (subscribed + live access — covers
+        // comped accounts too, which have no stripe_customer_id). For a reader
+        // with no access, resuming wouldn't send anything, so don't offer it.
+        if (row?.unsubscribed_at && row?.subscribed_at && hasActiveAccess(row.cancelled_at)) {
+          setShowResume(true);
+        }
       } catch {
         // ignore
       }
     })();
   }, []);
+
+  async function resumeLetters() {
+    setResumeBusy(true);
+    setResumeErr(null);
+    try {
+      const res = await fetch("/alpha/api/resume", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        setResumeErr("Sign in first to resume your letters.");
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setResumed(true);
+    } catch (e) {
+      setResumeErr(e instanceof Error ? e.message : "Couldn't resume. Try again.");
+    } finally {
+      setResumeBusy(false);
+    }
+  }
 
   // Open the in-app confirm panel for an add/drop. No network call yet.
   function requestTier(direction: "up" | "down") {
@@ -148,6 +182,43 @@ export default function SettingsPage() {
         <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight mb-12">
           Settings
         </h1>
+
+        {(showResume || resumed) && (
+          <Section title="Letters">
+            {resumed ? (
+              <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
+                You&apos;re back on. Your next letter lands this Sunday.
+              </p>
+            ) : (
+              <>
+                <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+                  Your letters are paused. You unsubscribed, so the Sunday,
+                  Tuesday, and Thursday letters aren&apos;t being sent. Your
+                  billing is separate and unaffected.
+                </p>
+                <button
+                  type="button"
+                  onClick={resumeLetters}
+                  disabled={resumeBusy}
+                  className="alpha-button alpha-button-accent text-sm"
+                  style={{ opacity: resumeBusy ? 0.6 : 1 }}
+                >
+                  {resumeBusy ? "Resuming…" : "Resume my letters →"}
+                </button>
+                {resumeErr && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className="alpha-ui text-sm mt-3"
+                    style={{ color: "var(--accent-ink)" }}
+                  >
+                    {resumeErr}
+                  </p>
+                )}
+              </>
+            )}
+          </Section>
+        )}
 
         <Section title="Your topics">
           {(() => {
