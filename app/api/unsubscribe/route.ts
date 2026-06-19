@@ -11,10 +11,12 @@ export const runtime = "nodejs";
 //     following the List-Unsubscribe-Post header per RFC 8058. Sets
 //     unsubscribed_at, returns 200 with no body.
 //
-// Subscribers can re-subscribe by going to /signin and signing back in;
-// resetting unsubscribed_at is a manual admin step for now (the user has
-// explicitly opted out and we want to respect that choice — they paid us
-// to send them email, and they told us to stop).
+// Re-subscribing is NOT done by signing in — signing in never touches
+// unsubscribed_at, so a "sign in to resume" instruction would be misleading.
+// Resetting unsubscribed_at (turning letters back on) is a manual step for now
+// (admin, or on request), which is why the confirmation page points an
+// opted-out reader at support to resume. We respect the explicit opt-out by
+// default — they paid us to send them email, and they told us to stop.
 
 async function performUnsubscribe(token: string): Promise<
   | { ok: true; email: string }
@@ -58,7 +60,7 @@ export async function GET(req: Request) {
   return new NextResponse(
     htmlPage(
       "You're unsubscribed.",
-      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is unaffected. Manage it from <a href="/alpha/settings">settings</a> if you also want to cancel billing.`
+      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="/alpha/settings">settings</a> if you also want to stop paying. Changed your mind? Email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20Alpha%20letters">youngalgy@gmail.com</a> and we'll turn your letters back on.`
     ),
     {
       status: 200,
