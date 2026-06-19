@@ -28,6 +28,7 @@ export default function CheckoutPage() {
 
   const [subscribing, setSubscribing] = useState(false);
   const [stripeErr, setStripeErr] = useState<string | null>(null);
+  const [alreadySubscribed, setAlreadySubscribed] = useState(false);
 
   async function subscribe() {
     setSubscribing(true);
@@ -48,6 +49,14 @@ export default function CheckoutPage() {
         // Stripe env not set — fall back to V0 stub flow
         update({ paid: true, completedAt: new Date().toISOString() });
         router.push("/writing" as never);
+        return;
+      }
+      if (res.status === 409) {
+        // Already an active subscriber — refuse to create a second
+        // subscription. Show the "you're already in" state, not the retry
+        // error (telling them to "try again" would invite a double charge).
+        setSubscribing(false);
+        setAlreadySubscribed(true);
         return;
       }
       if (!res.ok || !data.url) {
@@ -175,15 +184,33 @@ export default function CheckoutPage() {
               per month · cancel anytime
             </span>
           </div>
-          <button
-            type="button"
-            onClick={subscribe}
-            disabled={subscribing}
-            className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
-            style={{ opacity: subscribing ? 0.6 : 1 }}
-          >
-            {subscribing ? "Taking you to checkout…" : "Subscribe & get my first letter →"}
-          </button>
+          {alreadySubscribed ? (
+            <div className="space-y-3">
+              <p
+                className="alpha-ui text-sm text-center"
+                style={{ color: "var(--ink)" }}
+              >
+                You&apos;re already subscribed. No need to pay again.
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push("/inbox" as never)}
+                className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
+              >
+                Go to your letters →
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={subscribe}
+              disabled={subscribing}
+              className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
+              style={{ opacity: subscribing ? 0.6 : 1 }}
+            >
+              {subscribing ? "Taking you to checkout…" : "Subscribe & get my first letter →"}
+            </button>
+          )}
           {stripeErr && (
             <p
               role="alert"

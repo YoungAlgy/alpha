@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { STRIPE_PRICE_ID } from "@/lib/stripe";
+import { supabaseServiceClient } from "@/lib/supabase/server";
+import { hasActiveAccess } from "@/lib/access";
+import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -11,6 +14,21 @@ interface CheckoutPayload {
 }
 
 export async function POST(req: Request) {
+  // Rate limit (same in-memory limiter the sibling generate/support routes use).
+  // Caps casual abuse AND bulk probing of the already-subscribed guard below —
+  // that guard returns a distinguishable 409 for active subscribers vs a 200 for
+  // everyone else, a subscriber-enumeration oracle if left unthrottled. 10/hr/IP
+  // leaves ample room for a real user's checkout retries while making any
+  // list-sweep of "who is a paying subscriber" useless.
+  const ip = clientKeyFromRequest(req);
+  const limited = rateLimit(`checkout:${ip}`, { limit: 10, windowMs: 60 * 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many requests. Try again in ${Math.ceil(limited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+
   // Trim — env var paste from clipboards can include trailing \r or whitespace,
   // which Node's HTTP layer rejects when setting the Authorization header.
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
@@ -26,6 +44,41 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {
     // Empty body is fine
+  }
+
+  // Double-subscription guard. Checkout creates a NEW Stripe subscription on
+  // every call, so an already-active subscriber who lands back on /checkout (a
+  // shared link, the browser back button, a direct-checkout user bounced
+  // through onboarding, the /writing 402 redirect) and clicks Subscribe would
+  // be charged a SECOND $5/mo. Refuse when this email already has LIVE access.
+  // Fail OPEN on any lookup error (or no email) so a genuine new subscriber is
+  // never blocked from paying — a missed double-charge guard is recoverable, a
+  // blocked sale is lost revenue. A cancelled-and-ended subscriber (cancelled_at
+  // in the past) is NOT blocked, so they can resubscribe.
+  if (body.email) {
+    try {
+      const sb = await supabaseServiceClient();
+      const { data: existing } = await sb
+        .from("users")
+        .select("subscribed_at, cancelled_at")
+        .eq("email", body.email)
+        .maybeSingle();
+      if (existing?.subscribed_at && hasActiveAccess(existing.cancelled_at)) {
+        return NextResponse.json(
+          {
+            error: "already_subscribed",
+            message:
+              "You already have an active subscription. Sign in to read your letters or manage it.",
+          },
+          { status: 409 }
+        );
+      }
+    } catch (e) {
+      console.warn(
+        "[stripe/checkout] active-subscription pre-check failed, allowing checkout:",
+        e instanceof Error ? e.message : e
+      );
+    }
   }
 
   // Prefer the public app URL (youngalgy.com) over the request origin —
