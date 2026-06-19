@@ -11,12 +11,12 @@ export const runtime = "nodejs";
 //     following the List-Unsubscribe-Post header per RFC 8058. Sets
 //     unsubscribed_at, returns 200 with no body.
 //
-// Re-subscribing is NOT done by signing in — signing in never touches
-// unsubscribed_at, so a "sign in to resume" instruction would be misleading.
-// Resetting unsubscribed_at (turning letters back on) is a manual step for now
-// (admin, or on request), which is why the confirmation page points an
-// opted-out reader at support to resume. We respect the explicit opt-out by
-// default — they paid us to send them email, and they told us to stop.
+// Turning letters back on is self-serve: the reader signs in and hits "Resume
+// my letters" in /settings (POST /api/resume clears unsubscribed_at for their
+// own row). Signing in ALONE never touches unsubscribed_at, so the copy points
+// at the Resume control specifically, with email support as a fallback. We
+// respect the explicit opt-out by default — they paid us to send them email,
+// and they told us to stop, until they choose to resume.
 
 async function performUnsubscribe(token: string): Promise<
   | { ok: true; email: string }
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
   return new NextResponse(
     htmlPage(
       "You're unsubscribed.",
-      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="/alpha/settings">settings</a> if you also want to stop paying. Changed your mind? Email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20Alpha%20letters">youngalgy@gmail.com</a> and we'll turn your letters back on.`
+      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="/alpha/settings">settings</a> if you also want to stop paying. Changed your mind? Sign in and hit <a href="/alpha/settings">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20Alpha%20letters">youngalgy@gmail.com</a>.`
     ),
     {
       status: 200,

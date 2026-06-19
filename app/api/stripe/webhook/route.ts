@@ -73,9 +73,32 @@ export async function POST(req: Request) {
             // out-of-order checkout event. See lib/webhook-user-mutation.
             const { data: existing } = await sb
               .from("users")
-              .select("subscribed_at")
+              .select("subscribed_at, cancelled_at")
               .eq("id", userId)
               .maybeSingle();
+            // Is this checkout's subscription LIVE right now? A genuine new or
+            // resubscribe checkout has an active sub; a re-delivered ORIGINAL
+            // checkout for a since-ended subscription does not. Gates the
+            // stale-cancellation clear in checkoutUserMutation so a stray
+            // redelivery can't resurrect a churned reader. Best-effort: on a
+            // retrieve failure we leave subscriptionLive=false (DON'T clear) —
+            // a later subscription.* event re-mirrors the truth by customer id.
+            let subscriptionLive = false;
+            const subId =
+              typeof session.subscription === "string"
+                ? session.subscription
+                : session.subscription?.id ?? null;
+            if (subId) {
+              try {
+                const sub = await stripe.subscriptions.retrieve(subId);
+                subscriptionLive = sub.status === "active" || sub.status === "trialing";
+              } catch (e) {
+                console.warn(
+                  "[stripe-webhook] subscription status check failed; leaving cancelled_at untouched:",
+                  e instanceof Error ? e.message : e
+                );
+              }
+            }
             const mut = checkoutUserMutation(existing ?? null, {
               userId,
               email,
@@ -83,6 +106,7 @@ export async function POST(req: Request) {
               city,
               customerId: customerId ?? null,
               nowIso: new Date().toISOString(),
+              subscriptionLive,
             });
             // A failed user write must THROW (-> 5xx -> Stripe retry, #35).
             // It must also happen BEFORE the welcome email: sending the welcome

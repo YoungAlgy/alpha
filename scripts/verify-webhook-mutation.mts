@@ -11,6 +11,7 @@ const idn = {
   city: "Tampa, FL",
   customerId: "cus_ABC",
   nowIso: "2026-06-02T12:00:00.000Z",
+  subscriptionLive: true, // genuine new/resubscribe checkout (subscription is live)
 };
 
 let pass = 0,
@@ -33,42 +34,85 @@ if (m1.kind === "insert") {
 }
 
 // (2) Existing row, not yet marked subscribed (onboarding user) → update sets
-//     customer + subscribed_at, but NEVER quota/cancelled_at.
-const m2 = checkoutUserMutation({ subscribed_at: null }, idn);
+//     customer + subscribed_at, but NEVER quota; cancelled_at untouched (null).
+const m2 = checkoutUserMutation({ subscribed_at: null, cancelled_at: null }, idn);
 console.log("(2) existing row, subscribed_at null → update:");
 check("kind == update", m2.kind === "update");
 if (m2.kind === "update") {
   check("patch has stripe_customer_id", m2.patch.stripe_customer_id === "cus_ABC");
   check("patch sets subscribed_at (was null)", m2.patch.subscribed_at === idn.nowIso);
   check("patch has NO topic_quota", !("topic_quota" in m2.patch));
-  check("patch has NO cancelled_at", !("cancelled_at" in m2.patch));
+  check("patch has NO cancelled_at (existing was null)", !("cancelled_at" in m2.patch));
 }
 
 // (3) Re-delivered checkout for an established subscriber (already subscribed,
-//     maybe upgraded/cancelled) → update touches ONLY stripe_customer_id.
-const m3 = checkoutUserMutation({ subscribed_at: "2026-05-01T00:00:00.000Z" }, idn);
+//     cancelled_at null) → update touches ONLY stripe_customer_id.
+const m3 = checkoutUserMutation({ subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: null }, idn);
 console.log("(3) re-delivered for established sub → update:");
 check("kind == update", m3.kind === "update");
 if (m3.kind === "update") {
   check("patch has stripe_customer_id", m3.patch.stripe_customer_id === "cus_ABC");
   check("patch does NOT re-stamp subscribed_at", !("subscribed_at" in m3.patch));
   check("patch has NO topic_quota (no clobber)", !("topic_quota" in m3.patch));
-  check("patch has NO cancelled_at (no un-cancel)", !("cancelled_at" in m3.patch));
+  check("patch has NO cancelled_at (nothing stale to clear)", !("cancelled_at" in m3.patch));
 }
 
-// (4) Hard invariant across every update path: never the two clobber columns.
-console.log("(4) invariant — updates never carry the clobber columns:");
-for (const ex of [{ subscribed_at: null }, { subscribed_at: "2026-05-01T00:00:00.000Z" }]) {
+// (4) Hard invariant: an update NEVER carries topic_quota, and never carries
+//     cancelled_at when the existing cancellation is null/future (only a STALE
+//     past cancellation is cleared — see 4d).
+console.log("(4) invariant — updates never carry topic_quota; cancelled_at only when stale:");
+for (const ex of [
+  { subscribed_at: null, cancelled_at: null },
+  { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: null },
+]) {
   const m = checkoutUserMutation(ex, idn);
   const clean = m.kind === "update" && !("topic_quota" in m.patch) && !("cancelled_at" in m.patch);
-  check(`existing subscribed_at=${JSON.stringify(ex.subscribed_at)} → clean update`, clean);
+  check(`existing ${JSON.stringify(ex)} → no topic_quota, no cancelled_at`, clean);
 }
+
+// (4d) Resubscribe after a HARD (ended) cancellation: a fresh checkout is active
+//      re-consent, so a STALE past cancelled_at must be CLEARED or the cron's
+//      `cancelled_at <= now` filter silently excludes the new PAYING subscriber.
+//      A FUTURE cancelled_at (a live cancel-at-period-end) must be PRESERVED so a
+//      stray re-delivered checkout can't erase a scheduled cancellation.
+console.log("(4d) stale-cancellation clearing on resubscribe (nowIso = 2026-06-02):");
+// Genuine resubscribe (subscription LIVE) + stale PAST cancelled_at → cleared.
+const mPast = checkoutUserMutation(
+  { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: "2026-05-20T00:00:00.000Z" },
+  idn
+);
+check(
+  "PAST cancelled_at + subscription LIVE (resubscribe) → patch clears it (null)",
+  mPast.kind === "update" && "cancelled_at" in mPast.patch && mPast.patch.cancelled_at === null
+);
+// FUTURE cancelled_at (a live cancel-at-period-end) → PRESERVED even when live.
+const mFuture = checkoutUserMutation(
+  { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: "2026-12-31T00:00:00.000Z" },
+  idn
+);
+check(
+  "FUTURE cancelled_at (cancel-at-period-end) → PRESERVED (absent from patch)",
+  mFuture.kind === "update" && !("cancelled_at" in mFuture.patch)
+);
+// Re-delivered ORIGINAL checkout for a SINCE-ENDED sub (subscription NOT live) +
+// past cancelled_at → PRESERVED (must not resurrect a churned reader).
+const mRedeliver = checkoutUserMutation(
+  { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: "2026-05-20T00:00:00.000Z" },
+  { ...idn, subscriptionLive: false }
+);
+check(
+  "PAST cancelled_at + subscription NOT live (redelivery) → PRESERVED (no resurrect)",
+  mRedeliver.kind === "update" && !("cancelled_at" in mRedeliver.patch)
+);
 
 // (4c) Re-subscribe after one-click unsubscribe: checkout must CLEAR
 //      unsubscribed_at (no subscription.* event owns it) or the cron skips a
 //      PAYING subscriber forever.
 console.log("(4c) unsubscribed_at clearing:");
-for (const ex of [{ subscribed_at: null }, { subscribed_at: "2026-05-01T00:00:00.000Z" }]) {
+for (const ex of [
+  { subscribed_at: null, cancelled_at: null },
+  { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: null },
+]) {
   const m = checkoutUserMutation(ex, idn);
   check(
     `existing subscribed_at=${JSON.stringify(ex.subscribed_at)} → patch clears unsubscribed_at`,
@@ -102,16 +146,21 @@ try {
     const sb = createClient(url, key, { auth: { persistSession: false } });
     const { data: real } = await sb
       .from("users")
-      .select("id, subscribed_at")
+      .select("id, subscribed_at, cancelled_at")
       .not("subscribed_at", "is", null)
       .limit(1)
       .maybeSingle();
     if (!real) {
       console.log("  -- no subscribed users in DB; skipping (nothing to clobber yet)");
     } else {
-      const m = checkoutUserMutation({ subscribed_at: real.subscribed_at }, { ...idn, userId: real.id });
-      const clean = m.kind === "update" && !("topic_quota" in m.patch) && !("cancelled_at" in m.patch);
-      check("re-delivered checkout for a real subscriber → clean non-clobbering update", clean);
+      const m = checkoutUserMutation(
+        { subscribed_at: real.subscribed_at, cancelled_at: real.cancelled_at },
+        { ...idn, userId: real.id }
+      );
+      // topic_quota is the hard never-clobber invariant; cancelled_at is cleared
+      // only for a stale past date, so assert just the quota invariant here.
+      const clean = m.kind === "update" && !("topic_quota" in m.patch);
+      check("re-delivered checkout for a real subscriber → no topic_quota clobber", clean);
     }
   }
 } catch (e) {
