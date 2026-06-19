@@ -8,9 +8,17 @@ import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
+import { withDeadline } from "@/lib/with-deadline";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
+// A deterministic deadline comfortably under maxDuration. generateIssue's I/O is
+// self-bounded (Anthropic 60s, Brave 5s, deep-read 7s), but those are
+// PER-ATTEMPT, and the SDK's one retry plus topic-blurb's parse-retry can stack
+// past 120s in a pathological case. Failing fast here returns a clean 500 the
+// /writing client absorbs (its retry hits the now-warm per-topic cache), instead
+// of waiting for Vercel's hard 504. Mirrors the cron's per-user deadline.
+const GENERATE_DEADLINE_MS = 105_000;
 
 const ProfileSchema = z.object({
   firstName: z.string().min(1).max(60),
@@ -140,7 +148,11 @@ export async function POST(req: Request) {
     // re-generate path lets an existing reader with a DEEPER ranked pool hit
     // this endpoint, pass their topic_quota as letterSize here (as the cron
     // does) so it respects favorites/backups instead of generating the pool.
-    const issue = await generateIssue(profile, weekOf);
+    const issue = await withDeadline(
+      generateIssue(profile, weekOf),
+      GENERATE_DEADLINE_MS,
+      "onboarding generateIssue"
+    );
 
     // Best-effort persistence (doesn't block on failure)
     const persistence = await persistIssueIfPossible(profile, issue, weekOf);

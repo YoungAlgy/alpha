@@ -7,6 +7,7 @@ import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/em
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { topicLabel } from "@/lib/topics";
+import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId, ThemeId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -27,15 +28,9 @@ function bearerMatches(authHeader: string | null, expected: string): boolean {
 // so one pathologically slow user can't consume the whole cron budget and
 // starve every later subscriber that send. On timeout the per-user catch counts
 // it failed and the loop moves on (the underlying work keeps running detached
-// but is self-bounded, so it can't leak indefinitely).
+// but is self-bounded, so it can't leak indefinitely). withDeadline is the
+// shared helper (also used by the onboarding /api/generate route).
 const PER_USER_DEADLINE_MS = 110_000;
-function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms deadline`)), ms);
-  });
-  return Promise.race([p, deadline]).finally(() => clearTimeout(timer!));
-}
 
 interface SubscriberRow {
   id: string;

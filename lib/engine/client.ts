@@ -6,11 +6,14 @@ export function anthropicClient(): Anthropic {
   if (_client) return _client;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY missing from environment");
-  // Bound the call: a slow/overloaded API becomes a fast per-call failure that
-  // the select-sections backfill + editor-note fallback already absorb, instead
-  // of stacking the SDK default (600s × retries) and blowing the route's 120s
-  // (generate) / 800s (cron) budget — which would 504 the request and, on the
-  // cron, starve every later subscriber that send.
+  // Bound each ATTEMPT at 60s (vs the SDK's 600s default) with one retry, so a
+  // slow/overloaded API becomes a fast per-call failure the select-sections
+  // backfill + editor-note fallback absorb. NOTE: this is per-attempt, so in a
+  // pathological case (the retry, plus topic-blurb's own parse-retry, plus the
+  // sequential editor note) total time can still stack past a route's
+  // maxDuration. The DETERMINISTIC budget guarantee is the route-level
+  // withDeadline (weekly-send per-user, generate onboarding), not this timeout —
+  // this just shrinks the typical and common-failure cases dramatically.
   _client = new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 });
   return _client;
 }
