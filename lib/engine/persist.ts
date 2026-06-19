@@ -13,6 +13,24 @@ function supabaseConfigured(): boolean {
   );
 }
 
+// The set of profile fields that the incoming request actually HAS a value for.
+// Used to UPDATE an existing public.users row WITHOUT clobbering: a field the
+// caller left empty is omitted, so it can never null out a real subscriber's
+// saved blurbs/city/theme/topics. Mirrors the non-clobbering pattern in
+// lib/user-sync.ts. (The first-letter INSERT path still writes the full profile
+// — see persistIssueIfPossible — because onboarding always carries every field.)
+function nonEmptyProfileFields(profile: UserProfile): Record<string, string | string[]> {
+  const f: Record<string, string | string[]> = {};
+  if (profile.firstName?.trim()) f.first_name = profile.firstName.trim();
+  if (profile.city?.trim()) f.city = profile.city.trim();
+  if (profile.jobBlurb?.trim()) f.job_blurb = profile.jobBlurb.trim();
+  if (profile.projectBlurb?.trim()) f.project_blurb = profile.projectBlurb.trim();
+  if (profile.funBlurb?.trim()) f.fun_blurb = profile.funBlurb.trim();
+  if (profile.theme?.trim()) f.theme = profile.theme.trim();
+  if (Array.isArray(profile.topics) && profile.topics.length > 0) f.topics = profile.topics;
+  return f;
+}
+
 /**
  * Best-effort persistence of a freshly-generated issue. Idempotent over the
  * (user_id, week_of) unique constraint — re-runs will upsert.
@@ -59,8 +77,25 @@ export async function persistIssueIfPossible(
     // Surface failures: this row is what the weekly cron reads — a silently
     // failed sync means next Sunday's letter generates from stale/missing
     // profile data with no trace of why.
-    const { error: profileErr } = await sb.from("users").upsert(
-      {
+    //
+    // NON-CLOBBERING insert/update split (was a full-row upsert). A full-row
+    // upsert on conflict overwrites EVERY column with the incoming payload, so
+    // the day a re-generate path posts a sparse body (ProfileSchema makes the
+    // blurbs optional) it would null an existing paid subscriber's
+    // job/project/fun blurbs and stomp city/theme/topics with partial client
+    // data — the same silent data-loss class as the user-sync.ts bug. So:
+    //   • brand-new row  → write the FULL profile (onboarding always carries
+    //     every field, and the cron needs first_name + topics present).
+    //   • existing row   → write only the fields the caller actually has a
+    //     value for; never overwrite a real value with empty/partial input.
+    const { data: existingUser } = await sb
+      .from("users")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (!existingUser) {
+      const { error: insErr } = await sb.from("users").insert({
         id: userId,
         email,
         first_name: profile.firstName,
@@ -70,11 +105,37 @@ export async function persistIssueIfPossible(
         fun_blurb: profile.funBlurb || null,
         theme: profile.theme || "forest",
         topics: profile.topics,
-      },
-      { onConflict: "id" }
-    );
-    if (profileErr) {
-      console.error("[persist] users profile upsert failed:", profileErr.message);
+      });
+      if (insErr) {
+        // Lost a race with a concurrent insert (e.g. the Stripe checkout
+        // webhook creating the row mid-generation) — the row now exists, so
+        // fall back to a non-clobbering update instead of dropping the topics.
+        const updates = nonEmptyProfileFields(profile);
+        if (Object.keys(updates).length > 0) {
+          const { error: raceErr } = await sb
+            .from("users")
+            .update(updates)
+            .eq("id", userId);
+          if (raceErr) {
+            console.error(
+              "[persist] users profile insert raced AND update fallback failed:",
+              insErr.message,
+              raceErr.message
+            );
+          }
+        }
+      }
+    } else {
+      const updates = nonEmptyProfileFields(profile);
+      if (Object.keys(updates).length > 0) {
+        const { error: updErr } = await sb
+          .from("users")
+          .update(updates)
+          .eq("id", userId);
+        if (updErr) {
+          console.error("[persist] users profile update failed:", updErr.message);
+        }
+      }
     }
 
     // Persist the issue
