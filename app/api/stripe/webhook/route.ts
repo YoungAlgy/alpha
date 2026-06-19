@@ -44,7 +44,12 @@ export async function POST(req: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        const email = session.customer_details?.email || session.customer_email;
+        const rawEmail = session.customer_details?.email || session.customer_email;
+        // Normalize to lowercase so the public.users row, the auth user (Supabase
+        // auth lowercases anyway), and the checkout double-charge guard's email
+        // lookup all key on ONE canonical form (email addresses are treated
+        // case-insensitively in practice).
+        const email = rawEmail ? rawEmail.toLowerCase().trim() : null;
         const customerId =
           typeof session.customer === "string"
             ? session.customer
@@ -177,14 +182,27 @@ export async function POST(req: Request) {
           cancellingAtPeriodEnd && typeof sub.cancel_at === "number" && sub.cancel_at > 0
             ? new Date(sub.cancel_at * 1000).toISOString()
             : null;
-        const { error: subErr } = await sb
+        const { data: subRows, error: subErr } = await sb
           .from("users")
           .update({
             cancelled_at: cancelledAt,
             topic_quota: topicQuota,
           })
-          .eq("stripe_customer_id", customerId);
+          .eq("stripe_customer_id", customerId)
+          .select("id");
         if (subErr) throw new Error(`subscription mirror failed: ${subErr.message}`);
+        // No row carries this customer id yet — almost always out-of-order
+        // delivery (the subscription event landed before checkout.session.
+        // completed linked stripe_customer_id). A Supabase .update() does NOT
+        // error on 0 rows, so without this check the quota/cancel mirror is
+        // SILENTLY lost. THROW so Stripe retries (#35): by retry time checkout
+        // will have set the customer id and the mirror lands. A genuinely orphan
+        // customer just retries ~3d then Stripe gives up (log noise, no harm).
+        if ((subRows?.length ?? 0) === 0) {
+          throw new Error(
+            `subscription mirror matched 0 rows for customer ${customerId} (out-of-order? will retry)`
+          );
+        }
         break;
       }
       case "customer.subscription.deleted": {
@@ -194,11 +212,25 @@ export async function POST(req: Request) {
         // Throw on failure -> 5xx -> Stripe retries (#35). Losing this write
         // would keep sending letters to (and granting access for) an ended
         // subscription forever.
-        const { error: delErr } = await sb
+        const { data: delRows, error: delErr } = await sb
           .from("users")
           .update({ cancelled_at: new Date().toISOString() })
-          .eq("stripe_customer_id", customerId);
+          .eq("stripe_customer_id", customerId)
+          .select("id");
         if (delErr) throw new Error(`cancellation mirror failed: ${delErr.message}`);
+        // 0 rows here almost always means the account was ALREADY deleted: both
+        // self-serve (account/delete) and admin delete cancel the Stripe sub and
+        // then delete the auth user, which cascades public.users away — so THIS
+        // event arrives on a vanished row. There's nothing left to mirror, so
+        // absorb it with a 200. (Throwing would make Stripe retry an
+        // unrecoverable event for ~3 days, pure noise.) A true out-of-order
+        // delete-before-the-row-exists is vanishingly rare and self-corrects via
+        // the later checkout/subscription.* mirror anyway.
+        if ((delRows?.length ?? 0) === 0) {
+          console.warn(
+            `[stripe-webhook] subscription.deleted matched 0 rows for customer ${customerId} (account already deleted?) — no-op`
+          );
+        }
         break;
       }
       case "invoice.payment_failed": {

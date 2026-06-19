@@ -148,7 +148,7 @@ const ENTRIES: Entry[] = [
     date: "2026-05-14",
     title: "Weekly letter actually ships every Sunday now",
     body:
-      "A Sunday-at-10am-ET cron loops every active subscriber, generates a fresh personalized letter from your topics, and emails it. Topic blurbs cache across subscribers each week so it's fast and consistent. The first subscriber on a given topic pays the Claude cost, everyone else reads the same well-edited section.",
+      "A Sunday-morning cron loops every active subscriber, generates a fresh personalized letter from your topics, and emails it. Topic blurbs cache across subscribers each week so it's fast and consistent. The first subscriber on a given topic pays the Claude cost, everyone else reads the same well-edited section.",
     tag: "new",
   },
   {

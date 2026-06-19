@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import Stripe from "stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
+import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
 
 export const runtime = "nodejs";
 
@@ -123,6 +125,39 @@ export async function POST(req: Request) {
   const sb = await supabaseServiceClient();
 
   if (body.action === "delete") {
+    // Cancel any Stripe subscription FIRST (mirrors self-serve account/delete):
+    // deleting the auth user cascades public.users away incl. stripe_customer_id,
+    // so a still-active sub would bill forever with no way to stop it. Best-effort
+    // — a Stripe hiccup must never block the admin delete.
+    const stripeSecret = process.env.STRIPE_SECRET_KEY?.trim();
+    if (stripeSecret) {
+      try {
+        const { data: row } = await sb
+          .from("users")
+          .select("stripe_customer_id")
+          .eq("id", body.userId)
+          .maybeSingle();
+        const customerId = row?.stripe_customer_id;
+        if (customerId) {
+          const stripe = new Stripe(stripeSecret, {
+            apiVersion: "2026-04-22.dahlia",
+            httpClient: Stripe.createNodeHttpClient(),
+          });
+          const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(
+            stripe,
+            customerId
+          );
+          console.log(
+            `[admin/delete] stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
+          );
+        }
+      } catch (e) {
+        console.warn(
+          "[admin/delete] subscription cancel failed (proceeding with delete):",
+          e instanceof Error ? e.message : e
+        );
+      }
+    }
     // Delete the auth user — cascade removes their public.users + issues rows.
     const { error } = await sb.auth.admin.deleteUser(body.userId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -130,6 +165,21 @@ export async function POST(req: Request) {
   }
 
   if (body.action === "grant_free") {
+    // Don't let a comp grant clobber a REAL Stripe subscriber's cancellation
+    // state (the cancelled_at: null below would un-cancel them in our mirror).
+    // Mirror revoke_free's guard: refuse if they have a real Stripe customer —
+    // a paying sub is managed in Stripe, never comped over.
+    const { data: existing } = await sb
+      .from("users")
+      .select("stripe_customer_id")
+      .eq("id", body.userId)
+      .maybeSingle();
+    if (existing?.stripe_customer_id) {
+      return NextResponse.json(
+        { error: "User has a real Stripe subscription. Manage in Stripe, don't comp." },
+        { status: 400 }
+      );
+    }
     // Mark as subscribed without a Stripe customer. App checks subscribed_at.
     const { error } = await sb
       .from("users")

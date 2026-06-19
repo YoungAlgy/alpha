@@ -50,7 +50,10 @@ export async function persistIssueIfPossible(
   if (!supabaseConfigured()) return null;
   // We can't write to public.users / public.issues without a user_id (RLS).
   // Email is the bootstrap identifier.
-  const email = profile.email;
+  // Lowercase so the auth user + public.users row key on the same canonical
+  // email the checkout/webhook paths use (emails are case-insensitive in
+  // practice; Supabase auth lowercases anyway).
+  const email = profile.email?.toLowerCase().trim();
   if (!email) return null;
 
   try {

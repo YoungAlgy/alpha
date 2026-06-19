@@ -45,6 +45,10 @@ export async function POST(req: Request) {
   } catch {
     // Empty body is fine
   }
+  // Canonicalize the email to lowercase so the double-charge guard's lookup, the
+  // Stripe customer_email, and the row the webhook later writes all key on one
+  // form (emails are case-insensitive in practice; Supabase auth lowercases too).
+  if (body.email) body.email = body.email.toLowerCase().trim();
 
   // Double-subscription guard. Checkout creates a NEW Stripe subscription on
   // every call, so an already-active subscriber who lands back on /checkout (a
