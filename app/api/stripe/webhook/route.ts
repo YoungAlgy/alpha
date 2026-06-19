@@ -191,17 +191,31 @@ export async function POST(req: Request) {
           .eq("stripe_customer_id", customerId)
           .select("id");
         if (subErr) throw new Error(`subscription mirror failed: ${subErr.message}`);
-        // No row carries this customer id yet — almost always out-of-order
-        // delivery (the subscription event landed before checkout.session.
-        // completed linked stripe_customer_id). A Supabase .update() does NOT
-        // error on 0 rows, so without this check the quota/cancel mirror is
-        // SILENTLY lost. THROW so Stripe retries (#35): by retry time checkout
-        // will have set the customer id and the mirror lands. A genuinely orphan
-        // customer just retries ~3d then Stripe gives up (log noise, no harm).
+        // A Supabase .update() does NOT error on 0 matched rows, so a missed
+        // mirror would be SILENTLY lost. 0 rows means one of two things,
+        // distinguished by the subscription status:
+        //   - active/trialing/etc → out-of-order: the event beat checkout linking
+        //     stripe_customer_id. THROW so Stripe retries (#35); by retry time the
+        //     row exists and the mirror lands.
+        //   - terminal (canceled/expired/unpaid) → the account was already
+        //     deleted (delete cancels the sub, cascading the row away, then this
+        //     event lands). Nothing to mirror — absorb with 200 like
+        //     subscription.deleted, so a normal delete flow doesn't churn ~3d of
+        //     futile retries.
         if ((subRows?.length ?? 0) === 0) {
-          throw new Error(
-            `subscription mirror matched 0 rows for customer ${customerId} (out-of-order? will retry)`
-          );
+          const terminal =
+            sub.status === "canceled" ||
+            sub.status === "incomplete_expired" ||
+            sub.status === "unpaid";
+          if (terminal) {
+            console.warn(
+              `[stripe-webhook] subscription mirror matched 0 rows for customer ${customerId} (status=${sub.status}, account deleted?) — no-op`
+            );
+          } else {
+            throw new Error(
+              `subscription mirror matched 0 rows for customer ${customerId} (status=${sub.status}, out-of-order? will retry)`
+            );
+          }
         }
         break;
       }

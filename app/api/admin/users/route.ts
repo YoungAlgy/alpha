@@ -181,11 +181,16 @@ export async function POST(req: Request) {
       );
     }
     // Mark as subscribed without a Stripe customer. App checks subscribed_at.
+    // Clear unsubscribed_at too: a comp grant is an explicit admin decision to
+    // send letters, so it must re-consent a previously-opted-out user (mirrors
+    // the paid checkout path) — otherwise re-comping an unsubscribed reader
+    // would silently leave them dropped from every send.
     const { error } = await sb
       .from("users")
       .update({
         subscribed_at: new Date().toISOString(),
         cancelled_at: null,
+        unsubscribed_at: null,
       })
       .eq("id", body.userId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
