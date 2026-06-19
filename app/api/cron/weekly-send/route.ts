@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { generateIssue } from "@/lib/engine/assemble";
 import { poolCap } from "@/lib/engine/select-sections";
-import { sendLetterNotification, resendConfigured } from "@/lib/email";
+import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { topicLabel } from "@/lib/topics";
@@ -108,10 +108,16 @@ export async function GET(req: Request) {
   const rows = (subscribers ?? []) as SubscriberRow[];
   const startedAt = Date.now();
   let sent = 0;
-  let skippedNoTopics = 0;
+  let skippedNoName = 0;
+  let skippedEmptyPool = 0;
   let skippedAlreadyDelivered = 0;
   let failed = 0;
   const failures: Array<{ email: string; error: string }> = [];
+  // Emails of ACTIVE PAID subscribers who got NOTHING this send (blank name or
+  // empty topic pool). Every row in this loop already passed the subscribed +
+  // live-access filter, so anything here is a paying reader silently receiving
+  // no letter — surfaced in the summary + an ops alert so it can't go unnoticed.
+  const skippedBlankSubscribers: string[] = [];
 
   // Allow ?force=1 to override the delivered_at idempotency gate (only the
   // admin will ever hit this with the CRON_SECRET in hand; useful for explicit
@@ -164,7 +170,17 @@ export async function GET(req: Request) {
     const letterSize = Math.max(5, Math.min(25, row.topic_quota ?? 5));
     const pool = ((row.topics ?? []) as TopicId[]).slice(0, poolCap(letterSize));
     if (!row.first_name || pool.length === 0) {
-      skippedNoTopics++;
+      // This is an ACTIVE PAID subscriber getting NOTHING this send — exactly
+      // how a blanked profile (e.g. a fresh-device sign-in that nulled
+      // first_name / topics) drops a reader off every letter unnoticed. Never
+      // silent: count which case, record the email, and warn per-subscriber.
+      if (!row.first_name) skippedNoName++;
+      else skippedEmptyPool++;
+      skippedBlankSubscribers.push(row.email);
+      console.warn(
+        `[cron/weekly-send] SKIPPED PAID SUBSCRIBER (got nothing) → ${row.email} ` +
+          `first_name=${row.first_name ? "ok" : "MISSING"} pool=${pool.length}`
+      );
       continue;
     }
 
@@ -316,13 +332,36 @@ export async function GET(req: Request) {
     weekOf,
     subscribers: rows.length,
     sent,
-    skippedNoTopics,
+    skippedNoName,
+    skippedEmptyPool,
+    skippedBlankSubscribers,
     skippedAlreadyDelivered,
     failed,
     elapsedMs,
     failures: failures.slice(0, 25),
   };
   console.log("[cron/weekly-send] summary:", JSON.stringify(summary));
+
+  // A paid subscriber getting nothing, or a hard send failure, should be LOUD —
+  // not buried in logs the owner won't read until a letter is noticed missing.
+  // Best-effort single email per run (sendOpsAlert never throws), only when
+  // something actually went wrong.
+  if (skippedBlankSubscribers.length > 0 || failed > 0) {
+    const lines = [
+      `weekOf=${weekOf}  sent=${sent}  subscribers=${rows.length}  failed=${failed}`,
+      skippedBlankSubscribers.length
+        ? `PAID subscribers who got NOTHING (blank name / empty topics): ${skippedBlankSubscribers.join(", ")}`
+        : "",
+      failures.length
+        ? `Send failures: ${failures.map((f) => `${f.email} (${f.error})`).join("; ")}`
+        : "",
+    ].filter(Boolean);
+    await sendOpsAlert(
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed`,
+      lines.join("\n")
+    );
+  }
+
   return NextResponse.json(summary);
 }
 

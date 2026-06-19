@@ -99,18 +99,52 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     resendHeaders["List-Unsubscribe"] = `<${unsubUrl}>`;
     resendHeaders["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
-  const result = await resendClient().emails.send({
-    from: resendFrom,
-    to: params.to,
-    subject,
-    html,
-    text,
-    headers: resendHeaders,
-  });
+  // Idempotency key: stable per (subscriber, send date). If a send for the same
+  // (user, week_of) is retried — a Vercel cron retry racing the scheduled run,
+  // the rollback path re-opening the delivered_at claim, an admin re-trigger —
+  // Resend collapses it provider-side and the subscriber gets ONE letter, not
+  // two. Only set when userId is known (the normal cron + generate paths both
+  // pass it); legacy callers without a userId behave exactly as before.
+  const idempotencyKey = params.userId
+    ? `alpha-letter-${params.userId}-${params.issue.weekOf}`
+    : undefined;
+  const result = await resendClient().emails.send(
+    {
+      from: resendFrom,
+      to: params.to,
+      subject,
+      html,
+      text,
+      headers: resendHeaders,
+    },
+    idempotencyKey ? { idempotencyKey } : undefined
+  );
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);
   }
   return { id: result.data?.id ?? "" };
+}
+
+// ─── Ops alert ────────────────────────────────────────────────────────────
+// Best-effort INTERNAL notification (never sent to a subscriber). The cron
+// calls this when a paid subscriber gets NOTHING this send (blanked profile /
+// empty topic pool) or a send hard-fails — the exact silent drop that
+// otherwise only surfaces when the owner happens to notice a missing letter
+// days later. Never throws: a broken alert must never break the send path.
+export async function sendOpsAlert(subject: string, body: string): Promise<void> {
+  try {
+    if (!resendConfiguredInternal()) return;
+    const to = process.env.OPS_ALERT_EMAIL?.trim() || "youngalgy@gmail.com";
+    const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <alpha@youngalgy.com>";
+    await resendClient().emails.send({
+      from: resendFrom,
+      to,
+      subject,
+      text: body,
+    });
+  } catch (e) {
+    console.warn("[ops-alert] failed:", e instanceof Error ? e.message : e);
+  }
 }
 
 // The subject. Personal + unmistakably a newsletter + an issue number so it

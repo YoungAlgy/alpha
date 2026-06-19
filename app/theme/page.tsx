@@ -42,9 +42,24 @@ export default function ThemePage() {
       try {
         const sb = supabaseClient();
         const { data: { session } } = await sb.auth.getSession();
-        if (session) setSignedIn(true);
+        if (!session) return;
+        setSignedIn(true);
+        // Hydrate `picked` from the DB (the source of truth) for a signed-in
+        // reader. Without this, a returning subscriber on a fresh device —
+        // where localStorage is empty so `picked` is still the "forest"
+        // default — would CLOBBER their real saved theme back to the default
+        // the moment they tap a tile or Continue (pickTheme/submit call
+        // setTheme(picked)). Same empty/default-overwrites-real-DB class as
+        // the user-sync.ts fix; this closes the sibling write-path.
+        const { data: row } = await sb
+          .from("users")
+          .select("theme")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        const dbTheme = row?.theme as ThemeId | null | undefined;
+        if (dbTheme && dbTheme in SWATCHES) setPicked(dbTheme);
       } catch {
-        // ignore
+        // ignore — falls back to localStorage state / default
       }
     })();
   }, []);

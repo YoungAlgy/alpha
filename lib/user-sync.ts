@@ -17,14 +17,33 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
     // wrote it from this in-memory state too, a later update() (e.g. saving
     // topics) would clobber a just-changed theme back to a stale value — the
     // exact "theme doesn't stick" bug.
-    const updates = {
-      first_name: state.firstName ?? null,
-      city: state.city ?? null,
-      job_blurb: state.jobBlurb ?? null,
-      project_blurb: state.projectBlurb ?? null,
-      fun_blurb: state.funBlurb ?? null,
-      topics: state.topics ?? [],
-    };
+    //
+    // CRITICAL: only write fields the in-memory state actually has a value for.
+    // This sync runs whenever a session exists, including a fresh-device or
+    // cleared-browser sign-in where localStorage onboarding state is EMPTY. The
+    // old code wrote `first_name: state.firstName ?? null` (and `topics ?? []`)
+    // unconditionally, so an empty state would null out a real, populated
+    // profile in the DB. That silently dropped the user from every send
+    // (the cron skips rows with no first_name or no topics). The DB is the
+    // source of truth on a fresh device — never overwrite a present value with
+    // an empty one. Clearing an optional blurb intentionally is not supported
+    // through this path, which is an acceptable trade for not wiping a profile.
+    const updates: Record<string, string | string[]> = {};
+    const fn = state.firstName?.trim();
+    if (fn) updates.first_name = fn;
+    const city = state.city?.trim();
+    if (city) updates.city = city;
+    const jobBlurb = state.jobBlurb?.trim();
+    if (jobBlurb) updates.job_blurb = jobBlurb;
+    const projectBlurb = state.projectBlurb?.trim();
+    if (projectBlurb) updates.project_blurb = projectBlurb;
+    const funBlurb = state.funBlurb?.trim();
+    if (funBlurb) updates.fun_blurb = funBlurb;
+    if (Array.isArray(state.topics) && state.topics.length > 0) {
+      updates.topics = state.topics;
+    }
+    // Nothing real to sync (uninitialized/empty state) — don't touch the DB.
+    if (Object.keys(updates).length === 0) return;
     const { error } = await sb
       .from("users")
       .update(updates)

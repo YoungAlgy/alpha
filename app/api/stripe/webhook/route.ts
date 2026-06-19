@@ -140,12 +140,23 @@ export async function POST(req: Request) {
         // Throw on failure -> 5xx -> Stripe retries (#35). Set-to-current, so
         // a retry is idempotent. Silently losing this write desyncs paid quota
         // / cancellation state from Stripe with no recovery.
+        // Guard the cancelled_at derivation. The old `sub.cancel_at!` non-null
+        // assertion was a double trap: if cancel_at is null/undefined,
+        // `new Date(NaN).toISOString()` THROWS (→ outer catch → 5xx →
+        // Stripe retries forever, throw-looping the quota mirror too), and
+        // `new Date(0).toISOString()` would write a 1970 PAST date that the
+        // cron's `cancelled_at.gt.now` filter reads as "access ended" — silently
+        // DROPPING a cancel-at-period-end subscriber who is still paid up. Only
+        // write a real future end date; otherwise leave null (keep serving the
+        // paid-up reader — subscription.deleted will set the real end later).
+        const cancelledAt =
+          cancellingAtPeriodEnd && typeof sub.cancel_at === "number" && sub.cancel_at > 0
+            ? new Date(sub.cancel_at * 1000).toISOString()
+            : null;
         const { error: subErr } = await sb
           .from("users")
           .update({
-            cancelled_at: cancellingAtPeriodEnd
-              ? new Date(sub.cancel_at! * 1000).toISOString()
-              : null,
+            cancelled_at: cancelledAt,
             topic_quota: topicQuota,
           })
           .eq("stripe_customer_id", customerId);
