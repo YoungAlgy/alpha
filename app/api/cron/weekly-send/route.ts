@@ -22,6 +22,21 @@ function bearerMatches(authHeader: string | null, expected: string): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
+// Hard per-subscriber generation deadline. generateIssue's own I/O is already
+// bounded (Anthropic 60s, Brave 5s, deep-read 7s each), but this is a backstop
+// so one pathologically slow user can't consume the whole cron budget and
+// starve every later subscriber that send. On timeout the per-user catch counts
+// it failed and the loop moves on (the underlying work keeps running detached
+// but is self-bounded, so it can't leak indefinitely).
+const PER_USER_DEADLINE_MS = 110_000;
+function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms deadline`)), ms);
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer!));
+}
+
 interface SubscriberRow {
   id: string;
   email: string;
@@ -144,12 +159,16 @@ export async function GET(req: Request) {
 
   // Prefetch each subscriber's PRIOR issue count (weeks strictly before this
   // one) in ONE query → "Issue N" in the email subject is this reader's Nth
-  // letter (issueNumber = priorCount + 1), accurate on re-runs too.
+  // letter (issueNumber = priorCount + 1), accurate on re-runs too. Bounded to
+  // THIS send's subscriber set (was a whole-table scan of every user's lifetime
+  // history, including churned/deleted accounts), so the read scales with the
+  // recipients of this send, not the size of the issues table.
   const priorIssueCount = new Map<string, number>();
-  {
+  if (rows.length > 0) {
     const { data: priors } = await sb
       .from("issues")
       .select("user_id")
+      .in("user_id", rows.map((r) => r.id))
       .lt("week_of", weekOf);
     for (const p of (priors ?? []) as Array<{ user_id: string }>) {
       priorIssueCount.set(p.user_id, (priorIssueCount.get(p.user_id) ?? 0) + 1);
@@ -206,7 +225,11 @@ export async function GET(req: Request) {
     };
 
     try {
-      const issue = await generateIssue(profile, weekOf, letterSize, freshness);
+      const issue = await withDeadline(
+        generateIssue(profile, weekOf, letterSize, freshness),
+        PER_USER_DEADLINE_MS,
+        `generateIssue(${row.email})`
+      );
 
       // Upsert the issue so re-runs are idempotent on (user_id, week_of).
       // THROW on failure (caught by the per-user catch below) — if this row
@@ -242,10 +265,12 @@ export async function GET(req: Request) {
         // send failure — trading the old "stamp-fail/crash -> DUPLICATE" for a
         // far rarer "hard crash between claim and send -> missed once". A missed
         // letter is less harmful than a duplicate. ?force=1 bypasses the claim.
+        let claimedAt: string | null = null;
         if (!force) {
+          claimedAt = new Date().toISOString();
           const { data: claimRows, error: claimErr } = await sb
             .from("issues")
-            .update({ delivered_at: new Date().toISOString() })
+            .update({ delivered_at: claimedAt })
             .eq("user_id", row.id)
             .eq("week_of", weekOf)
             .is("delivered_at", null)
@@ -275,13 +300,17 @@ export async function GET(req: Request) {
             userId: row.id,
           });
         } catch (sendErr) {
-          if (!force) {
+          if (!force && claimedAt) {
             // Release the claim so the next run retries this user cleanly.
+            // Predicate-guarded on OUR exact claim timestamp so we only ever
+            // retract the stamp THIS invocation set — never one a concurrent
+            // run wrote, which would risk nulling a real, just-sent delivery.
             const { error: rollbackErr } = await sb
               .from("issues")
               .update({ delivered_at: null })
               .eq("user_id", row.id)
-              .eq("week_of", weekOf);
+              .eq("week_of", weekOf)
+              .eq("delivered_at", claimedAt);
             if (rollbackErr) {
               console.warn(
                 `[cron/weekly-send] send failed AND claim rollback failed for ${row.email}: ${rollbackErr.message} — may be skipped (missed) next run.`

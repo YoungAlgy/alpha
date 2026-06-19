@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useOnboarding, nextStep, type OnboardingState } from "@/lib/onboarding-state";
 import { confirm as audioConfirm, tap } from "@/lib/audio";
+import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 
 interface QuestionStepProps {
   field: keyof OnboardingState;
@@ -35,6 +36,22 @@ export function QuestionStep({
   const initial = (state[field] as string) || "";
   const [value, setValue] = useState<string>(initial);
   const [error, setError] = useState<string | null>(null);
+
+  // These are NEW-USER onboarding steps only (editing lives in /settings). A
+  // signed-in reader who deep-links here, or a returning subscriber on a fresh
+  // device, would otherwise see a blank form and could re-save stale values —
+  // bounce them to their inbox, mirroring the welcome page's guard.
+  useEffect(() => {
+    if (!supabaseConfigured()) return;
+    (async () => {
+      try {
+        const { data: { session } } = await supabaseClient().auth.getSession();
+        if (session) router.replace("/inbox" as never);
+      } catch {
+        // ignore — show the step as a fallback
+      }
+    })();
+  }, [router]);
 
   useEffect(() => {
     if (loaded) setValue((state[field] as string) || "");

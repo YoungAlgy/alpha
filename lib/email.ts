@@ -93,7 +93,10 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   // variant tells them they can use POST without navigating away from the inbox.
   const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <alpha@youngalgy.com>";
   const resendHeaders: Record<string, string> = {
-    "X-Alpha-Issue-Id": params.issue.id,
+    // Unique per (subscriber, issue): issue.id alone is firstName+weekOf, which
+    // collides across same-named subscribers. Prefix with the user id when we
+    // have it so delivery tracing by this header is unambiguous.
+    "X-Alpha-Issue-Id": params.userId ? `${params.userId}:${params.issue.id}` : params.issue.id,
   };
   if (unsubUrl) {
     resendHeaders["List-Unsubscribe"] = `<${unsubUrl}>`;

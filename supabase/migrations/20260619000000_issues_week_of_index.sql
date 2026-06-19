@@ -1,0 +1,16 @@
+-- Index public.issues.week_of to keep the weekly-send cron's per-send prefetches
+-- fast as the issues table grows over time.
+--
+-- The cron reads, once per Sun/Tue/Thu send:
+--   * "already delivered this week" → WHERE week_of = $1 AND delivered_at IS NOT NULL
+--   * "prior issue count per sub"    → WHERE user_id IN (...) AND week_of < $1
+--
+-- The (user_id, week_of) UNIQUE index that backs the issue upsert already covers
+-- the second query (user_id leading). This adds the week_of-leading index the
+-- first query needs, so it stops sequential-scanning the whole issues table on
+-- every send. Zero behavior change — purely a read-path index.
+--
+-- `if not exists` makes this idempotent and safe to re-run. The table is small,
+-- so a plain CREATE INDEX builds instantly; if it has grown large by apply time,
+-- run `create index concurrently` by hand instead to avoid the brief write lock.
+create index if not exists issues_week_of_idx on public.issues (week_of);
