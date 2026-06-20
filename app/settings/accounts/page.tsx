@@ -5,12 +5,15 @@ import { useEffect, useState } from "react";
 import { Footer } from "@/components/Footer";
 import { topicLabel } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
+import { generationLabel, generationOf, zodiacLabel, zodiacSign } from "@/lib/demographics";
 
 interface AdminUserRow {
   id: string;
   email: string;
   first_name: string | null;
   city: string | null;
+  birthday: string | null;
+  gender: string | null;
   theme: string | null;
   topics: string[] | null;
   stripe_customer_id: string | null;
@@ -224,6 +227,8 @@ export default function AdminAccountsPage() {
                   >
                     <span>Joined {created}</span>
                     {u.city && <span>· {u.city}</span>}
+                    {u.gender && <span>· {u.gender === "male" ? "Male" : "Female"}</span>}
+                    {u.birthday && <span>· {demoSummary(u.birthday)}</span>}
                     {theme !== "—" && <span>· {theme}</span>}
                   </div>
                   {topics && (
@@ -297,6 +302,13 @@ export default function AdminAccountsPage() {
       <Footer />
     </main>
   );
+}
+
+// "Millennial, Leo" from a birthday, falling back to the raw date.
+function demoSummary(birthday: string): string {
+  const g = generationOf(birthday);
+  const s = zodiacSign(birthday);
+  return [g ? generationLabel(g) : null, s ? zodiacLabel(s) : null].filter(Boolean).join(", ") || birthday;
 }
 
 function Stat({

@@ -90,7 +90,7 @@ export async function GET() {
   const [{ data: users, error }, stats] = await Promise.all([
     sb
       .from("users")
-      .select("id, email, first_name, city, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, created_at")
+      .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, created_at")
       .order("created_at", { ascending: false })
       .limit(200),
     gatherStats(),
