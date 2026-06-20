@@ -19,6 +19,27 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-06-20",
+    title: "Edit all your details in Settings",
+    body:
+      "Settings used to only let you change your topics and your theme. Now you can edit the rest too: your name, your city, what you do, what you're working on, and the fun one. The more your letter knows about you, the more it reads like it was written for you. Change any of it anytime.",
+    tag: "new",
+  },
+  {
+    date: "2026-06-20",
+    title: "A new look: Money Mitch",
+    body:
+      "There's a new theme in the picker. Money Mitch is black and champagne gold, with a heavier serif and a touch of grain. Pick it the same way as the others, in Settings or the theme gallery. Same letter, your vibe.",
+    tag: "new",
+  },
+  {
+    date: "2026-06-20",
+    title: "Change your email yourself",
+    body:
+      "You can now change the email your letters go to right from Settings, no need to write in. We send a confirmation link to your new address and your current one. Click both to confirm and your letters move over. Until you confirm, they keep coming to your current address, so nothing gets lost.",
+    tag: "new",
+  },
+  {
     date: "2026-06-15",
     title: "Letters now come three times a week",
     body:

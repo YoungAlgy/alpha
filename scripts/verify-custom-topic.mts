@@ -30,7 +30,13 @@ check("customTopicText strips prefix", customTopicText("custom:Crypto in Asia") 
 
 // labels (catalog vs custom)
 check("topicLabel catalog resolves registry", topicLabel("trading-cards") === "Trading cards");
-check("topicLabel custom capitalizes the text", topicLabel("custom:crypto trends in asia") === "Crypto trends in asia");
+check("topicLabel custom title-cases the text", topicLabel("custom:crypto trends in asia") === "Crypto Trends in Asia");
+// titleCaseTopic intent: significant words capitalize, small connectors stay
+// lowercase mid-phrase (but capitalize when leading), and existing caps are
+// preserved (so a stored acronym / a legacy mixed-case id keeps its case).
+check("topicLabel keeps mid-phrase connectors lowercase", topicLabel("custom:lord of the rings") === "Lord of the Rings");
+check("topicLabel capitalizes a leading connector", topicLabel("custom:the future of work") === "The Future of Work");
+check("topicLabel preserves existing caps (legacy mixed-case id)", topicLabel("custom:islam and Quran - inspiring Hadiths") === "Islam and Quran - Inspiring Hadiths");
 check("topicLabel unknown catalog id falls back to id", topicLabel("not-a-topic") === "not-a-topic");
 
 // emoji
