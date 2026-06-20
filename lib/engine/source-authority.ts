@@ -53,7 +53,10 @@ const TRUSTED_DOMAINS: string[] = [
 const DENIED_SUBSTRINGS: string[] = [
   "vettedconsumer", "outlookindia.com", "analyticsinsight", "techbullion",
   "marketresearchfuture", "openpr.com", "einnews.com", "globenewswire.com",
-  "prnewswire.com", "benzinga.com/pressreleases", "medium.com/@",
+  "prnewswire.com", "benzinga.com/pressreleases",
+  // "medium.com/@" is a DELIBERATE block of unvetted Medium author posts (not a
+  // host typo) — anyone can publish there, so we never deep-read/cite them.
+  "medium.com/@",
 ];
 
 // Listicle / SEO-bait URL shapes (e.g. "best-ai-tools-2026"). Deliberately

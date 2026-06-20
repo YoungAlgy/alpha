@@ -50,6 +50,11 @@ export async function POST(req: Request) {
         // lookup all key on ONE canonical form (email addresses are treated
         // case-insensitively in practice).
         const email = rawEmail ? rawEmail.toLowerCase().trim() : null;
+        // A subscription-mode Checkout always attaches a Customer, so
+        // session.customer is non-null here; the ?? null fallback is only for
+        // type-narrowing. If a customer-less checkout path is ever added, the
+        // out-of-order subscription-mirror self-heal would break (it keys on
+        // stripe_customer_id), so guard that path rather than writing a null id.
         const customerId =
           typeof session.customer === "string"
             ? session.customer

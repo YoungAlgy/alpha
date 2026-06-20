@@ -4,8 +4,17 @@ import { resolveTopicSignal, resolveMockSignal } from "./source-resolver";
 import { getCachedBlurb, setCachedBlurb } from "./blurb-cache";
 import { selectLetterSections } from "./select-sections";
 import { topicLabel } from "@/lib/topics";
+import { withDeadline } from "@/lib/with-deadline";
 import type { Issue, UserProfile, TopicId } from "@/lib/types";
 import type { TopicBlurb } from "./types";
+
+// Per-topic generation deadline. The model call is bounded per-attempt (60s) but
+// the SDK retry + topic-blurb's parse-retry can stack a single blurb past 2
+// minutes. This caps ONE topic so a pathologically slow one is treated as
+// "quiet" and BACKFILLED from a fresher backup, rather than dominating the
+// parallel wave and forcing the outer route/cron deadline to drop the WHOLE
+// letter. The reject lands in selectLetterSections' per-topic .catch → null.
+const TOPIC_GEN_DEADLINE_MS = 75_000;
 
 export async function generateIssue(
   user: UserProfile,
@@ -40,7 +49,11 @@ export async function generateIssue(
     if (cached && cached.items.length > 0) return { ...cached, topicLabel: topicLabel(id) };
     const signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness });
     if (!signal) return null; // no fresh signal — skip, no model call
-    const blurb = await generateTopicBlurb(id, weekOf, signal);
+    const blurb = await withDeadline(
+      generateTopicBlurb(id, weekOf, signal),
+      TOPIC_GEN_DEADLINE_MS,
+      `topic-blurb ${id}`
+    );
     // Only cache a real section. If the guard dropped every link (0 items),
     // don't cache the empty result — otherwise every later subscriber to this
     // topic would read the empty blurb back as a "hit" and ship a link-less
@@ -67,7 +80,11 @@ export async function generateIssue(
     // blurbs are deliberately never cached (see the note above), so generate it.
     const signal = resolveMockSignal(id, weekOf);
     if (!signal) return null;
-    const blurb = await generateTopicBlurb(id, weekOf, signal);
+    const blurb = await withDeadline(
+      generateTopicBlurb(id, weekOf, signal),
+      TOPIC_GEN_DEADLINE_MS,
+      `topic-filler ${id}`
+    );
     return blurb.items.length > 0 ? blurb : null;
   }
 
