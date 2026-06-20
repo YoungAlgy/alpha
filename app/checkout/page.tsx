@@ -76,7 +76,7 @@ export default function CheckoutPage() {
   const sw = SWATCHES[themeId];
 
   return (
-    <StepShell stepIndex={10} prevPath="email">
+    <StepShell stepIndex={11} prevPath="email">
       <div className="space-y-10">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">

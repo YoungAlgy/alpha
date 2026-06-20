@@ -1,10 +1,10 @@
 import { braveConfigured, braveSearch, type BraveSearchOptions } from "@/lib/brave";
 import { rankAndDedup } from "./source-rank";
 import { fetchArticleText, deepReadEnabled } from "./fetch-content";
-import { TOPIC_QUERIES } from "./topic-queries";
+import { TOPIC_QUERIES, zodiacQueries } from "./topic-queries";
 import { getSignal } from "./mock-signals";
 import { normalizeUrl } from "./url-guard";
-import { isCustomTopic, customTopicText } from "@/lib/topics";
+import { isCustomTopic, customTopicText, isZodiacTopicId } from "@/lib/topics";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
 
@@ -51,7 +51,14 @@ export async function resolveTopicSignal(
   opts?: { liveOnly?: boolean; freshness?: BraveSearchOptions["freshness"] }
 ): Promise<TopicSignal | undefined> {
   const custom = isCustomTopic(topicId);
-  const queries = custom ? customQueries(topicId) : TOPIC_QUERIES[topicId as FixedTopicId];
+  // A per-sign zodiac id ("zodiac-leo") builds its search from the sign, not the
+  // catalog query table. Custom topics use the reader's free text. Everything
+  // else is a catalog topic.
+  const queries = custom
+    ? customQueries(topicId)
+    : isZodiacTopicId(topicId)
+      ? zodiacQueries(topicId)
+      : TOPIC_QUERIES[topicId as FixedTopicId];
 
   if (braveConfigured() && queries && queries.length > 0) {
     try {

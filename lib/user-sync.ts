@@ -39,6 +39,9 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
     if (projectBlurb) updates.project_blurb = projectBlurb;
     const funBlurb = state.funBlurb?.trim();
     if (funBlurb) updates.fun_blurb = funBlurb;
+    const birthday = state.birthday?.trim();
+    if (birthday) updates.birthday = birthday;
+    if (state.gender === "male" || state.gender === "female") updates.gender = state.gender;
     if (Array.isArray(state.topics) && state.topics.length > 0) {
       updates.topics = state.topics;
     }

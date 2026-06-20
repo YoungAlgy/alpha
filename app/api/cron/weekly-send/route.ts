@@ -40,6 +40,8 @@ interface SubscriberRow {
   job_blurb: string | null;
   project_blurb: string | null;
   fun_blurb: string | null;
+  birthday: string | null;
+  gender: string | null;
   theme: string | null;
   topics: string[] | null;
   topic_quota: number | null;
@@ -104,7 +106,7 @@ export async function GET(req: Request) {
   const { data: subscribers, error } = await sb
     .from("users")
     .select(
-      "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, theme, topics, topic_quota"
+      "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, theme, topics, topic_quota"
     )
     .not("subscribed_at", "is", null)
     .or(`cancelled_at.is.null,cancelled_at.gt.${nowIso}`)
@@ -214,6 +216,8 @@ export async function GET(req: Request) {
       jobBlurb: row.job_blurb ?? undefined,
       projectBlurb: row.project_blurb ?? undefined,
       funBlurb: row.fun_blurb ?? undefined,
+      birthday: row.birthday ?? undefined,
+      gender: (row.gender === "male" || row.gender === "female") ? row.gender : undefined,
       topics: pool,
       theme: ((row.theme as ThemeId) ?? "forest"),
       email: row.email,

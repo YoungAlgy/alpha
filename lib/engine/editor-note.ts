@@ -1,4 +1,5 @@
 import { anthropicClient, MODEL } from "./client";
+import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
 import type { UserProfile } from "@/lib/types";
 
@@ -46,6 +47,13 @@ export async function generateEditorNote(
     clamp(user.funBlurb, 400) && `Outside work, into: ${clamp(user.funBlurb, 400)}`,
   ].filter(Boolean).join("\n");
 
+  // Reader voice steer, derived from gender + birthday. SAFE to place outside the
+  // untrusted fence: it's built only from validated enums (gender, generation),
+  // never raw user text, so it can't carry an injection. Empty when unknown, in
+  // which case the default (intentionally neutral, not feminine-leaning) voice
+  // stands — which is the baseline fix for "it felt too themed for women."
+  const tone = toneGuidance(user.gender, generationOf(user.birthday));
+
   // Untrusted user input is fenced in a delimited block the system prompt
   // tells the model to treat as data, not instructions.
   const userPrompt = `<reader-profile>
@@ -54,7 +62,7 @@ ${profileLines}
 
 This week's topic sections, with their intros:
 ${blurbSummaries}
-
+${tone ? `\n${tone}\n` : ""}
 Write the editor's note for this reader's letter this week.`;
 
   const response = await anthropicClient().messages.create({

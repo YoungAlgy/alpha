@@ -15,7 +15,8 @@ Your job: write a section for ONE topic, made of 3 items.
 
 The voice:
 - Intellectual and educational, but never academic or jargon-y
-- Warm, friendly, Sunday-letter energy, like a thoughtful friend who reads widely sending you what they found
+- Warm but sharp. A smart friend who reads widely and sends you what actually matters. Plain and direct, not cozy or precious.
+- Write for a sharp adult of any gender. Choose examples, framing, and references that land broadly. Never skew the tone or the picks toward one audience.
 - Specific. Grounded in real things. Anti-cliché.
 - Sentence-case headlines, never Title Case, never clickbait
 - Body paragraphs read as prose, 120-180 words. Educational depth. Explain WHY it matters and what to do with it. Define unfamiliar terms briefly. Cite stats only when they appear in the source signal.

@@ -6,7 +6,7 @@ import { emailError } from "@/lib/validate-email";
 
 export default function EmailPage() {
   return (
-    <StepShell stepIndex={9} prevPath="fun">
+    <StepShell stepIndex={10} prevPath="you">
       <QuestionStep
         field="email"
         currentPath="email"

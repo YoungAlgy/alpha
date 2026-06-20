@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { TopicId, ThemeId } from "./types";
+import type { TopicId, ThemeId, Gender } from "./types";
 import { syncUserProfile } from "./user-sync";
 
 const STORAGE_KEY = "alpha-onboarding";
@@ -12,6 +12,8 @@ export interface OnboardingState {
   jobBlurb?: string;
   projectBlurb?: string;
   funBlurb?: string;
+  birthday?: string; // ISO "YYYY-MM-DD"
+  gender?: Gender;
   topics?: TopicId[];
   theme?: ThemeId;
   email?: string;
@@ -73,6 +75,7 @@ export const ONBOARDING_STEPS = [
   { path: "focus", label: "Focus" },
   { path: "topics", label: "Topics" },
   { path: "fun", label: "Fun" },
+  { path: "you", label: "About you" },
   { path: "email", label: "Email" },
   { path: "checkout", label: "Subscribe" },
 ] as const;

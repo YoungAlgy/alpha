@@ -144,6 +144,16 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "Bankless Coinbase Institutional crypto ETF flows",
     "Farcaster Warpcast decentralized social",
   ],
+  // Generic parent fallback. The picker stores "zodiac"; at generation it maps
+  // to a per-sign id ("zodiac-leo") via the reader's birthday, and zodiacQueries
+  // below builds the sign-specific search. This entry just satisfies the typed
+  // Record and is only used if a sign somehow can't be derived (it's dropped
+  // first, so effectively never).
+  zodiac: [
+    "weekly horoscope this week astrology",
+    "zodiac signs forecast",
+    "astrology news this week",
+  ],
   "fl-gardening": [
     "UF IFAS Florida-Friendly Landscaping native plants",
     "Tampa Bay native plant society event sale",
@@ -169,4 +179,48 @@ export const TOPIC_QUERIES: Record<TopicId, string[]> = {
     "Bible Project Tim Keller theology podcast",
     "Plough Comment Magazine Richard Rohr contemplative",
   ],
+  "faith-christianity": [
+    "Christianity Today Gospel Coalition essay",
+    "Bible Project Tim Keller theology",
+    "Christian practice prayer church",
+  ],
+  "faith-islam": [
+    "Yaqeen Institute Islamic scholarship",
+    "Quran hadith contemporary Muslim thought",
+    "Islam practice Ramadan prayer community",
+  ],
+  "faith-judaism": [
+    "Tablet Magazine My Jewish Learning essay",
+    "Torah Talmud commentary Sefaria",
+    "Jewish practice Shabbat holidays thought",
+  ],
+  "faith-hinduism": [
+    "Hinduism Vedanta Bhagavad Gita teaching",
+    "Hindu philosophy dharma practice",
+    "Hindu festivals temple community",
+  ],
+  "faith-buddhism": [
+    "Tricycle Lion's Roar Buddhist teaching",
+    "Buddhism meditation dharma mindfulness",
+    "Thich Nhat Hanh Pema Chodron practice",
+  ],
+  "faith-spiritual": [
+    "Richard Rohr Krista Tippett On Being contemplative",
+    "spirituality meaning contemplative practice essay",
+    "spiritual but not religious seeking meaning",
+  ],
 };
+
+// Sign-specific Brave queries for a per-sign zodiac id ("zodiac-leo"). The
+// reader's section is keyed + cached by this id, so all Leos share one Leo
+// generation. Returns [] for a non-zodiac id.
+export function zodiacQueries(zodiacTopicId: string): string[] {
+  const m = zodiacTopicId.match(/^zodiac-([a-z]+)$/);
+  if (!m) return [];
+  const sign = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+  return [
+    `${sign} horoscope this week`,
+    `${sign} weekly astrology forecast`,
+    `${sign} zodiac what to know this week`,
+  ];
+}

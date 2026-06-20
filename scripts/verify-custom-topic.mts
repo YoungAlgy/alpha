@@ -1,7 +1,8 @@
 // Verify the custom-topic helpers (encoding, labels, validation). Pure, fast.
 // Run: npx tsx scripts/verify-custom-topic.mts
-const { isCustomTopic, customTopicText, makeCustomTopic, topicLabel, topicEmoji, topicAnchor, CUSTOM_PREFIX } =
+const { isCustomTopic, customTopicText, makeCustomTopic, topicLabel, topicEmoji, topicAnchor, CUSTOM_PREFIX, isZodiacTopicId, SUBTOPICS, PARENT_TOPIC } =
   await import("../lib/topics.ts");
+const { zodiacQueries } = await import("../lib/engine/topic-queries.ts");
 
 let pass = 0,
   fail = 0;
@@ -47,6 +48,25 @@ check("topicEmoji catalog resolves registry", topicEmoji("trading-cards") === "ð
 check("topicAnchor catalog unchanged", topicAnchor("ai-news") === "s-ai-news");
 check("topicAnchor custom is slugified (no spaces/colons)", topicAnchor("custom:crypto trends in Asia") === "s-custom-crypto-trends-in-asia");
 check("topicAnchor produces a valid id (no whitespace)", !/\s/.test(topicAnchor("custom:a b c")));
+
+// zodiac (parent picker id vs per-sign derived id)
+console.log("(6) zodiac topic");
+check("isZodiacTopicId: parent + per-sign true", isZodiacTopicId("zodiac") && isZodiacTopicId("zodiac-leo"));
+check("isZodiacTopicId: a normal id is false", !isZodiacTopicId("music") && !isZodiacTopicId("ai-news"));
+check("parent label = catalog label", topicLabel("zodiac") === "Zodiac & astrology");
+check("per-sign label = the sign", topicLabel("zodiac-leo") === "Leo" && topicLabel("zodiac-scorpio") === "Scorpio");
+check("per-sign emoji = crystal ball", topicEmoji("zodiac-leo") === "ðŸ”®");
+check("per-sign anchor is a valid slug", topicAnchor("zodiac-leo") === "s-zodiac-leo");
+check("zodiacQueries builds sign-specific search", zodiacQueries("zodiac-leo").every((q: string) => q.includes("Leo")) && zodiacQueries("zodiac-leo").length === 3);
+check("zodiacQueries empty for a non-zodiac id", zodiacQueries("music").length === 0);
+
+// religion (parent + subtopics, like music)
+console.log("(7) religion topic");
+check("faith-meaning relabeled to the umbrella", topicLabel("faith-meaning") === "Faith & religion");
+check("faith subtopics labeled", topicLabel("faith-christianity") === "Christianity" && topicLabel("faith-islam") === "Islam");
+check("SUBTOPICS lists the 6 faith options", (SUBTOPICS["faith-meaning"]?.length ?? 0) === 6);
+check("PARENT_TOPIC maps a sub back to faith-meaning", PARENT_TOPIC["faith-buddhism"] === "faith-meaning");
+check("a faith sub is NOT a custom or zodiac topic", !isCustomTopic("faith-judaism") && !isZodiacTopicId("faith-judaism"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

@@ -42,11 +42,18 @@ export type FixedTopicId =
   | "trading-cards"
   | "ai-news"
   | "web3-updates"
+  | "zodiac"
   | "fl-gardening"
   | "gardening-plants"
   | "sustainable-living"
   | "startups-vc"
-  | "faith-meaning";
+  | "faith-meaning"
+  | "faith-christianity"
+  | "faith-islam"
+  | "faith-judaism"
+  | "faith-hinduism"
+  | "faith-buddhism"
+  | "faith-spiritual";
 
 /** A catalog topic, or a user's own free-text topic encoded as `custom:<text>`. */
 export type TopicId = FixedTopicId | `custom:${string}`;
@@ -96,12 +103,21 @@ export interface Issue {
   sections: DigestSection[];
 }
 
+// Stored gender values. Absent/undefined = unspecified ("prefer not to say").
+// We only ever tone the letter for these two; everyone else gets the neutral
+// default voice. See lib/demographics.ts toneGuidance.
+export type Gender = "male" | "female";
+
 export interface UserProfile {
   firstName: string;
   city: string;
   jobBlurb?: string;
   projectBlurb?: string;
   funBlurb?: string;
+  // Full birthday as an ISO date "YYYY-MM-DD". Optional. Unlocks the zodiac
+  // sign + the reader's generation (for tone). See lib/demographics.ts.
+  birthday?: string;
+  gender?: Gender;
   topics: TopicId[];
   theme: ThemeId;
   email?: string;

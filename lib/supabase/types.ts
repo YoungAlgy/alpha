@@ -1,6 +1,6 @@
 // Hand-written types — replace with `supabase gen types typescript` output later.
 
-import type { TopicId, ThemeId, DigestSection } from "@/lib/types";
+import type { TopicId, ThemeId, Gender, DigestSection } from "@/lib/types";
 
 export interface DbUser {
   id: string;
@@ -10,6 +10,8 @@ export interface DbUser {
   job_blurb: string | null;
   project_blurb: string | null;
   fun_blurb: string | null;
+  birthday: string | null;
+  gender: Gender | null;
   theme: ThemeId | null;
   topics: TopicId[];
   stripe_customer_id: string | null;

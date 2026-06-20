@@ -78,6 +78,12 @@ export default function WritingPage() {
       jobBlurb: state.jobBlurb,
       projectBlurb: state.projectBlurb,
       funBlurb: state.funBlurb,
+      // Carry birthday + gender so the PAID first letter tones correctly and the
+      // zodiac section (which onboarding just forced a birthday for) actually
+      // ships. Without these the first letter falls back to the neutral voice and
+      // silently drops zodiac until the cron self-heals from the DB on send 2.
+      birthday: state.birthday,
+      gender: state.gender,
       topics: state.topics,
       theme: state.theme || "forest",
       email: state.email,

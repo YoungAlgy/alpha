@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { generationLabel, generationOf, zodiacLabel, zodiacSign } from "@/lib/demographics";
+import type { Gender } from "@/lib/types";
 
-// The five details onboarding collected. Editing them used to be impossible
-// after sign-up (settings only let you change topics + theme). first_name + city
-// are required; the three blurbs are optional and clearable. Labels/placeholders
+// The details onboarding collected. Editing them used to be impossible after
+// sign-up (settings only let you change topics + theme). first_name + city are
+// required; everything else is optional and clearable. Labels/placeholders
 // mirror the onboarding steps so the questions read the same here.
 interface Form {
   firstName: string;
@@ -14,9 +16,15 @@ interface Form {
   jobBlurb: string;
   projectBlurb: string;
   funBlurb: string;
+  birthday: string; // ISO "YYYY-MM-DD" or ""
+  gender: "" | Gender; // "" = unspecified
 }
 
-const EMPTY: Form = { firstName: "", city: "", jobBlurb: "", projectBlurb: "", funBlurb: "" };
+const EMPTY: Form = { firstName: "", city: "", jobBlurb: "", projectBlurb: "", funBlurb: "", birthday: "", gender: "" };
+
+function genderOf(v: unknown): "" | Gender {
+  return v === "male" || v === "female" ? v : "";
+}
 
 export function ProfileEditor() {
   const { update } = useOnboarding();
@@ -27,6 +35,10 @@ export function ProfileEditor() {
   const [saved, setSaved] = useState<Form>(EMPTY);
   const [loaded, setLoaded] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  // The reader's saved topics, only so we can warn when they have the Zodiac
+  // topic but no birthday (that section gets skipped without one). Mirrors the
+  // onboarding "you" step's gate, which the settings editor otherwise lacks.
+  const [hasZodiac, setHasZodiac] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   // Synchronous re-entrancy latch: busy is React state, so a sub-16ms double
@@ -51,15 +63,18 @@ export function ProfileEditor() {
         setSignedIn(true);
         const { data: row } = await sb
           .from("users")
-          .select("first_name, city, job_blurb, project_blurb, fun_blurb")
+          .select("first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, topics")
           .eq("id", user.id)
           .maybeSingle();
+        setHasZodiac(Array.isArray(row?.topics) && row.topics.includes("zodiac"));
         const next: Form = {
           firstName: row?.first_name ?? "",
           city: row?.city ?? "",
           jobBlurb: row?.job_blurb ?? "",
           projectBlurb: row?.project_blurb ?? "",
           funBlurb: row?.fun_blurb ?? "",
+          birthday: row?.birthday ?? "",
+          gender: genderOf(row?.gender),
         };
         setSaved(next);
         setForm(next);
@@ -81,7 +96,9 @@ export function ProfileEditor() {
     form.city !== saved.city ||
     form.jobBlurb !== saved.jobBlurb ||
     form.projectBlurb !== saved.projectBlurb ||
-    form.funBlurb !== saved.funBlurb;
+    form.funBlurb !== saved.funBlurb ||
+    form.birthday !== saved.birthday ||
+    form.gender !== saved.gender;
 
   const requiredFilled = form.firstName.trim().length > 0 && form.city.trim().length > 0;
   const canSave = dirty && requiredFilled && !busy;
@@ -115,6 +132,8 @@ export function ProfileEditor() {
         jobBlurb: p.job_blurb ?? "",
         projectBlurb: p.project_blurb ?? "",
         funBlurb: p.fun_blurb ?? "",
+        birthday: p.birthday ?? "",
+        gender: genderOf(p.gender),
       };
       setSaved(savedForm);
       setForm(savedForm);
@@ -124,6 +143,8 @@ export function ProfileEditor() {
         jobBlurb: savedForm.jobBlurb || undefined,
         projectBlurb: savedForm.projectBlurb || undefined,
         funBlurb: savedForm.funBlurb || undefined,
+        birthday: savedForm.birthday || undefined,
+        gender: savedForm.gender || undefined,
       });
       setMsg({ kind: "ok", text: "Saved. Your next letter uses these." });
     } catch (e) {
@@ -165,6 +186,69 @@ export function ProfileEditor() {
           hint="Lets the letter flag what's nearby. Never shared."
           disabled={!loaded || busy}
         />
+        <label className="block">
+          <span className="alpha-ui text-xs block mb-1" style={{ color: "var(--ink-soft)" }}>
+            Birthday
+          </span>
+          <input
+            type="date"
+            value={form.birthday}
+            min="1920-01-01"
+            max="2014-12-31"
+            disabled={!loaded || busy}
+            onChange={(e) => set("birthday", e.target.value)}
+            className="w-full alpha-ui text-base bg-transparent border-b pt-2 pb-2 focus:outline-none focus:border-current"
+            style={{ color: "var(--ink)", borderColor: "var(--rule)", colorScheme: "light" }}
+          />
+          <span
+            className="alpha-ui text-xs block mt-1"
+            style={{ color: hasZodiac && !form.birthday ? "var(--accent-ink)" : "var(--ink-soft)", opacity: hasZodiac && !form.birthday ? 1 : 0.8 }}
+          >
+            {(() => {
+              if (hasZodiac && !form.birthday) {
+                return "You have the Zodiac topic. Add your birthday or that section gets skipped each week.";
+              }
+              const g = generationOf(form.birthday);
+              const s = zodiacSign(form.birthday);
+              return g && s
+                ? `${generationLabel(g)}, ${zodiacLabel(s)}. Tunes the letter and unlocks the Zodiac topic. Optional.`
+                : "Tunes the letter to your generation and unlocks the Zodiac topic. Optional.";
+            })()}
+          </span>
+        </label>
+        <div>
+          <span className="alpha-ui text-xs block mb-2" style={{ color: "var(--ink-soft)" }}>
+            Gender
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {(["male", "female"] as const).map((g) => {
+              const active = form.gender === g;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  disabled={!loaded || busy}
+                  onClick={() => {
+                    setForm((f) => ({ ...f, gender: f.gender === g ? "" : g }));
+                    if (msg) setMsg(null);
+                  }}
+                  className="alpha-ui text-sm px-4 py-1.5 rounded-full border transition"
+                  style={{
+                    borderColor: active ? "var(--accent)" : "var(--rule)",
+                    background: active ? "var(--callout-bg)" : "transparent",
+                    color: active ? "var(--accent-ink)" : "var(--ink)",
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  {g === "male" ? "Male" : "Female"}
+                </button>
+              );
+            })}
+          </div>
+          <span className="alpha-ui text-xs block mt-1" style={{ color: "var(--ink-soft)", opacity: 0.8 }}>
+            Optional. Lets the letter talk to you naturally. Leave both off to keep it unset.
+          </span>
+        </div>
         <Field
           label="What you do"
           value={form.jobBlurb}

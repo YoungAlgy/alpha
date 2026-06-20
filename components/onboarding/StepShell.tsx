@@ -13,7 +13,7 @@ interface StepShellProps {
 
 export function StepShell({
   stepIndex,
-  totalSteps = 10,
+  totalSteps = 11,
   prevPath,
   children,
 }: StepShellProps) {

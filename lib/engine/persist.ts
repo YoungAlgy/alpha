@@ -26,6 +26,8 @@ function nonEmptyProfileFields(profile: UserProfile): Record<string, string | st
   if (profile.jobBlurb?.trim()) f.job_blurb = profile.jobBlurb.trim();
   if (profile.projectBlurb?.trim()) f.project_blurb = profile.projectBlurb.trim();
   if (profile.funBlurb?.trim()) f.fun_blurb = profile.funBlurb.trim();
+  if (profile.birthday?.trim()) f.birthday = profile.birthday.trim();
+  if (profile.gender === "male" || profile.gender === "female") f.gender = profile.gender;
   if (profile.theme?.trim()) f.theme = profile.theme.trim();
   if (Array.isArray(profile.topics) && profile.topics.length > 0) f.topics = profile.topics;
   return f;
@@ -106,6 +108,8 @@ export async function persistIssueIfPossible(
         job_blurb: profile.jobBlurb || null,
         project_blurb: profile.projectBlurb || null,
         fun_blurb: profile.funBlurb || null,
+        birthday: profile.birthday || null,
+        gender: profile.gender || null,
         theme: profile.theme || "forest",
         topics: profile.topics,
       });

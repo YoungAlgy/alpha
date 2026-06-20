@@ -4,6 +4,7 @@ import { resolveTopicSignal, resolveMockSignal } from "./source-resolver";
 import { getCachedBlurb, setCachedBlurb } from "./blurb-cache";
 import { selectLetterSections } from "./select-sections";
 import { topicLabel } from "@/lib/topics";
+import { zodiacSign } from "@/lib/demographics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { Issue, UserProfile, TopicId } from "@/lib/types";
 import type { TopicBlurb } from "./types";
@@ -31,7 +32,14 @@ export async function generateIssue(
   // from a fresher one instead of repeating the same news across sends.
   freshness?: import("@/lib/brave").BraveSearchOptions["freshness"],
 ): Promise<Issue> {
-  const pool = user.topics;
+  // Map the pickable "zodiac" topic to the reader's per-sign id ("zodiac-leo")
+  // so all readers of a sign share one cached section. Drop it if there's no
+  // birthday to derive a sign from (the picker is gated on a birthday, but be
+  // defensive — a section we can't personalize shouldn't ship a generic one).
+  const sign = zodiacSign(user.birthday);
+  const pool: TopicId[] = user.topics.flatMap((t) =>
+    t === "zodiac" ? (sign ? [`zodiac-${sign}` as TopicId] : []) : [t]
+  );
   const size = Math.max(1, letterSize ?? pool.length);
 
   // Generate a topic's section from FRESH live signal. Returns null WITHOUT a

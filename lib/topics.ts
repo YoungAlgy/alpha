@@ -37,6 +37,7 @@ export const TOPICS: TopicMeta[] = [
   { id: "books-worth-your-time", label: "Books worth your time", bucket: "Mind", tier: "A", blurb: "What's actually worth reading this month, with reasoning.", emoji: "📚" },
   { id: "psychology-behavior", label: "Psychology & behavior", bucket: "Mind", tier: "A", blurb: "Why people do what they do. The research that travels.", emoji: "🔍" },
   { id: "parenting", label: "Parenting", bucket: "Mind", tier: "A", blurb: "Gentle, science-backed, age-appropriate. No fearmongering.", emoji: "👶" },
+  { id: "zodiac", label: "Zodiac & astrology", bucket: "Mind", tier: "A", blurb: "Your weekly horoscope and what your sign is moving through. Add your birthday to switch it on.", emoji: "🔮" },
   // Culture
   { id: "inspiring-people", label: "Inspiring people", bucket: "Culture", tier: "A", blurb: "Profiles of operators, artists, founders doing the work.", emoji: "✨" },
   { id: "movies-tv", label: "Movies & TV", bucket: "Culture", tier: "A", blurb: "What's worth watching, who's making it, where it's going.", emoji: "🎬" },
@@ -56,7 +57,13 @@ export const TOPICS: TopicMeta[] = [
   { id: "gardening-plants", label: "Gardening & houseplants", bucket: "Home", tier: "A", blurb: "Houseplants, veg gardens, pollinator gardens. What to plant, grow, and fix, anywhere.", emoji: "🪴" },
   { id: "sustainable-living", label: "Sustainable living", bucket: "Home", tier: "A", blurb: "Low-waste home, energy, repair-not-replace, climate-smart everyday choices.", emoji: "♻️" },
   { id: "startups-vc", label: "Startups & VC", bucket: "Work", tier: "B", blurb: "Fundraises that matter, GTM playbooks, deal flow signal.", emoji: "🚀" },
-  { id: "faith-meaning", label: "Faith & meaning", bucket: "Mind", tier: "B", blurb: "Christianity, theology, practice. Thoughtful, not preachy.", emoji: "🕊️" },
+  { id: "faith-meaning", label: "Faith & religion", bucket: "Mind", tier: "A", blurb: "The big questions, your tradition or broadly. Thoughtful, not preachy.", emoji: "🕊️" },
+  { id: "faith-christianity", label: "Christianity", bucket: "Mind", tier: "A", blurb: "Scripture, theology, and practice across the Christian traditions.", emoji: "✝️" },
+  { id: "faith-islam", label: "Islam", bucket: "Mind", tier: "A", blurb: "Quran, hadith, scholarship, and Muslim life today.", emoji: "☪️" },
+  { id: "faith-judaism", label: "Judaism", bucket: "Mind", tier: "A", blurb: "Torah, commentary, and Jewish thought and practice.", emoji: "✡️" },
+  { id: "faith-hinduism", label: "Hinduism", bucket: "Mind", tier: "A", blurb: "Vedanta, the epics, philosophy, and daily practice.", emoji: "🕉️" },
+  { id: "faith-buddhism", label: "Buddhism", bucket: "Mind", tier: "A", blurb: "Meditation, dharma, and the schools of Buddhist thought.", emoji: "☸️" },
+  { id: "faith-spiritual", label: "Spiritual & seeking", bucket: "Mind", tier: "A", blurb: "Meaning, contemplative practice, spiritual but not religious.", emoji: "🌀" },
 ];
 
 export const TOPIC_BY_ID: Record<FixedTopicId, TopicMeta> = Object.fromEntries(
@@ -71,6 +78,14 @@ export const TOPIC_BY_ID: Record<FixedTopicId, TopicMeta> = Object.fromEntries(
  *  the whole category. */
 export const SUBTOPICS: Partial<Record<FixedTopicId, FixedTopicId[]>> = {
   music: ["music-edm", "music-hiphop", "music-indie", "music-country"],
+  "faith-meaning": [
+    "faith-christianity",
+    "faith-islam",
+    "faith-judaism",
+    "faith-hinduism",
+    "faith-buddhism",
+    "faith-spiritual",
+  ],
 };
 
 /** The parent broad topic for a sub-topic chip, if any (e.g. music-edm -> music). */
@@ -90,6 +105,13 @@ export const MAX_CUSTOM_TOPIC_LEN = 80;
 
 export function isCustomTopic(id: string): boolean {
   return id.startsWith(CUSTOM_PREFIX);
+}
+
+// The picker stores the parent "zodiac"; at generation it's mapped to a per-sign
+// id ("zodiac-leo") so all readers of a sign share one cached section. Both forms
+// are "zodiac topics."
+export function isZodiacTopicId(id: string): boolean {
+  return id === "zodiac" || id.startsWith("zodiac-");
 }
 
 /** The raw free text a user typed for a custom topic (no prefix). */
@@ -141,12 +163,19 @@ export function topicLabel(id: string): string {
     const t = customTopicText(id);
     return t ? titleCaseTopic(t) : "Your topic";
   }
+  // A per-sign zodiac section is labeled by the sign itself ("Leo"). The parent
+  // "zodiac" (the picker) falls through to its catalog label.
+  if (id.startsWith("zodiac-")) {
+    const s = id.slice("zodiac-".length);
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Zodiac";
+  }
   return TOPIC_BY_ID[id as FixedTopicId]?.label ?? id;
 }
 
 /** Display emoji for any topic id. Custom topics get a "personalized" sparkle. */
 export function topicEmoji(id: string): string {
   if (isCustomTopic(id)) return "✨";
+  if (id.startsWith("zodiac-")) return "🔮";
   return TOPIC_BY_ID[id as FixedTopicId]?.emoji ?? "•";
 }
 

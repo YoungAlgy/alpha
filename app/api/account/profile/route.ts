@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
+import { parseBirthday } from "@/lib/demographics";
 
 export const runtime = "nodejs";
 
@@ -77,12 +78,21 @@ export async function POST(req: Request) {
     );
   }
 
+  // Birthday: keep only a real ISO date; empty or invalid clears it to null
+  // (the native date input only ever sends a valid date or ""). Gender: only the
+  // two stored values; "prefer not to say" or anything else clears to null.
+  const rawBday = typeof body.birthday === "string" ? body.birthday.trim() : "";
+  const birthday = rawBday && parseBirthday(rawBday) ? rawBday : null;
+  const gender = body.gender === "male" || body.gender === "female" ? body.gender : null;
+
   const updates = {
     first_name: firstName.value,
     city: city.value,
     job_blurb: cleanOptional(body.jobBlurb, LIMITS.job_blurb),
     project_blurb: cleanOptional(body.projectBlurb, LIMITS.project_blurb),
     fun_blurb: cleanOptional(body.funBlurb, LIMITS.fun_blurb),
+    birthday,
+    gender,
   };
 
   const svc = await supabaseServiceClient();
