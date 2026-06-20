@@ -235,8 +235,8 @@ export default function Landing() {
             </span>
           </div>
           <p className="alpha-ui text-sm mt-8 leading-relaxed max-w-xl mx-auto" style={{ color: "var(--ink-soft)" }}>
-            Want something hyper-specific? Type your own, like &ldquo;crypto regulation in Asia&rdquo;
-            or &ldquo;AI in radiology,&rdquo; and we&apos;ll hunt the real signal on it three times a week.
+            Want something hyper-specific? Type your own, like &quot;crypto regulation in Asia&quot;
+            or &quot;AI in radiology,&quot; and we&apos;ll hunt the real signal on it three times a week.
           </p>
         </div>
       </section>

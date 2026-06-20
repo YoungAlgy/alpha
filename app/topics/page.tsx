@@ -31,6 +31,9 @@ export default function TopicsPage() {
   // navigating away as if it saved.
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // The signed-in reader's birthday, only to warn when they pick Zodiac without
+  // one (that section gets skipped). Mirrors the onboarding "you" step gate.
+  const [userBirthday, setUserBirthday] = useState<string | null>(null);
 
   useEffect(() => {
     if (loaded && state.topics) setPicked(state.topics);
@@ -48,9 +51,10 @@ export default function TopicsPage() {
         setSignedIn(true);
         const { data: row } = await sb
           .from("users")
-          .select("topic_quota, topics")
+          .select("topic_quota, topics, birthday")
           .eq("id", session.user.id)
           .maybeSingle();
+        setUserBirthday(row?.birthday ?? null);
         if (row?.topic_quota && typeof row.topic_quota === "number") {
           setTarget(Math.max(5, Math.min(25, row.topic_quota)));
         }
@@ -251,7 +255,7 @@ export default function TopicsPage() {
                     style={{ background: "var(--paper-deep)", border: "1px solid var(--rule)" }}
                   >
                     <p className="alpha-ui text-xs mb-2" style={{ color: "var(--ink-soft)" }}>
-                      Each counts as one topic. &ldquo;All {t.label.toLowerCase()}&rdquo; gives you the whole category.
+                      Each counts as one topic. &quot;All {t.label.toLowerCase()}&quot; gives you the whole category.
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {groupIds.map((id) => {
@@ -292,8 +296,8 @@ export default function TopicsPage() {
           <div>
             <h2 className="alpha-display text-lg font-semibold">Or add your own thing</h2>
             <p className="alpha-ui text-xs leading-snug" style={{ color: "var(--ink-soft)" }}>
-              Get specific. &ldquo;Crypto regulation in Asia,&rdquo; &ldquo;Formula 1 aero,&rdquo;
-              &ldquo;AI in radiology.&rdquo; We&apos;ll hunt the real signal on it for you three times a week.
+              Get specific. &quot;Crypto regulation in Asia,&quot; &quot;Formula 1 aero,&quot;
+              &quot;AI in radiology.&quot; We&apos;ll hunt the real signal on it for you three times a week.
             </p>
           </div>
 
@@ -452,6 +456,12 @@ export default function TopicsPage() {
               </p>
             )}
           </div>
+        )}
+
+        {signedIn && picked.includes("zodiac" as TopicId) && !userBirthday && (
+          <p className="alpha-ui text-xs" role="status" aria-live="polite" style={{ color: "var(--accent-ink)" }}>
+            Zodiac needs your birthday to read your sign. Add it in Settings under Your details, or that section gets skipped.
+          </p>
         )}
 
         <div className="sticky bottom-4 flex items-center justify-between gap-4 pt-4">
