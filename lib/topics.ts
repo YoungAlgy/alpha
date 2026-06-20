@@ -109,11 +109,37 @@ export function makeCustomTopic(text: string): `custom:${string}` | null {
   return `${CUSTOM_PREFIX}${clean}`;
 }
 
+// Small connector words that stay lowercase in a title unless they lead.
+const TITLE_SMALL_WORDS = new Set([
+  "a", "an", "and", "as", "at", "but", "by", "for", "from", "in",
+  "into", "of", "on", "or", "the", "to", "vs", "with",
+]);
+
+/** Title-case a custom topic's free text for DISPLAY only. New custom ids are
+ *  stored lowercased (makeCustomTopic, for cache-key dedup), so a raw label
+ *  reads "Bitcoin and ethereum". This capitalizes each significant word while
+ *  PRESERVING any existing capital — so a legacy mixed-case id ("...Quran...")
+ *  and an acronym stored upper keep their caps. The id itself is untouched, so
+ *  dedup + the blurb cache key are unaffected. */
+function titleCaseTopic(text: string): string {
+  let wordSeen = false;
+  return text
+    .split(/(\s+)/) // keep whitespace runs as tokens so spacing survives
+    .map((tok) => {
+      if (tok === "" || /^\s+$/.test(tok)) return tok;
+      const isFirst = !wordSeen;
+      wordSeen = true;
+      if (!isFirst && TITLE_SMALL_WORDS.has(tok.toLowerCase())) return tok.toLowerCase();
+      return tok.charAt(0).toUpperCase() + tok.slice(1);
+    })
+    .join("");
+}
+
 /** Display label for any topic id (catalog or custom). */
 export function topicLabel(id: string): string {
   if (isCustomTopic(id)) {
     const t = customTopicText(id);
-    return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Your topic";
+    return t ? titleCaseTopic(t) : "Your topic";
   }
   return TOPIC_BY_ID[id as FixedTopicId]?.label ?? id;
 }
