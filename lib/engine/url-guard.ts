@@ -16,8 +16,12 @@
 
 const URL_RE = /https?:\/\/[^\s"'<>)\]}]+/gi;
 
-// Normalize a URL to a comparison key. Returns null for non-http(s) or unparseable.
-function normalizeUrl(raw: string): string | null {
+// Normalize a URL to a comparison key. Returns null for non-http(s) or
+// unparseable. Exported so a KNOWN url (e.g. a curated source link) can be keyed
+// directly — building an allow-set by regex-scanning text would truncate a path
+// containing ')' (URL_RE stops there), but a real URL's path can legitimately
+// contain parens (e.g. /albums/x-(super-deluxe)/).
+export function normalizeUrl(raw: string): string | null {
   try {
     const u = new URL(raw.trim());
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;

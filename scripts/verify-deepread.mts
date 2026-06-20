@@ -10,7 +10,7 @@
 const { sanitizeContent } = await import("../lib/engine/fetch-content.ts");
 const { hostTier, tierRank } = await import("../lib/engine/source-authority.ts");
 const { rankAndDedup } = await import("../lib/engine/source-rank.ts");
-const { extractSignalUrls } = await import("../lib/engine/url-guard.ts");
+const { extractSignalUrls, normalizeUrl, isAllowedUrl } = await import("../lib/engine/url-guard.ts");
 const { cleanField } = await import("../lib/engine/source-resolver.ts");
 
 let pass = 0, fail = 0;
@@ -53,6 +53,17 @@ const liveCitable = extractSignalUrls(
 );
 check("citable set = the source urls", liveCitable.has("nytimes.com/2026/06/19/a") && liveCitable.has("reuters.com/world/b"));
 check("a title-smuggled URL is NOT in the citable set", !liveCitable.has("phish.example/login"));
+
+// (1c) A source URL whose PATH contains '(' / ')' (Pitchfork super-deluxe,
+// Letterboxd (2024), Wikipedia (planet)) must stay citable. citableUrls is built
+// by normalizeUrl PER source url, NOT by regex-scanning — URL_RE stops at ')' and
+// would silently truncate+drop these real links.
+console.log("(1c) url-guard: paren-path source URLs stay citable");
+const parenUrl = "https://pitchfork.com/reviews/albums/the-beatles-revolver-(super-deluxe)/";
+const parenSet = new Set([parenUrl].map((u) => normalizeUrl(u)).filter(Boolean));
+check("paren source URL keyed via normalizeUrl is citable", isAllowedUrl(parenUrl, parenSet));
+check("a non-source URL still rejected against that set", !isAllowedUrl("https://evil.example/x", parenSet));
+check("regression: the old regex-scan WOULD have dropped the paren URL", !isAllowedUrl(parenUrl, extractSignalUrls(parenUrl)));
 
 // (2) Authority tiering
 console.log("(2) authority tiering");

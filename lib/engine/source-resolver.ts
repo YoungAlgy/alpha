@@ -3,7 +3,7 @@ import { rankAndDedup } from "./source-rank";
 import { fetchArticleText, deepReadEnabled } from "./fetch-content";
 import { TOPIC_QUERIES } from "./topic-queries";
 import { getSignal } from "./mock-signals";
-import { extractSignalUrls } from "./url-guard";
+import { normalizeUrl } from "./url-guard";
 import { isCustomTopic, customTopicText } from "@/lib/topics";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
@@ -169,10 +169,17 @@ async function fetchLiveSignal(
   const context = `${header}\n\n${parts.join("\n\n")}\n\nAll URLs labeled SOURCE or listed above are real and citable. Do NOT invent URLs.`;
 
   // The citable allow-set = the resolver's chosen SOURCE urls ONLY (deep + more),
-  // normalized via the url-guard's own extractor. Built from the explicit url
-  // fields, NEVER by scanning the context, so attacker-controlled source
-  // title/description text can't smuggle a citable link past the guard.
-  const citableUrls = extractSignalUrls([...deep, ...more].map((s) => s.url).join("\n"));
+  // each normalized DIRECTLY via the url-guard's normalizeUrl. Built from the
+  // explicit url fields, NEVER by scanning text: regex-scanning would truncate a
+  // path containing ')' (URL_RE stops there), silently dropping a real link like
+  // Pitchfork /albums/x-(super-deluxe)/. Keying each url the same way isAllowedUrl
+  // does guarantees a legit source link always matches, while an attacker-
+  // controlled title/description URL still can't enter the set.
+  const citableUrls = new Set(
+    [...deep, ...more]
+      .map((s) => normalizeUrl(s.url))
+      .filter((n): n is string => n !== null)
+  );
 
   // No real URLs this period → "no live signal" so the caller falls back to the
   // curated mock (which always has real URLs). Without this the strict URL guard
