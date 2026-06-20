@@ -6,6 +6,8 @@ import {
   Source_Serif_4,
   Inter,
   Pixelify_Sans,
+  Playfair_Display,
+  Bebas_Neue,
 } from "next/font/google";
 import "./globals.css";
 import { ThemeApplier } from "@/components/ThemeApplier";
@@ -53,6 +55,23 @@ const pixelify = Pixelify_Sans({
   display: "swap",
   preload: false,
   weight: ["400", "500", "600", "700"],
+});
+// Money Mitch theme only — Playfair for headings, Bebas for the eyebrow labels.
+// preload:false keeps both off every other theme's critical path (same treatment
+// as Fraunces/DM Sans/Pixelify); they load on demand when "mitch" applies.
+const playfair = Playfair_Display({
+  variable: "--font-playfair",
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+  weight: ["400", "500", "600", "700"],
+});
+const bebas = Bebas_Neue({
+  variable: "--font-bebas",
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+  weight: ["400"],
 });
 
 export const metadata: Metadata = {
@@ -120,6 +139,8 @@ export default function RootLayout({
         sourceSerif.variable,
         inter.variable,
         pixelify.variable,
+        playfair.variable,
+        bebas.variable,
         "h-full antialiased",
       ].join(" ")}
     >

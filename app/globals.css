@@ -229,6 +229,56 @@
   --shadow-card: 0 1px 0 rgba(94, 59, 90, 0.05), 0 8px 24px rgba(94, 59, 90, 0.08);
 }
 
+/* Money Mitch — obsidian + champagne gold. The brand pack as a theme:
+   Playfair headings, Bebas eyebrow labels (override below), film grain. */
+[data-theme="mitch"] {
+  --paper: #0A0A0B;
+  --paper-deep: #15151A;
+  --ink: #ECE6D8;
+  --ink-soft: #9A9388;
+  --rule: #2A2A30;
+  --accent: #D4B373;
+  --accent-ink: #E2C684;        /* lighter gold — links stay legible on black */
+  --accent-2: #D4B373;
+  --callout-bg: #D4B3731A;
+  --callout-ink: #E2C684;
+  --quote-bar: #D4B373;
+  --font-display: var(--font-playfair);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 4px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(212, 179, 115, 0.07);
+}
+
+/* Bebas Neue for the small all-caps eyebrow labels + callout tags — the
+   condensed display face is the Money Mitch signature. Scoped to this theme so
+   it never touches the others' mono labels. */
+[data-theme="mitch"] .alpha-mono {
+  font-family: var(--font-bebas), ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.92rem;
+  letter-spacing: 0.16em;
+  font-weight: 400;
+}
+[data-theme="mitch"] .alpha-callout-tag {
+  font-family: var(--font-bebas), ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  letter-spacing: 0.22em;
+}
+
+/* Subtle film grain over the obsidian. Fixed, non-interactive, very low
+   opacity — reads as texture, never as noise over the text. Theme-scoped so it
+   only paints on Money Mitch. */
+[data-theme="mitch"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 /* ============================================================
    Base
    ============================================================ */

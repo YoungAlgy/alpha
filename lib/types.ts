@@ -8,7 +8,8 @@ export type ThemeId =
   | "midnight"
   | "forest"
   | "mono"
-  | "sunset";
+  | "sunset"
+  | "mitch";
 
 // The fixed catalog ids. TopicId additionally allows `custom:<text>` so a
 // subscriber can add their own hyper-specific topic ("custom:crypto trends in

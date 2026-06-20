@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { coerceThemeId } from "@/lib/themes";
 import type { ThemeId } from "@/lib/types";
 
 const ONBOARDING_KEY = "alpha-onboarding";
@@ -59,7 +60,8 @@ export function ThemeApplier() {
           .select("theme")
           .eq("id", user.id)
           .maybeSingle();
-        if (data?.theme) set(data.theme as ThemeId);
+        const dbTheme = coerceThemeId(data?.theme);
+        if (dbTheme) set(dbTheme);
       } catch {
         // ignore — fall back to local
       }

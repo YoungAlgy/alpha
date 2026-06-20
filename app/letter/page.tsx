@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Digest } from "@/components/Digest";
 import { verifyLetterToken } from "@/lib/letter-token";
 import { supabaseServiceClient } from "@/lib/supabase/server";
+import { coerceThemeId } from "@/lib/themes";
 import type { Issue, ThemeId } from "@/lib/types";
 
 // The weekly email's "Read the full letter" target — the view-in-browser
@@ -20,10 +21,6 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
-
-const THEMES: ReadonlySet<string> = new Set([
-  "soft", "linen", "ink", "cottage", "arcade", "marina", "midnight", "forest", "mono", "sunset",
-]);
 
 interface IssueRow {
   week_of: string;
@@ -59,7 +56,7 @@ export default async function LetterPage({
     ]);
     if (issueRow) {
       const row = issueRow as IssueRow;
-      if (userRow?.theme && THEMES.has(userRow.theme)) theme = userRow.theme as ThemeId;
+      theme = coerceThemeId(userRow?.theme) ?? "forest";
       issue = {
         id: `${userId}-${row.week_of}`,
         volume: row.volume,

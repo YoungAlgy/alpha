@@ -9,6 +9,7 @@ import { AudioToggle } from "@/components/AudioToggle";
 import { ReadingProgress } from "@/components/ReadingProgress";
 import { LetterTOC } from "@/components/LetterTOC";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { coerceThemeId } from "@/lib/themes";
 import type { Issue } from "@/lib/types";
 
 // Renders a specific past issue by ID (UUID from public.issues.id) for its
@@ -42,8 +43,9 @@ export default function IssuePage() {
                 .select("first_name, city, theme")
                 .eq("id", session.user.id)
                 .maybeSingle();
-              if (userRow?.theme) {
-                document.documentElement.setAttribute("data-theme", userRow.theme);
+              const themeId = coerceThemeId(userRow?.theme);
+              if (themeId) {
+                document.documentElement.setAttribute("data-theme", themeId);
               }
               setIssue({
                 id: issueId,

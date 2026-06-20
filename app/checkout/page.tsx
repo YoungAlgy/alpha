@@ -20,6 +20,7 @@ const SWATCHES: Record<ThemeId, { paper: string; ink: string; accent: string }> 
   forest: { paper: "#F4EFE0", ink: "#1F3D2E", accent: "#C9A961" },
   mono: { paper: "#FFFFFF", ink: "#000000", accent: "#FF0000" },
   sunset: { paper: "#FAEBD7", ink: "#5E3B5A", accent: "#E87C3E" },
+  mitch: { paper: "#0A0A0B", ink: "#ECE6D8", accent: "#D4B373" },
 };
 
 export default function CheckoutPage() {

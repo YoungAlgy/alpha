@@ -6,6 +6,7 @@ import { useOnboarding } from "@/lib/onboarding-state";
 import { topicLabel, topicEmoji } from "@/lib/topics";
 import { Footer } from "@/components/Footer";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { ProfileEditor } from "@/components/ProfileEditor";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { hasActiveAccess } from "@/lib/access";
@@ -219,6 +220,10 @@ export default function SettingsPage() {
             )}
           </Section>
         )}
+
+        <Section title="Your details">
+          <ProfileEditor />
+        </Section>
 
         <Section title="Your topics">
           {(() => {

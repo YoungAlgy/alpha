@@ -27,6 +27,7 @@ export const config = {
 const CSRF_GUARDED_SUFFIXES = [
   "/api/resume",
   "/api/account/delete",
+  "/api/account/profile",
   "/api/stripe/portal",
   "/api/stripe/update-quantity",
 ];
