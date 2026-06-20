@@ -64,10 +64,20 @@ export async function POST(req: Request) {
       const sb = await supabaseServiceClient();
       const { data: existing } = await sb
         .from("users")
-        .select("subscribed_at, cancelled_at")
+        .select("subscribed_at, cancelled_at, stripe_customer_id")
         .eq("email", body.email)
         .maybeSingle();
-      if (existing?.subscribed_at && hasActiveAccess(existing.cancelled_at)) {
+      // Block only a real PAYING subscriber (has a Stripe customer + live access)
+      // — that's the actual double-charge case. A COMP user (admin-granted, no
+      // stripe_customer_id) checking out is CONVERTING to paid, not double-paying,
+      // so let them through; the webhook just links their Stripe customer onto the
+      // existing row. (A comp converting shares the same brief pre-webhook window
+      // any brand-new signup has; the rate limit + disabled button cover it.)
+      if (
+        existing?.subscribed_at &&
+        existing.stripe_customer_id &&
+        hasActiveAccess(existing.cancelled_at)
+      ) {
         return NextResponse.json(
           {
             error: "already_subscribed",
