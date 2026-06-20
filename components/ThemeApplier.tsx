@@ -57,11 +57,20 @@ export function ThemeApplier() {
         if (!user) return;
         const { data } = await sb
           .from("users")
-          .select("theme")
+          .select("theme, email")
           .eq("id", user.id)
           .maybeSingle();
         const dbTheme = coerceThemeId(data?.theme);
         if (dbTheme) set(dbTheme);
+        // Self-heal the email mirror app-wide. After a confirmed email change the
+        // auth email leads public.users.email (what the cron sends to); this is
+        // the cheapest always-signed-in hook (the getUser + users read already
+        // happen here for theme), so any return visit catches the mirror up, not
+        // just /settings. No-op on every normal load (they already match).
+        const authLc = user.email?.trim().toLowerCase();
+        if (authLc && (data?.email ?? "").toLowerCase() !== authLc) {
+          fetch("/alpha/api/account/email/reconcile", { method: "POST" }).catch(() => {});
+        }
       } catch {
         // ignore — fall back to local
       }

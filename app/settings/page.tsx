@@ -7,6 +7,7 @@ import { topicLabel, topicEmoji } from "@/lib/topics";
 import { Footer } from "@/components/Footer";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { ProfileEditor } from "@/components/ProfileEditor";
+import { EmailChanger } from "@/components/EmailChanger";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { hasActiveAccess } from "@/lib/access";
@@ -290,18 +291,7 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Email">
-          <p className="alpha-display text-base mb-3">{authEmail || state.email || "—"}</p>
-          <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
-            Your letters and sign-in code go here. Need to change it?{" "}
-            <Link
-              href="/support"
-              className="underline underline-offset-4"
-              style={{ color: "var(--accent-ink)" }}
-            >
-              Send us a note
-            </Link>{" "}
-            and we&apos;ll move your subscription over.
-          </p>
+          <EmailChanger currentEmail={authEmail || state.email || null} />
         </Section>
 
         <Section title="Billing">
