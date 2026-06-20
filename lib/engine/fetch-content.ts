@@ -36,6 +36,11 @@ export async function fetchArticleText(
 
     const res = await fetch(`${JINA_PREFIX}${url}`, { headers, signal: ctrl.signal });
     if (!res.ok) return null;
+    // Cheap insurance against a degraded/abusive source: reject a declared-huge
+    // body before reading it all into memory. The 7s timeout + sanitizeContent's
+    // MAX_CHARS truncation bound the rest.
+    const declaredLen = res.headers.get("content-length");
+    if (declaredLen && Number(declaredLen) > 2_000_000) return null;
     const raw = await res.text();
     const cleaned = sanitizeContent(raw);
     if (cleaned.length < MIN_USABLE_CHARS || !looksLikeProse(cleaned)) return null;
@@ -65,12 +70,12 @@ function looksLikeProse(s: string): boolean {
   return sentences >= 4 || (words.length >= 120 && avgWordsPerLine >= 6);
 }
 
-// Strip every URL out of the fetched body. CRITICAL: the url-guard builds its
-// citable allow-set by regex-scanning the WHOLE signal string, so any link left
-// inside article text (ads, nav, random outbound links) would become citable.
-// We keep only the curated SOURCE urls citable (the resolver adds those
-// explicitly), so here we remove all URLs from the body while keeping the link
-// TEXT, leaving plain prose for the model to actually read.
+// Strip every URL out of the fetched body. The citable allow-set is built
+// explicitly from the resolver's chosen SOURCE urls (source-resolver's
+// citableUrls), so a body link can't be CITED regardless — but we still remove
+// all URLs from the body (keeping the link TEXT) so a smuggled link never even
+// reaches the model as prose it might copy into a body paragraph, and to leave
+// clean readable prose. Defense in depth alongside citableUrls + cleanField.
 export function sanitizeContent(raw: string): string {
   let s = raw;
   // Jina prepends "Title: / URL Source: / Markdown Content:" metadata — drop it.

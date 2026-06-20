@@ -11,6 +11,7 @@ const { sanitizeContent } = await import("../lib/engine/fetch-content.ts");
 const { hostTier, tierRank } = await import("../lib/engine/source-authority.ts");
 const { rankAndDedup } = await import("../lib/engine/source-rank.ts");
 const { extractSignalUrls } = await import("../lib/engine/url-guard.ts");
+const { cleanField } = await import("../lib/engine/source-resolver.ts");
 
 let pass = 0, fail = 0;
 const check = (label: string, cond: boolean) => { console.log(`  ${cond ? "OK " : "XX "} ${label}`); cond ? pass++ : fail++; };
@@ -36,6 +37,22 @@ const upBody = sanitizeContent(
 check("uppercase/mixed bare URL stripped from body", !/https?:\/\//i.test(upBody));
 const upAllowed = extractSignalUrls(`SOURCE: https://www.reuters.com/world/a\n\n${upBody}`);
 check("uppercase body URLs NOT citable", !upAllowed.has("evil.example/track") && !upAllowed.has("bad.example/x"));
+
+// (1b) SACRED: a URL planted in a source TITLE or DESCRIPTION (attacker-controlled,
+// straight from Brave) must NEVER become citable. cleanField strips it out of the
+// context, and the live citable allow-set is built from the EXPLICIT source urls
+// only — never by scanning the free-text context.
+console.log("(1b) url-guard: smuggled title/description URLs are never citable");
+check("cleanField strips a URL from a title", !/https?:\/\//i.test(cleanField("Breaking: visit https://phish.example/login NOW")));
+check("cleanField strips a URL + tags from a description", !/https?:\/\//i.test(cleanField("<b>See</b> HTTPS://Bad.example/x for the deal")));
+check("cleanField keeps the surrounding text", cleanField("Read https://phish.example now").includes("Read"));
+// The live citable set = extractSignalUrls over the explicit SOURCE urls ONLY
+// (what fetchLiveSignal builds), so a title-planted URL is absent from it.
+const liveCitable = extractSignalUrls(
+  ["https://www.nytimes.com/2026/06/19/a", "https://www.reuters.com/world/b"].join("\n")
+);
+check("citable set = the source urls", liveCitable.has("nytimes.com/2026/06/19/a") && liveCitable.has("reuters.com/world/b"));
+check("a title-smuggled URL is NOT in the citable set", !liveCitable.has("phish.example/login"));
 
 // (2) Authority tiering
 console.log("(2) authority tiering");

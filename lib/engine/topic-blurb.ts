@@ -143,10 +143,14 @@ Three items exactly. VARY the kinds across them. Include URLs only from the sign
         : undefined,
   }));
 
-  // SACRED GUARD (code-level, not just prompt): drop any URL the model
-  // returned that is not actually present in the signal. A hallucinated link
-  // physically cannot reach a letter. See lib/engine/url-guard.ts.
-  const allowed = extractSignalUrls(signal.context);
+  // SACRED GUARD (code-level, not just prompt): drop any URL the model returned
+  // that is not in the citable allow-set, so a hallucinated — OR a smuggled —
+  // link physically cannot reach a letter. The allow-set is the resolver's
+  // EXPLICIT chosen source URLs (signal.citableUrls) when present, NOT a scan of
+  // the context: a third party controls source titles/descriptions and could
+  // otherwise plant a citable URL in the free text. Only the curated mock path
+  // (no attacker-controlled text) falls back to scanning. See lib/engine/url-guard.ts.
+  const allowed = signal.citableUrls ?? extractSignalUrls(signal.context);
   const { items, dropped } = enforceSignalUrls(mapped, allowed);
   if (dropped > 0) {
     console.warn(

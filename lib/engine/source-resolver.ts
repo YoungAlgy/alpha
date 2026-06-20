@@ -19,6 +19,19 @@ function stripTags(s: string): string {
   return s.replace(/<[^>]+>/g, "").trim();
 }
 
+// Clean a third-party-controlled field (a source's title or description, which
+// come straight from Brave reflecting the page). Strip HTML tags AND any URL:
+// the citable allow-set is built from the resolver's chosen SOURCE urls only
+// (see fetchLiveSignal's citableUrls), but stripping URLs from these fields too
+// means a smuggled link never even reaches the model as prose it might copy into
+// a body. Same case-insensitive bare-URL pattern as fetch-content.sanitizeContent.
+export function cleanField(s: string): string {
+  return stripTags(s)
+    .replace(/https?:\/\/[^\s)\]]+/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 // Resolves a TopicSignal for (topicId, weekOf). Tries Brave Search first
 // when configured, falls back to hand-written mock signals otherwise.
 // Cache-friendly: blurbs persist to topic_blurbs so every subscriber to a
@@ -120,19 +133,23 @@ async function fetchLiveSignal(
   const readCount = contents.filter(Boolean).length;
 
   // 4. Build the signal: full-text trusted sources + a breadth list of headlines.
-  //    The url-guard scans this whole string for citable URLs, so only the
-  //    explicit SOURCE / headline links (all real) are citable — fetched bodies
-  //    have every URL stripped (see fetch-content).
+  //    CITABLE URLs are built EXPLICITLY from the resolver's chosen SOURCE urls
+  //    (citableUrls below) — NOT by regex-scanning the context, because a third
+  //    party controls a source's title/description and could otherwise smuggle a
+  //    URL into the citable set. Defense in depth: fetched bodies have every URL
+  //    stripped (fetch-content.sanitizeContent), and title/description run through
+  //    cleanField (tags + URLs removed), so the ONLY urls in the context are the
+  //    curated SOURCE / —url tokens anyway.
   const deepBlocks = deep.map((s, i) => {
     const host = s.host || s.meta_url?.hostname || "";
     const age = s.age ? ` · ${s.age}` : "";
-    const body = contents[i] || `(full text unavailable — snippet: ${stripTags(s.description)})`;
-    return `[${i + 1}] ${s.title}\n    ${host}${age}\n    SOURCE: ${s.url}\n\n${body}`;
+    const body = contents[i] || `(full text unavailable — snippet: ${cleanField(s.description)})`;
+    return `[${i + 1}] ${cleanField(s.title)}\n    ${host}${age}\n    SOURCE: ${s.url}\n\n${body}`;
   });
   const moreBlocks = more.map((s) => {
     const host = s.host || s.meta_url?.hostname || "";
     const age = s.age ? `, ${s.age}` : "";
-    return `- ${s.title} (${host}${age}) — ${s.url}\n  ${stripTags(s.description)}`;
+    return `- ${cleanField(s.title)} (${host}${age}) — ${s.url}\n  ${cleanField(s.description)}`;
   });
 
   const subject = isCustomTopic(topicId) ? customTopicText(topicId) : topicId;
@@ -151,14 +168,19 @@ async function fetchLiveSignal(
       : `Recent signal for ${subject} (as of ${weekOf}), gathered live from Brave Search. Headlines and snippets only this period.`;
   const context = `${header}\n\n${parts.join("\n\n")}\n\nAll URLs labeled SOURCE or listed above are real and citable. Do NOT invent URLs.`;
 
-  // If the live signal carries NO real URLs, treat it as "no live signal" so
-  // the caller falls back to the curated mock (which always has real URLs).
-  // Without this the strict URL guard would drop every link and ship a
-  // link-less section.
-  if (extractSignalUrls(context).size === 0) {
+  // The citable allow-set = the resolver's chosen SOURCE urls ONLY (deep + more),
+  // normalized via the url-guard's own extractor. Built from the explicit url
+  // fields, NEVER by scanning the context, so attacker-controlled source
+  // title/description text can't smuggle a citable link past the guard.
+  const citableUrls = extractSignalUrls([...deep, ...more].map((s) => s.url).join("\n"));
+
+  // No real URLs this period → "no live signal" so the caller falls back to the
+  // curated mock (which always has real URLs). Without this the strict URL guard
+  // would drop every link and ship a link-less section.
+  if (citableUrls.size === 0) {
     console.warn(`[source-resolver] live signal for ${topicId} had 0 URLs — falling back to mock`);
     return undefined;
   }
 
-  return { topicId: topicId as TopicId, weekOf, context };
+  return { topicId: topicId as TopicId, weekOf, context, citableUrls };
 }
