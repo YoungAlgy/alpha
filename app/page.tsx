@@ -48,21 +48,6 @@ const WHY = [
   },
 ];
 
-const FAQ = [
-  {
-    q: "Can I change my topics later?",
-    a: "Anytime, from settings. Swap any of your topics whenever your interests shift. Add more in bundles of five if five isn't enough.",
-  },
-  {
-    q: "How do I cancel?",
-    a: "One click in settings, through Stripe. No emails to send, no hoops. Cancel and you're done.",
-  },
-  {
-    q: "When does it arrive?",
-    a: "Sunday, Tuesday, and Thursday. In your inbox and on the web. Read each one whenever you like.",
-  },
-];
-
 // Structured data for richer search results. Static + app-controlled (no user
 // input → safe to inline). Every claim is true: $5/mo, USD, in stock. No
 // aggregateRating/reviewCount — we won't fabricate social proof.
@@ -98,18 +83,6 @@ const JSON_LD = {
         availability: "https://schema.org/InStock",
         url: "https://youngalgy.com/alpha",
       },
-    },
-    {
-      // The on-page FAQ, marked up so it's eligible for FAQ rich results.
-      // mainEntity is derived from the same FAQ array the page renders, so the
-      // structured data can never drift from what the visitor reads.
-      "@type": "FAQPage",
-      "@id": "https://youngalgy.com/alpha#faq",
-      mainEntity: FAQ.map((f) => ({
-        "@type": "Question",
-        name: f.q,
-        acceptedAnswer: { "@type": "Answer", text: f.a },
-      })),
     },
   ],
 };
@@ -302,27 +275,12 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* FAQ */}
+      {/* Final CTA */}
       <section className="px-6 pb-24">
-        <div className="max-w-2xl mx-auto">
-          <div className="alpha-mono mb-8 text-center" style={{ color: "var(--accent-ink)" }}>
-            QUESTIONS
-          </div>
-          <div className="space-y-8">
-            {FAQ.map((f) => (
-              <div key={f.q} className="space-y-2">
-                <h3 className="alpha-display text-lg font-semibold">{f.q}</h3>
-                <p className="alpha-ui text-base leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-                  {f.a}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className="text-center mt-12">
-            <Link href="/welcome" className="alpha-button alpha-button-accent text-base">
-              Start your letter →
-            </Link>
-          </div>
+        <div className="max-w-2xl mx-auto text-center">
+          <Link href="/welcome" className="alpha-button alpha-button-accent text-base">
+            Start your letter →
+          </Link>
         </div>
       </section>
 
