@@ -65,7 +65,26 @@ export async function proxy(req: NextRequest) {
     },
   });
 
-  // Refresh session if it exists; ignore the result.
-  await supabase.auth.getUser();
+  // Refresh the session if it exists (also tells us who's signed in).
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // A signed-in reader who opens the onboarding entry (/welcome) wants their
+  // letter, not the intro. Redirect server-side so the welcome hero never
+  // paints. The page also does this client-side, but only after an async
+  // getSession() — which is the brief flash we're removing. Anonymous visitors
+  // fall through and see /welcome normally. /inbox doesn't bounce back, so no
+  // loop. endsWith() matches whether or not nextUrl carries the basePath; the
+  // destination is set basePath-relative so Next re-adds /alpha on the redirect.
+  if (user && req.nextUrl.pathname.endsWith("/welcome")) {
+    const dest = req.nextUrl.clone();
+    dest.pathname = "/inbox";
+    const redirect = NextResponse.redirect(dest);
+    // Carry over any refreshed auth cookies set on res during getUser().
+    res.cookies.getAll().forEach((c) => redirect.cookies.set(c));
+    return redirect;
+  }
+
   return res;
 }

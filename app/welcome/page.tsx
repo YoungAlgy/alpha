@@ -10,9 +10,11 @@ export default function WelcomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    // If the visitor is already signed in (came back via magic link, or stayed
-    // signed in on this device), redirect to their inbox. The hero stays
-    // visible for that ~50ms — fine; the cross-fade to /inbox is gentle.
+    // Fallback redirect for an already-signed-in visitor. The middleware
+    // normally catches this first and redirects server-side (no hero paints),
+    // so this only fires in the edge case where the cookie session wasn't
+    // readable there (e.g. Supabase env missing in middleware) but a client
+    // session exists. Harmless when middleware already handled it.
     if (!supabaseConfigured()) return;
     (async () => {
       try {

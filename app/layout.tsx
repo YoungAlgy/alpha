@@ -125,6 +125,14 @@ export const viewport: Viewport = {
   themeColor: "#1F3D2E",
 };
 
+// Runs synchronously before first paint, so a returning visitor's saved theme
+// is on <html> before the body renders — no flash of the default Forest then a
+// flip. Mirrors ThemeApplier's local read exactly (onboarding state first, then
+// the standalone key); ThemeApplier's async DB check still runs after hydration
+// as the authority. An unknown/stale id just falls back to the :root default,
+// same as before. Kept inline + tiny so it can't block the critical path.
+const THEME_SCRIPT = `(function(){try{var t=null,r=localStorage.getItem("alpha-onboarding");if(r){var p=JSON.parse(r);if(p&&p.theme)t=p.theme;}if(!t)t=localStorage.getItem("alpha-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -132,6 +140,9 @@ export default function RootLayout({
     <html
       lang="en"
       data-theme="forest"
+      // The pre-paint script below sets data-theme before hydration; tell React
+      // not to warn that the server "forest" differs from the applied theme.
+      suppressHydrationWarning
       className={[
         fraunces.variable,
         newsreader.variable,
@@ -145,6 +156,7 @@ export default function RootLayout({
       ].join(" ")}
     >
       <body className="min-h-full flex flex-col">
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <ThemeApplier />
         <PostHogProvider />
         {children}
