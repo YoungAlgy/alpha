@@ -20,6 +20,7 @@ export default function robots(): MetadataRoute.Robots {
           "/alpha/topics",
           "/alpha/theme",
           "/alpha/fun",
+          "/alpha/you",
           "/alpha/email",
           "/alpha/api/",
           "/alpha/auth/",

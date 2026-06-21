@@ -3,6 +3,12 @@ import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { TOPICS, PARENT_TOPIC } from "@/lib/topics";
 
+// Derived from the catalog so the headline count can never drift from what the
+// picker actually offers (a copy-truth, and the no-synthetic-data rule). Broad
+// topics only — sub-genres (EDM under Music, Islam under Faith) live in the
+// picker, not the marketing count.
+const BROAD_COUNT = TOPICS.filter((t) => !PARENT_TOPIC[t.id]).length;
+
 // The landing page for cold traffic. Sits in FRONT of the onboarding funnel:
 // it sells (pitch, sample, price, how-it-works), then the CTA drops visitors
 // into /welcome — the existing 10-step flow, which is a deliberate commitment
@@ -19,7 +25,7 @@ const HOW = [
   {
     n: "1",
     t: "Pick five topics",
-    d: "From 27: AI and markets to longevity, gardening, sustainable living, trading cards. The five you actually want to keep up with.",
+    d: `From ${BROAD_COUNT}: AI and markets to longevity, gardening, sustainable living, trading cards. The five you actually want to keep up with.`,
   },
   {
     n: "2",
@@ -102,6 +108,18 @@ const JSON_LD = {
         availability: "https://schema.org/InStock",
         url: "https://youngalgy.com/alpha",
       },
+    },
+    {
+      // The on-page FAQ, marked up so it's eligible for FAQ rich results.
+      // mainEntity is derived from the same FAQ array the page renders, so the
+      // structured data can never drift from what the visitor reads.
+      "@type": "FAQPage",
+      "@id": "https://youngalgy.com/alpha#faq",
+      mainEntity: FAQ.map((f) => ({
+        "@type": "Question",
+        name: f.q,
+        acceptedAnswer: { "@type": "Answer", text: f.a },
+      })),
     },
   ],
 };
@@ -210,7 +228,7 @@ export default function Landing() {
       <section className="px-6 py-16 md:py-24">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="alpha-display text-3xl md:text-4xl font-bold tracking-tight mb-4">
-            Twenty-seven topics. You pick five.
+            {BROAD_COUNT} topics. You pick five.
           </h2>
           <p className="alpha-ui text-base mb-10 leading-relaxed" style={{ color: "var(--ink-soft)" }}>
             Whatever you want to stay sharp on, there&apos;s almost certainly a lane for it.
