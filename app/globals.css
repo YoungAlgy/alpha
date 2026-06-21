@@ -750,6 +750,53 @@ body {
   line-height: 1;
 }
 
+/* App-open intro — a brief α brand moment on a genuine app open. Drawn as
+   pseudo-elements on <html> (toggled by the pre-paint script in layout) so it
+   covers from the first frame with no injected node / no hydration conflict, and
+   reveals the content underneath as it fades. pointer-events:none keeps it
+   non-blocking; the script removes the class after ~0.9s or on first interaction.
+   Once per tab session, skipped on marketing/legal pages and under reduced-motion. */
+@keyframes alpha-intro-veil {
+  0%, 55% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes alpha-intro-mark {
+  0% { opacity: 0; transform: scale(0.9); }
+  30% { opacity: 1; transform: scale(1); }
+  60% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.04); }
+}
+html.alpha-intro-active::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: var(--paper);
+  pointer-events: none;
+  animation: alpha-intro-veil 820ms ease-in forwards;
+}
+html.alpha-intro-active::after {
+  content: "\03B1";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 700;
+  font-size: 26vmin;
+  line-height: 1;
+  color: var(--accent-ink);
+  pointer-events: none;
+  user-select: none;
+  animation: alpha-intro-mark 820ms ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.alpha-intro-active::before,
+  html.alpha-intro-active::after { display: none; }
+}
+
 /* Source-link favicon */
 .alpha-src-favicon {
   display: inline-block;
