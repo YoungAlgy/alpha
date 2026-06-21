@@ -21,7 +21,7 @@ const LIMITS = {
   first_name: 60,
   city: 120,
   job_blurb: 500,
-  project_blurb: 500,
+  project_blurb: 600,
   fun_blurb: 500,
 } as const;
 

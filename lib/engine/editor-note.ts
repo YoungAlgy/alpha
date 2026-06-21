@@ -42,9 +42,9 @@ export async function generateEditorNote(
   const profileLines = [
     clamp(user.firstName, 80) && `Name: ${clamp(user.firstName, 80)}`,
     clamp(user.city, 120) && `City: ${clamp(user.city, 120)}`,
-    clamp(user.jobBlurb, 400) && `Does: ${clamp(user.jobBlurb, 400)}`,
+    clamp(user.jobBlurb, 500) && `Does: ${clamp(user.jobBlurb, 500)}`,
     clamp(user.projectBlurb, 600) && `Currently working on: ${clamp(user.projectBlurb, 600)}`,
-    clamp(user.funBlurb, 400) && `Outside work, into: ${clamp(user.funBlurb, 400)}`,
+    clamp(user.funBlurb, 500) && `Outside work, into: ${clamp(user.funBlurb, 500)}`,
   ].filter(Boolean).join("\n");
 
   // Reader voice steer, derived from gender + birthday. SAFE to place outside the

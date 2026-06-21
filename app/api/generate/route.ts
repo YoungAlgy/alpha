@@ -23,9 +23,9 @@ const GENERATE_DEADLINE_MS = 105_000;
 const ProfileSchema = z.object({
   firstName: z.string().min(1).max(60),
   city: z.string().max(120).default(""),
-  jobBlurb: z.string().max(280).optional(),
+  jobBlurb: z.string().max(500).optional(),
   projectBlurb: z.string().max(600).optional(),
-  funBlurb: z.string().max(280).optional(),
+  funBlurb: z.string().max(500).optional(),
   birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   gender: z.enum(["male", "female"]).optional(),
   topics: z.array(z.string().min(1).max(60)).min(1).max(25),
