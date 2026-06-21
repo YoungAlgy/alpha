@@ -258,32 +258,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Founder note */}
-      <section className="px-6 pb-20">
-        <div
-          className="max-w-xl mx-auto alpha-card p-8 text-center"
-          style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)" }}
-        >
-          <p className="alpha-display text-lg md:text-xl leading-relaxed italic" style={{ color: "var(--ink)" }}>
-            &quot;I built alpha. because I was tired of either missing things
-            that mattered or drowning trying not to. This is the letter I wanted
-            to get.&quot;
-          </p>
-          <p className="alpha-ui text-sm mt-4" style={{ color: "var(--ink-soft)" }}>
-            Algy, who makes alpha.
-          </p>
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className="px-6 pb-24">
-        <div className="max-w-2xl mx-auto text-center">
-          <Link href="/welcome" className="alpha-button alpha-button-accent text-base">
-            Start your letter →
-          </Link>
-        </div>
-      </section>
-
       <Footer />
     </main>
   );
