@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Footer } from "@/components/Footer";
 import { topicLabel } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
-import { generationLabel, generationOf, zodiacLabel, zodiacSign } from "@/lib/demographics";
+import { demographicSummary } from "@/lib/demographics";
 
 interface AdminUserRow {
   id: string;
@@ -304,11 +304,10 @@ export default function AdminAccountsPage() {
   );
 }
 
-// "Millennial, Leo" from a birthday, falling back to the raw date.
+// "Millennial, Leo" from a birthday, falling back to the raw date if it doesn't
+// parse (so an admin still sees something for a malformed row).
 function demoSummary(birthday: string): string {
-  const g = generationOf(birthday);
-  const s = zodiacSign(birthday);
-  return [g ? generationLabel(g) : null, s ? zodiacLabel(s) : null].filter(Boolean).join(", ") || birthday;
+  return demographicSummary(birthday) || birthday;
 }
 
 function Stat({

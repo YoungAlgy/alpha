@@ -1,6 +1,7 @@
 "use client";
 
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { parseBirthday, coerceGender } from "@/lib/demographics";
 import type { OnboardingState } from "@/lib/onboarding-state";
 
 // Fire-and-forget sync of an OnboardingState to the authenticated user's row
@@ -40,8 +41,9 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
     const funBlurb = state.funBlurb?.trim();
     if (funBlurb) updates.fun_blurb = funBlurb;
     const birthday = state.birthday?.trim();
-    if (birthday) updates.birthday = birthday;
-    if (state.gender === "male" || state.gender === "female") updates.gender = state.gender;
+    if (birthday && parseBirthday(birthday)) updates.birthday = birthday;
+    const gender = coerceGender(state.gender);
+    if (gender) updates.gender = gender;
     if (Array.isArray(state.topics) && state.topics.length > 0) {
       updates.topics = state.topics;
     }

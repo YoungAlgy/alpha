@@ -6,6 +6,13 @@
 
 import type { Gender } from "./types";
 export type { Gender };
+
+// Narrow an untrusted value to a stored Gender, or null. The single home for
+// the male/female allow-check (mirrors coerceThemeId for themes) so the same
+// two-string guard isn't hand-written at every read/write boundary.
+export function coerceGender(raw: unknown): Gender | null {
+  return raw === "male" || raw === "female" ? raw : null;
+}
 export type Generation = "gen-z" | "millennial" | "gen-x" | "boomer" | "silent";
 export type ZodiacSign =
   | "aries" | "taurus" | "gemini" | "cancer" | "leo" | "virgo"
@@ -81,6 +88,17 @@ export function generationLabel(g: Generation): string {
 
 export function zodiacLabel(s: ZodiacSign): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// "Millennial, Leo" from a birthday — the generation and zodiac sign joined.
+// Empty string when the birthday is missing or invalid. The single source for
+// this read; callers wrap their own surrounding copy (or a raw-date fallback)
+// around it. A valid birthday always yields BOTH a generation and a sign, so a
+// non-empty return means a full "Gen, Sign".
+export function demographicSummary(raw: string | null | undefined): string {
+  const g = generationOf(raw);
+  const s = zodiacSign(raw);
+  return [g ? generationLabel(g) : null, s ? zodiacLabel(s) : null].filter(Boolean).join(", ");
 }
 
 // A short, plain-English steer the letter writer folds into its voice. Kept

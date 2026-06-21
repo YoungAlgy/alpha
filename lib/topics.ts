@@ -134,16 +134,22 @@ export function mapTopicsForUser(topics: TopicId[], birthday: string | undefined
 // single-word keys must match a whole token (so "rap" never fires inside
 // "therapy"), multi-word keys match as a substring. Only a small, low-ambiguity
 // set is mapped, so we never nag on a vague overlap. Returns a catalog id or null.
+// Specific subtopic keys come BEFORE the generic faith/religion umbrella keys,
+// so "islamic faith" resolves to the Islam topic (first hit wins), not the
+// umbrella. Common adjective/plural surface forms (islamic, muslims, christians)
+// are listed because single-word keys match a whole token, not a prefix.
 const CURATED_KEYWORDS: Record<string, FixedTopicId> = {
-  islam: "faith-islam", muslim: "faith-islam", quran: "faith-islam", koran: "faith-islam", hadith: "faith-islam", hadiths: "faith-islam",
-  christianity: "faith-christianity", christian: "faith-christianity", jesus: "faith-christianity", gospel: "faith-christianity", bible: "faith-christianity",
-  judaism: "faith-judaism", jewish: "faith-judaism", torah: "faith-judaism",
-  hinduism: "faith-hinduism", hindu: "faith-hinduism",
-  buddhism: "faith-buddhism", buddhist: "faith-buddhism", buddha: "faith-buddhism",
+  islam: "faith-islam", islamic: "faith-islam", muslim: "faith-islam", muslims: "faith-islam", quran: "faith-islam", koran: "faith-islam", hadith: "faith-islam", hadiths: "faith-islam",
+  christianity: "faith-christianity", christian: "faith-christianity", christians: "faith-christianity", jesus: "faith-christianity", gospel: "faith-christianity", bible: "faith-christianity",
+  judaism: "faith-judaism", jewish: "faith-judaism", jews: "faith-judaism", torah: "faith-judaism",
+  hinduism: "faith-hinduism", hindu: "faith-hinduism", hindus: "faith-hinduism",
+  buddhism: "faith-buddhism", buddhist: "faith-buddhism", buddhists: "faith-buddhism", buddha: "faith-buddhism",
+  spiritual: "faith-spiritual", spirituality: "faith-spiritual", mindfulness: "faith-spiritual",
+  religion: "faith-meaning", faith: "faith-meaning",
   edm: "music-edm", techno: "music-edm",
-  rap: "music-hiphop", hiphop: "music-hiphop", "hip-hop": "music-hiphop",
-  crypto: "web3-updates", cryptocurrency: "web3-updates", bitcoin: "web3-updates", ethereum: "web3-updates", web3: "web3-updates",
-  astrology: "zodiac", horoscope: "zodiac", zodiac: "zodiac",
+  rap: "music-hiphop", hiphop: "music-hiphop", "hip-hop": "music-hiphop", "hip hop": "music-hiphop",
+  crypto: "web3-updates", cryptocurrency: "web3-updates", bitcoin: "web3-updates", ethereum: "web3-updates", web3: "web3-updates", nft: "web3-updates", blockchain: "web3-updates", defi: "web3-updates",
+  astrology: "zodiac", horoscope: "zodiac", horoscopes: "zodiac", zodiac: "zodiac",
 };
 
 export function suggestCuratedTopic(text: string): FixedTopicId | null {

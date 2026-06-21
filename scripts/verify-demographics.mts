@@ -2,7 +2,7 @@
 // Pure, fast, no network. Run: npx tsx scripts/verify-demographics.mts
 const {
   parseBirthday, generationFromYear, zodiacFromDate, zodiacSign, generationOf,
-  toneGuidance, zodiacLabel, generationLabel,
+  toneGuidance, zodiacLabel, generationLabel, coerceGender, demographicSummary,
 } = await import("../lib/demographics.ts");
 
 let pass = 0, fail = 0;
@@ -62,6 +62,17 @@ check("female tone mentions woman", /woman/i.test(toneGuidance("female", null)))
 check("generation tone names the generation", /Millennial/.test(toneGuidance(null, "millennial")));
 check("combined includes both + the subtle guardrail", /man/i.test(toneGuidance("male", "gen-z")) && /Gen Z/.test(toneGuidance("male", "gen-z")) && /subtle/i.test(toneGuidance("male", "gen-z")));
 check("never name-drops the generation to the reader", /Do not name-drop/.test(toneGuidance(null, "boomer")));
+
+// coerceGender — the single male/female allow-check (replaces 6 hand-written guards)
+console.log("(6) coerceGender");
+check("passes male / female", coerceGender("male") === "male" && coerceGender("female") === "female");
+check("nulls everything else", coerceGender("skip") === null && coerceGender("") === null && coerceGender(undefined) === null && coerceGender(null) === null && coerceGender("Male") === null);
+
+// demographicSummary — the shared "Gen, Sign" read (replaces 3 inline copies)
+console.log("(7) demographicSummary");
+check("full birthday = 'Gen, Sign'", demographicSummary("1994-07-30") === "Millennial, Leo");
+check("empty on invalid / missing", demographicSummary("garbage") === "" && demographicSummary("") === "" && demographicSummary(null) === "" && demographicSummary(undefined) === "");
+check("a valid birthday always yields both parts", !demographicSummary("2000-02-29").includes("undefined") && demographicSummary("2000-02-29").split(", ").length === 2);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) { console.error("DEMOGRAPHICS VERIFICATION FAILED"); process.exit(1); }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Digest } from "@/components/Digest";
+import { coerceThemeId } from "@/lib/themes";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { AudioToggle } from "@/components/AudioToggle";
 import { ReadingProgress } from "@/components/ReadingProgress";
@@ -53,7 +54,7 @@ export default function InboxPage() {
                 .maybeSingle(),
             ]);
             if (!error && data) {
-              const themeToApply = userRow?.theme || state.theme || "forest";
+              const themeToApply = coerceThemeId(userRow?.theme) ?? coerceThemeId(state.theme) ?? "forest";
               document.documentElement.setAttribute("data-theme", themeToApply);
               setIssue({
                 id: `${session.user.id}-${data.week_of}`,

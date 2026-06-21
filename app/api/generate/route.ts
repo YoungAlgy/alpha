@@ -9,6 +9,8 @@ import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/serv
 import { hasActiveAccess } from "@/lib/access";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { withDeadline } from "@/lib/with-deadline";
+import { parseBirthday } from "@/lib/demographics";
+import { BLURB_CAPS } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -23,10 +25,13 @@ const GENERATE_DEADLINE_MS = 105_000;
 const ProfileSchema = z.object({
   firstName: z.string().min(1).max(60),
   city: z.string().max(120).default(""),
-  jobBlurb: z.string().max(500).optional(),
-  projectBlurb: z.string().max(600).optional(),
-  funBlurb: z.string().max(500).optional(),
-  birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  jobBlurb: z.string().max(BLURB_CAPS.jobBlurb).optional(),
+  projectBlurb: z.string().max(BLURB_CAPS.projectBlurb).optional(),
+  funBlurb: z.string().max(BLURB_CAPS.funBlurb).optional(),
+  // Shape AND validity: a regex-valid but impossible/out-of-range date (e.g.
+  // 2020-02-30, 1850-01-01) is rejected here too, so this write path agrees
+  // with parseBirthday, which every reader of the field already gates on.
+  birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => parseBirthday(s) !== null, "invalid birthday").optional(),
   gender: z.enum(["male", "female"]).optional(),
   topics: z.array(z.string().min(1).max(60)).min(1).max(25),
   theme: z.string().max(30).default("forest"),

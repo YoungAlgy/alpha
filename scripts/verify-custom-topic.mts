@@ -82,6 +82,18 @@ check("'EDM festivals' suggests the EDM topic", suggestCuratedTopic("EDM festiva
 check("'daily horoscope' suggests Zodiac", suggestCuratedTopic("daily horoscope") === "zodiac");
 check("no false positive: 'my therapy journey' does NOT match rap", suggestCuratedTopic("my therapy journey") === null);
 check("no match for a genuinely custom topic", suggestCuratedTopic("Formula 1 aerodynamics") === null);
+// Recall: the common adjective/plural surface forms a reader actually types.
+check("'Islamic finance' matches Islam (adjective)", suggestCuratedTopic("Islamic finance") === "faith-islam");
+check("'Muslims today' matches Islam (plural)", suggestCuratedTopic("Muslims today") === "faith-islam");
+check("'famous Christians' matches Christianity (plural)", suggestCuratedTopic("famous Christians") === "faith-christianity");
+check("'spirituality' matches the Spiritual topic", suggestCuratedTopic("spirituality and meaning") === "faith-spiritual");
+check("'mindfulness practice' matches the Spiritual topic", suggestCuratedTopic("mindfulness practice") === "faith-spiritual");
+check("bare 'religion' routes to the umbrella", suggestCuratedTopic("religion in america") === "faith-meaning");
+check("specific subtopic beats the umbrella: 'islamic faith' -> Islam", suggestCuratedTopic("islamic faith") === "faith-islam");
+check("'horoscopes' plural matches Zodiac", suggestCuratedTopic("daily horoscopes") === "zodiac");
+check("'NFT drops' matches Web3", suggestCuratedTopic("NFT drops") === "web3-updates");
+check("'blockchain news' matches Web3", suggestCuratedTopic("blockchain news") === "web3-updates");
+check("two-word 'hip hop' matches Hip-hop", suggestCuratedTopic("hip hop playlists") === "music-hiphop");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

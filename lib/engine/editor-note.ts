@@ -1,6 +1,7 @@
 import { anthropicClient, MODEL } from "./client";
 import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
+import { BLURB_CAPS } from "@/lib/types";
 import type { UserProfile } from "@/lib/types";
 
 const SYSTEM_PROMPT = `You are the editor of Alpha, a personal letter.
@@ -42,9 +43,9 @@ export async function generateEditorNote(
   const profileLines = [
     clamp(user.firstName, 80) && `Name: ${clamp(user.firstName, 80)}`,
     clamp(user.city, 120) && `City: ${clamp(user.city, 120)}`,
-    clamp(user.jobBlurb, 500) && `Does: ${clamp(user.jobBlurb, 500)}`,
-    clamp(user.projectBlurb, 600) && `Currently working on: ${clamp(user.projectBlurb, 600)}`,
-    clamp(user.funBlurb, 500) && `Outside work, into: ${clamp(user.funBlurb, 500)}`,
+    clamp(user.jobBlurb, BLURB_CAPS.jobBlurb) && `Does: ${clamp(user.jobBlurb, BLURB_CAPS.jobBlurb)}`,
+    clamp(user.projectBlurb, BLURB_CAPS.projectBlurb) && `Currently working on: ${clamp(user.projectBlurb, BLURB_CAPS.projectBlurb)}`,
+    clamp(user.funBlurb, BLURB_CAPS.funBlurb) && `Outside work, into: ${clamp(user.funBlurb, BLURB_CAPS.funBlurb)}`,
   ].filter(Boolean).join("\n");
 
   // Reader voice steer, derived from gender + birthday. SAFE to place outside the

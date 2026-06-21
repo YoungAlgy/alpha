@@ -367,7 +367,11 @@ export default function TopicsPage() {
               they didn't know existed (e.g. "Islam and Quran" -> the Islam topic). */}
           {(() => {
             const sug = customText.trim().length >= 2 ? suggestCuratedTopic(customText) : null;
-            if (!sug || picked.includes(sug) || picked.length >= poolMax) return null;
+            // Hide it if already picked, if its parent umbrella is already picked
+            // (so we don't nudge "Islam" when "All faith" is selected), or at the
+            // pool limit.
+            const sugParent = sug ? PARENT_TOPIC[sug] : undefined;
+            if (!sug || picked.includes(sug) || (sugParent && picked.includes(sugParent)) || picked.length >= poolMax) return null;
             return (
               <p className="alpha-ui text-xs" style={{ color: "var(--ink-soft)" }}>
                 We have a curated topic for that:{" "}

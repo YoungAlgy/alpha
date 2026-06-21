@@ -123,6 +123,12 @@ export interface UserProfile {
   email?: string;
 }
 
+// Max length of each free-text profile blurb, single-sourced so the input
+// validators (the generate Zod schema, the settings profile route) and the
+// prompt-assembly clamp (editor note) can't drift apart. They drifted once
+// already (280/600/280 vs 400/600/400 vs 500/600/500) before being aligned.
+export const BLURB_CAPS = { jobBlurb: 500, projectBlurb: 600, funBlurb: 500 } as const;
+
 export interface Theme {
   id: ThemeId;
   label: string;

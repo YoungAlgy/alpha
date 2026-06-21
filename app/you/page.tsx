@@ -6,7 +6,7 @@ import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding, nextStep } from "@/lib/onboarding-state";
 import { confirm as audioConfirm, tap } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { generationLabel, generationOf, zodiacLabel, zodiacSign } from "@/lib/demographics";
+import { coerceGender, demographicSummary } from "@/lib/demographics";
 import type { Gender } from "@/lib/types";
 
 const GENDERS: { value: Gender; label: string }[] = [
@@ -52,13 +52,12 @@ export default function YouPage() {
     audioConfirm();
     update({
       birthday: birthday || undefined,
-      gender: gender === "male" || gender === "female" ? gender : undefined,
+      gender: coerceGender(gender) ?? undefined,
     });
     router.push(`/${nextStep("you")}` as never);
   }
 
-  const gen = generationOf(birthday);
-  const sign = zodiacSign(birthday);
+  const summary = demographicSummary(birthday);
 
   return (
     <StepShell stepIndex={9} prevPath="fun">
@@ -90,8 +89,8 @@ export default function YouPage() {
           <p className="alpha-ui text-xs mt-2" style={{ color: zodiacPicked && !birthday ? "var(--accent-ink)" : "var(--ink-soft)" }}>
             {zodiacPicked && !birthday
               ? "You picked Zodiac, so add your birthday and we'll read your sign each week."
-              : sign && gen
-                ? `${generationLabel(gen)}, ${zodiacLabel(sign)}. The full date also unlocks the Zodiac topic if you want it.`
+              : summary
+                ? `${summary}. The full date also unlocks the Zodiac topic if you want it.`
                 : "The full date tunes the letter to your generation and unlocks the Zodiac topic if you want it."}
           </p>
         </div>

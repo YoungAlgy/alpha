@@ -8,7 +8,9 @@ import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
-import type { UserProfile, TopicId, ThemeId } from "@/lib/types";
+import type { UserProfile, TopicId } from "@/lib/types";
+import { coerceGender } from "@/lib/demographics";
+import { coerceThemeId } from "@/lib/themes";
 
 export const runtime = "nodejs";
 export const maxDuration = 800; // Vercel Pro cap
@@ -222,9 +224,9 @@ export async function GET(req: Request) {
       projectBlurb: row.project_blurb ?? undefined,
       funBlurb: row.fun_blurb ?? undefined,
       birthday: row.birthday ?? undefined,
-      gender: (row.gender === "male" || row.gender === "female") ? row.gender : undefined,
+      gender: coerceGender(row.gender) ?? undefined,
       topics: pool,
-      theme: ((row.theme as ThemeId) ?? "forest"),
+      theme: coerceThemeId(row.theme) ?? "forest",
       email: row.email,
     };
 

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { generationLabel, generationOf, zodiacLabel, zodiacSign } from "@/lib/demographics";
+import { coerceGender, demographicSummary } from "@/lib/demographics";
 import type { Gender } from "@/lib/types";
 
 // The details onboarding collected. Editing them used to be impossible after
@@ -23,7 +23,7 @@ interface Form {
 const EMPTY: Form = { firstName: "", city: "", jobBlurb: "", projectBlurb: "", funBlurb: "", birthday: "", gender: "" };
 
 function genderOf(v: unknown): "" | Gender {
-  return v === "male" || v === "female" ? v : "";
+  return coerceGender(v) ?? ""; // "" = unspecified, for the form state
 }
 
 export function ProfileEditor() {
@@ -208,10 +208,9 @@ export function ProfileEditor() {
               if (hasZodiac && !form.birthday) {
                 return "You have the Zodiac topic. Add your birthday or that section gets skipped each week.";
               }
-              const g = generationOf(form.birthday);
-              const s = zodiacSign(form.birthday);
-              return g && s
-                ? `${generationLabel(g)}, ${zodiacLabel(s)}. Tunes the letter and unlocks the Zodiac topic. Optional.`
+              const summary = demographicSummary(form.birthday);
+              return summary
+                ? `${summary}. Tunes the letter and unlocks the Zodiac topic. Optional.`
                 : "Tunes the letter to your generation and unlocks the Zodiac topic. Optional.";
             })()}
           </span>

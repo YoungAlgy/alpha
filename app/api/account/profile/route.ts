@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { parseBirthday } from "@/lib/demographics";
+import { parseBirthday, coerceGender } from "@/lib/demographics";
+import { BLURB_CAPS } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -20,9 +21,9 @@ export const runtime = "nodejs";
 const LIMITS = {
   first_name: 60,
   city: 120,
-  job_blurb: 500,
-  project_blurb: 600,
-  fun_blurb: 500,
+  job_blurb: BLURB_CAPS.jobBlurb,
+  project_blurb: BLURB_CAPS.projectBlurb,
+  fun_blurb: BLURB_CAPS.funBlurb,
 } as const;
 
 // A required field: trimmed, must be non-empty, capped. Returns the value or an
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
   // two stored values; "prefer not to say" or anything else clears to null.
   const rawBday = typeof body.birthday === "string" ? body.birthday.trim() : "";
   const birthday = rawBday && parseBirthday(rawBday) ? rawBday : null;
-  const gender = body.gender === "male" || body.gender === "female" ? body.gender : null;
+  const gender = coerceGender(body.gender);
 
   const updates = {
     first_name: firstName.value,
