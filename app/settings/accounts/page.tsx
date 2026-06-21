@@ -227,7 +227,7 @@ export default function AdminAccountsPage() {
                   >
                     <span>Joined {created}</span>
                     {u.city && <span>· {u.city}</span>}
-                    {u.gender && <span>· {u.gender === "male" ? "Male" : "Female"}</span>}
+                    {u.gender && <span>· {u.gender === "male" ? "Male" : u.gender === "female" ? "Female" : u.gender}</span>}
                     {u.birthday && <span>· {demoSummary(u.birthday)}</span>}
                     {theme !== "—" && <span>· {theme}</span>}
                   </div>
