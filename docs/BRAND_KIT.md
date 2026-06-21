@@ -1,6 +1,6 @@
 # Alpha Brand Kit
 
-The north star. Alpha's look is the house style. Fishing, Mitchmark, the Toggle hub,
+The north star. Alpha's look is the house style. Fishing, Worksites, the Toggle hub,
 trading, and youngalgy.com all match this. When in doubt, open Alpha and copy it.
 
 Source of truth in code: `app/globals.css` (tokens + components), `lib/themes.ts`
@@ -232,7 +232,7 @@ Fonts via Google Fonts: Source Serif 4, Newsreader, Inter, weights 400 to 700, l
 - **Toggle hub** — Alpha is in the everything-bundle and reachable at `toggle.town/news`.
   The hub's listing for Alpha uses the Forest palette and the α mark. Toggle's own
   "endorsed house" chrome should not fight Alpha's; keep Alpha's card on-brand.
-- **Fishing (Bay Bite), Mitchmark, Trading** — adopt the Forest tokens and the
+- **Fishing (Bay Bite), Worksites, Trading** — adopt the Forest tokens and the
   type/component recipes as the base skin. Keep each app's function, but the surfaces,
   buttons, cards, eyebrows, and voice match Alpha. One gold accent, calm motion,
   plain copy.
