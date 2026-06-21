@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { TOPICS, SUBTOPICS, PARENT_TOPIC, makeCustomTopic, isCustomTopic, customTopicText, topicLabel, topicEmoji } from "@/lib/topics";
+import { TOPICS, SUBTOPICS, PARENT_TOPIC, makeCustomTopic, isCustomTopic, customTopicText, topicLabel, topicEmoji, suggestCuratedTopic } from "@/lib/topics";
 import type { FixedTopicId } from "@/lib/types";
 import { poolCap } from "@/lib/engine/select-sections";
 import { tap, unselect, confirm } from "@/lib/audio";
@@ -362,6 +362,32 @@ export default function TopicsPage() {
               {customErr}
             </p>
           )}
+          {/* If their custom text matches a curated topic, nudge them to it —
+              better sources than a free-text topic, and helps them find topics
+              they didn't know existed (e.g. "Islam and Quran" -> the Islam topic). */}
+          {(() => {
+            const sug = customText.trim().length >= 2 ? suggestCuratedTopic(customText) : null;
+            if (!sug || picked.includes(sug) || picked.length >= poolMax) return null;
+            return (
+              <p className="alpha-ui text-xs" style={{ color: "var(--ink-soft)" }}>
+                We have a curated topic for that:{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    tap();
+                    setPicked((p) => (p.includes(sug) ? p : [...p, sug]));
+                    setCustomText("");
+                    setCustomErr(null);
+                  }}
+                  className="underline underline-offset-4 font-semibold"
+                  style={{ color: "var(--accent-ink)" }}
+                >
+                  {topicEmoji(sug)} {topicLabel(sug)} →
+                </button>{" "}
+                It pulls from sources we trust, not just a search.
+              </p>
+            );
+          })()}
         </div>
 
         {/* Your lineup — ranked favorites + backups (signed-in editing only) */}

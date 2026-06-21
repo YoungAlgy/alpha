@@ -128,6 +128,34 @@ export function mapTopicsForUser(topics: TopicId[], birthday: string | undefined
   );
 }
 
+// When a reader types a custom ("your own thing") topic, suggest a curated
+// catalog topic that would give better, sourced content (e.g. "Islam and Quran"
+// or "Inspiring Hadiths" -> the curated Islam topic). HIGH-PRECISION on purpose:
+// single-word keys must match a whole token (so "rap" never fires inside
+// "therapy"), multi-word keys match as a substring. Only a small, low-ambiguity
+// set is mapped, so we never nag on a vague overlap. Returns a catalog id or null.
+const CURATED_KEYWORDS: Record<string, FixedTopicId> = {
+  islam: "faith-islam", muslim: "faith-islam", quran: "faith-islam", koran: "faith-islam", hadith: "faith-islam", hadiths: "faith-islam",
+  christianity: "faith-christianity", christian: "faith-christianity", jesus: "faith-christianity", gospel: "faith-christianity", bible: "faith-christianity",
+  judaism: "faith-judaism", jewish: "faith-judaism", torah: "faith-judaism",
+  hinduism: "faith-hinduism", hindu: "faith-hinduism",
+  buddhism: "faith-buddhism", buddhist: "faith-buddhism", buddha: "faith-buddhism",
+  edm: "music-edm", techno: "music-edm",
+  rap: "music-hiphop", hiphop: "music-hiphop", "hip-hop": "music-hiphop",
+  crypto: "web3-updates", cryptocurrency: "web3-updates", bitcoin: "web3-updates", ethereum: "web3-updates", web3: "web3-updates",
+  astrology: "zodiac", horoscope: "zodiac", zodiac: "zodiac",
+};
+
+export function suggestCuratedTopic(text: string): FixedTopicId | null {
+  const lower = text.toLowerCase();
+  const tokens = new Set(lower.match(/[a-z0-9]+/g) || []);
+  for (const [kw, topic] of Object.entries(CURATED_KEYWORDS)) {
+    const hit = kw.includes("-") || kw.includes(" ") ? lower.includes(kw) : tokens.has(kw);
+    if (hit) return topic;
+  }
+  return null;
+}
+
 /** The raw free text a user typed for a custom topic (no prefix). */
 export function customTopicText(id: string): string {
   return id.slice(CUSTOM_PREFIX.length).trim();

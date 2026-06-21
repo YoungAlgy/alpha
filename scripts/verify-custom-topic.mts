@@ -1,6 +1,6 @@
 // Verify the custom-topic helpers (encoding, labels, validation). Pure, fast.
 // Run: npx tsx scripts/verify-custom-topic.mts
-const { isCustomTopic, customTopicText, makeCustomTopic, topicLabel, topicEmoji, topicAnchor, CUSTOM_PREFIX, isZodiacTopicId, SUBTOPICS, PARENT_TOPIC, mapTopicsForUser } =
+const { isCustomTopic, customTopicText, makeCustomTopic, topicLabel, topicEmoji, topicAnchor, CUSTOM_PREFIX, isZodiacTopicId, SUBTOPICS, PARENT_TOPIC, mapTopicsForUser, suggestCuratedTopic } =
   await import("../lib/topics.ts");
 const { zodiacQueries } = await import("../lib/engine/topic-queries.ts");
 
@@ -72,6 +72,16 @@ check("faith subtopics labeled", topicLabel("faith-christianity") === "Christian
 check("SUBTOPICS lists the 6 faith options", (SUBTOPICS["faith-meaning"]?.length ?? 0) === 6);
 check("PARENT_TOPIC maps a sub back to faith-meaning", PARENT_TOPIC["faith-buddhism"] === "faith-meaning");
 check("a faith sub is NOT a custom or zodiac topic", !isCustomTopic("faith-judaism") && !isZodiacTopicId("faith-judaism"));
+
+// suggestCuratedTopic: nudge a custom topic toward a curated equivalent.
+console.log("(8) curated-topic suggestion");
+check("'Islam and Quran' suggests the Islam topic", suggestCuratedTopic("Islam and Quran") === "faith-islam");
+check("'Inspiring Hadiths' suggests the Islam topic", suggestCuratedTopic("Inspiring Hadiths") === "faith-islam");
+check("'crypto trends in Asia' suggests Web3", suggestCuratedTopic("crypto trends in Asia") === "web3-updates");
+check("'EDM festivals' suggests the EDM topic", suggestCuratedTopic("EDM festivals") === "music-edm");
+check("'daily horoscope' suggests Zodiac", suggestCuratedTopic("daily horoscope") === "zodiac");
+check("no false positive: 'my therapy journey' does NOT match rap", suggestCuratedTopic("my therapy journey") === null);
+check("no match for a genuinely custom topic", suggestCuratedTopic("Formula 1 aerodynamics") === null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
