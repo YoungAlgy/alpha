@@ -70,14 +70,18 @@ export async function proxy(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // A signed-in reader who opens the onboarding entry (/welcome) wants their
-  // letter, not the intro. Redirect server-side so the welcome hero never
-  // paints. The page also does this client-side, but only after an async
-  // getSession() — which is the brief flash we're removing. Anonymous visitors
-  // fall through and see /welcome normally. /inbox doesn't bounce back, so no
-  // loop. endsWith() matches whether or not nextUrl carries the basePath; the
-  // destination is set basePath-relative so Next re-adds /alpha on the redirect.
-  if (user && req.nextUrl.pathname.endsWith("/welcome")) {
+  // A signed-in reader who opens an entry/auth page (/welcome, /signin) wants
+  // their letter, not the intro or the sign-in form. Redirect server-side so
+  // those screens never paint. Both pages also do this client-side, but only
+  // after an async getSession() — which is the brief flash we're removing.
+  // A fresh magic-link landing on /signin has NO cookie session yet (the tokens
+  // are in the URL hash, exchanged client-side), so `user` is null there and it
+  // falls through — the page can still finish the sign-in. Anonymous visitors
+  // see both pages normally. /inbox doesn't bounce back, so no loop. endsWith()
+  // matches whether or not nextUrl carries the basePath; the destination is set
+  // basePath-relative so Next re-adds /alpha on the redirect.
+  const path = req.nextUrl.pathname;
+  if (user && (path.endsWith("/welcome") || path.endsWith("/signin"))) {
     const dest = req.nextUrl.clone();
     dest.pathname = "/inbox";
     const redirect = NextResponse.redirect(dest);

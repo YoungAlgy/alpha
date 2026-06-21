@@ -25,10 +25,12 @@ export default function InboxPage() {
   const { state, loaded } = useOnboarding();
   const [issue, setIssue] = useState<Issue | null>(null);
   const [missing, setMissing] = useState(false);
+  const [checked, setChecked] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
 
   useEffect(() => {
     if (!loaded) return;
+    let cancelled = false;
     (async () => {
       // Path 1 — authenticated user reads from Supabase.
       // Prefer this so a returning sign-in on a fresh device still sees the letter.
@@ -93,10 +95,20 @@ export default function InboxPage() {
       } catch {
         setMissing(true);
       }
-    })();
+    })().finally(() => {
+      // Mark the auth+fetch resolved so the sign-in screen below can only paint
+      // once we KNOW the reader is signed out with no local letter — never
+      // during the async window (which would flash sign-in before the letter).
+      if (!cancelled) setChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [loaded, state.theme]);
 
-  if (missing) {
+  // Gate on `checked` + no issue so a cold-session race can't flash this
+  // sign-in-looking screen before the authed letter resolves.
+  if (checked && missing && !issue) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
         <div className="text-center space-y-6 max-w-md">
