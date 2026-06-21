@@ -9,7 +9,21 @@ export type ThemeId =
   | "forest"
   | "mono"
   | "sunset"
-  | "mitch";
+  | "mitch"
+  | "beacon"
+  | "grown-nearby"
+  | "freejob"
+  | "freeresume"
+  | "job-terminal"
+  | "trading-terminal"
+  | "downs"
+  | "fishing"
+  | "mitchmark"
+  | "studio"
+  | "pirate"
+  | "miami"
+  | "toggletown"
+  | "casino";
 
 // The fixed catalog ids. TopicId additionally allows `custom:<text>` so a
 // subscriber can add their own hyper-specific topic ("custom:crypto trends in

@@ -280,6 +280,304 @@
 }
 
 /* ============================================================
+   Preserved app looks. The real palette of each Toggle / Ava app
+   (sunset + merged), translated to a readable letter theme so the
+   look lives on here. Harvested 2026-06-21.
+   ============================================================ */
+
+[data-theme="beacon"] {
+  --paper: #FAFAFA;
+  --paper-deep: #F6F7F9;
+  --ink: #0B0D12;
+  --ink-soft: #5B6273;
+  --rule: #E5E7EB;
+  --accent: #4F46E5;
+  --accent-ink: #4338CA;
+  --accent-2: #F59E0B;
+  --callout-bg: #4F46E51F;
+  --callout-ink: #3730A3;
+  --quote-bar: #4F46E5;
+  --font-display: var(--font-fraunces);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 2px rgba(15, 18, 27, 0.04), 0 0 0 1px rgba(15, 18, 27, 0.05);
+}
+
+[data-theme="grown-nearby"] {
+  --paper: #FBF6EC;
+  --paper-deep: #EFE7D4;
+  --ink: #2A2620;
+  --ink-soft: #6B6459;
+  --rule: #E7DDCA;
+  --accent: #2E6B43;
+  --accent-ink: #234F33;
+  --accent-2: #D9482F;
+  --callout-bg: #2E6B431F;
+  --callout-ink: #234F33;
+  --quote-bar: #2E6B43;
+  --font-display: var(--font-newsreader);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 10px;
+  --radius-card: 14px;
+  --shadow-card: 0 1px 2px rgba(42, 38, 32, 0.04), 0 8px 24px -12px rgba(42, 38, 32, 0.16);
+}
+
+[data-theme="freejob"] {
+  --paper: #FFFFFF;
+  --paper-deep: #F5F5F5;
+  --ink: #003D5C;
+  --ink-soft: #4B5563;
+  --rule: #E5E5E5;
+  --accent: #7FBC00;
+  --accent-ink: #6DA300;
+  --accent-2: #00B5D4;
+  --callout-bg: #7FBC001F;
+  --callout-ink: #6DA300;
+  --quote-bar: #003D5C;
+  --font-display: var(--font-inter);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(0, 61, 92, 0.06);
+}
+
+[data-theme="freeresume"] {
+  --paper: #FFFFFF;
+  --paper-deep: #F5F5F5;
+  --ink: #003D5C;
+  --ink-soft: #4A6072;
+  --rule: #E5E5E5;
+  --accent: #7FBC00;
+  --accent-ink: #6DA300;
+  --accent-2: #003D5C;
+  --callout-bg: #7FBC001F;
+  --callout-ink: #5A8500;
+  --quote-bar: #003D5C;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(0, 61, 92, 0.06);
+}
+
+[data-theme="job-terminal"] {
+  --paper: #FCFCFC;
+  --paper-deep: #F6F2F7;
+  --ink: #1B1221;
+  --ink-soft: #6D6076;
+  --rule: #E2DAE7;
+  --accent: #EE2B93;
+  --accent-ink: #CA1676;
+  --accent-2: #0DB9F2;
+  --callout-bg: #EE2B931F;
+  --callout-ink: #CA1676;
+  --quote-bar: #EE2B93;
+  --font-display: var(--font-dm-sans);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 10px;
+  --radius-card: 12px;
+  --shadow-card: 0 1px 0 rgba(27, 18, 33, 0.06);
+}
+
+[data-theme="trading-terminal"] {
+  --paper: #080A11;
+  --paper-deep: #0E1019;
+  --ink: #D6E8E6;
+  --ink-soft: #8C9BA8;
+  --rule: #1D212E;
+  --accent: #00E0E0;
+  --accent-ink: #5BE9E6;
+  --accent-2: #3BF79A;
+  --callout-bg: #00E0E01F;
+  --callout-ink: #5BE9E6;
+  --quote-bar: #00E0E0;
+  --font-display: var(--font-pixelify);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 2px;
+  --radius-card: 4px;
+  --shadow-card: 0 0 12px rgba(0, 224, 224, 0.06);
+}
+
+[data-theme="downs"] {
+  --paper: #F4E8C1;
+  --paper-deep: #E0CEA0;
+  --ink: #3A2818;
+  --ink-soft: #5A4030;
+  --rule: #D8C49A;
+  --accent: #C19A44;
+  --accent-ink: #8B6F30;
+  --accent-2: #A8302A;
+  --callout-bg: #C19A441F;
+  --callout-ink: #8B6F30;
+  --quote-bar: #A8302A;
+  --font-display: var(--font-playfair);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(58, 40, 24, 0.07);
+}
+
+[data-theme="fishing"] {
+  --paper: #F4EFE0;
+  --paper-deep: #E5DEC8;
+  --ink: #1F3D2E;
+  --ink-soft: #4A5F50;
+  --rule: #D9D0B8;
+  --accent: #C9A961;
+  --accent-ink: #7A6630;
+  --accent-2: #1F3D2E;
+  --callout-bg: #C9A9611F;
+  --callout-ink: #7A6630;
+  --quote-bar: #C9A961;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(31, 61, 46, 0.06);
+}
+
+/* Fishing shares the cream/green/gold Alpha palette with Forest, so its faint
+   tide-almanac paper grain is what reads it apart. Very low opacity dots. */
+[data-theme="fishing"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(31, 61, 46, 0.05) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
+}
+
+[data-theme="mitchmark"] {
+  --paper: #F5EFE6;
+  --paper-deep: #E9E0D0;
+  --ink: #081828;
+  --ink-soft: #3E4C5E;
+  --rule: #D8CBB4;
+  --accent: #E2603F;
+  --accent-ink: #C44A2C;
+  --accent-2: #081828;
+  --callout-bg: #E2603F1A;
+  --callout-ink: #C44A2C;
+  --quote-bar: #E2603F;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(8, 24, 40, 0.06);
+}
+
+[data-theme="studio"] {
+  --paper: #0E0F13;
+  --paper-deep: #16181F;
+  --ink: #E8EAF0;
+  --ink-soft: #A8AEBF;
+  --rule: #22242B;
+  --accent: #E0A33E;
+  --accent-ink: #EBB454;
+  --accent-2: #5BA8C4;
+  --callout-bg: #E0A33E1F;
+  --callout-ink: #EBB454;
+  --quote-bar: #E0A33E;
+  --font-display: var(--font-dm-sans);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 4px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(224, 163, 62, 0.07);
+}
+
+[data-theme="pirate"] {
+  --paper: #0F0A08;
+  --paper-deep: #1A120D;
+  --ink: #F0E6D2;
+  --ink-soft: #C2B393;
+  --rule: #33271D;
+  --accent: #7A1F1F;
+  --accent-ink: #CD8377;
+  --accent-2: #C9A961;
+  --callout-bg: #C9A9611F;
+  --callout-ink: #D9BE80;
+  --quote-bar: #C9A961;
+  --font-display: var(--font-playfair);
+  --font-body: var(--font-source-serif);
+  --font-ui: var(--font-inter);
+  --radius: 4px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(201, 169, 97, 0.07);
+}
+
+[data-theme="miami"] {
+  --paper: #0A0A0F;
+  --paper-deep: #15151B;
+  --ink: #F2EFE8;
+  --ink-soft: #BFBFC5;
+  --rule: #2A2A33;
+  --accent: #FF2E93;
+  --accent-ink: #FF5BAC;
+  --accent-2: #00D4FF;
+  --callout-bg: #FF2E931F;
+  --callout-ink: #FF5BAC;
+  --quote-bar: #FF2E93;
+  --font-display: var(--font-bebas);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 4px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(255, 46, 147, 0.08);
+}
+
+[data-theme="toggletown"] {
+  --paper: #F4EFE0;
+  --paper-deep: #FBF7EC;
+  --ink: #1F3D2E;
+  --ink-soft: #3C5446;
+  --rule: #E2D9C2;
+  --accent: #C9A961;
+  --accent-ink: #A88947;
+  --accent-2: #1F3D2E;
+  --callout-bg: #C9A9611F;
+  --callout-ink: #A88947;
+  --quote-bar: #1F3D2E;
+  --font-display: var(--font-source-serif);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgba(31, 61, 46, 0.06);
+}
+
+[data-theme="casino"] {
+  --paper: #0A0A0A;
+  --paper-deep: #141414;
+  --ink: #F5EFE6;
+  --ink-soft: #C7BFB2;
+  --rule: #2A2A2A;
+  --accent: #D4B373;
+  --accent-ink: #E6CB94;
+  --accent-2: #2BD2E3;
+  --callout-bg: #D4B3731F;
+  --callout-ink: #E6CB94;
+  --quote-bar: #D4B373;
+  --font-display: var(--font-playfair);
+  --font-body: var(--font-newsreader);
+  --font-ui: var(--font-inter);
+  --radius: 6px;
+  --radius-card: 10px;
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* ============================================================
    Base
    ============================================================ */
 

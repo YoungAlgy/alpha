@@ -4,26 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { THEMES } from "@/lib/themes";
+import { THEMES, SWATCHES } from "@/lib/themes";
 import { chime, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { setTheme } from "@/lib/theme";
 import type { ThemeId } from "@/lib/types";
 
-// Display-only swatch for each theme. Matches the palette in globals.css.
-const SWATCHES: Record<ThemeId, { paper: string; ink: string; accent: string }> = {
-  soft: { paper: "#FBF6EC", ink: "#3A2E26", accent: "#F4A57D" },
-  linen: { paper: "#FAF6EE", ink: "#1A1A1A", accent: "#C75D3F" },
-  ink: { paper: "#FFFFFF", ink: "#000000", accent: "#B3162F" },
-  cottage: { paper: "#ECEEDA", ink: "#3D3528", accent: "#A86B4F" },
-  arcade: { paper: "#FFF8E7", ink: "#2D1E47", accent: "#FF6B9D" },
-  marina: { paper: "#F4ECD8", ink: "#2D3A4A", accent: "#E89B6A" },
-  midnight: { paper: "#0F1419", ink: "#E8D5A8", accent: "#7BA7D9" },
-  forest: { paper: "#F4EFE0", ink: "#1F3D2E", accent: "#C9A961" },
-  mono: { paper: "#FFFFFF", ink: "#000000", accent: "#FF0000" },
-  sunset: { paper: "#FAEBD7", ink: "#5E3B5A", accent: "#E87C3E" },
-  mitch: { paper: "#0A0A0B", ink: "#ECE6D8", accent: "#D4B373" },
-};
+// Theme preview swatches live in lib/themes.ts (SWATCHES) so they stay in sync
+// with the THEMES list and globals.css. Don't re-add a local copy here.
 
 export default function ThemePage() {
   const router = useRouter();
