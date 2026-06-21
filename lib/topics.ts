@@ -1,3 +1,4 @@
+import { zodiacSign } from "./demographics";
 import type { TopicId, FixedTopicId } from "./types";
 
 export interface TopicMeta {
@@ -112,6 +113,19 @@ export function isCustomTopic(id: string): boolean {
 // are "zodiac topics."
 export function isZodiacTopicId(id: string): boolean {
   return id === "zodiac" || id.startsWith("zodiac-");
+}
+
+// Map a reader's stored topics to their EFFECTIVE generation pool: the pickable
+// "zodiac" becomes their per-sign id ("zodiac-leo"), and DROPS when there's no
+// birthday to derive a sign from. Shared by the generator (assemble) AND the
+// cron's skip-check, so a reader whose whole pool maps to empty (only reachable
+// by a raw DB write — the product gates zodiac on a birthday) is treated as a
+// loud "got nothing" blank skip, not a hard generation failure.
+export function mapTopicsForUser(topics: TopicId[], birthday: string | undefined): TopicId[] {
+  const sign = zodiacSign(birthday);
+  return topics.flatMap((t) =>
+    t === "zodiac" ? (sign ? [`zodiac-${sign}` as TopicId] : []) : [t]
+  );
 }
 
 /** The raw free text a user typed for a custom topic (no prefix). */

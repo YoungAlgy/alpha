@@ -471,11 +471,12 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={async () => {
-                // Paying users: deletion does NOT stop Stripe billing, and a
-                // deleted account can't reach the portal afterward — so warn
-                // them to cancel first or they'll keep being charged.
+                // Paying users: the delete endpoint cancels their Stripe
+                // subscription before removing the account (best-effort), so we
+                // tell them it's handled and offer the portal as a double-check
+                // rather than the old "we won't cancel, you'll keep paying" warning.
                 const confirmMsg = hasPaidSub
-                  ? `Delete your Alpha account?\n\nThis removes your letters and profile and can't be undone.\n\n⚠️ It does NOT cancel your $${monthlyDollars}/mo subscription. Stripe will keep charging you, and a deleted account can't cancel it. Cancel your subscription first via "Manage subscription" above, then delete.\n\nDelete anyway?`
+                  ? `Delete your Alpha account?\n\nThis removes your letters and profile and can't be undone. We cancel your $${monthlyDollars}/mo subscription as part of this. To be safe you can confirm it's gone in "Manage subscription" above first.\n\nDelete anyway?`
                   : "Delete your Alpha account? This removes your saved letters and profile. Can't be undone.";
                 if (!confirm(confirmMsg)) return;
                 const result = await deleteUserAccount();

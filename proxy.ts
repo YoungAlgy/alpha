@@ -29,6 +29,7 @@ const CSRF_GUARDED_SUFFIXES = [
   "/api/account/delete",
   "/api/account/profile",
   "/api/account/email/reconcile",
+  "/api/admin/users",
   "/api/stripe/portal",
   "/api/stripe/update-quantity",
 ];

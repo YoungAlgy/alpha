@@ -3,8 +3,7 @@ import { generateEditorNote } from "./editor-note";
 import { resolveTopicSignal, resolveMockSignal } from "./source-resolver";
 import { getCachedBlurb, setCachedBlurb } from "./blurb-cache";
 import { selectLetterSections } from "./select-sections";
-import { topicLabel } from "@/lib/topics";
-import { zodiacSign } from "@/lib/demographics";
+import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { Issue, UserProfile, TopicId } from "@/lib/types";
 import type { TopicBlurb } from "./types";
@@ -32,14 +31,15 @@ export async function generateIssue(
   // from a fresher one instead of repeating the same news across sends.
   freshness?: import("@/lib/brave").BraveSearchOptions["freshness"],
 ): Promise<Issue> {
-  // Map the pickable "zodiac" topic to the reader's per-sign id ("zodiac-leo")
-  // so all readers of a sign share one cached section. Drop it if there's no
-  // birthday to derive a sign from (the picker is gated on a birthday, but be
-  // defensive — a section we can't personalize shouldn't ship a generic one).
-  const sign = zodiacSign(user.birthday);
-  const pool: TopicId[] = user.topics.flatMap((t) =>
-    t === "zodiac" ? (sign ? [`zodiac-${sign}` as TopicId] : []) : [t]
-  );
+  // Map the pickable "zodiac" topic to the reader's per-sign id, dropping it when
+  // there's no birthday (see mapTopicsForUser). If the WHOLE pool maps to empty
+  // (only reachable via a raw DB write — the product gates zodiac on a birthday,
+  // and the cron skip-checks the effective pool), fail fast with a clear reason
+  // instead of the generic "all sections failed" downstream.
+  const pool = mapTopicsForUser(user.topics, user.birthday);
+  if (pool.length === 0) {
+    throw new Error("No usable topics after mapping (e.g. zodiac with no birthday)");
+  }
   const size = Math.max(1, letterSize ?? pool.length);
 
   // Generate a topic's section from FRESH live signal. Returns null WITHOUT a

@@ -1,6 +1,6 @@
 // Verify the custom-topic helpers (encoding, labels, validation). Pure, fast.
 // Run: npx tsx scripts/verify-custom-topic.mts
-const { isCustomTopic, customTopicText, makeCustomTopic, topicLabel, topicEmoji, topicAnchor, CUSTOM_PREFIX, isZodiacTopicId, SUBTOPICS, PARENT_TOPIC } =
+const { isCustomTopic, customTopicText, makeCustomTopic, topicLabel, topicEmoji, topicAnchor, CUSTOM_PREFIX, isZodiacTopicId, SUBTOPICS, PARENT_TOPIC, mapTopicsForUser } =
   await import("../lib/topics.ts");
 const { zodiacQueries } = await import("../lib/engine/topic-queries.ts");
 
@@ -59,6 +59,11 @@ check("per-sign emoji = crystal ball", topicEmoji("zodiac-leo") === "🔮");
 check("per-sign anchor is a valid slug", topicAnchor("zodiac-leo") === "s-zodiac-leo");
 check("zodiacQueries builds sign-specific search", zodiacQueries("zodiac-leo").every((q: string) => q.includes("Leo")) && zodiacQueries("zodiac-leo").length === 3);
 check("zodiacQueries empty for a non-zodiac id", zodiacQueries("music").length === 0);
+// mapTopicsForUser: the cron + generator share this so a zodiac-only/no-birthday
+// pool degrades to empty (a loud skip) instead of a hard failure.
+check("mapTopicsForUser drops zodiac with no birthday", JSON.stringify(mapTopicsForUser(["zodiac"], undefined)) === "[]");
+check("mapTopicsForUser maps zodiac to the sign and keeps the rest", JSON.stringify(mapTopicsForUser(["zodiac", "ai-news"], "1994-07-30")) === JSON.stringify(["zodiac-leo", "ai-news"]));
+check("mapTopicsForUser leaves non-zodiac topics untouched", JSON.stringify(mapTopicsForUser(["ai-news", "music-edm"], undefined)) === JSON.stringify(["ai-news", "music-edm"]));
 
 // religion (parent + subtopics, like music)
 console.log("(7) religion topic");

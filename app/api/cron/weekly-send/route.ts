@@ -6,7 +6,7 @@ import { poolCap } from "@/lib/engine/select-sections";
 import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
-import { topicLabel } from "@/lib/topics";
+import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId, ThemeId } from "@/lib/types";
 
@@ -185,7 +185,12 @@ export async function GET(req: Request) {
     // letter with the top fresh topics and backfills from the rest.
     const letterSize = Math.max(5, Math.min(25, row.topic_quota ?? 5));
     const pool = ((row.topics ?? []) as TopicId[]).slice(0, poolCap(letterSize));
-    if (!row.first_name || pool.length === 0) {
+    // The EFFECTIVE pool after mapping the pickable "zodiac" to a per-sign id
+    // (dropped if no birthday). A reader whose whole pool maps to empty (only
+    // reachable via a raw DB write) is a "got nothing" blank skip here, not a
+    // hard generateIssue failure later (generateIssue maps the same way).
+    const effectivePool = mapTopicsForUser(pool, row.birthday ?? undefined);
+    if (!row.first_name || effectivePool.length === 0) {
       // This is an ACTIVE PAID subscriber getting NOTHING this send — exactly
       // how a blanked profile (e.g. a fresh-device sign-in that nulled
       // first_name / topics) drops a reader off every letter unnoticed. Never
@@ -195,7 +200,7 @@ export async function GET(req: Request) {
       skippedBlankSubscribers.push(row.email);
       console.warn(
         `[cron/weekly-send] SKIPPED PAID SUBSCRIBER (got nothing) → ${row.email} ` +
-          `first_name=${row.first_name ? "ok" : "MISSING"} pool=${pool.length}`
+          `first_name=${row.first_name ? "ok" : "MISSING"} pool=${effectivePool.length}`
       );
       continue;
     }
