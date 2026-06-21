@@ -3,12 +3,6 @@ import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { TOPICS, PARENT_TOPIC } from "@/lib/topics";
 
-// Derived from the catalog so the headline count can never drift from what the
-// picker actually offers (a copy-truth, and the no-synthetic-data rule). Broad
-// topics only — sub-genres (EDM under Music, Islam under Faith) live in the
-// picker, not the marketing count.
-const BROAD_COUNT = TOPICS.filter((t) => !PARENT_TOPIC[t.id]).length;
-
 // The landing page for cold traffic. Sits in FRONT of the onboarding funnel:
 // it sells (pitch, sample, price, how-it-works), then the CTA drops visitors
 // into /welcome — the existing 10-step flow, which is a deliberate commitment
@@ -25,7 +19,7 @@ const HOW = [
   {
     n: "1",
     t: "Pick five topics",
-    d: `From ${BROAD_COUNT}: AI and markets to longevity, gardening, sustainable living, trading cards. The five you actually want to keep up with.`,
+    d: "Longevity, markets, gardening, trading cards, or your own niche thing. The five you actually want to keep up with.",
   },
   {
     n: "2",
@@ -55,10 +49,6 @@ const WHY = [
 ];
 
 const FAQ = [
-  {
-    q: "Is it just AI spitting out links?",
-    a: "AI does the reading and the writing. A person set the format, the voice, and the rules it writes by, including a hard one enforced in code: every link must come from a real web search made that week. The goal is a letter that feels edited, not generated.",
-  },
   {
     q: "Can I change my topics later?",
     a: "Anytime, from settings. Swap any of your topics whenever your interests shift. Add more in bundles of five if five isn't enough.",
@@ -228,14 +218,14 @@ export default function Landing() {
       <section className="px-6 py-16 md:py-24">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="alpha-display text-3xl md:text-4xl font-bold tracking-tight mb-4">
-            {BROAD_COUNT} topics. You pick five.
+            Any topic you want. You pick five.
           </h2>
           <p className="alpha-ui text-base mb-10 leading-relaxed" style={{ color: "var(--ink-soft)" }}>
             Whatever you want to stay sharp on, there&apos;s almost certainly a lane for it.
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             {/* Broad topics only — sub-genre chips (EDM under Music, etc.) live
-                in the picker, not the marketing cloud. Keeps this at 27. */}
+                in the picker, not the marketing cloud. */}
             {TOPICS.filter((t) => !PARENT_TOPIC[t.id]).map((t) => (
               <span
                 key={t.id}
@@ -254,7 +244,7 @@ export default function Landing() {
           </div>
           <p className="alpha-ui text-sm mt-8 leading-relaxed max-w-xl mx-auto" style={{ color: "var(--ink-soft)" }}>
             Want something hyper-specific? Type your own, like &quot;crypto regulation in Asia&quot;
-            or &quot;AI in radiology,&quot; and we&apos;ll hunt the real signal on it three times a week.
+            or &quot;F1 aerodynamics,&quot; and we&apos;ll hunt the real signal on it three times a week.
           </p>
         </div>
       </section>
