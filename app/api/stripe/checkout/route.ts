@@ -140,6 +140,16 @@ export async function POST(req: Request) {
       success_url: `${origin}${basePath}/writing?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}${basePath}/checkout`,
       allow_promotion_codes: true,
+      // Safety net for a bounced checkout. "A problem repeatedly occurred" is
+      // iOS Safari hitting its per-tab memory limit on Stripe's hosted page — a
+      // device/page-weight issue we can lower the odds of (adaptive pricing off)
+      // but not fully prevent. With recovery on, a customer who has entered
+      // their email (we pass customer_email) but doesn't finish gets a Stripe
+      // come-back email with a fresh link, and the incomplete session shows in
+      // the dashboard — so a crash on their phone isn't a lost subscriber.
+      after_expiration: {
+        recovery: { enabled: true, allow_promotion_codes: true },
+      },
     });
 
     return NextResponse.json({ url: session.url });
