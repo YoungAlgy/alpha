@@ -233,15 +233,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Closing CTA */}
-      <section className="px-6 py-20 md:py-24">
-        <div className="max-w-md mx-auto text-center">
-          <Link href="/welcome" className="alpha-button alpha-button-accent text-base">
-            Start your letter →
-          </Link>
-        </div>
-      </section>
-
       <Footer />
     </main>
   );
