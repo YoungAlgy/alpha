@@ -1,52 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
-import { TOPICS, PARENT_TOPIC } from "@/lib/topics";
 
-// The landing page for cold traffic. Sits in FRONT of the onboarding funnel:
-// it sells (pitch, sample, price, how-it-works), then the CTA drops visitors
-// into /welcome — the existing 10-step flow, which is a deliberate commitment
-// device. Warm visitors are one click from starting; cold visitors get the
-// context they need first. Static + indexable (this is the SEO/share surface).
+// The landing page for cold traffic. A deliberately minimal hero — the pitch
+// plus the CTA into /welcome (the onboarding flow) and a sample link. Sits in
+// FRONT of the funnel; warm visitors are one click from starting. Static +
+// indexable (this is the SEO/share surface).
 export const metadata: Metadata = {
   title: { absolute: "alpha. your alpha" },
   description:
     "A personal letter on the five topics you care about. Sourced and edited so it's worth your time. Three times a week.",
   alternates: { canonical: "https://youngalgy.com/alpha" },
 };
-
-const HOW = [
-  {
-    n: "1",
-    t: "Pick five topics",
-    d: "Longevity, markets, gardening, trading cards, or your own niche thing. The five you actually want to keep up with.",
-  },
-  {
-    n: "2",
-    t: "We read the week for you",
-    d: "Three times a week we pull the signal on your topics from real sources, then edit it into something you'll actually finish.",
-  },
-  {
-    n: "3",
-    t: "A letter lands, addressed to you",
-    d: "Not a feed, not a firehose. One calm letter, written like a friend who happens to read everything.",
-  },
-];
-
-const WHY = [
-  {
-    t: "No doomscroll",
-    d: "You don't have to hunt across ten apps and a hundred tabs. The good stuff comes to you, three times a week.",
-  },
-  {
-    t: "Real sources, enforced in code",
-    d: "Every link in your letter comes from a real, live search that week. If a source isn't real, it can't appear. That rule is enforced in code, not vibes.",
-  },
-  {
-    t: "Yours, and only yours",
-    d: "Built around your five topics, addressed by name. No ads, no tracking-for-sale, no selling your data. Ever.",
-  },
-];
 
 // Structured data for richer search results. Static + app-controlled (no user
 // input → safe to inline). Every claim is true: $5/mo, USD, in stock. No
@@ -112,12 +77,13 @@ export default function Landing() {
         </Link>
       </nav>
 
-      {/* Hero */}
-      <section className="relative px-6 pt-16 pb-24 md:pt-24 md:pb-32 overflow-hidden">
+      {/* Hero — the whole landing now. Grow to fill the space between the nav
+          and the footer and center it, with the α watermark behind it. */}
+      <section className="relative flex-1 flex items-center justify-center px-6 py-16 overflow-hidden">
         <span
           aria-hidden
           className="alpha-watermark"
-          style={{ top: "-14vmin", left: "50%", transform: "translateX(-50%)" }}
+          style={{ top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
         >
           α
         </span>
@@ -147,89 +113,6 @@ export default function Landing() {
               See a sample first
             </Link>
           </div>
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section className="px-6 py-16 md:py-20" style={{ background: "var(--paper-deep)" }}>
-        <div className="max-w-4xl mx-auto">
-          <div className="alpha-mono mb-10 text-center" style={{ color: "var(--accent-ink)" }}>
-            HOW IT WORKS
-          </div>
-          <div className="grid md:grid-cols-3 gap-10 md:gap-8">
-            {HOW.map((s) => (
-              <div key={s.n} className="text-center md:text-left space-y-3">
-                <div
-                  className="alpha-display text-5xl font-bold"
-                  style={{ color: "var(--accent)", opacity: 0.9 }}
-                >
-                  {s.n}
-                </div>
-                <h3 className="alpha-display text-xl font-semibold">{s.t}</h3>
-                <p className="alpha-ui text-sm leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-                  {s.d}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className="text-center mt-12">
-            <Link
-              href="/sample"
-              className="alpha-ui text-base underline underline-offset-4 font-semibold"
-              style={{ color: "var(--accent-ink)" }}
-            >
-              Read a full sample issue →
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Topics breadth */}
-      <section className="px-6 py-16 md:py-24">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="alpha-display text-3xl md:text-4xl font-bold tracking-tight mb-4">
-            Any topic you want. You pick five.
-          </h2>
-          <p className="alpha-ui text-base mb-10 leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-            Whatever you want to stay sharp on, there&apos;s almost certainly a lane for it.
-          </p>
-          <div className="flex flex-wrap justify-center gap-2">
-            {/* Broad topics only — sub-genre chips (EDM under Music, etc.) live
-                in the picker, not the marketing cloud. */}
-            {TOPICS.filter((t) => !PARENT_TOPIC[t.id]).map((t) => (
-              <span
-                key={t.id}
-                className="alpha-ui text-sm px-3 py-1.5 rounded-full"
-                style={{ background: "var(--callout-bg)", color: "var(--ink)" }}
-              >
-                {t.emoji} {t.label}
-              </span>
-            ))}
-            <span
-              className="alpha-ui text-sm px-3 py-1.5 rounded-full"
-              style={{ background: "transparent", color: "var(--accent-ink)", border: "1.5px solid var(--accent)" }}
-            >
-              ✨ or add your own
-            </span>
-          </div>
-          <p className="alpha-ui text-sm mt-8 leading-relaxed max-w-xl mx-auto" style={{ color: "var(--ink-soft)" }}>
-            Want something hyper-specific? Type your own, like &quot;crypto regulation in Asia&quot;
-            or &quot;F1 aerodynamics,&quot; and we&apos;ll hunt the real signal on it three times a week.
-          </p>
-        </div>
-      </section>
-
-      {/* Why it's different */}
-      <section className="px-6 py-16 md:py-20" style={{ background: "var(--paper-deep)" }}>
-        <div className="max-w-4xl mx-auto grid md:grid-cols-3 gap-10 md:gap-8">
-          {WHY.map((w) => (
-            <div key={w.t} className="space-y-3">
-              <h3 className="alpha-display text-xl font-semibold">{w.t}</h3>
-              <p className="alpha-ui text-sm leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-                {w.d}
-              </p>
-            </div>
-          ))}
         </div>
       </section>
 
