@@ -113,6 +113,13 @@ export async function POST(req: Request) {
       payment_method_types: ["card"],
       line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
       customer_email: body.email,
+      // Turn OFF adaptive pricing. It runs IP-based geolocation + currency
+      // conversion on Stripe's hosted page, which is a known trigger for the
+      // iOS Safari "a problem repeatedly occurred" reload loop when the buyer is
+      // on iCloud Private Relay / a VPN / ambiguous geo (Apple's relay masks the
+      // real IP). This is a single USD $5/mo product with a US audience, so
+      // adaptive pricing adds zero value and only risk. Everyone pays USD.
+      adaptive_pricing: { enabled: false },
       // Only ask for a card when payment is actually due. A 100%-off promo
       // code (our free-trial / comp codes) makes the first invoice $0, so
       // testers get in with NO card. Normal $5 signups still collect a card.
