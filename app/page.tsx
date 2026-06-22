@@ -11,7 +11,7 @@ import { TOPICS, PARENT_TOPIC } from "@/lib/topics";
 export const metadata: Metadata = {
   title: { absolute: "alpha. your alpha" },
   description:
-    "A personal letter on the five topics you care about. Sourced and edited so it's worth your time. $5 a month, three times a week.",
+    "A personal letter on the five topics you care about. Sourced and edited so it's worth your time. Three times a week.",
   alternates: { canonical: "https://youngalgy.com/alpha" },
 };
 
@@ -147,9 +147,6 @@ export default function Landing() {
               See a sample first
             </Link>
           </div>
-          <p className="alpha-ui text-sm pt-1" style={{ color: "var(--ink-soft)" }}>
-            $5 a month · cancel anytime · no ads
-          </p>
         </div>
       </section>
 
@@ -236,25 +233,12 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Price */}
+      {/* Closing CTA */}
       <section className="px-6 py-20 md:py-24">
-        <div className="max-w-md mx-auto text-center space-y-5">
-          <div className="flex items-baseline justify-center gap-3">
-            <span className="alpha-display text-6xl font-bold">$5</span>
-            <span className="alpha-ui text-lg" style={{ color: "var(--ink-soft)" }}>
-              per month
-            </span>
-          </div>
-          <p className="alpha-ui text-base leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-            Five topics for $5. Want more? Add five-topic bundles for $5 each,
-            up to 25 topics. No &quot;premium,&quot; no ads. And you can cancel in one
-            click whenever you want.
-          </p>
-          <div className="pt-2">
-            <Link href="/welcome" className="alpha-button alpha-button-accent text-base">
-              Start your letter →
-            </Link>
-          </div>
+        <div className="max-w-md mx-auto text-center">
+          <Link href="/welcome" className="alpha-button alpha-button-accent text-base">
+            Start your letter →
+          </Link>
         </div>
       </section>
 
