@@ -11,6 +11,7 @@ import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { withDeadline } from "@/lib/with-deadline";
 import { parseBirthday } from "@/lib/demographics";
 import { BLURB_CAPS } from "@/lib/types";
+import { deliverLetterOnce, type DeliveryStore } from "@/lib/letter-delivery";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -180,18 +181,13 @@ export async function POST(req: Request) {
     const inboxUrl = `${origin}/alpha/inbox`;
     let emailSent = false;
     if (profile.email && resendConfigured()) {
-      let alreadyDelivered = false;
+      const toEmail = profile.email;
       let issueNumber = 1; // this reader's Nth letter (drives "Issue N" subject)
+      let store: DeliveryStore | null = null;
       if (persistence?.userId) {
+        const sb = await supabaseServiceClient();
+        store = deliveryStoreFor(sb);
         try {
-          const sb = await supabaseServiceClient();
-          const { data: existing } = await sb
-            .from("issues")
-            .select("delivered_at")
-            .eq("user_id", persistence.userId)
-            .eq("week_of", weekOf)
-            .maybeSingle();
-          alreadyDelivered = !!existing?.delivered_at;
           // Issue number = prior DELIVERED letters (weeks before this one) + 1.
           // delivered_at NOT NULL so a generated-but-unsent row doesn't inflate it.
           const { data: priors } = await sb
@@ -203,49 +199,41 @@ export async function POST(req: Request) {
           issueNumber = (priors?.length ?? 0) + 1;
         } catch (e) {
           console.warn(
-            "[generate] delivered_at/issue-number lookup failed (will attempt send):",
+            "[generate] issue-number lookup failed (will still attempt send):",
             e instanceof Error ? e.message : e
           );
         }
       }
-      if (alreadyDelivered) {
-        console.log(
-          `[generate] skipped letter email for ${profile.email} — already delivered for ${weekOf}`
-        );
-      } else {
-        try {
+      // Idempotent send via an ATOMIC delivered_at claim, the same compare-and-
+      // swap the weekly cron uses (lib/letter-delivery.ts). A signup can land
+      // within ~a minute of a Sun/Tue/Thu cron tick and both paths target the
+      // same (user, week_of) row, so claiming before the send means exactly one
+      // of them wins and the other skips. No persisted row → best-effort send.
+      const result = await deliverLetterOnce({
+        store,
+        userId: persistence?.userId ?? null,
+        weekOf,
+        stamp: new Date().toISOString(),
+        send: async () => {
           await sendLetterNotification({
-            to: profile.email,
+            to: toEmail,
             firstName: profile.firstName,
             issue,
             inboxUrl,
-            // Tokenized view-in-browser CTA — opens the letter with no session.
-            letterUrl: persistence?.userId
-              ? buildLetterUrl(persistence.userId, inboxUrl.replace(/\/alpha\/inbox$/, ""))
-              : null,
+            // Tokenized view-in-browser CTA. Opens the letter with no session.
+            letterUrl: persistence?.userId ? buildLetterUrl(persistence.userId, origin) : null,
             issueNumber,
             userId: persistence?.userId ?? null,
           });
-          emailSent = true;
-          // Stamp delivered_at so subsequent re-triggers short-circuit.
-          if (persistence?.userId) {
-            try {
-              const sb = await supabaseServiceClient();
-              await sb
-                .from("issues")
-                .update({ delivered_at: new Date().toISOString() })
-                .eq("user_id", persistence.userId)
-                .eq("week_of", weekOf);
-            } catch (e) {
-              console.warn(
-                "[generate] delivered_at stamp failed:",
-                e instanceof Error ? e.message : e
-              );
-            }
-          }
-        } catch (e) {
-          console.warn("[generate] letter email failed:", e instanceof Error ? e.message : e);
-        }
+        },
+        onError: (e) =>
+          console.warn("[generate] letter email:", e instanceof Error ? e.message : e),
+      });
+      emailSent = result.sent;
+      if (!result.sent && result.reason === "already-delivered") {
+        console.log(
+          `[generate] skipped letter email for ${toEmail}, already delivered for ${weekOf}`
+        );
       }
     }
 
@@ -259,6 +247,46 @@ export async function POST(req: Request) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+// Adapt a Supabase service client to the DeliveryStore atomic-claim contract.
+// `claim` is the compare-and-swap: stamp delivered_at only where it is still
+// NULL (Postgres row-locks the UPDATE, so one concurrent caller wins). A 0-row
+// result is disambiguated with a read — row present means already delivered, no
+// row means best-effort persist never wrote one. `release` is guarded on our
+// exact stamp so a rollback can't clear another invocation's claim.
+function deliveryStoreFor(
+  sb: Awaited<ReturnType<typeof supabaseServiceClient>>
+): DeliveryStore {
+  return {
+    async claim(userId, weekOf, stamp) {
+      const { data: claimRows, error } = await sb
+        .from("issues")
+        .update({ delivered_at: stamp })
+        .eq("user_id", userId)
+        .eq("week_of", weekOf)
+        .is("delivered_at", null)
+        .select("user_id");
+      if (error) throw new Error(error.message);
+      if ((claimRows?.length ?? 0) > 0) return { won: true, exists: true };
+      const { data: check } = await sb
+        .from("issues")
+        .select("delivered_at")
+        .eq("user_id", userId)
+        .eq("week_of", weekOf)
+        .maybeSingle();
+      return { won: false, exists: !!check };
+    },
+    async release(userId, weekOf, stamp) {
+      const { error } = await sb
+        .from("issues")
+        .update({ delivered_at: null })
+        .eq("user_id", userId)
+        .eq("week_of", weekOf)
+        .eq("delivered_at", stamp);
+      if (error) throw new Error(error.message);
+    },
+  };
 }
 
 function defaultWeekOf(): string {
