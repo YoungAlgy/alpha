@@ -56,7 +56,7 @@ const pixelify = Pixelify_Sans({
   preload: false,
   weight: ["400", "500", "600", "700"],
 });
-// Money Mitch theme only — Playfair for headings, Bebas for the eyebrow labels.
+// Tuxedo theme only (id "mitch") — Playfair for headings, Bebas for the labels.
 // preload:false keeps both off every other theme's critical path (same treatment
 // as Fraunces/DM Sans/Pixelify); they load on demand when "mitch" applies.
 const playfair = Playfair_Display({

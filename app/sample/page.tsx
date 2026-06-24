@@ -12,7 +12,7 @@ import { SAMPLE_ISSUE } from "@/lib/sample-issue";
 export const metadata: Metadata = {
   title: "A sample issue",
   description:
-    "See what a letter from alpha. looks like. A personal letter on the five topics you care about. Sourced, edited, and worth your time.",
+    "See what a letter from alpha. looks like. A personal letter on the five topics you care about. Sourced and edited so it's worth your time.",
   alternates: { canonical: "https://youngalgy.com/alpha/sample" },
   openGraph: {
     title: "A sample issue | alpha.",

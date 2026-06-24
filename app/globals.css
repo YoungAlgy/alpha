@@ -229,7 +229,7 @@
   --shadow-card: 0 1px 0 rgba(94, 59, 90, 0.05), 0 8px 24px rgba(94, 59, 90, 0.08);
 }
 
-/* Money Mitch — obsidian + champagne gold. The brand pack as a theme:
+/* Tuxedo — obsidian + champagne gold. The brand pack as a theme:
    Playfair headings, Bebas eyebrow labels (override below), film grain. */
 [data-theme="mitch"] {
   --paper: #0A0A0B;
@@ -252,7 +252,7 @@
 }
 
 /* Bebas Neue for the small all-caps eyebrow labels + callout tags — the
-   condensed display face is the Money Mitch signature. Scoped to this theme so
+   condensed display face is the Tuxedo signature. Scoped to this theme so
    it never touches the others' mono labels. */
 [data-theme="mitch"] .alpha-mono {
   font-family: var(--font-bebas), ui-monospace, "SF Mono", Menlo, monospace;
@@ -268,7 +268,7 @@
 
 /* Subtle film grain over the obsidian. Fixed, non-interactive, very low
    opacity — reads as texture, never as noise over the text. Theme-scoped so it
-   only paints on Money Mitch. */
+   only paints on Tuxedo. */
 [data-theme="mitch"] body::before {
   content: "";
   position: fixed;
@@ -755,7 +755,8 @@ body {
    covers from the first frame with no injected node / no hydration conflict, and
    reveals the content underneath as it fades. pointer-events:none keeps it
    non-blocking; the script removes the class after ~0.9s or on first interaction.
-   Once per tab session, skipped on marketing/legal pages and under reduced-motion. */
+   Once per tab session, skipped under reduced-motion and on the marketing/legal
+   pages + the signup funnel (so it only fires on a real app open). */
 @keyframes alpha-intro-veil {
   0%, 55% { opacity: 1; }
   100% { opacity: 0; }
