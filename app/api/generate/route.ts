@@ -192,12 +192,14 @@ export async function POST(req: Request) {
             .eq("week_of", weekOf)
             .maybeSingle();
           alreadyDelivered = !!existing?.delivered_at;
-          // Issue number = prior letters (weeks before this one) + 1.
+          // Issue number = prior DELIVERED letters (weeks before this one) + 1.
+          // delivered_at NOT NULL so a generated-but-unsent row doesn't inflate it.
           const { data: priors } = await sb
             .from("issues")
             .select("week_of")
             .eq("user_id", persistence.userId)
-            .lt("week_of", weekOf);
+            .lt("week_of", weekOf)
+            .not("delivered_at", "is", null);
           issueNumber = (priors?.length ?? 0) + 1;
         } catch (e) {
           console.warn(

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
+import { hasActiveAccess } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -40,7 +41,11 @@ async function gatherStats(): Promise<Stats> {
   // paying > free > never-subscribed.
   for (const r of rows ?? []) {
     if (r.unsubscribed_at) stats.unsubscribed++;
-    else if (r.cancelled_at) stats.cancelled++;
+    // "cancelled" = actually churned (cancel date in the PAST). A FUTURE
+    // cancelled_at is cancel-at-period-end: still paying, still getting
+    // letters, so it falls through to the paying bucket — matches
+    // hasActiveAccess, the single source of truth the cron + access gates use.
+    else if (r.cancelled_at && !hasActiveAccess(r.cancelled_at)) stats.cancelled++;
     else if (r.subscribed_at && r.stripe_customer_id) stats.paying++;
     else if (r.subscribed_at && !r.stripe_customer_id) stats.freeGranted++;
     else stats.notSubscribed++;

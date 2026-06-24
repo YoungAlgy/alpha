@@ -157,10 +157,13 @@ export async function GET(req: Request) {
     }
   }
 
-  // Prefetch each subscriber's PRIOR issue count (weeks strictly before this
-  // one) in ONE query → "Issue N" in the email subject is this reader's Nth
-  // letter (issueNumber = priorCount + 1), accurate on re-runs too. Bounded to
-  // THIS send's subscriber set (was a whole-table scan of every user's lifetime
+  // Prefetch each subscriber's PRIOR DELIVERED issue count (weeks strictly
+  // before this one) in ONE query → "Issue N" in the email subject is this
+  // reader's Nth letter actually delivered (issueNumber = priorCount + 1),
+  // accurate on re-runs too. Filters delivered_at NOT NULL so a
+  // generated-but-never-sent row (a failed send leaves the row behind) doesn't
+  // inflate the number past the letters they really received. Bounded to THIS
+  // send's subscriber set (was a whole-table scan of every user's lifetime
   // history, including churned/deleted accounts), so the read scales with the
   // recipients of this send, not the size of the issues table.
   const priorIssueCount = new Map<string, number>();
@@ -169,7 +172,8 @@ export async function GET(req: Request) {
       .from("issues")
       .select("user_id")
       .in("user_id", rows.map((r) => r.id))
-      .lt("week_of", weekOf);
+      .lt("week_of", weekOf)
+      .not("delivered_at", "is", null);
     for (const p of (priors ?? []) as Array<{ user_id: string }>) {
       priorIssueCount.set(p.user_id, (priorIssueCount.get(p.user_id) ?? 0) + 1);
     }
