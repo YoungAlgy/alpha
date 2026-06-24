@@ -91,7 +91,7 @@ Three roles, three fonts (all Google Fonts, latin, weights 400 to 700):
 
 Helper classes (from `globals.css`):
 - `.alpha-display` — display serif, `letter-spacing: -0.01em`. Headlines.
-- `.alpha-digest` — body serif (Newsreader), `line-height: 1.6`. Reading.
+- `.alpha-body` — body serif (Newsreader), `line-height: 1.6`. Reading.
 - `.alpha-ui` — UI sans (Inter). Everything interface.
 - `.alpha-mono` — uppercase mono caps, `font-size: 0.72rem`, `letter-spacing: 0.12em`,
   color `--ink-soft`. The "eyebrow" label treatment.
