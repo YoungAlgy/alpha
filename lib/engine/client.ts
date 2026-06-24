@@ -18,4 +18,9 @@ export function anthropicClient(): Anthropic {
   return _client;
 }
 
-export const MODEL = "claude-sonnet-4-6";
+// Haiku keeps per-letter cost well under subscriber revenue at this scale: topic
+// blurbs cache per (topic, week_of) and are SHARED across subscribers, so cost
+// grows slower than subs (each new reader mostly adds just their editor note).
+// Flip back to "claude-sonnet-4-6" — or use Sonnet only for the editor note — as
+// a quality bump once the margin allows.
+export const MODEL = "claude-haiku-4-5";
