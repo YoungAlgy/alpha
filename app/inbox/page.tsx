@@ -28,6 +28,7 @@ export default function InboxPage() {
   const [missing, setMissing] = useState(false);
   const [checked, setChecked] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
     if (!loaded) return;
@@ -40,6 +41,7 @@ export default function InboxPage() {
           const sb = supabaseClient();
           const { data: { session } } = await sb.auth.getSession();
           if (session) {
+            setSignedIn(true);
             // Independent queries — run them in parallel (same pattern as
             // /letter) instead of two sequential round trips on the app's
             // most-visited page.
@@ -107,8 +109,22 @@ export default function InboxPage() {
     };
   }, [loaded, state.theme]);
 
+  // Clear any session, then HARD-navigate. The middleware bounces a cookie-user
+  // off /signin and /welcome back to /inbox, so a Link straight there would loop
+  // a signed-in (or stale-cookie) reader right back to this screen. Signing out
+  // first drops the cookie so the destination actually renders; window.location
+  // forces the middleware to re-evaluate with the cleared cookie.
+  async function clearAndGo(path: string) {
+    try {
+      if (supabaseConfigured()) await supabaseClient().auth.signOut();
+    } catch {
+      // ignore — navigate anyway
+    }
+    window.location.assign(`/alpha${path}`);
+  }
+
   // Gate on `checked` + no issue so a cold-session race can't flash this
-  // sign-in-looking screen before the authed letter resolves.
+  // screen before the authed letter resolves.
   if (checked && missing && !issue) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
@@ -122,26 +138,64 @@ export default function InboxPage() {
           <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
             No letter on this device yet.
           </p>
-          <p
-            className="alpha-display text-base md:text-lg leading-relaxed"
-            style={{ color: "var(--ink-soft)" }}
-          >
-            Already subscribed? Sign in and your letters will be right here.
-            We&apos;ll email you a 6-digit code, no password. New here? Set up
-            your first letter in a couple of minutes.
-          </p>
-          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/signin" className="alpha-button">
-              Sign in to see my letters →
-            </Link>
-            <Link
-              href="/welcome"
-              className="alpha-ui text-sm underline underline-offset-4"
-              style={{ color: "var(--ink-soft)" }}
-            >
-              I&apos;m new, start fresh
-            </Link>
-          </div>
+          {signedIn ? (
+            <>
+              {/* Already signed in: never link to /signin or /welcome (the
+                  middleware bounces a cookie-user off both back here = a dead
+                  loop). Settings is not redirected, so it's a real way out. */}
+              <p
+                className="alpha-display text-base md:text-lg leading-relaxed"
+                style={{ color: "var(--ink-soft)" }}
+              >
+                You&apos;re signed in. Your letters show up here once they&apos;re
+                sent. Check your plan and topics in settings, or sign out to start
+                over.
+              </p>
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
+                <Link href="/settings" className="alpha-button">
+                  Go to settings →
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => clearAndGo("/welcome")}
+                  className="alpha-ui text-sm underline underline-offset-4"
+                  style={{ color: "var(--ink-soft)" }}
+                >
+                  Sign out
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p
+                className="alpha-display text-base md:text-lg leading-relaxed"
+                style={{ color: "var(--ink-soft)" }}
+              >
+                Already subscribed? Sign in and your letters will be right here.
+                We&apos;ll email you a 6-digit code, no password. New here? Set up
+                your first letter in a couple of minutes.
+              </p>
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
+                {/* Buttons (not Links) that clear any stale cookie first, so a
+                    half-signed-in reader can't get bounced back to /inbox. */}
+                <button
+                  type="button"
+                  onClick={() => clearAndGo("/signin")}
+                  className="alpha-button"
+                >
+                  Sign in to see my letters →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => clearAndGo("/welcome")}
+                  className="alpha-ui text-sm underline underline-offset-4"
+                  style={{ color: "var(--ink-soft)" }}
+                >
+                  I&apos;m new, start fresh
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </main>
     );
