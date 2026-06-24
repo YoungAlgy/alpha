@@ -6,6 +6,7 @@
 export const PITCH =
   "A personal letter on the five topics you care about. Sourced and edited so it's worth your time. Three times a week.";
 
-// One-line form for share text. Callers append their own CTA ("Worth a look:").
+// One-line form of the pitch. Used for the OG/Twitter share card, the welcome
+// hero, and share text (share callers append their own CTA, e.g. "Worth a look:").
 export const SHARE_LEAD =
   "A personal letter on the five topics you care about, three times a week.";

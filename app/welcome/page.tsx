@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { SHARE_LEAD } from "@/lib/copy";
 
 export default function WelcomePage() {
   const router = useRouter();
@@ -44,7 +45,7 @@ export default function WelcomePage() {
             className="alpha-display text-xl md:text-2xl leading-relaxed max-w-lg mx-auto"
             style={{ color: "var(--ink-soft)" }}
           >
-            A personal letter on what matters to you, three times a week.
+            {SHARE_LEAD}
           </p>
           <div className="pt-4">
             <Link href="/theme" className="alpha-button text-base">

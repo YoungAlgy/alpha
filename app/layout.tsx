@@ -12,6 +12,7 @@ import {
 import "./globals.css";
 import { ThemeApplier } from "@/components/ThemeApplier";
 import { PostHogProvider } from "@/components/PostHogProvider";
+import { PITCH, SHARE_LEAD } from "@/lib/copy";
 
 // Fonts: the default Forest theme uses source-serif + newsreader + inter, so
 // those preload. Fraunces / DM Sans / Pixelify are only used by NON-default
@@ -84,8 +85,7 @@ export const metadata: Metadata = {
     default: "alpha. your alpha",
     template: "%s · alpha.",
   },
-  description:
-    "A personal letter on what matters to you. Pick five topics. Three times a week.",
+  description: PITCH,
   manifest: "/alpha/manifest.json",
   // iMessage / iOS prefer a real PNG over SVG for the bubble icon. Listing the
   // PNG first prevents fall-through to the apex domain's apple-touch-icon
@@ -100,7 +100,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "alpha. your alpha",
-    description: "A personal letter on what matters to you, three times a week.",
+    description: SHARE_LEAD,
     type: "website",
     siteName: "alpha.",
     url: "https://youngalgy.com/alpha",
@@ -116,7 +116,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "alpha. your alpha",
-    description: "A personal letter on what matters to you, three times a week.",
+    description: SHARE_LEAD,
     images: ["/alpha/og-image.png"],
   },
 };
