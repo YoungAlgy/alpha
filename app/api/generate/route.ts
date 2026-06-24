@@ -275,6 +275,13 @@ function deliveryStoreFor(
         .eq("user_id", userId)
         .eq("week_of", weekOf)
         .maybeSingle();
+      // exists keys on ROW PRESENCE, not on delivered_at being set, on purpose.
+      // If a concurrent run claimed this row then released it (its send failed)
+      // in the sliver between our UPDATE and this read, we treat the present row
+      // as already-handled and SKIP. That is deliberate: best-effort sending a
+      // present-but-null row holds NO claim, so the cron could claim and send it
+      // too — the exact double-send this guards against. A skipped letter is
+      // re-delivered by the next cron tick; a duplicate is not recoverable.
       return { won: false, exists: !!check };
     },
     async release(userId, weekOf, stamp) {

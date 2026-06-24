@@ -52,11 +52,26 @@ export async function deliverLetterOnce(
 ): Promise<{ sent: boolean; reason: DeliverReason }> {
   const { store, userId, weekOf, stamp, send, onError } = opts;
 
+  // Best-effort send: an email failure must NEVER throw (the letter still
+  // renders on /inbox), matching the original route's swallow-and-warn. The
+  // route runs this inside a try whose catch returns a 500, so a naked throw
+  // here would turn a generated-letter 200 into an error screen. Returns whether
+  // the email actually went out.
+  const trySend = async (): Promise<boolean> => {
+    try {
+      await send();
+      return true;
+    } catch (e) {
+      onError?.(e);
+      return false;
+    }
+  };
+
   // No way to dedup (persist returned nothing) → best-effort single send, the
   // same behavior as before the atomic claim existed.
   if (!store || !userId) {
-    await send();
-    return { sent: true, reason: "no-persistence" };
+    const ok = await trySend();
+    return { sent: ok, reason: ok ? "no-persistence" : "send-failed" };
   }
 
   let claim: { won: boolean; exists: boolean };
@@ -67,8 +82,8 @@ export async function deliverLetterOnce(
     // first letter and the route's rule is to never block it on an infra hiccup.
     // The only dup risk is a same-instant cron tick, which is vanishingly rare.
     onError?.(e);
-    await send();
-    return { sent: true, reason: "claim-error" };
+    const ok = await trySend();
+    return { sent: ok, reason: ok ? "claim-error" : "send-failed" };
   }
 
   if (!claim.won) {
@@ -79,22 +94,19 @@ export async function deliverLetterOnce(
     }
     // No issue row to claim (best-effort persist left none) → best-effort send,
     // same as the no-persistence path. There is nothing to roll back.
-    await send();
-    return { sent: true, reason: "no-row" };
+    const ok = await trySend();
+    return { sent: ok, reason: ok ? "no-row" : "send-failed" };
   }
 
   // We hold the claim: delivered_at is ours. Send, and release on failure so a
   // retry or the cron can re-claim and deliver this period cleanly.
-  try {
-    await send();
+  if (await trySend()) {
     return { sent: true, reason: "claimed" };
+  }
+  try {
+    await store.release(userId, weekOf, stamp);
   } catch (e) {
     onError?.(e);
-    try {
-      await store.release(userId, weekOf, stamp);
-    } catch (e2) {
-      onError?.(e2);
-    }
-    return { sent: false, reason: "send-failed" };
   }
+  return { sent: false, reason: "send-failed" };
 }

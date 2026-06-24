@@ -137,6 +137,49 @@ const WEEK = "2026-06-24";
   check("exactly one email", sends === 1);
 }
 
+// (8) Best-effort contract: a FAILING send in the no-persistence / no-row /
+//     claim-error branches must NOT throw. The original swallowed every send
+//     failure; a throw here bubbles to the route's outer catch and 500s a
+//     generated letter. Each must resolve to { sent:false, reason:"send-failed" }.
+{
+  const boom = async () => {
+    throw new Error("resend 500");
+  };
+  console.log("(8) failing send in best-effort branches does NOT throw:");
+
+  let threwNP = false;
+  let rNP: Awaited<ReturnType<typeof deliverLetterOnce>> | undefined;
+  try {
+    rNP = await deliverLetterOnce({ store: null, userId: null, weekOf: WEEK, stamp: "S1", send: boom, onError: () => {} });
+  } catch {
+    threwNP = true;
+  }
+  check("no-persistence: did not throw", !threwNP);
+  check("no-persistence: reports sent:false (send-failed)", !!rNP && !rNP.sent && rNP.reason === "send-failed");
+
+  const empty = makeStore();
+  let threwNR = false;
+  let rNR: Awaited<ReturnType<typeof deliverLetterOnce>> | undefined;
+  try {
+    rNR = await deliverLetterOnce({ store: empty.store, userId: "u8", weekOf: WEEK, stamp: "S1", send: boom, onError: () => {} });
+  } catch {
+    threwNR = true;
+  }
+  check("no-row: did not throw", !threwNR);
+  check("no-row: reports sent:false (send-failed)", !!rNR && !rNR.sent && rNR.reason === "send-failed");
+
+  const errStore = { async claim() { throw new Error("db down"); }, async release() {} };
+  let threwCE = false;
+  let rCE: Awaited<ReturnType<typeof deliverLetterOnce>> | undefined;
+  try {
+    rCE = await deliverLetterOnce({ store: errStore, userId: "u8", weekOf: WEEK, stamp: "S1", send: boom, onError: () => {} });
+  } catch {
+    threwCE = true;
+  }
+  check("claim-error: did not throw", !threwCE);
+  check("claim-error: reports sent:false (send-failed)", !!rCE && !rCE.sent && rCE.reason === "send-failed");
+}
+
 // (7) Live, READ-ONLY: confirm the issues table exposes delivered_at, so the real
 //     store's claim/release query shape is valid against the actual schema. No
 //     writes — purely a SELECT.
