@@ -63,8 +63,8 @@ export const THEMES: Theme[] = [
   },
   {
     id: "mitch",
-    label: "Money Mitch",
-    blurb: "Black and champagne gold. The Money Mitch look.",
+    label: "Tuxedo",
+    blurb: "Obsidian and champagne gold. Black-tie sharp.",
     fonts: { display: "var(--font-playfair)", body: "var(--font-newsreader)", ui: "var(--font-inter)" },
   },
   // Extra looks beyond the core palettes above. Each was harvested from a past
