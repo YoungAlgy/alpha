@@ -4,6 +4,7 @@ import { Digest } from "@/components/Digest";
 import { Footer } from "@/components/Footer";
 import { ShareButton } from "@/components/ShareButton";
 import { SAMPLE_ISSUE } from "@/lib/sample-issue";
+import { PITCH, SHARE_LEAD } from "@/lib/copy";
 
 // Public, indexable sample issue — the trust asset for a pay-before-you-see-it
 // product. Rendered through the exact same <Digest> the real letters use, so
@@ -11,8 +12,7 @@ import { SAMPLE_ISSUE } from "@/lib/sample-issue";
 // every marketing channel.
 export const metadata: Metadata = {
   title: "A sample issue",
-  description:
-    "See what a letter from alpha. looks like. A personal letter on the five topics you care about. Sourced and edited so it's worth your time.",
+  description: `See what a letter from alpha. looks like. ${PITCH}`,
   alternates: { canonical: "https://youngalgy.com/alpha/sample" },
   openGraph: {
     title: "A sample issue | alpha.",
@@ -91,7 +91,7 @@ export default function SamplePage() {
               context="sample"
               url="https://youngalgy.com/alpha/sample"
               title="alpha. a sample issue"
-              text="A personal letter on the five topics you care about, three times a week. Here's a sample:"
+              text={`${SHARE_LEAD} Here's a sample:`}
               label="Share this sample"
               className="alpha-ui text-base underline underline-offset-4"
               style={{ color: "var(--accent-ink)" }}

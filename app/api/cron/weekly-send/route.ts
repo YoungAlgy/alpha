@@ -9,6 +9,7 @@ import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId } from "@/lib/types";
+import { clampQuota } from "@/lib/types";
 import { coerceGender } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
 
@@ -185,7 +186,7 @@ export async function GET(req: Request) {
     // stays bounded and a topics array written straight to the DB (the RLS
     // trigger permits the column) can't blow up cost. generateIssue fills the
     // letter with the top fresh topics and backfills from the rest.
-    const letterSize = Math.max(5, Math.min(25, row.topic_quota ?? 5));
+    const letterSize = clampQuota(row.topic_quota ?? 5);
     const pool = ((row.topics ?? []) as TopicId[]).slice(0, poolCap(letterSize));
     // The EFFECTIVE pool after mapping the pickable "zodiac" to a per-sign id
     // (dropped if no birthday). A reader whose whole pool maps to empty (only

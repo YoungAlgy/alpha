@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { checkoutUserMutation, isFirstSubscription } from "@/lib/webhook-user-mutation";
 import { sendWelcomeEmail, resendConfigured } from "@/lib/email";
+import { clampQuota, TOPICS_PER_BUNDLE } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -170,7 +171,7 @@ export async function POST(req: Request) {
         // any reason the items list is empty. Cap at 25 (5 add-ons max).
         const firstItem = sub.items?.data?.[0];
         const quantity = firstItem?.quantity ?? 1;
-        const topicQuota = Math.max(5, Math.min(25, quantity * 5));
+        const topicQuota = clampQuota(quantity * TOPICS_PER_BUNDLE);
         // Throw on failure -> 5xx -> Stripe retries (#35). Set-to-current, so
         // a retry is idempotent. Silently losing this write desyncs paid quota
         // / cancellation state from Stripe with no recovery.

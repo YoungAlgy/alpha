@@ -57,7 +57,7 @@ const ENTRIES: Entry[] = [
     date: "2026-06-10",
     title: "Email links now open your letter instantly",
     body:
-      "The \"Read the full letter\" button in your Sunday email now opens your letter directly. On any device, signed in or not. No more landing on an empty inbox when your session expired.",
+      "The \"Read the full letter\" button in the email now opens your letter directly. On any device, signed in or not. No more landing on an empty inbox when your session expired.",
     tag: "fixed",
   },
   {
@@ -78,14 +78,14 @@ const ENTRIES: Entry[] = [
     date: "2026-05-24",
     title: "Hardened account + billing security",
     body:
-      "Tightened the database so plan tier, subscription status, and billing identity can only ever be changed by our payment system, never from the browser. Your profile fields (name, topics, theme) stay freely editable. Belt-and-suspenders work behind the scenes; nothing changes in how you use Alpha.",
+      "Tightened the database so plan tier, subscription status, and billing identity can only ever be changed by our payment system, never from the browser. Your profile fields (name, topics, theme) stay freely editable. Belt-and-suspenders work behind the scenes. Nothing changes in how you use Alpha.",
     tag: "security",
   },
   {
     date: "2026-05-17",
     title: "Topics are now stackable: $5 buys 5 topics, add more anytime",
     body:
-      "Instead of a fixed five-topic plan, Alpha is now $5/mo for the base five topics with the option to add five-topic bundles for $5/mo each, up to 25 topics ($25/mo). Bump or drop tiers from Settings → Billing; Stripe prorates the change.",
+      "Instead of a fixed five-topic plan, Alpha is now $5/mo for the base five topics with the option to add five-topic bundles for $5/mo each, up to 25 topics ($25/mo). Bump or drop tiers from Settings → Billing. Stripe prorates the change.",
     tag: "new",
   },
   {
@@ -113,7 +113,7 @@ const ENTRIES: Entry[] = [
     date: "2026-05-14",
     title: "Letter only ships once per week per subscriber, period",
     body:
-      "Closed a hole where the weekly-send endpoint could fire the same letter multiple times to the same person if the cron got triggered more than once for the same week (admin re-trigger, ?weekOf= backfill, an unlucky retry). Now every send stamps a delivered_at marker; the next trigger reads it and short-circuits. Backfilled the marker on all existing letters so no historical week ever re-sends. The first-letter generate endpoint got the same idempotency gate.",
+      "Closed a hole where the weekly-send endpoint could fire the same letter multiple times to the same person if the cron got triggered more than once for the same week (admin re-trigger, ?weekOf= backfill, an unlucky retry). Now every send stamps a delivered_at marker. The next trigger reads it and short-circuits. Backfilled the marker on all existing letters so no historical week ever re-sends. The first-letter generate endpoint got the same idempotency gate.",
     tag: "fixed",
   },
   {

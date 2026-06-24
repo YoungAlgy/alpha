@@ -13,10 +13,6 @@ import posthog from "posthog-js";
 
 let started = false;
 
-export function analyticsEnabled(): boolean {
-  return !!process.env.NEXT_PUBLIC_POSTHOG_KEY;
-}
-
 export function initAnalytics(): void {
   if (started || typeof window === "undefined") return;
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;

@@ -11,6 +11,7 @@ import { EmailChanger } from "@/components/EmailChanger";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { hasActiveAccess } from "@/lib/access";
+import { clampQuota } from "@/lib/types";
 
 const ADMIN_EMAIL = "youngalgy@gmail.com";
 
@@ -73,7 +74,7 @@ export default function SettingsPage() {
           .eq("id", user.id)
           .maybeSingle();
         if (row?.topic_quota && typeof row.topic_quota === "number") {
-          setTopicQuota(Math.max(5, Math.min(25, row.topic_quota)));
+          setTopicQuota(clampQuota(row.topic_quota));
         }
         if (Array.isArray(row?.topics) && row.topics.length > 0) {
           setTopics(row.topics as string[]);

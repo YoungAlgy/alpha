@@ -29,7 +29,7 @@ export default function TermsPage() {
           (up to 25 topics, $25/mo) from Settings → Billing.</li>
         <li>Your subscription auto-renews each month until you cancel.</li>
         <li>You can cancel any time from Settings → Billing. Cancellation takes
-          effect at the end of the current billing cycle; you keep access until then.</li>
+          effect at the end of the current billing cycle. You keep access until then.</li>
         <li>We don&apos;t prorate partial-month refunds, but if something has gone
           materially wrong on our end, email us and we&apos;ll make it right.</li>
       </ul>
@@ -39,7 +39,7 @@ export default function TermsPage() {
         <li>You can read, save, screenshot, and share your letters with friends.</li>
         <li>You can&apos;t republish them in bulk, repackage them as your own product,
           or use them to train machine-learning models.</li>
-        <li>The voice, design, and editorial choices are ours; the topic selections
+        <li>The voice, design, and editorial choices are ours. The topic selections
           and personalization details are yours.</li>
       </ul>
 

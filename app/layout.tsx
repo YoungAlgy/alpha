@@ -137,10 +137,10 @@ const THEME_SCRIPT = `(function(){try{var t=null,r=localStorage.getItem("alpha-o
 // veil/mark use the active theme's colors) and just toggles a class on <html>,
 // so the CSS pseudo-elements (globals.css) do the cover-then-reveal with no
 // injected DOM node and no hydration conflict. Once per tab session, skipped
-// under reduced-motion, and skipped on the marketing/legal pages and the whole
-// signup funnel (/welcome, /signin, /checkout) so it only fires on a real app
-// open, not mid-conversion. Removed after the animation or the first interaction.
-const INTRO_SCRIPT = `(function(){try{var p=(location.pathname||"").replace(/^\\/alpha/,"")||"/";var S={"/":1,"/sample":1,"/privacy":1,"/terms":1,"/support":1,"/welcome":1,"/signin":1,"/checkout":1};if(S[p])return;if(sessionStorage.getItem("alpha-intro-shown"))return;if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;sessionStorage.setItem("alpha-intro-shown","1");var d=document.documentElement;d.classList.add("alpha-intro-active");function off(){window.removeEventListener("pointerdown",end,true);window.removeEventListener("keydown",end,true);window.removeEventListener("wheel",end,true);window.removeEventListener("touchmove",end,true);}function end(){d.classList.remove("alpha-intro-active");off();}window.addEventListener("pointerdown",end,true);window.addEventListener("keydown",end,true);window.addEventListener("wheel",end,true);window.addEventListener("touchmove",end,true);setTimeout(end,900);}catch(e){}})();`;
+// under reduced-motion, and skipped on the marketing/legal pages and every step
+// of the signup funnel (welcome through checkout) plus /signin, so it only fires
+// on a real app open. Removed after the animation or the first interaction.
+const INTRO_SCRIPT = `(function(){try{var p=(location.pathname||"").replace(/^\\/alpha/,"")||"/";var S={"/":1,"/sample":1,"/privacy":1,"/terms":1,"/support":1,"/welcome":1,"/theme":1,"/name":1,"/city":1,"/role":1,"/focus":1,"/topics":1,"/fun":1,"/you":1,"/email":1,"/checkout":1,"/signin":1};if(S[p])return;if(sessionStorage.getItem("alpha-intro-shown"))return;if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;sessionStorage.setItem("alpha-intro-shown","1");var d=document.documentElement;d.classList.add("alpha-intro-active");function off(){window.removeEventListener("pointerdown",end,true);window.removeEventListener("keydown",end,true);window.removeEventListener("wheel",end,true);window.removeEventListener("touchmove",end,true);}function end(){d.classList.remove("alpha-intro-active");off();}window.addEventListener("pointerdown",end,true);window.addEventListener("keydown",end,true);window.addEventListener("wheel",end,true);window.addEventListener("touchmove",end,true);setTimeout(end,900);}catch(e){}})();`;
 
 export default function RootLayout({
   children,

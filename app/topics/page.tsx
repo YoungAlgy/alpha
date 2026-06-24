@@ -10,6 +10,7 @@ import { poolCap } from "@/lib/engine/select-sections";
 import { tap, unselect, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { TopicId } from "@/lib/types";
+import { clampQuota } from "@/lib/types";
 
 const DEFAULT_TARGET = 5; // unsigned (first-onboarding) flow always picks 5
 
@@ -56,7 +57,7 @@ export default function TopicsPage() {
           .maybeSingle();
         setUserBirthday(row?.birthday ?? null);
         if (row?.topic_quota && typeof row.topic_quota === "number") {
-          setTarget(Math.max(5, Math.min(25, row.topic_quota)));
+          setTarget(clampQuota(row.topic_quota));
         }
         // Prefer the DB's saved order (the user's ranking) over whatever
         // onboarding localStorage happens to hold on this device.
@@ -401,7 +402,7 @@ export default function TopicsPage() {
               <h2 className="alpha-display text-lg font-semibold">Your lineup</h2>
               <p className="alpha-ui text-xs leading-snug" style={{ color: "var(--ink-soft)" }}>
                 Order is the ranking. Move things up or down. The top {quota} fill
-                your letter; anything below the line is a backup.
+                your letter. Anything below the line is a backup.
               </p>
             </div>
 

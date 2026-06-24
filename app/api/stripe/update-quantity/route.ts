@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
+import { clampQuota, TOPICS_PER_BUNDLE, MAX_TOPIC_QUOTA, MIN_TOPIC_QUOTA } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -23,8 +24,8 @@ interface Body {
   direction?: "up" | "down";
 }
 
-const MAX_QTY = 5;
-const MIN_QTY = 1;
+const MAX_QTY = MAX_TOPIC_QUOTA / TOPICS_PER_BUNDLE; // 5 bundles = 25 topics
+const MIN_QTY = MIN_TOPIC_QUOTA / TOPICS_PER_BUNDLE; // 1 bundle = 5 topics
 
 export async function POST(req: Request) {
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
@@ -142,7 +143,7 @@ export async function POST(req: Request) {
   // returning 200 with a stale DB — Stripe is already updated (source of
   // truth; the subscription.updated webhook re-mirrors and throws on failure),
   // so tell the client the truth and let the webhook reconcile.
-  const newQuota = Math.max(5, Math.min(25, nextQty * 5));
+  const newQuota = clampQuota(nextQty * TOPICS_PER_BUNDLE);
   const { error: quotaErr } = await svc
     .from("users")
     .update({ topic_quota: newQuota })

@@ -143,6 +143,16 @@ export interface UserProfile {
 // already (280/600/280 vs 400/600/400 vs 500/600/500) before being aligned.
 export const BLURB_CAPS = { jobBlurb: 500, projectBlurb: 600, funBlurb: 500 } as const;
 
+// The topic-plan numeric rules, single-sourced (same reason as BLURB_CAPS) so
+// the cron sender, the Stripe webhook, the quantity-change route, and the two
+// client pages can't drift on the 5/25 bounds or the 5-topics-per-bundle math.
+export const TOPICS_PER_BUNDLE = 5;
+export const MIN_TOPIC_QUOTA = 5;
+export const MAX_TOPIC_QUOTA = 25;
+/** Clamp a topic quota to the allowed [5, 25] range. */
+export const clampQuota = (n: number): number =>
+  Math.max(MIN_TOPIC_QUOTA, Math.min(MAX_TOPIC_QUOTA, n));
+
 export interface Theme {
   id: ThemeId;
   label: string;

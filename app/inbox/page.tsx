@@ -16,6 +16,7 @@ import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { nextSendIso } from "@/lib/cadence";
 import { fanfare } from "@/lib/audio";
+import { SHARE_LEAD } from "@/lib/copy";
 import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
@@ -221,7 +222,7 @@ export default function InboxPage() {
             context="inbox"
             url="https://youngalgy.com/alpha"
             title="alpha. your alpha"
-            text="A personal letter on the five topics you care about, three times a week. Worth a look:"
+            text={`${SHARE_LEAD} Worth a look:`}
             label="Tell a friend"
             className="underline underline-offset-4 hover:opacity-80"
           />

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
+import { PITCH } from "@/lib/copy";
 
 // The landing page for cold traffic. A deliberately minimal hero — the pitch
 // plus the CTA into /welcome (the onboarding flow) and a sample link. Sits in
@@ -8,8 +9,7 @@ import { Footer } from "@/components/Footer";
 // indexable (this is the SEO/share surface).
 export const metadata: Metadata = {
   title: { absolute: "alpha. your alpha" },
-  description:
-    "A personal letter on the five topics you care about. Sourced and edited so it's worth your time. Three times a week.",
+  description: PITCH,
   alternates: { canonical: "https://youngalgy.com/alpha" },
 };
 
@@ -38,8 +38,7 @@ const JSON_LD = {
     {
       "@type": "Product",
       name: "alpha. A personal letter",
-      description:
-        "A personal letter on the five topics you choose, sourced and edited so it's worth your time. Three times a week.",
+      description: PITCH,
       brand: { "@id": "https://youngalgy.com/alpha#org" },
       url: "https://youngalgy.com/alpha",
     },
@@ -92,8 +91,7 @@ export default function Landing() {
             className="alpha-display text-xl md:text-2xl leading-relaxed max-w-xl mx-auto"
             style={{ color: "var(--ink-soft)" }}
           >
-            A personal letter on the five topics you care about. Sourced and
-            edited so it&apos;s worth your time. Three times a week.
+            {PITCH}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <Link href="/welcome" className="alpha-button alpha-button-accent text-base">

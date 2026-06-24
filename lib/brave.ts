@@ -67,30 +67,3 @@ export async function braveSearch(
   const data = (await res.json()) as { web?: { results?: BraveResult[] } };
   return data.web?.results ?? [];
 }
-
-// Format Brave results into a signal-context string that the topic-blurb
-// prompt can read. Same shape as our existing mock signals so the engine
-// doesn't need to change.
-export function formatAsSignal(query: string, results: BraveResult[]): string {
-  if (results.length === 0) {
-    return `No fresh search results for "${query}" this week.`;
-  }
-  const lines = results.slice(0, 10).map((r, i) => {
-    const host = r.meta_url?.hostname || tryHost(r.url);
-    const age = r.age ? ` · ${r.age}` : "";
-    return `${i + 1}. ${r.title}${age}\n   ${stripTags(r.description)}\n   ${r.url} (${host})`;
-  });
-  return lines.join("\n\n");
-}
-
-function tryHost(u: string): string {
-  try {
-    return new URL(u).hostname;
-  } catch {
-    return "";
-  }
-}
-
-function stripTags(s: string): string {
-  return s.replace(/<[^>]+>/g, "").trim();
-}
