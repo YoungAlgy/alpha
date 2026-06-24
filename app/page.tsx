@@ -14,8 +14,9 @@ export const metadata: Metadata = {
 };
 
 // Structured data for richer search results. Static + app-controlled (no user
-// input → safe to inline). Every claim is true: $5/mo, USD, in stock. No
-// aggregateRating/reviewCount — we won't fabricate social proof.
+// input, so it's safe to inline). No price/offer node: the page leads with the
+// letter, not a number, so the markup carries no price either. No
+// aggregateRating/reviewCount, we won't fabricate social proof.
 const JSON_LD = {
   "@context": "https://schema.org",
   "@graph": [
@@ -41,13 +42,6 @@ const JSON_LD = {
         "A personal letter on the five topics you choose, sourced and edited so it's worth your time. Three times a week.",
       brand: { "@id": "https://youngalgy.com/alpha#org" },
       url: "https://youngalgy.com/alpha",
-      offers: {
-        "@type": "Offer",
-        price: "5.00",
-        priceCurrency: "USD",
-        availability: "https://schema.org/InStock",
-        url: "https://youngalgy.com/alpha",
-      },
     },
   ],
 };
