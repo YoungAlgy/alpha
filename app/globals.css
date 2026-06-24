@@ -201,6 +201,11 @@
   --callout-bg: #FF000010;
   --callout-ink: #FF0000;
   --quote-bar: #000000;
+  /* All three font roles are Inter on purpose. mono is the brutalist look:
+     sans display, sans body, sans UI. Do not "fix" --font-body to a serif to
+     match the other themes. The headings are sans too, so a serif letter body
+     would make mono the one theme with a sans display over a serif body, which
+     reads as broken. The sans reading surface is the vibe, not a missed serif. */
   --font-display: var(--font-inter);
   --font-body: var(--font-inter);
   --font-ui: var(--font-inter);
