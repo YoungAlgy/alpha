@@ -69,7 +69,7 @@ export const THEMES: Theme[] = [
   },
   // Extra looks beyond the core palettes above. Each was harvested from a past
   // app's colors, then named for its vibe. The id is permanent (it's stored on
-  // user rows and drives the CSS data-theme) — only the labels/blurbs are vibes.
+  // user rows and drives the CSS data-theme). Only the labels/blurbs are vibes.
   {
     id: "beacon",
     label: "Indigo",

@@ -134,12 +134,13 @@ export const viewport: Viewport = {
 const THEME_SCRIPT = `(function(){try{var t=null,r=localStorage.getItem("alpha-onboarding");if(r){var p=JSON.parse(r);if(p&&p.theme)t=p.theme;}if(!t)t=localStorage.getItem("alpha-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
 
 // A brief α intro on a genuine app open. Runs after the theme script (so the
-// veil/mark use the active theme's colors) and just toggles a class on <html> —
-// the CSS pseudo-elements (globals.css) do the cover-then-reveal, so there's no
-// injected DOM node and no hydration conflict. Once per tab session, skipped on
-// the public marketing/legal pages and under reduced-motion. Removed after the
-// animation or on the first interaction so it never blocks the reader.
-const INTRO_SCRIPT = `(function(){try{var p=(location.pathname||"").replace(/^\\/alpha/,"")||"/";var S={"/":1,"/sample":1,"/privacy":1,"/terms":1,"/support":1};if(S[p])return;if(sessionStorage.getItem("alpha-intro-shown"))return;if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;sessionStorage.setItem("alpha-intro-shown","1");var d=document.documentElement;d.classList.add("alpha-intro-active");function off(){window.removeEventListener("pointerdown",end,true);window.removeEventListener("keydown",end,true);window.removeEventListener("wheel",end,true);window.removeEventListener("touchmove",end,true);}function end(){d.classList.remove("alpha-intro-active");off();}window.addEventListener("pointerdown",end,true);window.addEventListener("keydown",end,true);window.addEventListener("wheel",end,true);window.addEventListener("touchmove",end,true);setTimeout(end,900);}catch(e){}})();`;
+// veil/mark use the active theme's colors) and just toggles a class on <html>,
+// so the CSS pseudo-elements (globals.css) do the cover-then-reveal with no
+// injected DOM node and no hydration conflict. Once per tab session, skipped
+// under reduced-motion, and skipped on the marketing/legal pages and the whole
+// signup funnel (/welcome, /signin, /checkout) so it only fires on a real app
+// open, not mid-conversion. Removed after the animation or the first interaction.
+const INTRO_SCRIPT = `(function(){try{var p=(location.pathname||"").replace(/^\\/alpha/,"")||"/";var S={"/":1,"/sample":1,"/privacy":1,"/terms":1,"/support":1,"/welcome":1,"/signin":1,"/checkout":1};if(S[p])return;if(sessionStorage.getItem("alpha-intro-shown"))return;if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;sessionStorage.setItem("alpha-intro-shown","1");var d=document.documentElement;d.classList.add("alpha-intro-active");function off(){window.removeEventListener("pointerdown",end,true);window.removeEventListener("keydown",end,true);window.removeEventListener("wheel",end,true);window.removeEventListener("touchmove",end,true);}function end(){d.classList.remove("alpha-intro-active");off();}window.addEventListener("pointerdown",end,true);window.addEventListener("keydown",end,true);window.addEventListener("wheel",end,true);window.addEventListener("touchmove",end,true);setTimeout(end,900);}catch(e){}})();`;
 
 export default function RootLayout({
   children,

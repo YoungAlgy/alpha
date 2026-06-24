@@ -27,9 +27,9 @@ const ENTRIES: Entry[] = [
   },
   {
     date: "2026-06-20",
-    title: "A new look: Money Mitch",
+    title: "A new look: Tuxedo",
     body:
-      "There's a new theme in the picker. Money Mitch is black and champagne gold, with a heavier serif and a touch of grain. Pick it the same way as the others, in Settings or the theme gallery. Same letter, your vibe.",
+      "There's a new theme in the picker. Tuxedo is black and champagne gold, with a heavier serif and a touch of grain. Pick it the same way as the others, in Settings or the theme gallery. Same letter, your vibe.",
     tag: "new",
   },
   {

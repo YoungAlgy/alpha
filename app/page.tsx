@@ -98,8 +98,8 @@ export default function Landing() {
             className="alpha-display text-xl md:text-2xl leading-relaxed max-w-xl mx-auto"
             style={{ color: "var(--ink-soft)" }}
           >
-            A personal letter on the five topics you care about. Sourced,
-            edited, and worth your time. Three times a week.
+            A personal letter on the five topics you care about. Sourced and
+            edited so it&apos;s worth your time. Three times a week.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <Link href="/welcome" className="alpha-button alpha-button-accent text-base">

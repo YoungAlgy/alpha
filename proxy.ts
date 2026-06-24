@@ -73,13 +73,14 @@ export async function proxy(req: NextRequest) {
   // A signed-in reader who opens an entry/auth page (/welcome, /signin) wants
   // their letter, not the intro or the sign-in form. Redirect server-side so
   // those screens never paint. Both pages also do this client-side, but only
-  // after an async getSession() — which is the brief flash we're removing.
-  // A fresh magic-link landing on /signin has NO cookie session yet (the tokens
-  // are in the URL hash, exchanged client-side), so `user` is null there and it
-  // falls through — the page can still finish the sign-in. Anonymous visitors
-  // see both pages normally. /inbox doesn't bounce back, so no loop. endsWith()
-  // matches whether or not nextUrl carries the basePath; the destination is set
-  // basePath-relative so Next re-adds /alpha on the redirect.
+  // after an async getSession(), which is the brief flash we're removing.
+  // Only a SIGNED-IN (cookie) user is redirected. A signed-out visitor, or any
+  // not-yet-exchanged auth flow, has a null user here and renders the page
+  // normally. Magic links land on /auth/callback (not /signin or /welcome),
+  // which this redirect never touches, so a token exchange is never interrupted.
+  // /inbox doesn't bounce back, so no loop. endsWith() matches whether or not
+  // nextUrl carries the basePath; the destination is set basePath-relative so
+  // Next re-adds /alpha on the redirect.
   const path = req.nextUrl.pathname;
   if (user && (path.endsWith("/welcome") || path.endsWith("/signin"))) {
     const dest = req.nextUrl.clone();
