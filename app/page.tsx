@@ -9,6 +9,8 @@ import { PITCH } from "@/lib/copy";
 // indexable (this is the SEO/share surface).
 export const metadata: Metadata = {
   title: { absolute: "alpha. your alpha" },
+  // Set explicitly on the indexable landing, next to its own title + canonical.
+  // Same value as the root default, single-sourced from PITCH so it can't drift.
   description: PITCH,
   alternates: { canonical: "https://youngalgy.com/alpha" },
 };

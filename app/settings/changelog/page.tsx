@@ -183,7 +183,7 @@ const ENTRIES: Entry[] = [
     date: "2026-05-13",
     title: "Magic-link sign-in handles both flow types",
     body:
-      "The auth callback now recognizes both PKCE (?code=…) and implicit-flow (#access_token=…) magic links, so clicking the link in any letter, or returning from checkout, lands you signed in instead of dropping you on a sign-in error page.",
+      "The auth callback now recognizes both PKCE (?code=...) and implicit-flow (#access_token=...) magic links, so clicking the link in any letter, or returning from checkout, lands you signed in instead of dropping you on a sign-in error page.",
     tag: "fixed",
   },
   {

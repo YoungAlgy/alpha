@@ -329,7 +329,7 @@ export default function SettingsPage() {
                     opacity: busyTier ? 0.4 : 1,
                   }}
                 >
-                  {busyTier === "down" ? "Dropping…" : "Drop 5 topics (−$5/mo)"}
+                  {busyTier === "down" ? "Dropping…" : "Drop 5 topics (-$5/mo)"}
                 </button>
               )}
             </div>

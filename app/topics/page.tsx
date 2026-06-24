@@ -195,7 +195,7 @@ export default function TopicsPage() {
             style={{ color: "var(--ink-soft)" }}
           >
             {signedIn
-              ? `Your top ${quota} fill your letter each week. Add backups below them — we swap one in when a favorite has no fresh news that week.`
+              ? `Your top ${quota} fill your letter each week. Add backups below them. We swap one in when a favorite has no fresh news that week.`
               : "You can swap any of these later, anytime."}
           </p>
         </div>
@@ -389,7 +389,7 @@ export default function TopicsPage() {
                 >
                   {topicEmoji(sug)} {topicLabel(sug)} →
                 </button>{" "}
-                It pulls from sources we trust, not just a search.
+                It pulls from sources we trust, deeper than a quick search.
               </p>
             );
           })()}
