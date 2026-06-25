@@ -19,3 +19,64 @@ export function sanitizeVoice(s: string): string {
     .replace(/ {2,}/g, " ") // collapse doubled spaces
     .trim();
 }
+
+// META-LEAK GUARD. The single worst tell a reader can hit is the letter narrating
+// its OWN sourcing: "this week's signal is thin", "without seeing the full essay",
+// a note listing the raw junk inputs. It instantly proves a machine assembled the
+// letter with no human in the loop. The prompt now forbids it, but Haiku slips, so
+// (like url-guard) we ENFORCE it in code: any reader-facing string that matches one
+// of these is dropped (an item) or replaced (the section intro) before it ships.
+//
+// Patterns target the META use only. The bare word "signal" is allowed (a legit
+// "market signal" is fine); we match "signal" only next to source/scarcity verbs,
+// plus the process-confession phrases that have no innocent reading here.
+const META_LEAK_PATTERNS: RegExp[] = [
+  /\bthis week'?s signal\b/i,
+  /\bwhat this week'?s signal\b/i,
+  /\bthe signal (suggests|provides|contains|includes|gives|offers|is thin|is quiet|is sparse|is mostly|for this)\b/i,
+  /\bin the signal\b/i,
+  /\bsignal (is|was|seems|reads as|looks) (thin|quiet|sparse|light|weak|limited|mostly)\b/i,
+  /\bthe (week|signal) produced (no|little|nothing)\b/i,
+  /\bno substantive (new )?(essay|reporting|writing|piece|coverage)\b/i,
+  /\bwithout (seeing|reading|having seen|having read) the full\b/i,
+  /\bbased on (the|a) headline (alone|snippet)\b/i,
+  /\bthe premise alone is worth\b/i,
+  /\bheadline snippet\b/i,
+  /\bnavigation pages?\b/i,
+  /\barchive listings?\b/i,
+  /\bwhat (is|'?s) missing this week\b/i,
+  /\bsource material\b/i,
+];
+
+// True if a reader-facing string narrates the letter's own sourcing/process.
+export function containsMetaLeak(s: string | undefined | null): boolean {
+  if (!s) return false;
+  return META_LEAK_PATTERNS.some((re) => re.test(s));
+}
+
+// Lexical tells the PROMPT already bans but the model still slips. We do NOT
+// auto-rewrite these (a clumsy swap reads worse than the word, which defeats the
+// goal), but findLexicalTells surfaces them so the rate is observable in logs and
+// we can tighten the prompt or escalate if it climbs. Detection only.
+const BANNED_LEXICAL: RegExp[] = [
+  /\b(leverage|leverages|leveraging|utilize|utilizes|utilizing|navigate|navigating|elevate|foster|fostering|tailored|tailoring|robust|seamless|seamlessly|delve|delving|comprehensive|landscape|realm|testament|optimize|optimizes|optimizing|optimization|calibrate|calibrating|synergy)\b/gi,
+  /\bthis matters because\b/gi,
+  /\bmatters because\b/gi,
+  /\bthe insight here\b/gi,
+  /\bwhat makes this (critical|matter)\b/gi,
+  /\bunderstanding (this|these|the why)\b/gi,
+  /\bthe practical move\b/gi,
+  /\bthe takeaway is\b/gi,
+  /\bthis reframes\b/gi,
+];
+
+// Returns the distinct banned words/phrases present (lowercased), for logging.
+export function findLexicalTells(s: string | undefined | null): string[] {
+  if (!s) return [];
+  const hits = new Set<string>();
+  for (const re of BANNED_LEXICAL) {
+    const m = s.match(re);
+    if (m) for (const h of m) hits.add(h.toLowerCase());
+  }
+  return [...hits];
+}
