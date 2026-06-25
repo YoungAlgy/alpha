@@ -1,4 +1,5 @@
 import { anthropicClient, MODEL } from "./client";
+import { sanitizeVoice } from "./voice-guard";
 import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
 import { BLURB_CAPS } from "@/lib/types";
@@ -73,9 +74,13 @@ Write the editor's note for this reader's letter this week.`;
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  return response.content
+  const note = response.content
     .filter((b) => b.type === "text")
     .map((b) => (b as { type: "text"; text: string }).text)
     .join("\n")
     .trim();
+
+  // Deterministic voice guard: strip any em/en dash, semicolon, or curly quote
+  // the model slipped in despite the prompt (Haiku does so more than Sonnet).
+  return sanitizeVoice(note);
 }

@@ -1,6 +1,7 @@
 import { anthropicClient, MODEL } from "./client";
 import { topicLabel } from "@/lib/topics";
 import { extractSignalUrls, enforceSignalUrls } from "./url-guard";
+import { sanitizeVoice } from "./voice-guard";
 import type { TopicId } from "@/lib/types";
 import type { TopicBlurb, TopicSignal, BlurbItemKind } from "./types";
 
@@ -133,14 +134,23 @@ Three items exactly. VARY the kinds across them. Include URLs only from the sign
     parsed = await callAndParse();
   }
 
+  // Deterministic voice guard on all reader-facing prose (headline, body, ref
+  // labels/notes). URLs are left untouched so the citable-URL guard below still
+  // matches. The intro is sanitized at the return.
   const mapped = parsed.items.map((it) => ({
     kind: narrowKind(it.kind),
-    headline: it.headline,
-    body: it.body,
-    primaryRef: it.primaryRef || undefined,
+    headline: sanitizeVoice(it.headline),
+    body: sanitizeVoice(it.body),
+    primaryRef: it.primaryRef
+      ? { ...it.primaryRef, label: sanitizeVoice(it.primaryRef.label) }
+      : undefined,
     supplementaryRefs:
       Array.isArray(it.supplementaryRefs) && it.supplementaryRefs.length > 0
-        ? it.supplementaryRefs
+        ? it.supplementaryRefs.map((r) => ({
+            ...r,
+            label: sanitizeVoice(r.label),
+            note: r.note ? sanitizeVoice(r.note) : r.note,
+          }))
         : undefined,
   }));
 
@@ -163,7 +173,7 @@ Three items exactly. VARY the kinds across them. Include URLs only from the sign
     topicId,
     topicLabel: label,
     weekOf,
-    intro: parsed.intro,
+    intro: sanitizeVoice(parsed.intro),
     items,
   };
 }
