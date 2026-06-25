@@ -27,14 +27,21 @@ export function sanitizeVoice(s: string): string {
 // (like url-guard) we ENFORCE it in code: any reader-facing string that matches one
 // of these is dropped (an item) or replaced (the section intro) before it ships.
 //
-// Patterns target the META use only. The bare word "signal" is allowed (a legit
-// "market signal" is fine); we match "signal" only next to source/scarcity verbs,
-// plus the process-confession phrases that have no innocent reading here.
+// Patterns target the META use only, and are deliberately PRECISION-biased: a
+// false positive silently DROPS a good item a subscriber paid for, so we only
+// match phrasings with no innocent reading across the topic catalog (finance,
+// markets, sports-betting, music, tech...). The bare word "signal" is allowed
+// (a "market signal" / "buy signal" / "the signal suggests a reversal" is legit
+// trading language). We only flag "signal" when it is described as SCARCE ("the
+// signal is thin/quiet") or scoped to the letter's own period ("this week's
+// signal"), plus the process-confession phrases. We do NOT match "source
+// material" (legit in a documentary/research item), "in the signal" (EEG/signal
+// processing), or a generic "the signal suggests" (trading) — those over-matched.
+// The prompt is the primary defense; this guard catches only the unambiguous,
+// fatal leaks, and accepts a small recall loss on ambiguous wording.
 const META_LEAK_PATTERNS: RegExp[] = [
-  /\bthis week'?s signal\b/i,
-  /\bwhat this week'?s signal\b/i,
-  /\bthe signal (suggests|provides|contains|includes|gives|offers|is thin|is quiet|is sparse|is mostly|for this)\b/i,
-  /\bin the signal\b/i,
+  /\bthis week'?s signal\b/i, // also covers "what this week's signal actually contains"
+  /\bthe signal (is thin|is quiet|is sparse|is mostly|for this week|for this topic)\b/i,
   /\bsignal (is|was|seems|reads as|looks) (thin|quiet|sparse|light|weak|limited|mostly)\b/i,
   /\bthe (week|signal) produced (no|little|nothing)\b/i,
   /\bno substantive (new )?(essay|reporting|writing|piece|coverage)\b/i,
@@ -45,7 +52,6 @@ const META_LEAK_PATTERNS: RegExp[] = [
   /\bnavigation pages?\b/i,
   /\barchive listings?\b/i,
   /\bwhat (is|'?s) missing this week\b/i,
-  /\bsource material\b/i,
 ];
 
 // True if a reader-facing string narrates the letter's own sourcing/process.

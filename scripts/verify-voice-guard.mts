@@ -14,7 +14,7 @@ for (const line of readFileSync(".env.local", "utf8").split("\n")) {
   if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
 }
 
-const { sanitizeVoice } = await import("../lib/engine/voice-guard.ts");
+const { sanitizeVoice, containsMetaLeak, findLexicalTells } = await import("../lib/engine/voice-guard.ts");
 const { resolveTopicSignal } = await import("../lib/engine/source-resolver.ts");
 const { generateTopicBlurb } = await import("../lib/engine/topic-blurb.ts");
 const { generateEditorNote } = await import("../lib/engine/editor-note.ts");
@@ -58,6 +58,52 @@ if (unitHits.length) {
   console.log("UNIT PASS: sanitizeVoice stripped every banned glyph.");
   console.log("  in :", JSON.stringify(dirty));
   console.log("  out:", JSON.stringify(cleaned));
+}
+
+// --- 1b) Meta-leak guard unit check -----------------------------------------
+// containsMetaLeak DROPS items, so a false positive deletes a good item a reader
+// paid for. These probes lock in: legit content (a "market signal", "source
+// material" in a documentary, "a spike in the signal") must NOT be flagged, and
+// the real sourcing/process confessions MUST be flagged.
+const LEGIT_NOT_LEAK = [
+  "The bond market signal suggests a reversal is coming.",
+  "A strong buy signal appeared on the weekly chart.",
+  "Traders watch the yield curve as a recession signal.",
+  "The documentary draws on rare archival source material.",
+  "Her book uses primary source material from the 1840s.",
+  "There was a spike in the signal during the EEG study.",
+  "The app sends a clear signal when your heart rate climbs.",
+  "Congress held hearings on job postings that discriminate by age.",
+  "The museum digitized its archive of listings from the 1920s.",
+  "A navigation app that maps trail conditions in real time.",
+  "He provides a clear framework for thinking about risk.",
+];
+const REAL_META_LEAK = [
+  "This week's signal on Christianity is thin and mostly institutional.",
+  "What this week's signal actually contains is mostly navigation pages.",
+  "Without seeing the full essay text, the premise alone is worth clicking.",
+  "The week produced no substantive new essay or reporting.",
+  "The signal for this topic is mostly archive listings and homepages.",
+  "Based on the headline snippet alone, this looks promising.",
+];
+const fp = LEGIT_NOT_LEAK.filter((s) => containsMetaLeak(s));
+const fn = REAL_META_LEAK.filter((s) => !containsMetaLeak(s));
+if (fp.length || fn.length) {
+  console.error("META-LEAK GUARD FAIL:");
+  for (const s of fp) console.error("  FALSE POSITIVE (legit dropped): " + JSON.stringify(s));
+  for (const s of fn) console.error("  MISSED LEAK: " + JSON.stringify(s));
+  failures++;
+} else {
+  console.log(`META-LEAK GUARD PASS: ${LEGIT_NOT_LEAK.length} legit kept, ${REAL_META_LEAK.length} leaks caught.`);
+}
+// findLexicalTells is detection-only; confirm it surfaces a known tell and stays quiet on clean prose.
+const tellsHit = findLexicalTells("This matters because it optimizes the tailored plan.");
+const tellsClean = findLexicalTells("Homes are sitting longer and sellers are offering concessions.");
+if (tellsHit.length === 0 || tellsClean.length > 0) {
+  console.error(`LEXICAL-TELL FAIL: hit=${JSON.stringify(tellsHit)} clean=${JSON.stringify(tellsClean)}`);
+  failures++;
+} else {
+  console.log(`LEXICAL-TELL PASS: flagged ${JSON.stringify(tellsHit)} and stayed quiet on clean prose.`);
 }
 
 // --- 2) Live generation ------------------------------------------------------
