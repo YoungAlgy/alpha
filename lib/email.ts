@@ -239,6 +239,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
       ${escapeHtml(preheader || "")}${"&nbsp;&zwnj;".repeat(60)}
     </div>
     <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
+      <div style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span style="color:#C9A961;">.</span></div>
       <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
         ${escapeHtml(weekOf.toUpperCase())}
       </div>
@@ -265,7 +266,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        ${unsubLine}ALPHA · A PERSONAL LETTER · ${new Date().getFullYear()}
+        ${unsubLine}alpha<span style="color:#C9A961;">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}
       </p>
     </div>
   </body>
@@ -364,8 +365,9 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
   </head>
   <body style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
     <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
+      <div style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span style="color:#C9A961;">.</span></div>
       <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
-        WELCOME TO ALPHA
+        WELCOME
       </div>
       <h1 style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;">
         You're in, ${escapeHtml(firstName)}.
@@ -394,7 +396,7 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        ALPHA · A PERSONAL LETTER · ${new Date().getFullYear()}
+        alpha<span style="color:#C9A961;">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}
       </p>
     </div>
   </body>
