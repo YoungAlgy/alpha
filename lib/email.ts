@@ -23,6 +23,14 @@ export function resendConfigured(): boolean {
   return resendConfiguredInternal();
 }
 
+// The alpha. wordmark (lowercase serif + gold dot) and the footer line are shared
+// by the letter + welcome emails, so define them once instead of copy-pasting.
+// BRAND_GOLD #C9A961 is the web --accent (globals.css); keep them in sync.
+const BRAND_GOLD = "#C9A961";
+const WORDMARK_MASTHEAD = `<div style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span style="color:${BRAND_GOLD};">.</span></div>`;
+const wordmarkFooter = (prefix = "") =>
+  `${prefix}alpha<span style="color:${BRAND_GOLD};">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}`;
+
 export interface SendLetterParams {
   to: string;
   firstName: string;
@@ -239,7 +247,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
       ${escapeHtml(preheader || "")}${"&nbsp;&zwnj;".repeat(60)}
     </div>
     <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
-      <div style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span style="color:#C9A961;">.</span></div>
+      ${WORDMARK_MASTHEAD}
       <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
         ${escapeHtml(weekOf.toUpperCase())}
       </div>
@@ -266,7 +274,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        ${unsubLine}alpha<span style="color:#C9A961;">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}
+        ${wordmarkFooter(unsubLine)}
       </p>
     </div>
   </body>
@@ -365,7 +373,7 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
   </head>
   <body style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
     <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
-      <div style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span style="color:#C9A961;">.</span></div>
+      ${WORDMARK_MASTHEAD}
       <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
         WELCOME
       </div>
@@ -396,7 +404,7 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        alpha<span style="color:#C9A961;">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}
+        ${wordmarkFooter()}
       </p>
     </div>
   </body>
