@@ -19,6 +19,48 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-06-25",
+    title: "Letters read more like a person wrote them",
+    body:
+      "We reworked how each section gets written so the letters stopped falling into the same shape every time. No more canned setups or salesy filler. Each pick earns its spot and reads more naturally now, like a real letter instead of a template.",
+    tag: "improved",
+  },
+  {
+    date: "2026-06-21",
+    title: "Faster checkout on iPhone",
+    body:
+      "Some people on iPhone hit a \"problem repeatedly occurred\" loop on the payment page and couldn't finish signing up. We turned off the currency-conversion step that was triggering it, so checkout loads clean. If you do bounce out partway, you'll now get an email with a link to pick up where you left off.",
+    tag: "fixed",
+  },
+  {
+    date: "2026-06-21",
+    title: "We'll point you to a curated topic when one fits",
+    body:
+      "If you type your own topic and we already have a hand-picked one that covers it, we'll offer it right there. One tap swaps it in. Better sources than a plain search, and you might spot a topic you didn't know we had.",
+    tag: "improved",
+  },
+  {
+    date: "2026-06-21",
+    title: "Resume your letters yourself if you paused them",
+    body:
+      "If you unsubscribed but you're still paying, you no longer have to write in to start your letters back up. Settings now shows a one-tap way to turn them back on. It only appears when resuming would actually send you something.",
+    tag: "new",
+  },
+  {
+    date: "2026-06-20",
+    title: "Two new topics: Zodiac and Faith & religion",
+    body:
+      "Pick your sign and read what's worth knowing for it. Faith & religion splits into Christianity, Islam, Judaism, Hinduism, Buddhism, and a broader spiritual pick. Add any of them like the rest.",
+    tag: "new",
+  },
+  {
+    date: "2026-06-20",
+    title: "Tell us your age and we'll tone the letter to you",
+    body:
+      "You can now share your birthday and whether you're a man or woman, both optional, in onboarding or Settings. The letter reads less generic when it knows. One reader said it felt too aimed at women, so this fixes that. Leave it blank and you get the neutral voice.",
+    tag: "improved",
+  },
+  {
     date: "2026-06-20",
     title: "Edit all your details in Settings",
     body:
@@ -51,6 +93,13 @@ const ENTRIES: Entry[] = [
     title: "Rank your topics and add free backups",
     body:
       "In Change topics you can now pick more topics than your letter holds, rank them, and let the top ones fill each letter. The extras ride along as backups. If a favorite has no fresh news that day, a backup with something good takes its place, so your letter stays full and fresh. Backups are free.",
+    tag: "new",
+  },
+  {
+    date: "2026-06-15",
+    title: "Music splits into genres you can pick",
+    body:
+      "Music is now its own row of picks: all music, EDM, hip-hop, indie, or country. Tap Music to open it and choose what you actually listen to. Each one counts as one topic.",
     tag: "new",
   },
   {
