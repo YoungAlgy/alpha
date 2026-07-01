@@ -185,21 +185,35 @@ const TITLE_SMALL_WORDS = new Set([
   "into", "of", "on", "or", "the", "to", "vs", "with",
 ]);
 
+// Acronyms a reader is likely to type in a custom topic, kept fully upper
+// regardless of position. Matches the house style already used in the fixed
+// catalog labels ("AI: news...", "Startups & VC"). Intentionally a short,
+// unambiguous list, not a general acronym detector.
+const TITLE_ACRONYMS = new Set([
+  "ai", "ml", "vc", "seo", "ceo", "cfo", "cto", "ui", "ux", "api", "nba", "nfl", "mlb", "nhl", "ufc",
+]);
+
 /** Title-case a custom topic's free text for DISPLAY only. New custom ids are
  *  stored lowercased (makeCustomTopic, for cache-key dedup), so a raw label
  *  reads "Bitcoin and ethereum". This capitalizes each significant word while
  *  PRESERVING any existing capital — so a legacy mixed-case id ("...Quran...")
- *  and an acronym stored upper keep their caps. The id itself is untouched, so
- *  dedup + the blurb cache key are unaffected. */
+ *  keeps its caps. The id itself is untouched, so dedup + the blurb cache key
+ *  are unaffected. Splits on "/" and "-" too (as their own tokens, kept
+ *  verbatim), so a slash- or hyphen-joined phrase like "sales/marketing/growth"
+ *  capitalizes each part instead of only the very first letter of the whole
+ *  chunk. Known acronyms (TITLE_ACRONYMS) are forced upper regardless of the
+ *  stored case, matching the catalog's own style ("AI: news...", "...& VC"). */
 function titleCaseTopic(text: string): string {
   let wordSeen = false;
   return text
-    .split(/(\s+)/) // keep whitespace runs as tokens so spacing survives
+    .split(/(\s+|[/-])/) // whitespace runs AND a lone "/" or "-" become their own tokens
     .map((tok) => {
-      if (tok === "" || /^\s+$/.test(tok)) return tok;
+      if (tok === "" || /^\s+$/.test(tok) || tok === "/" || tok === "-") return tok;
       const isFirst = !wordSeen;
       wordSeen = true;
-      if (!isFirst && TITLE_SMALL_WORDS.has(tok.toLowerCase())) return tok.toLowerCase();
+      const lower = tok.toLowerCase();
+      if (TITLE_ACRONYMS.has(lower)) return lower.toUpperCase();
+      if (!isFirst && TITLE_SMALL_WORDS.has(lower)) return lower;
       return tok.charAt(0).toUpperCase() + tok.slice(1);
     })
     .join("");
