@@ -8,13 +8,17 @@
 //
 // posthog-js (~400-500KB) is dynamically imported only when the key is set,
 // so it never ships in the shared client bundle for static/legal pages or
-// for anyone running the app without analytics configured.
+// for anyone running the app without analytics configured. Events fired
+// before the import resolves (the very first pageview is the common case —
+// PostHogProvider calls initAnalytics() then capturePageview() in the same
+// mount) are queued and flushed once posthog is ready, rather than dropped.
 //
 // To activate: set NEXT_PUBLIC_POSTHOG_KEY (and optionally
 // NEXT_PUBLIC_POSTHOG_HOST, defaults to PostHog US cloud) in Vercel env.
 
 let started = false;
 let posthog: typeof import("posthog-js").default | null = null;
+let queue: Array<() => void> = [];
 
 export function initAnalytics(): void {
   if (started || typeof window === "undefined") return;
@@ -32,17 +36,29 @@ export function initAnalytics(): void {
       person_profiles: "identified_only",
       respect_dnt: true,
     });
+    const pending = queue;
+    queue = [];
+    pending.forEach((fn) => fn());
   });
 }
 
-export function capturePageview(path: string): void {
-  if (!posthog) return;
-  posthog.capture("$pageview", { $current_url: path });
+function capture(event: string, props?: Record<string, unknown>): void {
+  if (!started) return; // analytics not configured at all — stay a true no-op
+  if (!posthog) {
+    // import("posthog-js") is still in flight — queue rather than drop.
+    // Bounded defensively; a real page can't plausibly fire this many events
+    // before a same-origin chunk fetch resolves.
+    if (queue.length < 20) queue.push(() => capture(event, props));
+    return;
+  }
+  posthog.capture(event, props);
 }
 
-// Money-moment events. Safe no-ops when analytics isn't configured, or while
-// the dynamic import is still in flight.
+export function capturePageview(path: string): void {
+  capture("$pageview", { $current_url: path });
+}
+
+// Money-moment events. Safe no-ops when analytics isn't configured.
 export function track(event: string, props?: Record<string, unknown>): void {
-  if (!posthog) return;
-  posthog.capture(event, props);
+  capture(event, props);
 }
