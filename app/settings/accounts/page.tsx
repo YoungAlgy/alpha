@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Footer } from "@/components/Footer";
+import { Wordmark } from "@/components/Wordmark";
 import { topicLabel } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { demographicSummary } from "@/lib/demographics";
@@ -99,7 +100,7 @@ export default function AdminAccountsPage() {
           className="alpha-display text-2xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </Link>
         <Link
           href="/settings"

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { topicLabel, topicEmoji } from "@/lib/topics";
 import { Footer } from "@/components/Footer";
+import { Wordmark } from "@/components/Wordmark";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { ProfileEditor } from "@/components/ProfileEditor";
 import { EmailChanger } from "@/components/EmailChanger";
@@ -170,7 +171,7 @@ export default function SettingsPage() {
           className="alpha-display text-2xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </Link>
         <Link
           href="/inbox"

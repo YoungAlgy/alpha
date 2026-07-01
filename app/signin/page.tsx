@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect, FormEvent, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Footer } from "@/components/Footer";
+import { Wordmark } from "@/components/Wordmark";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { confirm as audioConfirm } from "@/lib/audio";
 import { isValidEmail } from "@/lib/validate-email";
@@ -166,7 +167,7 @@ export default function SigninPage() {
           className="alpha-display text-2xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </Link>
       </nav>
 

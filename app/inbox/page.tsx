@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Digest } from "@/components/Digest";
+import { Wordmark } from "@/components/Wordmark";
 import { coerceThemeId } from "@/lib/themes";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { AudioToggle } from "@/components/AudioToggle";
@@ -242,7 +243,7 @@ export default function InboxPage() {
             className="alpha-display text-xl font-bold leading-none"
             style={{ color: "var(--ink)" }}
           >
-            alpha<span style={{ color: "var(--accent)" }}>.</span>
+            <Wordmark />
           </Link>
           <div className="flex items-center gap-2">
             <AudioToggle />

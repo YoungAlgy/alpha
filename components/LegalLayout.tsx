@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Footer } from "./Footer";
+import { Wordmark } from "./Wordmark";
 
 interface LegalLayoutProps {
   title: string;
@@ -16,7 +17,7 @@ export function LegalLayout({ title, effectiveDate, children }: LegalLayoutProps
           className="alpha-display text-2xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </Link>
       </nav>
       <article className="flex-1 max-w-2xl mx-auto px-6 py-12 md:py-20 alpha-body">

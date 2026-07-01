@@ -1,6 +1,7 @@
 import type { Issue, DigestItem, ItemKind } from "@/lib/types";
 import { ScrollFadeIn } from "./ScrollFadeIn";
 import { topicEmoji, topicAnchor } from "@/lib/topics";
+import { Wordmark } from "./Wordmark";
 
 interface DigestProps {
   issue: Issue;
@@ -104,9 +105,9 @@ export function Digest({ issue }: DigestProps) {
           className="alpha-display text-xl italic mb-1"
           style={{ color: "var(--ink-soft)" }}
         >
-          That's the drop. See you next Sunday.
+          That's the drop. See you next time.
         </p>
-        <p className="alpha-display text-xl font-semibold">Alpha</p>
+        <p className="alpha-display text-xl font-semibold"><Wordmark /></p>
       </div>
     </article>
   );

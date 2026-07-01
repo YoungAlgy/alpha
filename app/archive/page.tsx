@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
+import { Wordmark } from "@/components/Wordmark";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { Issue } from "@/lib/types";
 
@@ -84,7 +85,7 @@ export default function ArchivePage() {
           className="alpha-display text-2xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </Link>
         <Link href="/inbox" className="alpha-ui text-sm py-2" style={{ color: "var(--ink-soft)" }}>
           ← Inbox

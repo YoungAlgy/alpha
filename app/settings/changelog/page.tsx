@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
+import { Wordmark } from "@/components/Wordmark";
 
 export const metadata: Metadata = {
   title: "Changelog",
@@ -40,7 +41,7 @@ const ENTRIES: Entry[] = [
     tag: "improved",
   },
   {
-    date: "2026-06-21",
+    date: "2026-06-19",
     title: "Resume your letters yourself if you paused them",
     body:
       "If you unsubscribed but you're still paying, you no longer have to write in to start your letters back up. Settings now shows a one-tap way to turn them back on. It only appears when resuming would actually send you something.",
@@ -57,7 +58,7 @@ const ENTRIES: Entry[] = [
     date: "2026-06-20",
     title: "Tell us your age and we'll tone the letter to you",
     body:
-      "You can now share your birthday and whether you're a man or woman, both optional, in onboarding or Settings. The letter reads less generic when it knows. One reader said it felt too aimed at women, so this fixes that. Leave it blank and you get the neutral voice.",
+      "You can now share your birthday and gender, both optional, in onboarding or Settings. The letter reads less generic when it knows. One reader said it felt too aimed at women, so this fixes that. Leave it blank and you get the neutral voice.",
     tag: "improved",
   },
   {
@@ -363,7 +364,7 @@ export default function ChangelogPage() {
           className="alpha-display text-2xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </Link>
         <Link
           href="/settings"
@@ -388,7 +389,7 @@ export default function ChangelogPage() {
           className="alpha-display text-lg leading-relaxed mb-12"
           style={{ color: "var(--ink-soft)" }}
         >
-          What's new, improved, and fixed in Alpha.
+          What's new, improved, and fixed in alpha.
         </p>
 
         {Array.from(grouped.entries()).map(([month, entries]) => (

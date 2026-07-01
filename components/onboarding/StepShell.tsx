@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProgressDots } from "./ProgressDots";
+import { Wordmark } from "../Wordmark";
 
 interface StepShellProps {
   stepIndex: number; // 1-based (Welcome = 1)
@@ -26,7 +27,7 @@ export function StepShell({
           className="alpha-display text-xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </Link>
         <ProgressDots current={stepIndex} total={totalSteps} />
         {prevPath ? (

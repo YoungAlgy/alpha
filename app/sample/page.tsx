@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Digest } from "@/components/Digest";
 import { Footer } from "@/components/Footer";
+import { Wordmark } from "@/components/Wordmark";
 import { ShareButton } from "@/components/ShareButton";
 import { SAMPLE_ISSUE } from "@/lib/sample-issue";
 import { PITCH, SHARE_LEAD } from "@/lib/copy";
@@ -48,7 +49,7 @@ export default function SamplePage() {
             className="alpha-display text-xl font-bold leading-none"
             style={{ color: "var(--ink)" }}
           >
-            alpha<span style={{ color: "var(--accent)" }}>.</span>
+            <Wordmark />
           </Link>
           <Link
             href="/welcome"

@@ -10,6 +10,10 @@
    ============================================================ */
 
 :root {
+  /* The wordmark's gold dot is brand identity, not theme chrome -- it must
+     read gold in every theme, unlike --accent below which each theme
+     recolors. Never redeclare --brand-gold in a [data-theme] block. */
+  --brand-gold: #C9A961;
   --paper: #F4EFE0;
   --paper-deep: #E5DEC8;
   --ink: #1F3D2E;

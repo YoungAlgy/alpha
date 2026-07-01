@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Digest } from "@/components/Digest";
+import { Wordmark } from "@/components/Wordmark";
 import { verifyLetterToken } from "@/lib/letter-token";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { coerceThemeId } from "@/lib/themes";
@@ -93,7 +94,7 @@ export default async function LetterPage({
             className="alpha-display text-xl font-bold leading-none"
             style={{ color: "var(--ink)" }}
           >
-            alpha<span style={{ color: "var(--accent)" }}>.</span>
+            <Wordmark />
           </span>
           <Link
             href="/signin"

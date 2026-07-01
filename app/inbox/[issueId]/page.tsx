@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Digest } from "@/components/Digest";
+import { Wordmark } from "@/components/Wordmark";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { AudioToggle } from "@/components/AudioToggle";
 import { ReadingProgress } from "@/components/ReadingProgress";
@@ -119,7 +120,7 @@ export default function IssuePage() {
             className="alpha-display text-xl font-bold leading-none"
             style={{ color: "var(--ink)" }}
           >
-            alpha<span style={{ color: "var(--accent)" }}>.</span>
+            <Wordmark />
           </Link>
           <div className="flex items-center gap-2">
             <Link

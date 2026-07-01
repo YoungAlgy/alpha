@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
+import { Wordmark } from "@/components/Wordmark";
 import { SupportForm } from "./SupportForm";
 
 export const metadata = {
@@ -17,7 +18,7 @@ export default function SupportPage() {
           className="alpha-display text-2xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </Link>
       </nav>
       <section className="flex-1 max-w-xl mx-auto px-6 py-12 md:py-20 w-full">

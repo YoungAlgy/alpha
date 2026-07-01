@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
+import { Wordmark } from "@/components/Wordmark";
 import { PITCH } from "@/lib/copy";
 
 // The landing page for cold traffic. A deliberately minimal hero — the pitch
@@ -61,7 +62,7 @@ export default function Landing() {
           className="alpha-display text-2xl font-bold leading-none"
           style={{ color: "var(--ink)" }}
         >
-          alpha<span style={{ color: "var(--accent)" }}>.</span>
+          <Wordmark />
         </span>
         <Link
           href="/signin"
