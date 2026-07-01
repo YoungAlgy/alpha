@@ -58,7 +58,7 @@ export function InstallPrompt() {
     >
       <div className="flex-1">
         <p className="alpha-display font-semibold text-base mb-0.5">
-          Add Alpha to your home screen
+          Add alpha. to your home screen
         </p>
         <p
           className="alpha-ui text-xs leading-snug"

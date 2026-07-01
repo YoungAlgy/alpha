@@ -4,7 +4,7 @@ export const THEMES: Theme[] = [
   {
     id: "soft",
     label: "Soft",
-    blurb: "Butter cream and sage. The Alpha default.",
+    blurb: "Butter cream and sage.",
     fonts: { display: "var(--font-fraunces)", body: "var(--font-newsreader)", ui: "var(--font-dm-sans)" },
   },
   {

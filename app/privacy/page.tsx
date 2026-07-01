@@ -10,13 +10,13 @@ export default function PrivacyPage() {
   return (
     <LegalLayout title="Privacy" effectiveDate="May 13, 2026">
       <p>
-        Alpha is a personal newsletter service. We try to collect as little
+        alpha. is a personal newsletter service. We try to collect as little
         about you as we need to write you a good letter, and we don&apos;t sell or share
         your data with advertisers. Ever.
       </p>
 
       <H2>What we collect</H2>
-      <p>When you sign up and use Alpha, we store:</p>
+      <p>When you sign up and use alpha., we store:</p>
       <ul>
         <li>
           <strong>Account basics:</strong> your first name, email address, and city.
@@ -39,7 +39,7 @@ export default function PrivacyPage() {
       <H2>How we use it</H2>
       <p>
         We use your data only to (a) generate and deliver your letters,
-        (b) bill your subscription, and (c) improve Alpha. We don&apos;t use it to
+        (b) bill your subscription, and (c) improve alpha. We don&apos;t use it to
         train external machine-learning models, and we don&apos;t share it with
         advertisers.
       </p>
@@ -83,7 +83,7 @@ export default function PrivacyPage() {
       </p>
 
       <H2>Children</H2>
-      <p>Alpha is for adults. We do not knowingly collect data from anyone under 13.</p>
+      <p>alpha. is for adults. We do not knowingly collect data from anyone under 13.</p>
 
       <H2>Changes to this policy</H2>
       <p>
@@ -99,7 +99,7 @@ export default function PrivacyPage() {
 
       <hr className="opacity-30 my-8" />
       <p className="text-sm italic" style={{ color: "var(--ink-soft)" }}>
-        This policy is a plain-English description of how Alpha handles your
+        This policy is a plain-English description of how alpha. handles your
         information. It does not constitute legal advice. We recommend reviewing
         the Terms of Service for the full agreement.
       </p>

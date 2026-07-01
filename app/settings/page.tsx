@@ -298,7 +298,7 @@ export default function SettingsPage() {
 
         <Section title="Billing">
           <p className="alpha-display text-base mb-1">
-            Alpha · ${monthlyDollars} / month
+            alpha. · ${monthlyDollars} / month
           </p>
           <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
             {topicQuota} topics this cycle
@@ -478,8 +478,8 @@ export default function SettingsPage() {
                 // tell them it's handled and offer the portal as a double-check
                 // rather than the old "we won't cancel, you'll keep paying" warning.
                 const confirmMsg = hasPaidSub
-                  ? `Delete your Alpha account?\n\nThis removes your letters and profile and can't be undone. We cancel your $${monthlyDollars}/mo subscription as part of this. To be safe you can confirm it's gone in "Manage subscription" above first.\n\nDelete anyway?`
-                  : "Delete your Alpha account? This removes your saved letters and profile. Can't be undone.";
+                  ? `Delete your alpha. account?\n\nThis removes your letters and profile and can't be undone. We cancel your $${monthlyDollars}/mo subscription as part of this. To be safe you can confirm it's gone in "Manage subscription" above first.\n\nDelete anyway?`
+                  : "Delete your alpha. account? This removes your saved letters and profile. Can't be undone.";
                 if (!confirm(confirmMsg)) return;
                 const result = await deleteUserAccount();
                 if (!result.ok) {

@@ -86,7 +86,7 @@ const ENTRIES: Entry[] = [
     date: "2026-06-15",
     title: "Letters now come three times a week",
     body:
-      "Alpha used to land once a week. Now it comes Sunday, Tuesday, and Thursday. Each one only pulls what's new since the last letter, so you get fresh picks every time instead of the same stories repeated. If one of your topics is quiet that day, we fill the slot with one of your other topics that has something worth reading.",
+      "alpha. used to land once a week. Now it comes Sunday, Tuesday, and Thursday. Each one only pulls what's new since the last letter, so you get fresh picks every time instead of the same stories repeated. If one of your topics is quiet that day, we fill the slot with one of your other topics that has something worth reading.",
     tag: "new",
   },
   {
@@ -128,14 +128,14 @@ const ENTRIES: Entry[] = [
     date: "2026-05-24",
     title: "Hardened account + billing security",
     body:
-      "Tightened the database so plan tier, subscription status, and billing identity can only ever be changed by our payment system, never from the browser. Your profile fields (name, topics, theme) stay freely editable. Belt-and-suspenders work behind the scenes. Nothing changes in how you use Alpha.",
+      "Tightened the database so plan tier, subscription status, and billing identity can only ever be changed by our payment system, never from the browser. Your profile fields (name, topics, theme) stay freely editable. Belt-and-suspenders work behind the scenes. Nothing changes in how you use alpha.",
     tag: "security",
   },
   {
     date: "2026-05-17",
     title: "Topics are now stackable: $5 buys 5 topics, add more anytime",
     body:
-      "Instead of a fixed five-topic plan, Alpha is now $5/mo for the base five topics with the option to add five-topic bundles for $5/mo each, up to 25 topics ($25/mo). Bump or drop tiers from Settings → Billing. Stripe prorates the change.",
+      "Instead of a fixed five-topic plan, alpha. is now $5/mo for the base five topics with the option to add five-topic bundles for $5/mo each, up to 25 topics ($25/mo). Bump or drop tiers from Settings → Billing. Stripe prorates the change.",
     tag: "new",
   },
   {
@@ -149,14 +149,14 @@ const ENTRIES: Entry[] = [
     date: "2026-05-16",
     title: "Sign-in codes also come from alpha@youngalgy.com",
     body:
-      "The 6-digit code you enter at sign-in now arrives from the same branded address as the weekly letter. Consistent sender across every email Alpha sends. Fewer junk-folder false positives and easier to recognize in your inbox.",
+      "The 6-digit code you enter at sign-in now arrives from the same branded address as the weekly letter. Consistent sender across every email alpha. sends. Fewer junk-folder false positives and easier to recognize in your inbox.",
     tag: "improved",
   },
   {
     date: "2026-05-16",
     title: "Every letter ships from alpha@youngalgy.com",
     body:
-      "Cut over Alpha's transactional email to its own branded sender, alpha@youngalgy.com, with full DKIM and SPF authentication. Weekly digests, welcome emails, and any future system mail all leave from the same address. (Behind the scenes: switched providers, verified the domain, dropped the temporary fallback.)",
+      "Cut over alpha's transactional email to its own branded sender, alpha@youngalgy.com, with full DKIM and SPF authentication. Weekly digests, welcome emails, and any future system mail all leave from the same address. (Behind the scenes: switched providers, verified the domain, dropped the temporary fallback.)",
     tag: "improved",
   },
   {
@@ -275,7 +275,7 @@ const ENTRIES: Entry[] = [
     date: "2026-05-13",
     title: "Letter & sign-in emails come from alpha@youngalgy.com",
     body:
-      "Moved transactional email to AWS SES with verified DKIM. Subject lines, sender name, and email design all match the rest of Alpha.",
+      "Moved transactional email to AWS SES with verified DKIM. Subject lines, sender name, and email design all match the rest of alpha.",
     tag: "improved",
   },
   {

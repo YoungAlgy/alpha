@@ -123,7 +123,7 @@ export default function AdminAccountsPage() {
           )}
         </div>
         <p className="alpha-ui text-sm mb-10" style={{ color: "var(--ink-soft)" }}>
-          Admin-only. Everyone who has signed up for Alpha. Grant free, delete, or just look.
+          Admin-only. Everyone who has signed up for alpha. Grant free, delete, or just look.
         </p>
 
         {stats && (
@@ -249,7 +249,7 @@ export default function AdminAccountsPage() {
                           act(
                             u.id,
                             "grant_free",
-                            `Grant ${u.email} a free Alpha subscription?`
+                            `Grant ${u.email} a free alpha. subscription?`
                           )
                         }
                         className="alpha-ui text-xs underline underline-offset-4"

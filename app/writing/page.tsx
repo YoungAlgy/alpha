@@ -306,7 +306,7 @@ export default function WritingPage() {
                 Go to inbox
               </button>
               <a
-                href="mailto:youngalgy@gmail.com?subject=Alpha%20generate%20failure"
+                href="mailto:youngalgy@gmail.com?subject=alpha.%20generate%20failure"
                 className="alpha-ui text-sm underline underline-offset-4"
                 style={{ color: "var(--ink-soft)" }}
               >
