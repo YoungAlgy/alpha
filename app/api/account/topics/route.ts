@@ -29,7 +29,10 @@ function isValidTopicId(id: string): boolean {
     // a hand-crafted request tried to sneak in with different casing/spacing.
     return text.length > 0 && text.length <= MAX_CUSTOM_TOPIC_LEN && makeCustomTopic(text) === id;
   }
-  return id in TOPIC_BY_ID;
+  // hasOwnProperty, not `in`: TOPIC_BY_ID is a plain object, so `in` walks the
+  // prototype chain and would accept "constructor"/"toString"/"__proto__" as
+  // if they were real catalog topics.
+  return Object.prototype.hasOwnProperty.call(TOPIC_BY_ID, id);
 }
 
 export async function POST(req: Request) {
@@ -70,6 +73,9 @@ export async function POST(req: Request) {
       { error: `You can pick up to ${cap} topics on your plan.` },
       { status: 400 }
     );
+  }
+  if (new Set(topics).size !== topics.length) {
+    return NextResponse.json({ error: "That list has a duplicate topic in it." }, { status: 400 });
   }
   if (topics.some((t) => !isValidTopicId(t))) {
     return NextResponse.json({ error: "One of those topics isn't recognized." }, { status: 400 });
