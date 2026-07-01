@@ -1,7 +1,7 @@
 import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
 import { resolveTopicSignal, resolveMockSignal } from "./source-resolver";
-import { getCachedBlurb, setCachedBlurb } from "./blurb-cache";
+import { getCachedBlurbs, setCachedBlurb } from "./blurb-cache";
 import { selectLetterSections } from "./select-sections";
 import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
@@ -42,6 +42,10 @@ export async function generateIssue(
   }
   const size = Math.max(1, letterSize ?? pool.length);
 
+  // ONE round trip for the whole pool's cache reads, instead of one per topic
+  // inside genLive's per-wave calls below (up to 25 topics in a reader's pool).
+  const cachedBlurbs = await getCachedBlurbs(pool as TopicId[], weekOf);
+
   // Generate a topic's section from FRESH live signal. Returns null WITHOUT a
   // model call when the topic has nothing new this period, so the selector can
   // skip it and reach for a backup. A cache hit = already generated this
@@ -49,7 +53,7 @@ export async function generateIssue(
   // one generation per topic-week, shared across every subscriber to it.
   async function genLive(topicId: string): Promise<TopicBlurb | null> {
     const id = topicId as TopicId;
-    const cached = await getCachedBlurb(id, weekOf);
+    const cached = cachedBlurbs.get(id) ?? null;
     // Treat a cached blurb with no items as a miss. A section whose links all
     // got guard-dropped when it was generated isn't worth a slot, so it must
     // never be served (to this reader or any later one) and the topic should

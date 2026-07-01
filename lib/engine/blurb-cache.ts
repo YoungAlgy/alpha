@@ -23,35 +23,42 @@ export function blurbCacheEnabled(): boolean {
   );
 }
 
-export async function getCachedBlurb(
-  topicId: TopicId,
+// Batched read for a reader's whole ranked pool (up to 25 topics) in ONE round
+// trip instead of one per topic. generateIssue calls this once up front, then
+// each per-topic genLive() reads its result from the returned map. Was a
+// per-topic getCachedBlurb() query inside the pool's parallel waves -- fine at
+// today's ~4 subscribers, but scales as O(subscribers x topics) instead of
+// O(subscribers) round trips.
+export async function getCachedBlurbs(
+  topicIds: TopicId[],
   weekOf: string
-): Promise<TopicBlurb | null> {
-  if (!blurbCacheEnabled()) return null;
+): Promise<Map<TopicId, TopicBlurb>> {
+  const result = new Map<TopicId, TopicBlurb>();
+  if (!blurbCacheEnabled() || topicIds.length === 0) return result;
   try {
     const sb = await supabaseServiceClient();
     const { data, error } = await sb
       .from(TABLE)
       .select("topic_id, week_of, intro, items")
-      .eq("topic_id", topicId)
       .eq("week_of", weekOf)
-      .maybeSingle();
+      .in("topic_id", topicIds);
     if (error) {
-      console.warn(`[blurb-cache] read failed for ${topicId} ${weekOf}:`, error.message);
-      return null;
+      console.warn(`[blurb-cache] batch read failed for ${weekOf}:`, error.message);
+      return result;
     }
-    if (!data) return null;
-    const row = data as DbBlurb;
-    return {
-      topicId: row.topic_id,
-      topicLabel: "", // filled by caller from TOPIC_BY_ID
-      weekOf: row.week_of,
-      intro: row.intro,
-      items: row.items,
-    };
+    for (const row of (data ?? []) as DbBlurb[]) {
+      result.set(row.topic_id, {
+        topicId: row.topic_id,
+        topicLabel: "", // filled by caller from TOPIC_BY_ID
+        weekOf: row.week_of,
+        intro: row.intro,
+        items: row.items,
+      });
+    }
+    return result;
   } catch (e) {
-    console.warn(`[blurb-cache] read exception:`, e);
-    return null;
+    console.warn(`[blurb-cache] batch read exception:`, e);
+    return result;
   }
 }
 

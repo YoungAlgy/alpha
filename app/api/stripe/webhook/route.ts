@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { checkoutUserMutation, isFirstSubscription } from "@/lib/webhook-user-mutation";
-import { sendWelcomeEmail, resendConfigured } from "@/lib/email";
+import { sendWelcomeEmail, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { clampQuota, TOPICS_PER_BUNDLE } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -254,10 +254,19 @@ export async function POST(req: Request) {
         break;
       }
       case "invoice.payment_failed": {
-        // Best-effort — log for now. V1 hooks dunning email via Resend.
         const inv = event.data.object as Stripe.Invoice;
         console.warn(
           `[stripe-webhook] payment_failed for invoice ${inv.id}, customer ${inv.customer}`
+        );
+        // A declining card doesn't revoke access on its own -- hasActiveAccess
+        // only flips on cancelled_at, which stays null through Stripe's whole
+        // Smart Retry window (commonly 2-4 weeks). Without this, the only
+        // signal is a log line nobody's watching, so a subscriber can keep
+        // reading (and getting sent) paid content for weeks on a dead card
+        // with no one noticing. Best-effort: sendOpsAlert never throws.
+        await sendOpsAlert(
+          "alpha. payment failed",
+          `Invoice ${inv.id} failed for customer ${inv.customer}. Stripe will retry automatically over the next couple weeks; check the customer in the Stripe dashboard if it keeps failing.`
         );
         break;
       }

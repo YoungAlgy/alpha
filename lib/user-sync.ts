@@ -2,6 +2,7 @@
 
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { parseBirthday, coerceGender } from "@/lib/demographics";
+import { isValidTopicId } from "@/lib/topics";
 import type { OnboardingState } from "@/lib/onboarding-state";
 
 // Fire-and-forget sync of an OnboardingState to the authenticated user's row
@@ -45,7 +46,13 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
     const gender = coerceGender(state.gender);
     if (gender) updates.gender = gender;
     if (Array.isArray(state.topics) && state.topics.length > 0) {
-      updates.topics = state.topics;
+      // Filter through isValidTopicId: this write goes straight through the
+      // browser's own RLS-scoped client (not the validated /api/account/topics
+      // route), so a stale/corrupted localStorage state or a modified client
+      // could otherwise smuggle a garbage topic id (including Object.prototype
+      // names like "constructor") into the same column that route locks down.
+      const validTopics = state.topics.filter(isValidTopicId);
+      if (validTopics.length > 0) updates.topics = validTopics;
     }
     // Nothing real to sync (uninitialized/empty state) — don't touch the DB.
     if (Object.keys(updates).length === 0) return;

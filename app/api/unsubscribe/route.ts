@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
+import { escapeHtml } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -151,11 +152,3 @@ function htmlPage(title: string, bodyHtml: string): string {
 </html>`;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}

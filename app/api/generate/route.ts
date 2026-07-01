@@ -3,6 +3,7 @@ import { z } from "zod";
 import Stripe from "stripe";
 import { generateIssue } from "@/lib/engine/assemble";
 import { persistIssueIfPossible } from "@/lib/engine/persist";
+import { isValidTopicId } from "@/lib/topics";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
@@ -34,7 +35,14 @@ const ProfileSchema = z.object({
   // with parseBirthday, which every reader of the field already gates on.
   birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => parseBirthday(s) !== null, "invalid birthday").optional(),
   gender: z.enum(["male", "female"]).optional(),
-  topics: z.array(z.string().min(1).max(60)).min(1).max(25),
+  // isValidTopicId, not just shape: this is the same users.topics column the
+  // self-serve /api/account/topics route locks down against smuggled/garbage
+  // ids (including Object.prototype names like "constructor" that a plain `in`
+  // lookup would wrongly accept) -- this onboarding path needs the same gate.
+  topics: z.array(z.string().min(1).max(60)).min(1).max(25).refine(
+    (arr) => arr.every(isValidTopicId),
+    "unrecognized topic"
+  ),
   theme: z.string().max(30).default("forest"),
   email: z.string().email().optional(),
 });
@@ -146,9 +154,9 @@ export async function POST(req: Request) {
 
   try {
     const weekOf = body.weekOf || defaultWeekOf();
-    // Cast: zod validated structure, the type narrowing for TopicId / ThemeId
-    // happens implicitly via the engine's TOPIC_BY_ID lookup (unknown topics
-    // throw clearly inside resolveTopicSignal).
+    // Cast: zod's refine (above) already rejected any topic id that isn't a
+    // real catalog id, "zodiac", or well-formed custom:<text> -- so this
+    // narrowing to TopicId is backed by real validation, not just the shape.
     const profile = body.profile as Parameters<typeof generateIssue>[0];
     // No letterSize passed on purpose: this is the onboarding first letter,
     // where the reader picked exactly their quota of topics (pool == quota), so

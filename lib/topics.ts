@@ -167,6 +167,24 @@ export function customTopicText(id: string): string {
   return id.slice(CUSTOM_PREFIX.length).trim();
 }
 
+/** True if `id` is a real, generation-safe topic id: the "zodiac" picker id, a
+ *  well-formed custom:<text> topic in canonical form, or a real catalog id.
+ *  Guards every write path into users.topics against a smuggled/garbage value
+ *  -- including Object.prototype member names like "constructor"/"toString",
+ *  which `id in TOPIC_BY_ID` would wrongly accept via prototype-chain lookup,
+ *  hence hasOwnProperty here instead. Single source of truth: every writer of
+ *  users.topics (account/topics route, the onboarding generate route, the
+ *  client-side onboarding sync) should filter/validate through this, not
+ *  reimplement the check. */
+export function isValidTopicId(id: string): boolean {
+  if (id === "zodiac") return true;
+  if (isCustomTopic(id)) {
+    const text = customTopicText(id);
+    return text.length > 0 && text.length <= MAX_CUSTOM_TOPIC_LEN && makeCustomTopic(text) === id;
+  }
+  return Object.prototype.hasOwnProperty.call(TOPIC_BY_ID, id);
+}
+
 /** Build a custom topic id from free text. Returns null if it's empty/too long.
  *  Lowercases + collapses whitespace so two readers who type the same thing in
  *  different case or spacing ("EDM" / "edm" / "  edm ") land on the SAME id, and

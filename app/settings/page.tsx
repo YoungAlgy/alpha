@@ -41,10 +41,11 @@ export default function SettingsPage() {
   const [justAdded, setJustAdded] = useState(false);
   // In-page billing feedback (replaces jarring/off-brand alert() dialogs).
   const [billingMsg, setBillingMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  // Whether the user has an active PAID Stripe subscription. Account deletion
-  // removes the app account but does NOT cancel Stripe billing (the delete
-  // endpoint can't, and the cancelled account can't reach the portal after) —
-  // so we warn paying users to cancel first or keep getting charged.
+  // Whether the user has an active PAID Stripe subscription. The delete
+  // endpoint cancels their Stripe subscription before removing the account
+  // (best-effort, see app/api/account/delete/route.ts) — this just drives the
+  // confirm-dialog copy so paying users know billing is handled, not just the
+  // app account.
   const [hasPaidSub, setHasPaidSub] = useState(false);
   // The signed-in user's real email (auth session = source of truth). The
   // onboarding-state email in localStorage is only present for users who came
@@ -488,7 +489,12 @@ export default function SettingsPage() {
                 reset();
                 localStorage.removeItem("alpha-first-issue");
                 localStorage.removeItem("alpha-theme");
-                window.location.href = "/welcome";
+                // Must include the /alpha basePath: window.location isn't
+                // basePath-aware (only next/link and router.push are), so a
+                // bare "/welcome" would send the browser to the site root,
+                // outside where this app is mounted. See app/inbox/page.tsx's
+                // clearAndGo for the same footgun already solved once.
+                window.location.href = "/alpha/welcome";
               }}
               className="alpha-ui text-sm underline underline-offset-4"
               style={{ color: "var(--ink-soft)" }}

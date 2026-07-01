@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { TOPIC_BY_ID, isCustomTopic, customTopicText, makeCustomTopic, MAX_CUSTOM_TOPIC_LEN } from "@/lib/topics";
+import { isValidTopicId } from "@/lib/topics";
 import { clampQuota } from "@/lib/types";
 import { poolCap } from "@/lib/engine/select-sections";
 
@@ -16,24 +16,11 @@ export const runtime = "nodejs";
 // already stops a direct browser write from touching topic_quota/billing
 // columns, and a CHECK constraint caps the array at 25 -- this route is
 // defense in depth on top of both, not a replacement: it validates every
-// entry is a real topic (known catalog id or a well-formed custom: string,
-// not an arbitrary value a crafted request could otherwise smuggle into the
-// generation prompt) and caps the length at THIS reader's actual poolCap
-// (quota + backup slots), not just the flat 25-wide table constraint.
-function isValidTopicId(id: string): boolean {
-  if (id === "zodiac") return true; // the pickable id; mapped to a per-sign id server-side at generation
-  if (isCustomTopic(id)) {
-    const text = customTopicText(id);
-    // Must already be in the exact canonical form makeCustomTopic produces
-    // (lowercased, collapsed whitespace, length-capped) -- rejects anything
-    // a hand-crafted request tried to sneak in with different casing/spacing.
-    return text.length > 0 && text.length <= MAX_CUSTOM_TOPIC_LEN && makeCustomTopic(text) === id;
-  }
-  // hasOwnProperty, not `in`: TOPIC_BY_ID is a plain object, so `in` walks the
-  // prototype chain and would accept "constructor"/"toString"/"__proto__" as
-  // if they were real catalog topics.
-  return Object.prototype.hasOwnProperty.call(TOPIC_BY_ID, id);
-}
+// entry is a real topic via isValidTopicId (known catalog id or a well-formed
+// custom: string, not an arbitrary value a crafted request could otherwise
+// smuggle into the generation prompt) and caps the length at THIS reader's
+// actual poolCap (quota + backup slots), not just the flat 25-wide table
+// constraint.
 
 export async function POST(req: Request) {
   const sb = await supabaseServerClient();
