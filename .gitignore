@@ -40,4 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# supabase CLI local cache (project ref, pooler URL, version pins)
+supabase/.temp/
