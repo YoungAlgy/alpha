@@ -10,8 +10,8 @@ export default function TermsPage() {
   return (
     <LegalLayout title="Terms of Service" effectiveDate="May 13, 2026">
       <p>
-        These terms govern your use of alpha., a personal newsletter service
-        ("alpha.", "we", "us"). By subscribing, you agree to them.
+        These terms govern your use of alpha. ("we," "us"), a personal
+        newsletter service. By subscribing, you agree to them.
       </p>
 
       <H2>The service</H2>

@@ -120,7 +120,7 @@ function htmlPage(title: string, bodyHtml: string): string {
     margin: 0 0 24px;
     color: #1F3D2E;
   }
-  .accent {
+  .brand-gold {
     color: #C9A961;
   }
   h1 {
@@ -142,10 +142,10 @@ function htmlPage(title: string, bodyHtml: string): string {
 </head>
 <body>
   <div class="card">
-    <p class="mark">α<span class="accent">.</span></p>
+    <p class="mark">α<span class="brand-gold">.</span></p>
     <h1>${escapeHtml(title)}</h1>
     <p>${bodyHtml}</p>
-    <p><a href="/alpha/welcome">Back to alpha<span class="accent">.</span></a></p>
+    <p><a href="/alpha/welcome">Back to alpha<span class="brand-gold">.</span></a></p>
   </div>
 </body>
 </html>`;

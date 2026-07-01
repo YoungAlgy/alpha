@@ -25,7 +25,8 @@ export function resendConfigured(): boolean {
 
 // The alpha. wordmark (lowercase serif + gold dot) and the footer line are shared
 // by the letter + welcome emails, so define them once instead of copy-pasting.
-// BRAND_GOLD #C9A961 is the web --accent (globals.css); keep them in sync.
+// BRAND_GOLD #C9A961 matches the web --brand-gold (globals.css :root, fixed
+// across every theme — never --accent, which each theme recolors).
 const BRAND_GOLD = "#C9A961";
 const WORDMARK_MASTHEAD = `<div style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span style="color:${BRAND_GOLD};">.</span></div>`;
 const wordmarkFooter = (prefix = "") =>
