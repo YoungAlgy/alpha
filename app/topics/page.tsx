@@ -152,13 +152,19 @@ export default function TopicsPage() {
       // page with an error instead of navigating away as if it saved (the
       // letter reads topics from the DB, so a silent failure would lose the
       // change). Only mirror to local state + leave once the DB write lands.
+      // Routed through the server (service role) rather than a direct browser
+      // write, matching every other mutation in the app -- see
+      // app/api/account/topics/route.ts.
       setSaving(true);
       try {
-        const sb = supabaseClient();
-        const { data: { user } } = await sb.auth.getUser();
-        if (user) {
-          const { error } = await sb.from("users").update({ topics: picked }).eq("id", user.id);
-          if (error) throw new Error(error.message);
+        const res = await fetch("/alpha/api/account/topics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topics: picked }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.error || "save failed");
         }
       } catch {
         setSaving(false);
