@@ -71,13 +71,13 @@ export async function POST(req: Request) {
   if (resendConfigured()) {
     try {
       const ownerEmail = process.env.SUPPORT_FORWARD_EMAIL || "youngalgy@gmail.com";
-      const from = process.env.RESEND_FROM || "Alpha <onboarding@resend.dev>";
+      const from = process.env.RESEND_FROM || '"alpha." <onboarding@resend.dev>';
       const { Resend } = await import("resend");
       const resend = new Resend(process.env.RESEND_API_KEY!);
       await resend.emails.send({
         from,
         to: ownerEmail,
-        subject: `[Alpha support] ${body.name || body.email}`,
+        subject: `[alpha. support] ${body.name || body.email}`,
         text: `From: ${body.name ? `${body.name} <${body.email}>` : body.email}\n\n${body.message}`,
       });
     } catch (e) {

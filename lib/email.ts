@@ -99,7 +99,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   // List-Unsubscribe + List-Unsubscribe-Post (RFC 2369 + 8058) tell Gmail /
   // Apple Mail / Outlook to surface a one-click unsubscribe button. The Post
   // variant tells them they can use POST without navigating away from the inbox.
-  const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <alpha@youngalgy.com>";
+  const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@youngalgy.com>";
   const resendHeaders: Record<string, string> = {
     // Unique per (subscriber, issue): issue.id alone is firstName+weekOf, which
     // collides across same-named subscribers. Prefix with the user id when we
@@ -146,7 +146,7 @@ export async function sendOpsAlert(subject: string, body: string): Promise<void>
   try {
     if (!resendConfiguredInternal()) return;
     const to = process.env.OPS_ALERT_EMAIL?.trim() || "youngalgy@gmail.com";
-    const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <alpha@youngalgy.com>";
+    const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@youngalgy.com>";
     await resendClient().emails.send({
       from: resendFrom,
       to,
@@ -160,7 +160,7 @@ export async function sendOpsAlert(subject: string, body: string): Promise<void>
 
 // The subject. Personal + unmistakably a newsletter + an issue number so it
 // reads like a recurring publication the reader opted into. The brand is
-// carried by the From name ("Alpha"); the subject earns the open. Exported
+// carried by the From name ("alpha."); the subject earns the open. Exported
 // for testing.
 export function subjectLine(firstName: string, issueNumber?: number, weekOf?: string): string {
   const who = firstName?.trim() ? `${firstName.trim()}'s` : "Your";
@@ -263,14 +263,14 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
       <pre style="font-family:Georgia,serif;font-size:16px;line-height:1.7;margin:0 0 36px;color:#1F3D2E;white-space:pre-wrap;">${escapeHtml(sectionList)}</pre>
       <div style="margin:40px 0;">
         <a href="${escapeAttr(ctaUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
-          Read the full letter →
+          Read the full letter &rarr;
         </a>
       </div>
       <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
         Want to change topics or read past letters? <a href="${escapeAttr(signinUrl)}" style="color:#A88947;">Sign in here</a>. We'll email you a 6-digit code.
       </p>
       <p style="font-size:14px;line-height:1.6;color:#4A5F50;margin:48px 0 0;">
-        Alpha
+        alpha<span style="color:${BRAND_GOLD};">.</span>
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
@@ -297,7 +297,7 @@ ${letterUrl || inboxUrl}
 
 (To change topics or read past letters, sign in at ${inboxUrl.replace("/inbox", "/signin")}. We'll email you a 6-digit code.)
 
-Alpha${unsubLine}`;
+alpha.${unsubLine}`;
 }
 
 function escapeHtml(s: string): string {
@@ -331,7 +331,7 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
   if (!resendConfiguredInternal()) throw new Error("No email provider configured");
   const html = renderWelcomeHTML(params);
   const text = renderWelcomeText(params);
-  const resendFrom = process.env.RESEND_FROM?.trim() || "Alpha <alpha@youngalgy.com>";
+  const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@youngalgy.com>";
   const headers: Record<string, string> = {};
   if (params.userId) {
     const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";

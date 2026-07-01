@@ -60,7 +60,7 @@ export async function GET(req: Request) {
   return new NextResponse(
     htmlPage(
       "You're unsubscribed.",
-      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="/alpha/settings">settings</a> if you also want to stop paying. Changed your mind? Sign in and hit <a href="/alpha/settings">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20Alpha%20letters">youngalgy@gmail.com</a>.`
+      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="/alpha/settings">settings</a> if you also want to stop paying. Changed your mind? Sign in and hit <a href="/alpha/settings">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20alpha.%20letters">youngalgy@gmail.com</a>.`
     ),
     {
       status: 200,
@@ -95,7 +95,7 @@ function htmlPage(title: string, bodyHtml: string): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(title)} | Alpha</title>
+<title>${escapeHtml(title)} | alpha.</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <style>
@@ -145,7 +145,7 @@ function htmlPage(title: string, bodyHtml: string): string {
     <p class="mark">α<span class="accent">.</span></p>
     <h1>${escapeHtml(title)}</h1>
     <p>${bodyHtml}</p>
-    <p><a href="/alpha/welcome">Back to Alpha</a></p>
+    <p><a href="/alpha/welcome">Back to alpha<span class="accent">.</span></a></p>
   </div>
 </body>
 </html>`;
