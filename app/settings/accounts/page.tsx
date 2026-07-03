@@ -160,7 +160,7 @@ export default function AdminAccountsPage() {
               <Stat
                 label="Send cron"
                 value="armed"
-                sub="Sun/Tue/Thu"
+                sub="Daily, 14:00 UTC"
               />
               <Stat label="Total users" value={stats.totalUsers} />
             </div>

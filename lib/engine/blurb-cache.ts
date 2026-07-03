@@ -1,7 +1,7 @@
 // Per-(topic, week_of) cache for shared topic blurbs.
-// Generate once per topic per week, serve to all subscribers to that topic.
+// Generate once per topic per send period, serve to all subscribers to it.
 // This is the cost unlock — drops AI usage from O(users × topics × weeks)
-// to O(topics × weeks) regardless of subscriber count.
+// to O(topics × periods) regardless of subscriber count.
 
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import type { TopicBlurb } from "./types";

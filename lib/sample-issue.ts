@@ -13,7 +13,7 @@ import type { Issue } from "@/lib/types";
 //   - No fabricated stats. Describe what a source does and why it's worth your
 //     time; don't invent numbers.
 //
-// The real letters are fresh on every send (Sun/Tue/Thu) and built around the
+// The real letters are fresh on every send (daily) and built around the
 // reader's five chosen topics; the /sample page says so explicitly.
 
 export const SAMPLE_ISSUE: Issue = {

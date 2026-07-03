@@ -214,7 +214,7 @@ export async function POST(req: Request) {
       }
       // Idempotent send via an ATOMIC delivered_at claim, the same compare-and-
       // swap the weekly cron uses (lib/letter-delivery.ts). A signup can land
-      // within ~a minute of a Sun/Tue/Thu cron tick and both paths target the
+      // within ~a minute of a daily cron tick and both paths target the
       // same (user, week_of) row, so claiming before the send means exactly one
       // of them wins and the other skips. No persisted row → best-effort send.
       const result = await deliverLetterOnce({
@@ -308,7 +308,7 @@ function defaultWeekOf(): string {
   // The first letter's period key = TODAY's UTC date (the send date), matching
   // the cron's currentPeriodIso() under the multi-send cadence. This keeps the
   // (user, week_of) idempotency key and the (topic, week_of) blurb cache aligned
-  // between the onboarding first-letter path and the Sun/Tue/Thu cron, so a
+  // between the onboarding first-letter path and the daily cron, so a
   // first letter and a same-day cron send share one period instead of two keys.
   return new Date().toISOString().slice(0, 10);
 }

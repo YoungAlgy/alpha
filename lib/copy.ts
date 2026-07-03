@@ -4,9 +4,9 @@
 // (the JSON-LD said "you choose" while the hero said "you care about"; the
 // sample metadata dropped the cadence). Edit it here once.
 export const PITCH =
-  "A personal letter on the five topics you care about. Sourced and edited so it's worth your time. Three times a week.";
+  "A personal letter on the five topics you care about. Sourced and edited so it's worth your time. Every day.";
 
 // One-line form of the pitch. Used for the OG/Twitter share card, the welcome
 // hero, and share text (share callers append their own CTA, e.g. "Worth a look:").
 export const SHARE_LEAD =
-  "A personal letter on the five topics you care about, three times a week.";
+  "A personal letter on the five topics you care about, every day.";

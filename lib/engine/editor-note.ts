@@ -104,13 +104,13 @@ Write the editor's note for this reader's letter this week.`;
     .trim();
 
   // Deterministic voice guard: strip any em/en dash, semicolon, or curly quote
-  // the model slipped in despite the prompt (Haiku does so more than Sonnet).
+  // the model slipped in despite the prompt (cheap models did so more than Sonnet; kept as defense in depth).
   const clean = sanitizeVoice(note);
 
   // Meta-leak backstop, symmetric with topic-blurb. The note is a single string,
   // so a leak cannot be "dropped" like one item among several. Throw instead, and
   // let the assembler's catch fall back to a clean derived intro. The note runs on
-  // Sonnet and does not leak in practice, so this is defense in depth.
+  // a strong model and does not leak in practice, so this is defense in depth.
   if (containsMetaLeak(clean)) {
     console.warn("[editor-note] meta-leak detected, throwing to use fallback intro");
     throw new Error("editor note contained a meta-leak");

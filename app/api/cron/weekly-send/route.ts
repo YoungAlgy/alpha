@@ -60,7 +60,7 @@ interface SubscriberRow {
 //   2. For each, generate this send's Issue via the same engine /api/generate
 //      uses (Brave + Claude + per-topic cache), persist via upsert on (user_id,
 //      week_of), and send the letter email via Resend. The `week_of` column now
-//      holds the SEND DATE (one row per send), so each Sun/Tue/Thu letter is its
+//      holds the SEND DATE (one row per send), so each daily letter is its
 //      own period: distinct idempotency key, distinct blurb cache, no collision.
 //   3. The live search uses a "since the last send" window, so a topic with no
 //      NEW info that period comes back empty and the ranked-pool selector

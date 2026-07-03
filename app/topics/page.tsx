@@ -304,7 +304,7 @@ export default function TopicsPage() {
             <h2 className="alpha-display text-lg font-semibold">Or add your own thing</h2>
             <p className="alpha-ui text-xs leading-snug" style={{ color: "var(--ink-soft)" }}>
               Get specific. &quot;Crypto regulation in Asia,&quot; &quot;Formula 1 aero,&quot;
-              &quot;AI in radiology.&quot; We&apos;ll hunt the real signal on it for you three times a week.
+              &quot;AI in radiology.&quot; We&apos;ll hunt the real signal on it for you every day.
             </p>
           </div>
 

@@ -2,7 +2,7 @@
 // compare-and-swap, so the onboarding first-letter path (/api/generate) and the
 // weekly-send cron can never double-send. Both can target the SAME (user,
 // week_of) issue row: a reader who finishes Stripe checkout within ~a minute of
-// a Sun/Tue/Thu 14:00 UTC cron tick is already in the cron's subscriber set AND
+// a daily 14:00 UTC cron tick is already in the cron's subscriber set AND
 // running generate, on the same period key. A non-atomic "read delivered_at,
 // send, then stamp" lets both read NULL and both send. The cron closes this with
 // an UPDATE ... WHERE delivered_at IS NULL claim. This shares that primitive so

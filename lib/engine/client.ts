@@ -18,27 +18,25 @@ export function anthropicClient(): Anthropic {
   return _client;
 }
 
-// Default letter-generation model. Haiku keeps per-letter cost well under
-// subscriber revenue at this scale: topic blurbs cache per (topic, week_of) and
-// are SHARED across subscribers, so cost grows slower than subs.
-const DEFAULT_MODEL = "claude-haiku-4-5";
+// Default letter-generation model. Sonnet 5 (upgraded from Haiku 4.5 on
+// 2026-07-03, alongside the daily cadence): the blurbs are the actual product —
+// the prose subscribers read — and topic blurbs cache per (topic, week_of) and
+// are SHARED across subscribers, so cost grows with distinct topics, not subs
+// (~$20-27/mo at daily cadence with today's 4 subscribers; Algy approved).
+const DEFAULT_MODEL = "claude-sonnet-5";
 
-// Env override so an operator can A/B models (e.g. flip blurbs to
-// "claude-sonnet-4-6") without a code change. Unset in normal runs.
+// Env override so an operator can A/B models without a code change. Unset in
+// normal runs (verified: no ALPHA_* vars in the production env).
 function pickModel(envVar: string, fallback: string): string {
   return process.env[envVar]?.trim() || fallback;
 }
 
-// Split the two calls so the model can differ — the cost/quality split that lets
-// the voice land where it matters most while keeping the bill under revenue.
-//
-// Topic blurbs are the COST DRIVER (the bulk of the prose, longer + per topic),
-// but they cache + share across subscribers, and on the rebuilt prompt Haiku
-// reads genuinely well, so they default to the cheap model (~$5/mo at this scale).
-// Flip to Sonnet via ALPHA_BLURB_MODEL for a richer-sourced read (~$14/mo) once
-// paid subs grow.
+// Split the two calls so the model can differ — blurbs are the cost driver
+// (bulk of the prose, per topic, cached/shared), the editor's note is one
+// short call per reader.
 export const BLURB_MODEL = pickModel("ALPHA_BLURB_MODEL", DEFAULT_MODEL);
 
 // The editor's note is ONE short call per reader and the most personal,
-// voice-critical part of the letter, so it rides Sonnet for pennies (~$0.30/mo).
-export const EDITOR_NOTE_MODEL = pickModel("ALPHA_EDITOR_MODEL", "claude-sonnet-4-6");
+// voice-critical part of the letter, so it rides Opus 4.8 — the strongest
+// writing model — for about $2/mo at daily cadence.
+export const EDITOR_NOTE_MODEL = pickModel("ALPHA_EDITOR_MODEL", "claude-opus-4-8");

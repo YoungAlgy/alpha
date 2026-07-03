@@ -171,7 +171,17 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     const response = await anthropicClient().messages.create({
       model: BLURB_MODEL,
       max_tokens: 4000,
-      system: SYSTEM_PROMPT,
+      // thinking disabled EXPLICITLY: Sonnet 5 runs adaptive thinking when the
+      // field is omitted, which for this JSON-emitting task would spend billed
+      // output tokens on reasoning and eat into max_tokens for zero quality
+      // gain on a tightly-templated blurb.
+      thinking: { type: "disabled" },
+      // cache_control on the big static system prompt (~4k tokens): within a
+      // cron run every blurb call lands inside the 5-minute cache TTL, so all
+      // calls after the first read it at ~0.1x price (~20% off the send).
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+      ],
       messages: [{ role: "user", content: userPrompt }],
     });
     const text = response.content

@@ -3,7 +3,7 @@
 // are a clean comparison, not a cache hit. Model is controlled by the env vars
 // ALPHA_BLURB_MODEL / ALPHA_EDITOR_MODEL (see lib/engine/client.ts).
 //
-// Run: ALPHA_BLURB_MODEL=claude-sonnet-4-6 npx tsx scripts/gen-sample.mts <profile> <topicsCsv>
+// Run: ALPHA_BLURB_MODEL=claude-sonnet-5 npx tsx scripts/gen-sample.mts <profile> <topicsCsv>
 //   <profile>   = gigi | founder        (a reader profile)
 //   <topicsCsv> = personal-finance,real-estate   (defaults to the profile's set)
 import { readFileSync } from "node:fs";

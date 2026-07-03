@@ -21,6 +21,20 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "2026-07-03",
+    title: "Your letter comes every day now",
+    body:
+      "alpha. went daily. Same letter, same topics, fresh every morning instead of three times a week. Each day only covers what's new since yesterday, so there's no repeats and no filler. Same price.",
+    tag: "new",
+  },
+  {
+    date: "2026-07-03",
+    title: "The writing got a real upgrade",
+    body:
+      "We moved letter generation to a much stronger AI model, and the personal intro at the top of your letter to the strongest one available. You should notice the difference in how the letters read starting today.",
+    tag: "improved",
+  },
+  {
+    date: "2026-07-03",
     title: "alpha. has its own home now",
     body:
       "We moved to alpha.everyday.report. Everything works the same, just at a cleaner address. Old links and bookmarks still get you here, and every link in past emails still works. Nothing to do on your end.",

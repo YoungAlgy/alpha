@@ -2,10 +2,10 @@ import { Resend } from "resend";
 import type { Issue } from "@/lib/types";
 import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
 
-// Single provider: Resend, sending from the verified everyday.report domain
-// domain. (We previously carried an AWS SES branch as a dual-provider cutover
-// path, but AWS denied production access and we standardized on Resend —
-// the SES code was dead and has been removed.)
+// Single provider: Resend, sending from the verified everyday.report domain.
+// (We previously carried an AWS SES branch as a dual-provider cutover path,
+// but AWS denied production access and we standardized on Resend — the SES
+// code was dead and has been removed.)
 
 function resendConfiguredInternal(): boolean {
   return !!process.env.RESEND_API_KEY?.trim();
@@ -317,7 +317,7 @@ function escapeAttr(s: string): string {
 // ─── Welcome email ────────────────────────────────────────────────────────
 // Sent once, on first subscription, from the Stripe webhook. Confirms the
 // payment worked, points to the first letter (already generated + waiting on
-// web), and sets the Sunday cadence + passwordless sign-in expectation.
+// web), and sets the daily cadence + passwordless sign-in expectation.
 
 export interface SendWelcomeParams {
   to: string;
@@ -391,9 +391,9 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
         </a>
       </div>
       <p style="font-size:16px;line-height:1.7;margin:0 0 12px;">
-        From here on, new letters land <strong>three times a week</strong>, on
-        Sunday, Tuesday, and Thursday, in your inbox and on the web. No feeds,
-        no firehose. Just the things you care about.
+        From here on, a new letter lands <strong>every day</strong>, in your
+        inbox and on the web. No feeds, no firehose. Just the things you care
+        about.
       </p>
       <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
         Signed out when you click through? We'll email you a 6-digit code.
@@ -422,7 +422,7 @@ Thanks for subscribing. Your first letter is being written for you right now, bu
 Read your first letter:
 ${inboxUrl}
 
-From here on, new letters land three times a week, on Sunday, Tuesday, and Thursday, in your inbox and on the web. No feeds, no firehose. Just the things you care about.
+From here on, a new letter lands every day, in your inbox and on the web. No feeds, no firehose. Just the things you care about.
 
 (Signed out when you click through? We'll email you a 6-digit code at ${inboxUrl.replace("/inbox", "/signin")}. No password to remember.)
 

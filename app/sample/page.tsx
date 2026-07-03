@@ -75,7 +75,7 @@ export default function SamplePage() {
       >
         <div className="max-w-2xl mx-auto px-6 py-16 md:py-20 text-center space-y-6">
           <h2 className="alpha-display text-3xl md:text-4xl font-bold tracking-tight">
-            Want one of these three times a week?
+            Want one of these every day?
           </h2>
           <p
             className="alpha-display text-lg md:text-xl leading-relaxed max-w-lg mx-auto"

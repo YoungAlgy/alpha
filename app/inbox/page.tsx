@@ -305,7 +305,7 @@ function weekLabel(weekOf: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-// "Next one ships May 24" — the upcoming send in the Sun/Tue/Thu cadence.
+// "Next one ships May 24" — the upcoming send (daily cadence: tomorrow).
 function nextSendLabel(): string {
   const d = new Date(`${nextSendIso()}T12:00:00Z`);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });

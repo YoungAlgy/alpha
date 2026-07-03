@@ -1,6 +1,6 @@
 # Alpha
 
-A $5/mo personal newsletter. Users pick 5 topics from a curated menu of 25 (add-on bundles up to 25 topics, $25/mo); three times a week (Sun/Tue/Thu) we deliver an AI-written letter built from real sources — every cited link must come from that send's live search, enforced in code (lib/engine/url-guard.ts). Each send only looks at what's new since the last one (lib/cadence.ts).
+A $5/mo personal newsletter. Users pick 5 topics from a curated menu of 25 (add-on bundles up to 25 topics, $25/mo); every day (14:00 UTC) we deliver an AI-written letter built from real sources — every cited link must come from that send's live search, enforced in code (lib/engine/url-guard.ts). Each send only looks at what's new since the last one (lib/cadence.ts).
 
 Lives at `alpha.everyday.report` (its own domain, app at the root — no basePath). `everyday.report` redirects there. The old home, `youngalgy.com/alpha/*`, 308-redirects page paths here and still PROXIES `/alpha/api/*` to this deployment so links baked into already-sent emails (unsubscribe GET/POST, one-click List-Unsubscribe-Post) keep working. Old magic-link/email-change callbacks are NOT proxied — they survive only because browsers follow the 308 to `/auth/callback` AND `https://youngalgy.com/alpha/auth/callback**` stays in the Supabase redirect allowlist. Never remove that allowlist entry.
 
