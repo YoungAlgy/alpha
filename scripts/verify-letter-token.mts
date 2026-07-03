@@ -44,34 +44,34 @@ check(
 );
 
 // (5) letterUrl shape
-const url = letterUrl(uid, "https://youngalgy.com/");
-check("letterUrl targets /alpha/letter?t=", url.startsWith("https://youngalgy.com/alpha/letter?t="));
+const url = letterUrl(uid, "https://alpha.everyday.report/");
+check("letterUrl targets /letter?t=", url.startsWith("https://alpha.everyday.report/letter?t="));
 
 // (6) Email CTA prefers the letter URL; signin small-print intact
 const html = renderHTML({
   firstName: "Sam",
   teaser: "teaser",
   sectionList: "• A\n• B",
-  inboxUrl: "https://youngalgy.com/alpha/inbox",
+  inboxUrl: "https://alpha.everyday.report/inbox",
   letterUrl: url,
   weekOf: "2026-06-07",
   unsubscribeUrl: null,
 });
 check("CTA href is the tokenized letter URL", html.includes(`href="${url.replace(/&/g, "&amp;")}"`) || html.includes(`href="${url}"`));
-check("CTA is NOT the bare inbox link anymore", !html.includes('href="https://youngalgy.com/alpha/inbox"'));
-check("sign-in small print kept", html.includes("/alpha/signin"));
+check("CTA is NOT the bare inbox link anymore", !html.includes('href="https://alpha.everyday.report/inbox"'));
+check("sign-in small print kept", html.includes("/signin"));
 
 // (7) Legacy fallback: no letterUrl → CTA falls back to inbox
 const legacy = renderHTML({
   firstName: "Sam",
   teaser: "t",
   sectionList: "• A",
-  inboxUrl: "https://youngalgy.com/alpha/inbox",
+  inboxUrl: "https://alpha.everyday.report/inbox",
   letterUrl: null,
   weekOf: "2026-06-07",
   unsubscribeUrl: null,
 });
-check("no token → CTA falls back to /inbox", legacy.includes('href="https://youngalgy.com/alpha/inbox"'));
+check("no token → CTA falls back to /inbox", legacy.includes('href="https://alpha.everyday.report/inbox"'));
 
 // (8) Subject reads like a recognizable newsletter (Ally's feedback)
 check("subject is personal + says newsletter + issue number", subjectLine("Ally", 1) === "Ally's newsletter · Issue 1");

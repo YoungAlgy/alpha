@@ -5,7 +5,7 @@ const { renderWelcomeHTML } = await import("../lib/email.ts");
 
 const html = renderWelcomeHTML({
   firstName: "Sam",
-  inboxUrl: "https://youngalgy.com/alpha/inbox",
+  inboxUrl: "https://alpha.everyday.report/inbox",
 });
 
 let pass = 0,
@@ -16,8 +16,8 @@ const check = (label: string, cond: boolean) => {
 };
 
 check("greets the recipient by name", html.includes("You're in, Sam."));
-check("links to the first letter (inbox)", html.includes('href="https://youngalgy.com/alpha/inbox"'));
-check("sign-in fallback points at /signin", html.includes('href="https://youngalgy.com/alpha/signin"'));
+check("links to the first letter (inbox)", html.includes('href="https://alpha.everyday.report/inbox"'));
+check("sign-in fallback points at /signin", html.includes('href="https://alpha.everyday.report/signin"'));
 check("sets the 3x cadence (Sun/Tue/Thu)", /three times a week/i.test(html) && /Sunday, Tuesday, and Thursday/i.test(html));
 check("has the read-first-letter CTA", html.includes("Read your first letter"));
 check("signed by Algy", html.includes("Algy"));
@@ -26,7 +26,7 @@ check("mobile viewport present", html.includes("width=device-width"));
 check("valid doctype + closes html", html.trim().startsWith("<!doctype html>") && html.trim().endsWith("</html>"));
 
 // A name with HTML-unsafe characters must be escaped, not injected raw.
-const evil = renderWelcomeHTML({ firstName: 'A<b>"&', inboxUrl: "https://x/alpha/inbox" });
+const evil = renderWelcomeHTML({ firstName: 'A<b>"&', inboxUrl: "https://x/inbox" });
 check("escapes an HTML-unsafe name", evil.includes("A&lt;b&gt;") && !evil.includes("A<b>"));
 
 writeFileSync("/tmp/alpha-welcome.html", html);

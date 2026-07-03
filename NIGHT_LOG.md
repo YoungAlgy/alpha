@@ -1,6 +1,6 @@
 # NIGHT_LOG — Alpha overnight autonomous run (started 2026-06-02)
 
-Repo: `C:\Users\Algy\alpha`. Stack: **Next.js** App Router (basePath `/alpha`). Live: youngalgy.com/alpha. Start HEAD: `2b417bb`.
+Repo: `C:\Users\Algy\alpha`. Stack: **Next.js** App Router (no basePath since 2026-07-03). Live: alpha.everyday.report (formerly youngalgy.com/alpha, which now redirects). Start HEAD: `2b417bb`.
 Real-generation / verification harnesses (reuse to verify any change; scripts/ excluded from tsconfig):
 - `npx tsx scripts/verify-url-guard.mts [topic]` — Brave+Claude, asserts URL guard holds + links resolve.
 - `npx tsx scripts/audit-topic-signal.mts` — Brave-only signal-strength sweep across all topics.

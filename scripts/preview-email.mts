@@ -6,9 +6,9 @@ const html = renderHTML({
   firstName: SAMPLE_ISSUE.recipientFirstName,
   teaser: SAMPLE_ISSUE.editorIntro.slice(0, 320).trim(),
   sectionList: SAMPLE_ISSUE.sections.map((s) => `• ${s.topicLabel}`).join("\n"),
-  inboxUrl: "https://youngalgy.com/alpha/inbox",
+  inboxUrl: "https://alpha.everyday.report/inbox",
   weekOf: SAMPLE_ISSUE.weekOf,
-  unsubscribeUrl: "https://youngalgy.com/alpha/api/unsubscribe?token=demo",
+  unsubscribeUrl: "https://alpha.everyday.report/api/unsubscribe?token=demo",
 });
 writeFileSync("/tmp/alpha-email-preview.html", html);
 const checks: [string, boolean][] = [
@@ -17,7 +17,7 @@ const checks: [string, boolean][] = [
   ["supported-color-schemes", html.includes("supported-color-schemes")],
   ["mobile padding media query", html.includes("@media only screen and (max-width:600px)") && html.includes("alpha-wrap")],
   ["unsubscribe link", html.includes("/api/unsubscribe")],
-  ["CTA to inbox", html.includes("/alpha/inbox")],
+  ["CTA to inbox", html.includes("/inbox")],
   ["no leftover template tokens", !html.includes("${")],
   ["balanced html tags", (html.match(/<div/g)||[]).length === (html.match(/<\/div>/g)||[]).length],
 ];

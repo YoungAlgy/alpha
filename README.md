@@ -2,7 +2,7 @@
 
 A $5/mo personal newsletter. Users pick 5 topics from a curated menu of 25 (add-on bundles up to 25 topics, $25/mo); three times a week (Sun/Tue/Thu) we deliver an AI-written letter built from real sources — every cited link must come from that send's live search, enforced in code (lib/engine/url-guard.ts). Each send only looks at what's new since the last one (lib/cadence.ts).
 
-Lives at `alpha.everyday.report` (its own domain, app at the root — no basePath). `everyday.report` redirects there. The old home, `youngalgy.com/alpha/*`, 308-redirects page paths here and still PROXIES `/alpha/api/*` to this deployment so links baked into already-sent emails (unsubscribe, one-click List-Unsubscribe-Post, magic-link callbacks) keep working.
+Lives at `alpha.everyday.report` (its own domain, app at the root — no basePath). `everyday.report` redirects there. The old home, `youngalgy.com/alpha/*`, 308-redirects page paths here and still PROXIES `/alpha/api/*` to this deployment so links baked into already-sent emails (unsubscribe GET/POST, one-click List-Unsubscribe-Post) keep working. Old magic-link/email-change callbacks are NOT proxied — they survive only because browsers follow the 308 to `/auth/callback` AND `https://youngalgy.com/alpha/auth/callback**` stays in the Supabase redirect allowlist. Never remove that allowlist entry.
 
 ## Stack
 
@@ -133,7 +133,7 @@ The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalg
 ## Operational notes
 
 - **Stripe** — dedicated Alpha account, fully Alpha-branded checkout. FOUNDER coupon (100%-off forever, owner-curated promo codes) for testing.
-- **Email** — SES out of sandbox is **still pending AWS support case 177814045700922**. While in sandbox, only verified recipient identities receive (currently: `youngalgy@gmail.com`). The Resend fallback (FROM `alpha@avahealth.co`) is kept in code so any unverified-recipient send still arrives — it just won't be from the brand sender until sandbox lifts.
+- **Email** — Resend is the sole provider, sending as `"alpha." <alpha@youngalgy.com>` (SPF/DKIM/DMARC verified on youngalgy.com). SES was dropped entirely (AWS denied production access) and its code removed — there is no fallback provider.
 - **Supabase** — free tier in "Algy" org. Daily traffic prevents the 7-day idle pause.
 
 ## Project memory

@@ -25,6 +25,9 @@ const nextConfig: NextConfig = {
       },
       // Safety net for any straggler still carrying the old /alpha prefix
       // (an old bookmark that reached this host directly, a hardcoded link).
+      // Bare /alpha needs its own rule: with zero segments the :path* rule
+      // renders an empty destination (blank Location header under next start).
+      { source: "/alpha", destination: "/", permanent: true },
       { source: "/alpha/:path*", destination: "/:path*", permanent: true },
     ];
   },

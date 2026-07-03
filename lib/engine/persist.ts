@@ -68,8 +68,10 @@ export async function persistIssueIfPossible(
       type: "magiclink",
       email,
       options: {
-        redirectTo: process.env.NEXT_PUBLIC_APP_URL
-          ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/inbox`
+        // .trim(): a trailing space/newline pasted into the Vercel env var
+        // silently breaks the redirect URL (and Supabase's allowlist match).
+        redirectTo: process.env.NEXT_PUBLIC_APP_URL?.trim()
+          ? `${process.env.NEXT_PUBLIC_APP_URL.trim()}/auth/callback?next=/inbox`
           : undefined,
       },
     });
