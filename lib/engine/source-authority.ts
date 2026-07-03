@@ -9,24 +9,27 @@
 // Reputable outlets, primary sources, and recognized operators across the topic
 // catalog. Bare registrable domains; subdomains match via endsWith. Not
 // exhaustive by design — it just needs to float the good stuff to the top.
+// NOTE: hard-paywalled outlets deliberately do NOT appear here — they live in
+// PAYWALLED_DOMAINS below and are excluded entirely (a subscriber reported
+// clicking through to articles she couldn't read; a citation the reader can't
+// open is worse than a slightly less prestigious one she can).
 const TRUSTED_DOMAINS: string[] = [
-  // General journalism / news
-  "nytimes.com", "wsj.com", "washingtonpost.com", "theatlantic.com", "newyorker.com",
-  "economist.com", "ft.com", "bloomberg.com", "reuters.com", "apnews.com", "npr.org",
+  // General journalism / news (free to read)
+  "reuters.com", "apnews.com", "npr.org",
   "bbc.com", "bbc.co.uk", "theguardian.com", "axios.com", "politico.com", "vox.com",
-  "propublica.org", "semafor.com", "time.com", "fortune.com",
+  "propublica.org", "semafor.com", "time.com",
   // Tech / AI journalism + primary
-  "wired.com", "theverge.com", "arstechnica.com", "techcrunch.com", "businessinsider.com",
-  "technologyreview.com", "theinformation.com", "404media.co", "restofworld.org",
+  "theverge.com", "arstechnica.com", "techcrunch.com",
+  "technologyreview.com", "404media.co", "restofworld.org",
   "anthropic.com", "openai.com", "deepmind.google", "ai.meta.com", "mistral.ai",
   "huggingface.co", "arxiv.org", "github.com", "simonwillison.net", "latent.space",
   "stratechery.com", "every.to", "platformer.news", "oneusefulthing.org", "interconnects.ai",
   // Business / startups / markets
-  "cnbc.com", "marketwatch.com", "morningstar.com", "barrons.com", "hbr.org",
+  "cnbc.com", "morningstar.com",
   "lennysnewsletter.com", "apricitas.io", "ofdollarsanddata.com", "ritholtz.com",
   "federalreserve.gov", "bls.gov", "sec.gov",
   // Health / science / longevity / nutrition
-  "nejm.org", "jamanetwork.com", "thelancet.com", "nature.com", "science.org",
+  "nature.com", "science.org",
   "statnews.com", "kff.org", "cdc.gov", "nih.gov", "examine.com",
   "peterattiamd.com", "hubermanlab.com",
   // Healthcare industry (recruiting topic)
@@ -35,7 +38,7 @@ const TRUSTED_DOMAINS: string[] = [
   // Real estate / housing
   "biggerpockets.com", "redfin.com", "zillow.com",
   // Sports / betting (data + sharp coverage, not tout sites)
-  "unabated.com", "actionnetwork.com", "espn.com", "theathletic.com",
+  "unabated.com", "actionnetwork.com", "espn.com",
   // Crypto / web3 (primary + reputable)
   "ethereum.org", "vitalik.eth.limo", "coindesk.com", "theblock.co", "bankless.com",
   "a16zcrypto.com", "paradigm.xyz",
@@ -44,6 +47,20 @@ const TRUSTED_DOMAINS: string[] = [
   "residentadvisor.net", "billboard.com",
   // Gardening / sustainability primary
   "ifas.ufl.edu", "xerces.org", "grist.org",
+];
+
+// Hard- or tightly-metered paywalls: never deep-read, never cited. A reader
+// who clicks a letter link and hits "subscribe to continue" got nothing from
+// us (real complaint from a real subscriber, 2026-07-03). These are excluded
+// OUTRIGHT rather than downranked — a paywalled citation is broken product,
+// not a lower-quality source. Academic journals are included: the full text
+// is what matters and abstracts read as a wall to a normal subscriber.
+const PAYWALLED_DOMAINS: string[] = [
+  "wsj.com", "ft.com", "bloomberg.com", "economist.com", "nytimes.com",
+  "washingtonpost.com", "theathletic.com", "theinformation.com", "barrons.com",
+  "newyorker.com", "theatlantic.com", "fortune.com", "businessinsider.com",
+  "wired.com", "hbr.org", "marketwatch.com",
+  "nejm.org", "jamanetwork.com", "thelancet.com",
 ];
 
 // Known low-quality patterns we never deep-read or cite. Kept deliberately
@@ -75,7 +92,11 @@ function registrable(host: string): string {
 export function hostTier(host: string, url?: string): SourceTier {
   const h = registrable(host);
   if (!h) return "denied";
-  // Curated trusted host wins OUTRIGHT, checked first — a reputable outlet's
+  // Paywalls are checked FIRST, before trusted — a paywalled outlet must never
+  // win a tier on reputation. The reader can't read it; that's a broken link
+  // to them regardless of how good the journalism is.
+  if (PAYWALLED_DOMAINS.some((d) => h === d || h.endsWith(`.${d}`))) return "denied";
+  // Curated trusted host wins OUTRIGHT, checked next — a reputable outlet's
   // article is never SEO bait even if its slug says "review", "vs", or "best".
   // This guarantees a path-level deny can't exclude a primary source.
   if (TRUSTED_DOMAINS.some((d) => h === d || h.endsWith(`.${d}`))) return "trusted";

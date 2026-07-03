@@ -206,7 +206,7 @@ export function ProfileEditor() {
           >
             {(() => {
               if (hasZodiac && !form.birthday) {
-                return "You have the Zodiac topic. Add your birthday or that section gets skipped each week.";
+                return "You have the Zodiac topic. Add your birthday or that section gets skipped each day.";
               }
               const summary = demographicSummary(form.birthday);
               return summary
@@ -271,7 +271,7 @@ export function ProfileEditor() {
           value={form.funBlurb}
           onChange={(v) => set("funBlurb", v)}
           placeholder="Florida pollinator gardening"
-          hint="Optional. We'll find one fun item for you most weeks."
+          hint="Optional. We'll find one fun item for you most days."
           multiline
           disabled={!loaded || busy}
         />

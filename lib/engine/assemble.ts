@@ -1,7 +1,8 @@
 import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
 import { resolveTopicSignal, resolveMockSignal } from "./source-resolver";
-import { getCachedBlurbs, setCachedBlurb } from "./blurb-cache";
+import { getCachedBlurbs, getRecentlyCitedUrls, setCachedBlurb } from "./blurb-cache";
+import { normalizeUrl } from "./url-guard";
 import { selectLetterSections } from "./select-sections";
 import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
@@ -15,6 +16,16 @@ import type { TopicBlurb } from "./types";
 // parallel wave and forcing the outer route/cron deadline to drop the WHOLE
 // letter. The reject lands in selectLetterSections' per-topic .catch → null.
 const TOPIC_GEN_DEADLINE_MS = 75_000;
+
+// Topics that came back DRY this invocation, keyed (topic, period, window).
+// Module-level on purpose: the cron processes all subscribers in ONE
+// invocation, and without this a dry topic re-spends its 3 Brave queries (x2
+// with the wide retry) for EVERY subscriber who shares it — the multiplier
+// that pushes daily-cadence search volume past the free tier. Positive
+// results don't need this (the blurb cache already dedupes them); only
+// dryness was uncached. Keys include the period so a warm lambda serving
+// tomorrow's run never reuses today's verdicts.
+const dryThisRun = new Set<string>();
 
 export async function generateIssue(
   user: UserProfile,
@@ -42,9 +53,30 @@ export async function generateIssue(
   }
   const size = Math.max(1, letterSize ?? pool.length);
 
-  // ONE round trip for the whole pool's cache reads, instead of one per topic
-  // inside genLive's per-wave calls below (up to 25 topics in a reader's pool).
-  const cachedBlurbs = await getCachedBlurbs(pool as TopicId[], weekOf);
+  // ONE round trip each for the whole pool's cache reads and its recently-
+  // cited URLs, instead of one per topic inside genLive's per-wave calls below.
+  // The cited-URL lookback (14 days) feeds the resolver's exclusion set: a
+  // letter never re-covers an article this topic already cited — the fix for
+  // a subscriber seeing the same articles across letters, and what makes the
+  // wider-window retry below safe (older-but-uncovered is still new to HER).
+  const CITED_LOOKBACK_DAYS = 14;
+  const sinceIso = new Date(
+    Date.parse(`${weekOf}T12:00:00Z`) - CITED_LOOKBACK_DAYS * 86400000
+  ).toISOString().slice(0, 10);
+  const [cachedBlurbs, citedRaw] = await Promise.all([
+    getCachedBlurbs(pool as TopicId[], weekOf),
+    getRecentlyCitedUrls(pool as TopicId[], sinceIso, weekOf),
+  ]);
+  // Normalize once to the url-guard identity the resolver compares against.
+  const citedByTopic = new Map<string, Set<string>>();
+  for (const [tid, urls] of citedRaw) {
+    const set = new Set<string>();
+    for (const u of urls) {
+      const n = normalizeUrl(u);
+      if (n) set.add(n);
+    }
+    if (set.size > 0) citedByTopic.set(tid, set);
+  }
 
   // Generate a topic's section from FRESH live signal. Returns null WITHOUT a
   // model call when the topic has nothing new this period, so the selector can
@@ -59,8 +91,22 @@ export async function generateIssue(
     // never be served (to this reader or any later one) and the topic should
     // backfill instead.
     if (cached && cached.items.length > 0) return { ...cached, topicLabel: topicLabel(id) };
-    const signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness });
-    if (!signal) return null; // no fresh signal — skip, no model call
+    const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
+    if (dryThisRun.has(dryKey)) return null; // searched dry earlier this run — no re-search
+    const excludeUrls = citedByTopic.get(id);
+    let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls });
+    // Dry in the tight since-last-send window? Retry ONCE at past-week before
+    // giving up the slot. With the exclusion set filtering out everything
+    // already cited, whatever the wide pass finds is guaranteed new to the
+    // reader — this keeps daily letters full of real articles instead of
+    // sliding into the static filler (whose repeats a subscriber noticed).
+    if (!signal && freshness && freshness !== "pw") {
+      signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls });
+    }
+    if (!signal) {
+      dryThisRun.add(dryKey);
+      return null; // no fresh signal — skip, no model call
+    }
     const blurb = await withDeadline(
       generateTopicBlurb(id, weekOf, signal),
       TOPIC_GEN_DEADLINE_MS,
@@ -127,7 +173,7 @@ export async function generateIssue(
       labels.length > 1
         ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`
         : labels[0];
-    editorIntro = `A few things worth your time this week, across ${list}. Dig into whatever pulls at you and let the rest wait.`;
+    editorIntro = `A few things worth your time today, across ${list}. Dig into whatever pulls at you and let the rest wait.`;
   }
 
   // Step 3 — assemble Issue

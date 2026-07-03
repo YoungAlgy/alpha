@@ -62,6 +62,50 @@ export async function getCachedBlurbs(
   }
 }
 
+// URLs cited in each topic's recent blurbs, ONE batched query for a whole
+// pool. Feeds the resolver's exclusion set so the same article is never
+// covered twice within the lookback window — the cross-send repeat guard
+// (a subscriber was seeing the same articles in back-to-back letters; at
+// daily cadence the Brave freshness window alone is too leaky to rely on).
+export async function getRecentlyCitedUrls(
+  topicIds: TopicId[],
+  sinceIso: string,
+  beforePeriodIso: string
+): Promise<Map<TopicId, Set<string>>> {
+  const result = new Map<TopicId, Set<string>>();
+  if (!blurbCacheEnabled() || topicIds.length === 0) return result;
+  try {
+    const sb = await supabaseServiceClient();
+    const { data, error } = await sb
+      .from(TABLE)
+      .select("topic_id, items")
+      .gte("week_of", sinceIso)
+      .lt("week_of", beforePeriodIso)
+      .in("topic_id", topicIds);
+    if (error) {
+      console.warn(`[blurb-cache] cited-urls read failed:`, error.message);
+      return result;
+    }
+    for (const row of (data ?? []) as Pick<DbBlurb, "topic_id" | "items">[]) {
+      let set = result.get(row.topic_id);
+      if (!set) {
+        set = new Set<string>();
+        result.set(row.topic_id, set);
+      }
+      for (const item of row.items ?? []) {
+        if (item.primaryRef?.url) set.add(item.primaryRef.url);
+        for (const ref of item.supplementaryRefs ?? []) {
+          if (ref.url) set.add(ref.url);
+        }
+      }
+    }
+    return result;
+  } catch (e) {
+    console.warn(`[blurb-cache] cited-urls read exception:`, e);
+    return result;
+  }
+}
+
 export async function setCachedBlurb(blurb: TopicBlurb): Promise<void> {
   if (!blurbCacheEnabled()) return;
   try {

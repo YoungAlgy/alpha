@@ -23,8 +23,8 @@ function personalizedSteps(
   // a slower cadence keep the progress bar moving through the full ~45s cold
   // generation instead of stalling at 80% on "Almost there" for half the wait.
   const shown = topicLabels.slice(0, 4);
-  const steps: string[] = shown.map((l) => `Reading this week on ${l}`);
-  if (steps.length === 0) steps.push("Reading this week on your topics");
+  const steps: string[] = shown.map((l) => `Reading the latest on ${l}`);
+  if (steps.length === 0) steps.push("Reading the latest on your topics");
   if (topicLabels.length > 4) {
     steps.push(`Pulling signal on ${topicLabels.length - 4} more`);
   }

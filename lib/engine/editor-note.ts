@@ -13,11 +13,11 @@ Your voice for the editor's note:
 - Warm but un-cute. Plain words, honest, a little dry. You sound like a thoughtful friend, not a brand.
 - Roughly 3-5 sentences. Concise.
 - DO NOT greet the reader. The renderer already prints "Hi [name]," above your note. Your note picks up after that.
-- React to 1-2 specific things from this week's topics the way a friend would when forwarding them. ADD a take or a human angle. Do not paraphrase the section intros, which the reader is about to read anyway.
+- React to 1-2 specific things from today's topics the way a friend would when forwarding them. ADD a take or a human angle. Do not paraphrase the section intros, which the reader is about to read anyway.
 
 The opening:
-- Open on the single most interesting concrete thing in the issue, stated flat. No windup. Banned opener crutches: "This week we are digging into," "This week we look at," "matter more than the headlines suggest," "some things that matter more than," "I wanted to share."
-- Vary the structure week to week. Do not always lead with a theme sentence.
+- Open on the single most interesting concrete thing in the issue, stated flat. No windup. Banned opener crutches: "This week we are digging into," "Today we are digging into," "This week we look at," "matter more than the headlines suggest," "some things that matter more than," "I wanted to share."
+- Vary the structure day to day. Do not always lead with a theme sentence. The letter is DAILY — never say "this week" as if the letter were weekly.
 
 The close:
 - Do not end with a summary-and-motivate close or a stock sign-off. Banned closers: "Read what lands for you this week," "these are not small tweaks," "the kinds of things that change how you move forward," "I hope this helps." Do not inflate the stakes with vague uplift.
@@ -39,7 +39,7 @@ Write like a person, not an AI (strict):
 - Land at least one short, plain sentence among the longer ones. One short line ("Worth sitting with that one.") is what makes it sound like a person.
 - NO "X, not Y" framing, including the split-sentence version ("These are not small tweaks. They are the kind that..."). No rule-of-three or perfectly balanced sentences. Do not over-polish. Leave an edge.
 - Skip these words in any form: utilize, leverage, delve, foster, seamless, robust, tailored, comprehensive, landscape, optimize, calibrate, navigate, crucial, vital, critical. No "Hope you are well" filler, no "In a world where" opener, no "Dear Reader," no "Good morning,".
-- NEVER refer to how this letter is made. The word "signal" is banned, and so is any mention of sources, what the week did or did not contain, or that a topic was thin or light. React to the actual items, never to the state of the week. If a section is short, react to what is in it and say nothing about it being short.
+- NEVER refer to how this letter is made. The word "signal" is banned, and so is any mention of sources, what the week did or did not contain, or that a topic was thin or light. React to the actual items, never to the state of the day. If a section is short, react to what is in it and say nothing about it being short.
 - Never imply you have or have not read the underlying pieces. React to what the items say.
 - Do not label an item with a template tag like "the practical one" or "the practical move." React to what the piece actually does.
 
@@ -85,17 +85,28 @@ export async function generateEditorNote(
 ${profileLines}
 </reader-profile>
 
-This week's topic sections, with their intros:
+Today's topic sections, with their intros:
 ${blurbSummaries}
 ${tone ? `\n${tone}\n` : ""}
-Write the editor's note for this reader's letter this week.`;
+Write the editor's note for this reader's letter today.`;
 
   const response = await anthropicClient().messages.create({
     model: EDITOR_NOTE_MODEL,
-    max_tokens: 500,
+    // 1000, not 500: Opus 4.8 narrates more than Sonnet did and its tokenizer
+    // spends ~1-1.35x more tokens on the same text — a 3-5 sentence note fits
+    // comfortably, but the old ceiling left no headroom for a verbose day.
+    max_tokens: 1000,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
   });
+
+  // A truncated note is a broken note (mid-sentence cutoff shipped straight
+  // into a subscriber's email, and nothing downstream would notice — the
+  // voice/meta guards pass on truncated text). Throw; the assembler's catch
+  // falls back to its clean derived intro.
+  if (response.stop_reason === "max_tokens") {
+    throw new Error("editor note hit max_tokens — refusing to ship a truncated note");
+  }
 
   const note = response.content
     .filter((b) => b.type === "text")

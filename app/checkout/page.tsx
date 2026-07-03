@@ -109,7 +109,7 @@ export default function CheckoutPage() {
                 className="text-[8px] leading-snug mt-1"
                 style={{ color: sw.ink, opacity: 0.7 }}
               >
-                Two things pulling at me this week. The recruiting signals…
+                Two things pulling at me today. The recruiting signals…
               </div>
             </div>
             <div className="flex items-center justify-between mt-2">

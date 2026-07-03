@@ -197,8 +197,8 @@ export default function SettingsPage() {
             ) : (
               <>
                 <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
-                  Your letters are paused. You unsubscribed, so the Sunday,
-                  Tuesday, and Thursday letters aren&apos;t being sent. Your
+                  Your letters are paused. You unsubscribed, so the daily
+                  letters aren&apos;t being sent. Your
                   billing is separate and unaffected.
                 </p>
                 <button
@@ -238,10 +238,10 @@ export default function SettingsPage() {
               <>
                 <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
                   {backups.length > 0
-                    ? `The ${topicQuota} things your letter focuses on each week, plus ${backups.length} backup${backups.length > 1 ? "s" : ""} we swap in when a favorite is quiet.`
+                    ? `The ${topicQuota} things your letter focuses on each day, plus ${backups.length} backup${backups.length > 1 ? "s" : ""} we swap in when a favorite is quiet.`
                     : topicQuota === 5
-                      ? "The five things your letter focuses on each week."
-                      : `The ${topicQuota} things your letter focuses on each week.`}
+                      ? "The five things your letter focuses on each day."
+                      : `The ${topicQuota} things your letter focuses on each day.`}
                 </p>
                 <ul className="space-y-1 mb-3">
                   {favorites.map((id) => (

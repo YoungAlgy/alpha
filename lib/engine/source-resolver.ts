@@ -48,7 +48,14 @@ function customQueries(topicId: string): string[] {
 export async function resolveTopicSignal(
   topicId: TopicId,
   weekOf: string,
-  opts?: { liveOnly?: boolean; freshness?: BraveSearchOptions["freshness"] }
+  opts?: {
+    liveOnly?: boolean;
+    freshness?: BraveSearchOptions["freshness"];
+    /** normalizeUrl-keyed URLs already cited in this topic's recent letters —
+     *  excluded from candidates so a letter never re-covers an article the
+     *  reader was already sent (the cross-send repeat guard). */
+    excludeUrls?: Set<string>;
+  }
 ): Promise<TopicSignal | undefined> {
   const custom = isCustomTopic(topicId);
   // A per-sign zodiac id ("zodiac-leo") builds its search from the sign, not the
@@ -62,7 +69,7 @@ export async function resolveTopicSignal(
 
   if (braveConfigured() && queries && queries.length > 0) {
     try {
-      const live = await fetchLiveSignal(topicId, queries, weekOf, opts?.freshness);
+      const live = await fetchLiveSignal(topicId, queries, weekOf, opts?.freshness, opts?.excludeUrls);
       if (live) return live;
     } catch (e) {
       console.warn(`[source-resolver] Brave failed for ${topicId}:`, e);
@@ -95,7 +102,8 @@ async function fetchLiveSignal(
   // multi-send cadence passes a "since the last letter" date range so a topic
   // with nothing NEW in the last few days comes back empty and the ranked-pool
   // selector backfills it from a fresher topic instead of repeating stale news.
-  freshness: BraveSearchOptions["freshness"] = "pw"
+  freshness: BraveSearchOptions["freshness"] = "pw",
+  excludeUrls?: Set<string>
 ): Promise<TopicSignal | undefined> {
   if (!queries || queries.length === 0) return undefined;
 
@@ -114,9 +122,18 @@ async function fetchLiveSignal(
     })
   );
 
-  // 2. Dedup + diversity-rank into a shortlist (freshest first, capped per host
-  //    so we don't deep-read five near-duplicates from one aggregator).
-  const ranked = rankAndDedup(perQuery.flat());
+  // 2. Dedup + diversity-rank into a shortlist, then drop anything this topic
+  //    already cited recently (the cross-send repeat guard — Brave's freshness
+  //    window alone re-surfaces the same article across sends when a page's
+  //    date metadata is off). Compare on the SAME normalizeUrl identity the
+  //    citable allow-set uses so a match can't be dodged by a fragment.
+  let ranked = rankAndDedup(perQuery.flat());
+  if (excludeUrls && excludeUrls.size > 0) {
+    ranked = ranked.filter((s) => {
+      const n = normalizeUrl(s.url);
+      return !(n && excludeUrls.has(n));
+    });
+  }
   if (ranked.length === 0) {
     console.warn(`[source-resolver] live signal for ${topicId} had 0 results — falling back to mock`);
     return undefined;

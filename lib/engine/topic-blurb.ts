@@ -136,13 +136,13 @@ export async function generateTopicBlurb(
   const label = topicLabel(topicId);
 
   const userPrompt = `Topic: ${label}
-Week: ${weekOf}
+Date: ${weekOf}
 
-Raw signal for this week (URLs here are real, you may use them. Do NOT invent new ones):
+Raw signal for this period (URLs here are real, you may use them. Do NOT invent new ones):
 
 ${signal.context.trim()}
 
-Write this week's ${label} section. Return JSON in this exact shape:
+Write today's ${label} section. Do not say "this week" — the letter is daily. Return JSON in this exact shape:
 
 {
   "intro": "1-2 sentence intro that sets up the section's theme, WITHOUT stating the conclusion the items will reach",
@@ -164,7 +164,7 @@ Write this week's ${label} section. Return JSON in this exact shape:
 
 Up to three items, and ship two or even one rather than padding with a weak or repetitive item. VARY the kinds across them. Include URLs only from the signal above. Make each item feel like a small piece of education with something concrete to click or try.`;
 
-  // Generate + parse, retrying ONCE on a malformed-JSON response. Sonnet is
+  // Generate + parse, retrying ONCE on a malformed-JSON response. The model is
   // told "JSON only" but occasionally wraps it in prose or truncates; a single
   // retry recovers the transient case before we give up and skip the topic.
   async function callAndParse(): Promise<ParsedBlurb> {
@@ -176,14 +176,25 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       // output tokens on reasoning and eat into max_tokens for zero quality
       // gain on a tightly-templated blurb.
       thinking: { type: "disabled" },
-      // cache_control on the big static system prompt (~4k tokens): within a
-      // cron run every blurb call lands inside the 5-minute cache TTL, so all
-      // calls after the first read it at ~0.1x price (~20% off the send).
+      // cache_control on the big static system prompt (~4k tokens). Honest
+      // economics: pass-1 blurb calls fire in a parallel wave, and concurrent
+      // requests can't read a cache entry still being written, so first-wave
+      // misses pay the 1.25x write premium. Reads at ~0.1x come from backfill
+      // waves, the filler pass, staggered starts within a wave (each call is
+      // fronted by its own search+deep-read, so they rarely start in the same
+      // instant), and the onboarding /api/generate path. Net effect is a
+      // modest saving, not the naive "everything after call one is cached".
       system: [
         { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
       ],
       messages: [{ role: "user", content: userPrompt }],
     });
+    if (response.stop_reason === "max_tokens") {
+      // Truncated output can't be valid JSON — and if it somehow parsed, it
+      // would ship a cut-off body. Throw as NOT-retryable-by-parse: a second
+      // identical call would truncate the same way.
+      throw new BlurbTruncatedError(`${topicId} ${weekOf}: hit max_tokens`);
+    }
     const text = response.content
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
@@ -195,6 +206,14 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   try {
     parsed = await callAndParse();
   } catch (e) {
+    // Retry ONLY parse-shaped failures (prose-wrapped/malformed JSON). An API
+    // rejection (4xx/5xx after SDK retries) or a truncation is deterministic —
+    // retrying doubles the spend for the same failure on every topic in the
+    // pool. Those propagate up and the selector treats the topic as quiet.
+    const parseShaped =
+      !(e instanceof BlurbTruncatedError) &&
+      !(e && typeof e === "object" && "status" in e); // SDK APIError carries .status
+    if (!parseShaped) throw e;
     console.warn(`[topic-blurb] ${topicId} ${weekOf}: parse failed, retrying once: ${e instanceof Error ? e.message : e}`);
     parsed = await callAndParse();
   }
@@ -261,7 +280,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   let intro = sanitizeVoice(parsed.intro);
   if (containsMetaLeak(intro)) {
     console.warn(`[voice-guard] ${topicId} ${weekOf}: intro meta-leak, replaced with neutral intro`);
-    intro = `Worth your time on ${label.toLowerCase()} this week.`;
+    intro = `Worth your time on ${label.toLowerCase()} today.`;
   }
 
   // Observability only (no auto-rewrite — a clumsy swap reads worse than the word).
@@ -292,6 +311,9 @@ interface ParsedBlurb {
   intro: string;
   items: ParsedItem[];
 }
+
+// Thrown when the model hit its output ceiling — deterministic, never retried.
+export class BlurbTruncatedError extends Error {}
 
 function extractJson(text: string): ParsedBlurb {
   const start = text.indexOf("{");

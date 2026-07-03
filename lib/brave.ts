@@ -1,7 +1,22 @@
 // Thin client over the Brave Search API.
-// Free credit covers ~1,000 queries/mo. We use ~300 with shared-topic content.
+// VOLUME (daily cadence, 2026-07-03): ~60-100 queries/day ≈ 1,800-3,000/mo —
+// pressing against the free tier's 2,000/mo cap. If letters start degrading
+// (rateLimited429 below trips, sections go filler-heavy), the fix is Brave's
+// paid tier (~$5-10/mo at this volume), not code.
 
 const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
+
+// Degradation signal for the cron's end-of-run ops summary: how many queries
+// came back 429 (quota/rate exhaustion) this invocation. Without this, an
+// exhausted Brave quota silently turns every letter into stale filler with no
+// operator-visible trace — generation "succeeds" all the way down.
+let rateLimited429 = 0;
+export function braveRateLimitedCount(): number {
+  return rateLimited429;
+}
+export function resetBraveRateLimitedCount(): void {
+  rateLimited429 = 0;
+}
 
 export interface BraveResult {
   title: string;
@@ -60,6 +75,7 @@ export async function braveSearch(
   }
 
   if (!res.ok) {
+    if (res.status === 429) rateLimited429 += 1;
     const text = await res.text().catch(() => "");
     throw new Error(`Brave Search ${res.status}: ${text.slice(0, 200)}`);
   }

@@ -6,6 +6,7 @@ import { poolCap } from "@/lib/engine/select-sections";
 import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
+import { braveRateLimitedCount, resetBraveRateLimitedCount } from "@/lib/brave";
 import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId } from "@/lib/types";
@@ -122,6 +123,10 @@ export async function GET(req: Request) {
 
   const rows = (subscribers ?? []) as SubscriberRow[];
   const startedAt = Date.now();
+  // Fresh Brave-degradation counter for THIS run (module state survives a warm
+  // lambda across invocations; without the reset, yesterday's 429s would
+  // re-alert today even after an upgrade fixed the quota).
+  resetBraveRateLimitedCount();
   let sent = 0;
   let skippedNoName = 0;
   let skippedEmptyPool = 0;
@@ -157,27 +162,30 @@ export async function GET(req: Request) {
     }
   }
 
-  // Prefetch each subscriber's PRIOR DELIVERED issue count (weeks strictly
-  // before this one) in ONE query → "Issue N" in the email subject is this
-  // reader's Nth letter actually delivered (issueNumber = priorCount + 1),
-  // accurate on re-runs too. Filters delivered_at NOT NULL so a
-  // generated-but-never-sent row (a failed send leaves the row behind) doesn't
-  // inflate the number past the letters they really received. Bounded to THIS
-  // send's subscriber set (was a whole-table scan of every user's lifetime
-  // history, including churned/deleted accounts), so the read scales with the
-  // recipients of this send, not the size of the issues table.
+  // Prefetch each subscriber's PRIOR DELIVERED issue count (periods strictly
+  // before this one) → "Issue N" in the email subject is this reader's Nth
+  // letter actually delivered (issueNumber = priorCount + 1), accurate on
+  // re-runs too. Filters delivered_at NOT NULL so a generated-but-never-sent
+  // row doesn't inflate the number.
+  //
+  // COUNT queries, not row-fetch-and-tally: PostgREST silently caps a select
+  // at 1,000 rows, and at daily cadence the subscriber base crosses 1,000
+  // lifetime delivered rows within months — the old row-fetch would silently
+  // undercount and every "Issue N" would go wrong with no error. One head
+  // count per subscriber; N = this send's recipients, small. Revisit with a
+  // grouped aggregate RPC if the list grows past ~100.
   const priorIssueCount = new Map<string, number>();
-  if (rows.length > 0) {
-    const { data: priors } = await sb
-      .from("issues")
-      .select("user_id")
-      .in("user_id", rows.map((r) => r.id))
-      .lt("week_of", weekOf)
-      .not("delivered_at", "is", null);
-    for (const p of (priors ?? []) as Array<{ user_id: string }>) {
-      priorIssueCount.set(p.user_id, (priorIssueCount.get(p.user_id) ?? 0) + 1);
-    }
-  }
+  await Promise.all(
+    rows.map(async (r) => {
+      const { count } = await sb
+        .from("issues")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", r.id)
+        .lt("week_of", weekOf)
+        .not("delivered_at", "is", null);
+      priorIssueCount.set(r.id, count ?? 0);
+    })
+  );
 
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
   // total Claude time is bounded by topics-this-week, not users × topics.
@@ -218,7 +226,7 @@ export async function GET(req: Request) {
     // ?weekOf= backfill, etc.). Override with ?force=1.
     if (!force && alreadyDelivered.has(row.id)) {
       skippedAlreadyDelivered++;
-      console.log(`[cron/weekly-send] skipped (already delivered this week) → ${row.email}`);
+      console.log(`[cron/weekly-send] skipped (already delivered this period) → ${row.email}`);
       continue;
     }
 
@@ -368,6 +376,7 @@ export async function GET(req: Request) {
   }
 
   const elapsedMs = Date.now() - startedAt;
+  const braveRateLimited = braveRateLimitedCount();
   const summary = {
     weekOf,
     subscribers: rows.length,
@@ -377,16 +386,19 @@ export async function GET(req: Request) {
     skippedBlankSubscribers,
     skippedAlreadyDelivered,
     failed,
+    braveRateLimited,
     elapsedMs,
     failures: failures.slice(0, 25),
   };
   console.log("[cron/weekly-send] summary:", JSON.stringify(summary));
 
-  // A paid subscriber getting nothing, or a hard send failure, should be LOUD —
-  // not buried in logs the owner won't read until a letter is noticed missing.
+  // A paid subscriber getting nothing, a hard send failure, or Brave quota
+  // exhaustion (letters silently degrade to stale filler — a subscriber
+  // reported exactly this class of repeat content) should be LOUD — not
+  // buried in logs the owner won't read until a letter is noticed missing.
   // Best-effort single email per run (sendOpsAlert never throws), only when
   // something actually went wrong.
-  if (skippedBlankSubscribers.length > 0 || failed > 0) {
+  if (skippedBlankSubscribers.length > 0 || failed > 0 || braveRateLimited > 0) {
     const lines = [
       `weekOf=${weekOf}  sent=${sent}  subscribers=${rows.length}  failed=${failed}`,
       skippedBlankSubscribers.length
@@ -395,9 +407,12 @@ export async function GET(req: Request) {
       failures.length
         ? `Send failures: ${failures.map((f) => `${f.email} (${f.error})`).join("; ")}`
         : "",
+      braveRateLimited > 0
+        ? `Brave returned 429 on ${braveRateLimited} queries — monthly search quota likely exhausted; letters are degrading to filler. Fix: upgrade the Brave plan (https://api.search.brave.com), ~$5-10/mo at this volume.`
+        : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed${braveRateLimited > 0 ? ", Brave quota hit" : ""}`,
       lines.join("\n")
     );
   }

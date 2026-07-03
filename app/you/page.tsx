@@ -88,7 +88,7 @@ export default function YouPage() {
           />
           <p className="alpha-ui text-xs mt-2" style={{ color: zodiacPicked && !birthday ? "var(--accent-ink)" : "var(--ink-soft)" }}>
             {zodiacPicked && !birthday
-              ? "You picked Zodiac, so add your birthday and we'll read your sign each week."
+              ? "You picked Zodiac, so add your birthday and we'll read your sign each day."
               : summary
                 ? `${summary}. The full date also unlocks the Zodiac topic if you want it.`
                 : "The full date tunes the letter to your generation and unlocks the Zodiac topic if you want it."}

@@ -201,7 +201,7 @@ export default function TopicsPage() {
             style={{ color: "var(--ink-soft)" }}
           >
             {signedIn
-              ? `Your top ${quota} fill your letter each week. Add backups below them. We swap one in when a favorite has no fresh news that week.`
+              ? `Your top ${quota} fill your letter each day. Add backups below them. We swap one in when a favorite has no fresh news that day.`
               : "You can swap any of these later, anytime."}
           </p>
         </div>

@@ -10,7 +10,7 @@ export default function FunPage() {
         field="funBlurb"
         currentPath="fun"
         question="One fun one. Something non-work you've been into?"
-        helper="We'll find one fun item for you most weeks."
+        helper="We'll find one fun item for you most days."
         placeholder="Florida pollinator gardening"
         multiline
         optional

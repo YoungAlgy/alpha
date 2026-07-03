@@ -61,18 +61,31 @@ export async function selectLetterSections<T>(
 
   // Pass 2 — last resort. The pool's live signal didn't fill the letter (a
   // quiet period). Fill remaining slots with filler for the top dry topics so
-  // the reader still gets a full letter.
+  // the reader still gets a full letter. PARALLEL waves like pass 1 — the old
+  // sequential walk meant a fully-dry pool (an everyday event at daily
+  // cadence's 1-day windows) could not fit even two 75s-deadline filler
+  // generations inside the cron's 110s per-user budget, and the reader got NO
+  // letter instead of a filler letter.
   const usedFiller: string[] = [];
-  if (chosen.length < size) {
-    for (let rank = 0; rank < pool.length && chosen.length < size; rank++) {
-      const topicId = pool[rank];
-      if (chosen.some((c) => c.topicId === topicId)) continue;
-      const value = await filler(topicId);
-      if (value != null) {
-        chosen.push({ topicId, rank, value, source: "filler" });
-        usedFiller.push(topicId);
+  let fillCursor = 0;
+  while (chosen.length < size && fillCursor < pool.length) {
+    const candidates: Array<{ topicId: string; rank: number }> = [];
+    while (candidates.length < size - chosen.length && fillCursor < pool.length) {
+      const topicId = pool[fillCursor];
+      if (!chosen.some((c) => c.topicId === topicId)) {
+        candidates.push({ topicId, rank: fillCursor });
       }
+      fillCursor++;
     }
+    if (candidates.length === 0) break;
+    const results = await Promise.all(candidates.map((c) => filler(c.topicId)));
+    candidates.forEach((c, k) => {
+      const value = results[k];
+      if (value != null && chosen.length < size) {
+        chosen.push({ topicId: c.topicId, rank: c.rank, value, source: "filler" });
+        usedFiller.push(c.topicId);
+      }
+    });
   }
 
   chosen.sort((a, b) => a.rank - b.rank);

@@ -38,13 +38,27 @@ function urlKey(url: string): string {
   }
 }
 
+// A bare site root (path "/" and no query) is a portal, not an article. Brave
+// returns them for broad queries and they always look "fresh", so they were
+// getting cited over and over (a subscriber saw the same homepage linked in
+// three letters). A search for what's NEW should cite pieces, not portals —
+// the curated mock signals still recommend whole sites by design.
+function isBareRoot(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return (u.pathname === "/" || u.pathname === "") && !u.search;
+  } catch {
+    return false;
+  }
+}
+
 export function rankAndDedup(results: BraveResult[], maxPerHost = 2): RankedSource[] {
   const enriched = results
     .map((r, i) => {
       const host = hostOf(r.url);
       return { r, i, host, key: urlKey(r.url), tier: hostTier(host, r.url) };
     })
-    .filter((e) => e.host && e.key && e.tier !== "denied");
+    .filter((e) => e.host && e.key && e.tier !== "denied" && !isBareRoot(e.r.url));
 
   // Authority first, then Brave's own relevance order.
   enriched.sort((a, b) => tierRank(a.tier) - tierRank(b.tier) || a.i - b.i);

@@ -38,7 +38,7 @@ export const TOPICS: TopicMeta[] = [
   { id: "books-worth-your-time", label: "Books worth your time", bucket: "Mind", tier: "A", blurb: "What's actually worth reading this month, with reasoning.", emoji: "📚" },
   { id: "psychology-behavior", label: "Psychology & behavior", bucket: "Mind", tier: "A", blurb: "Why people do what they do. The research that travels.", emoji: "🔍" },
   { id: "parenting", label: "Parenting", bucket: "Mind", tier: "A", blurb: "Gentle, science-backed, age-appropriate. No fearmongering.", emoji: "👶" },
-  { id: "zodiac", label: "Zodiac & astrology", bucket: "Mind", tier: "A", blurb: "Your weekly horoscope and what your sign is moving through. Add your birthday to switch it on.", emoji: "🔮" },
+  { id: "zodiac", label: "Zodiac & astrology", bucket: "Mind", tier: "A", blurb: "Your horoscope and what your sign is moving through. Add your birthday to switch it on.", emoji: "🔮" },
   // Culture
   { id: "inspiring-people", label: "Inspiring people", bucket: "Culture", tier: "A", blurb: "Profiles of operators, artists, founders doing the work.", emoji: "✨" },
   { id: "movies-tv", label: "Movies & TV", bucket: "Culture", tier: "A", blurb: "What's worth watching, who's making it, where it's going.", emoji: "🎬" },
