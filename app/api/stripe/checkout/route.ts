@@ -95,12 +95,11 @@ export async function POST(req: Request) {
     }
   }
 
-  // Prefer the public app URL (youngalgy.com) over the request origin —
-  // when the request comes in through the youngalgy.com Vercel rewrite,
-  // req.url's origin is the raw alpha-chi-five.vercel.app host, which would
-  // send users back to the unrouted Vercel URL after Stripe success.
+  // Prefer the public app URL (alpha.everyday.report) over the request origin —
+  // a request that arrives through a proxy/rewrite carries the raw internal
+  // Vercel host in req.url, which would send users back to an unrouted URL
+  // after Stripe success.
   const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || new URL(req.url).origin;
-  const basePath = "/alpha";
 
   try {
     const stripe = new Stripe(secret, {
@@ -137,8 +136,8 @@ export async function POST(req: Request) {
           alpha_city: body.city ?? "",
         },
       },
-      success_url: `${origin}${basePath}/writing?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}${basePath}/checkout`,
+      success_url: `${origin}/writing?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/checkout`,
       allow_promotion_codes: true,
       // Keep a bounced session recoverable. "A problem repeatedly occurred" is
       // iOS Safari hitting its per-tab memory limit on Stripe's hosted page, a

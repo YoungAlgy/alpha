@@ -121,7 +121,7 @@ export default function InboxPage() {
     } catch {
       // ignore — navigate anyway
     }
-    window.location.assign(`/alpha${path}`);
+    window.location.assign(path);
   }
 
   // Gate on `checked` + no issue so a cold-session race can't flash this
@@ -275,7 +275,7 @@ export default function InboxPage() {
           <span aria-hidden style={{ opacity: 0.4 }}>·</span>
           <ShareButton
             context="inbox"
-            url="https://youngalgy.com/alpha"
+            url="https://alpha.everyday.report"
             title="alpha. your alpha"
             text={`${SHARE_LEAD} Worth a look:`}
             label="Tell a friend"

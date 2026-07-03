@@ -76,7 +76,7 @@ const bebas = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://youngalgy.com"),
+  metadataBase: new URL("https://alpha.everyday.report"),
   // Consistent lowercase-brand titles across every page. Child pages set just
   // their page name (e.g. "Privacy") and the template appends "· alpha." —
   // no more drift between "— Alpha", "— alpha.", and "Alpha —". A page can
@@ -86,27 +86,25 @@ export const metadata: Metadata = {
     template: "%s · alpha.",
   },
   description: PITCH,
-  manifest: "/alpha/manifest.json",
-  // iMessage / iOS prefer a real PNG over SVG for the bubble icon. Listing the
-  // PNG first prevents fall-through to the apex domain's apple-touch-icon
-  // (which on youngalgy.com is the portfolio's sugar skull).
+  manifest: "/manifest.json",
+  // iMessage / iOS prefer a real PNG over SVG for the bubble icon.
   icons: {
     icon: [
-      { url: "/alpha/icon-512.png", type: "image/png", sizes: "512x512" },
-      { url: "/alpha/icon-192.png", type: "image/png", sizes: "192x192" },
-      { url: "/alpha/favicon.svg", type: "image/svg+xml" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
     ],
-    apple: [{ url: "/alpha/apple-touch-icon.png", sizes: "180x180" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   openGraph: {
     title: "alpha. your alpha",
     description: SHARE_LEAD,
     type: "website",
     siteName: "alpha.",
-    url: "https://youngalgy.com/alpha",
+    url: "https://alpha.everyday.report",
     images: [
       {
-        url: "/alpha/og-image.png",
+        url: "/og-image.png",
         width: 1200,
         height: 630,
         alt: "alpha. your alpha",
@@ -117,7 +115,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "alpha. your alpha",
     description: SHARE_LEAD,
-    images: ["/alpha/og-image.png"],
+    images: ["/og-image.png"],
   },
 };
 
@@ -140,7 +138,7 @@ const THEME_SCRIPT = `(function(){try{var t=null,r=localStorage.getItem("alpha-o
 // under reduced-motion, and skipped on the marketing/legal pages and every step
 // of the signup funnel (welcome through checkout) plus /signin, so it only fires
 // on a real app open. Removed after the animation or the first interaction.
-const INTRO_SCRIPT = `(function(){try{var p=(location.pathname||"").replace(/^\\/alpha/,"")||"/";var S={"/":1,"/sample":1,"/privacy":1,"/terms":1,"/support":1,"/welcome":1,"/theme":1,"/name":1,"/city":1,"/role":1,"/focus":1,"/topics":1,"/fun":1,"/you":1,"/email":1,"/checkout":1,"/signin":1};if(S[p])return;if(sessionStorage.getItem("alpha-intro-shown"))return;if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;sessionStorage.setItem("alpha-intro-shown","1");var d=document.documentElement;d.classList.add("alpha-intro-active");function off(){window.removeEventListener("pointerdown",end,true);window.removeEventListener("keydown",end,true);window.removeEventListener("wheel",end,true);window.removeEventListener("touchmove",end,true);}function end(){d.classList.remove("alpha-intro-active");off();}window.addEventListener("pointerdown",end,true);window.addEventListener("keydown",end,true);window.addEventListener("wheel",end,true);window.addEventListener("touchmove",end,true);setTimeout(end,900);}catch(e){}})();`;
+const INTRO_SCRIPT = `(function(){try{var p=(location.pathname||"")||"/";var S={"/":1,"/sample":1,"/privacy":1,"/terms":1,"/support":1,"/welcome":1,"/theme":1,"/name":1,"/city":1,"/role":1,"/focus":1,"/topics":1,"/fun":1,"/you":1,"/email":1,"/checkout":1,"/signin":1};if(S[p])return;if(sessionStorage.getItem("alpha-intro-shown"))return;if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;sessionStorage.setItem("alpha-intro-shown","1");var d=document.documentElement;d.classList.add("alpha-intro-active");function off(){window.removeEventListener("pointerdown",end,true);window.removeEventListener("keydown",end,true);window.removeEventListener("wheel",end,true);window.removeEventListener("touchmove",end,true);}function end(){d.classList.remove("alpha-intro-active");off();}window.addEventListener("pointerdown",end,true);window.addEventListener("keydown",end,true);window.addEventListener("wheel",end,true);window.addEventListener("touchmove",end,true);setTimeout(end,900);}catch(e){}})();`;
 
 export default function RootLayout({
   children,

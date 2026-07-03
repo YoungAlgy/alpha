@@ -20,6 +20,13 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-07-03",
+    title: "alpha. has its own home now",
+    body:
+      "We moved to alpha.everyday.report. Everything works the same, just at a cleaner address. Old links and bookmarks still get you here, and every link in past emails still works. Nothing to do on your end.",
+    tag: "new",
+  },
+  {
     date: "2026-07-01",
     title: "Custom topics get their capitals right",
     body:

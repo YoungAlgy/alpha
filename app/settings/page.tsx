@@ -103,7 +103,7 @@ export default function SettingsPage() {
     setResumeBusy(true);
     setResumeErr(null);
     try {
-      const res = await fetch("/alpha/api/resume", { method: "POST" });
+      const res = await fetch("/api/resume", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
         setResumeErr("Sign in first to resume your letters.");
@@ -134,7 +134,7 @@ export default function SettingsPage() {
     setBusyTier(direction);
     setBillingMsg(null);
     try {
-      const res = await fetch("/alpha/api/stripe/update-quantity", {
+      const res = await fetch("/api/stripe/update-quantity", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ direction }),
@@ -397,7 +397,7 @@ export default function SettingsPage() {
             onClick={async () => {
               setBillingMsg(null);
               try {
-                const res = await fetch("/alpha/api/stripe/portal", { method: "POST" });
+                const res = await fetch("/api/stripe/portal", { method: "POST" });
                 const data = await res.json();
                 if (res.status === 401) {
                   setBillingMsg({ kind: "err", text: "Sign in first to manage billing." });
@@ -489,12 +489,7 @@ export default function SettingsPage() {
                 reset();
                 localStorage.removeItem("alpha-first-issue");
                 localStorage.removeItem("alpha-theme");
-                // Must include the /alpha basePath: window.location isn't
-                // basePath-aware (only next/link and router.push are), so a
-                // bare "/welcome" would send the browser to the site root,
-                // outside where this app is mounted. See app/inbox/page.tsx's
-                // clearAndGo for the same footgun already solved once.
-                window.location.href = "/alpha/welcome";
+                window.location.href = "/welcome";
               }}
               className="alpha-ui text-sm underline underline-offset-4"
               style={{ color: "var(--ink-soft)" }}

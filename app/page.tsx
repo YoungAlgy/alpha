@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   // Set explicitly on the indexable landing, next to its own title + canonical.
   // Same value as the root default, single-sourced from PITCH so it can't drift.
   description: PITCH,
-  alternates: { canonical: "https://youngalgy.com/alpha" },
+  alternates: { canonical: "https://alpha.everyday.report" },
 };
 
 // Structured data for richer search results. Static + app-controlled (no user
@@ -25,25 +25,25 @@ const JSON_LD = {
   "@graph": [
     {
       "@type": "Organization",
-      "@id": "https://youngalgy.com/alpha#org",
+      "@id": "https://alpha.everyday.report#org",
       name: "alpha.",
-      url: "https://youngalgy.com/alpha",
-      logo: "https://youngalgy.com/alpha/icon-512.png",
+      url: "https://alpha.everyday.report",
+      logo: "https://alpha.everyday.report/icon-512.png",
       email: "youngalgy@gmail.com",
     },
     {
       "@type": "WebSite",
-      "@id": "https://youngalgy.com/alpha#website",
+      "@id": "https://alpha.everyday.report#website",
       name: "alpha.",
-      url: "https://youngalgy.com/alpha",
-      publisher: { "@id": "https://youngalgy.com/alpha#org" },
+      url: "https://alpha.everyday.report",
+      publisher: { "@id": "https://alpha.everyday.report#org" },
     },
     {
       "@type": "Product",
       name: "alpha. A personal letter",
       description: PITCH,
-      brand: { "@id": "https://youngalgy.com/alpha#org" },
-      url: "https://youngalgy.com/alpha",
+      brand: { "@id": "https://alpha.everyday.report#org" },
+      url: "https://alpha.everyday.report",
     },
   ],
 };

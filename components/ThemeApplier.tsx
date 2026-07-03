@@ -69,7 +69,7 @@ export function ThemeApplier() {
         // just /settings. No-op on every normal load (they already match).
         const authLc = user.email?.trim().toLowerCase();
         if (authLc && (data?.email ?? "").toLowerCase() !== authLc) {
-          fetch("/alpha/api/account/email/reconcile", { method: "POST" }).catch(() => {});
+          fetch("/api/account/email/reconcile", { method: "POST" }).catch(() => {});
         }
       } catch {
         // ignore — fall back to local

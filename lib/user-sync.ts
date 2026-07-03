@@ -80,7 +80,7 @@ export async function deleteUserAccount(): Promise<{ ok: boolean; error?: string
     const sb = supabaseClient();
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return { ok: true };
-    const res = await fetch("/alpha/api/account/delete", { method: "POST" });
+    const res = await fetch("/api/account/delete", { method: "POST" });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       return { ok: false, error: data.error || `HTTP ${res.status}` };

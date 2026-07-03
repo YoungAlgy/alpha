@@ -22,7 +22,7 @@ export default function CheckoutPage() {
     setStripeErr(null);
     track("checkout_started", { topics: state.topics?.length ?? 0 });
     try {
-      const res = await fetch("/alpha/api/stripe/checkout", {
+      const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

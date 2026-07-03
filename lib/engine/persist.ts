@@ -69,7 +69,7 @@ export async function persistIssueIfPossible(
       email,
       options: {
         redirectTo: process.env.NEXT_PUBLIC_APP_URL
-          ? `${process.env.NEXT_PUBLIC_APP_URL}/alpha/auth/callback?next=/inbox`
+          ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/inbox`
           : undefined,
       },
     });

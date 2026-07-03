@@ -2,16 +2,16 @@
   "name": "alpha.",
   "short_name": "alpha",
   "description": "Your alpha. A personal letter on the five topics you care about, three times a week.",
-  "start_url": "/alpha/inbox",
-  "scope": "/alpha/",
+  "start_url": "/inbox",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#F4EFE0",
   "theme_color": "#1F3D2E",
   "orientation": "portrait",
   "icons": [
-    { "src": "/alpha/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/alpha/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/alpha/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "/alpha/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
   ]
 }

@@ -157,7 +157,7 @@ export default function TopicsPage() {
       // app/api/account/topics/route.ts.
       setSaving(true);
       try {
-        const res = await fetch("/alpha/api/account/topics", {
+        const res = await fetch("/api/account/topics", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ topics: picked }),

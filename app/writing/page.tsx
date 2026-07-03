@@ -102,7 +102,7 @@ export default function WritingPage() {
     // UI so the user isn't stranded staring at a writing animation.
     async function attemptGenerate(retriesLeft: number): Promise<void> {
       try {
-        const r = await fetch("/alpha/api/generate", {
+        const r = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ profile, sessionId }),

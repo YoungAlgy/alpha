@@ -296,8 +296,8 @@ export async function GET(req: Request) {
           }
         }
 
-        const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
-        const inboxUrl = `${origin}/alpha/inbox`;
+        const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
+        const inboxUrl = `${origin}/inbox`;
         try {
           await sendLetterNotification({
             to: row.email,

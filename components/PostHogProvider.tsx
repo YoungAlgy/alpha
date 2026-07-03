@@ -17,8 +17,7 @@ export function PostHogProvider() {
 
   useEffect(() => {
     if (!pathname) return;
-    // basePath is /alpha; pathname here is the in-app path (e.g. /welcome).
-    capturePageview(`/alpha${pathname === "/" ? "" : pathname}`);
+    capturePageview(pathname);
   }, [pathname]);
 
   return null;

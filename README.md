@@ -2,13 +2,13 @@
 
 A $5/mo personal newsletter. Users pick 5 topics from a curated menu of 25 (add-on bundles up to 25 topics, $25/mo); three times a week (Sun/Tue/Thu) we deliver an AI-written letter built from real sources — every cited link must come from that send's live search, enforced in code (lib/engine/url-guard.ts). Each send only looks at what's new since the last one (lib/cadence.ts).
 
-Lives at `youngalgy.com/alpha` (Vercel rewrite from a separate Next.js project at this repo to `alpha-chi-five.vercel.app`).
+Lives at `alpha.everyday.report` (its own domain, app at the root — no basePath). `everyday.report` redirects there. The old home, `youngalgy.com/alpha/*`, 308-redirects page paths here and still PROXIES `/alpha/api/*` to this deployment so links baked into already-sent emails (unsubscribe, one-click List-Unsubscribe-Post, magic-link callbacks) keep working.
 
 ## Stack
 
 | Layer | Tool |
 |---|---|
-| Framework | Next.js 16 (App Router, basePath `/alpha`, Turbopack) |
+| Framework | Next.js 16 (App Router, Turbopack) |
 | Styling | Tailwind CSS 4 + CSS custom properties (10 themes) |
 | Hosting | Vercel (project `alpha`) |
 | DB / Auth | Supabase (project `xpqxhdciaoicsnyyfshy` in the "Algy" org) |
@@ -99,14 +99,14 @@ BRAVE_SEARCH_API_KEY=          # Brave Search
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SECRET_KEY=
-NEXT_PUBLIC_APP_URL=https://youngalgy.com  # canonical origin for Stripe URLs + ALL email links
+NEXT_PUBLIC_APP_URL=https://alpha.everyday.report  # canonical origin for Stripe URLs + ALL email links
 UNSUBSCRIBE_SECRET=            # HMAC secret for unsubscribe + letter-view tokens
 CRON_SECRET=                   # bearer for /api/cron/weekly-send (Vercel Cron sends it)
 SUPPORT_FORWARD_EMAIL=         # where /api/support notifications go (optional)
 NEXT_PUBLIC_POSTHOG_KEY=       # analytics (optional — inert if unset)
 ```
 
-`GET /alpha/api/health` returns which services are configured + active email provider.
+`GET /api/health` returns which services are configured + active email provider.
 
 ## Development
 
@@ -128,7 +128,7 @@ vercel deploy
 vercel promote <preview-url>   # explicit promote — confirms before swapping prod
 ```
 
-`youngalgy.com/alpha/*` paths proxy to this app via a `vercel.json` rewrite in the youngalgy.com portfolio repo (`YoungAlgy/youngalgy`).
+The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalgy.com/alpha/*` page paths to `alpha.everyday.report/*` and proxies `/alpha/api/*` to this deployment (old email links).
 
 ## Operational notes
 

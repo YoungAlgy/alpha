@@ -42,7 +42,7 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
         typeof window !== "undefined" ? window.location.origin : "";
       const { error } = await sb.auth.updateUser(
         { email: next },
-        { emailRedirectTo: `${origin}/alpha/auth/callback?next=/settings` }
+        { emailRedirectTo: `${origin}/auth/callback?next=/settings` }
       );
       if (error) throw error;
       setSentTo(next);

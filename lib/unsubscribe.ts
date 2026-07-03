@@ -51,5 +51,5 @@ export function verifyUnsubscribeToken(token: string): string | null {
 
 export function unsubscribeUrl(userId: string, origin: string): string {
   const token = makeUnsubscribeToken(userId);
-  return `${origin.replace(/\/$/, "")}/alpha/api/unsubscribe?token=${encodeURIComponent(token)}`;
+  return `${origin.replace(/\/$/, "")}/api/unsubscribe?token=${encodeURIComponent(token)}`;
 }

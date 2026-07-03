@@ -72,7 +72,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   // Build the unsubscribe URL once and reuse it everywhere (HTML link, plain
   // text link, and the RFC 8058 List-Unsubscribe header that Gmail / Apple
   // Mail use to render their inbox-side unsubscribe button).
-  const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
+  const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
   const unsubUrl = params.userId ? buildUnsubscribeUrl(params.userId, origin) : null;
 
   const html = renderHTML({
@@ -335,7 +335,7 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
   const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@youngalgy.com>";
   const headers: Record<string, string> = {};
   if (params.userId) {
-    const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
+    const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
     const unsubUrl = buildUnsubscribeUrl(params.userId, origin);
     headers["List-Unsubscribe"] = `<${unsubUrl}>`;
     headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";

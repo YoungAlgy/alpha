@@ -15,7 +15,7 @@ export function SupportForm() {
     setStatus("sending");
     setError(null);
     try {
-      const res = await fetch("/alpha/api/support", {
+      const res = await fetch("/api/support", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, message }),

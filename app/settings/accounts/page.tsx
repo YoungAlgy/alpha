@@ -43,7 +43,7 @@ export default function AdminAccountsPage() {
 
   async function load() {
     try {
-      const res = await fetch("/alpha/api/admin/users");
+      const res = await fetch("/api/admin/users");
       if (res.status === 401) {
         setErr("Sign in first.");
         return;
@@ -69,7 +69,7 @@ export default function AdminAccountsPage() {
     if (confirmMsg && !confirm(confirmMsg)) return;
     setBusy(userId);
     try {
-      const res = await fetch("/alpha/api/admin/users", {
+      const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, userId }),

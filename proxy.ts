@@ -16,7 +16,7 @@ export const config = {
 // browser request — a malicious page calling fetch() to one of these on a
 // logged-in reader's behalf, riding their cookie — carries Sec-Fetch-Site of
 // "cross-site" or "same-site"; we reject both. This is safe because every
-// legitimate in-app call is same-ORIGIN (relative "/alpha/api/..." fetches →
+// legitimate in-app call is same-ORIGIN (relative "/api/..." fetches →
 // Sec-Fetch-Site: same-origin), and server-to-server callers send no Sec-Fetch
 // header at all (the Stripe webhook + cron aren't in this list anyway). GETs are
 // untouched. Sec-Fetch-Site is browser-computed from the user-visible origin, so
@@ -78,9 +78,7 @@ export async function proxy(req: NextRequest) {
   // not-yet-exchanged auth flow, has a null user here and renders the page
   // normally. Magic links land on /auth/callback (not /signin or /welcome),
   // which this redirect never touches, so a token exchange is never interrupted.
-  // /inbox doesn't bounce back, so no loop. endsWith() matches whether or not
-  // nextUrl carries the basePath; the destination is set basePath-relative so
-  // Next re-adds /alpha on the redirect.
+  // /inbox doesn't bounce back, so no loop.
   const path = req.nextUrl.pathname;
   if (user && (path.endsWith("/welcome") || path.endsWith("/signin"))) {
     const dest = req.nextUrl.clone();

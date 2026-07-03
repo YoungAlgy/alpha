@@ -185,8 +185,8 @@ export async function POST(req: Request) {
     // the subscriber's EMAIL — links to the internal host land on a domain
     // where their session cookie doesn't exist ("No letter yet" dead end; a
     // real subscriber hit exactly this). Same canonical fallback as the cron.
-    const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
-    const inboxUrl = `${origin}/alpha/inbox`;
+    const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
+    const inboxUrl = `${origin}/inbox`;
     let emailSent = false;
     if (profile.email && resendConfigured()) {
       const toEmail = profile.email;

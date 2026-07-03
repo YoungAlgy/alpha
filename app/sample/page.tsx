@@ -14,14 +14,14 @@ import { PITCH, SHARE_LEAD } from "@/lib/copy";
 export const metadata: Metadata = {
   title: "A sample issue",
   description: `See what a letter from alpha. looks like. ${PITCH}`,
-  alternates: { canonical: "https://youngalgy.com/alpha/sample" },
+  alternates: { canonical: "https://alpha.everyday.report/sample" },
   openGraph: {
     title: "A sample issue | alpha.",
     description:
       "See what a letter from alpha. looks like before you sign up.",
-    url: "https://youngalgy.com/alpha/sample",
+    url: "https://alpha.everyday.report/sample",
     type: "article",
-    images: ["/alpha/og-image.png"],
+    images: ["/og-image.png"],
   },
   // Sample-specific Twitter card too — otherwise X falls back to the layout's
   // generic title/description. Shares are a channel now (the ShareButton), so
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     title: "A sample issue | alpha.",
     description:
       "See what a letter from alpha. looks like before you sign up.",
-    images: ["/alpha/og-image.png"],
+    images: ["/og-image.png"],
   },
 };
 
@@ -90,7 +90,7 @@ export default function SamplePage() {
             </Link>
             <ShareButton
               context="sample"
-              url="https://youngalgy.com/alpha/sample"
+              url="https://alpha.everyday.report/sample"
               title="alpha. a sample issue"
               text={`${SHARE_LEAD} Here's a sample:`}
               label="Share this sample"

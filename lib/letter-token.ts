@@ -68,5 +68,5 @@ export function verifyLetterToken(token: string): string | null {
 
 export function letterUrl(userId: string, origin: string): string {
   const token = makeLetterToken(userId);
-  return `${origin.replace(/\/$/, "")}/alpha/letter?t=${encodeURIComponent(token)}`;
+  return `${origin.replace(/\/$/, "")}/letter?t=${encodeURIComponent(token)}`;
 }

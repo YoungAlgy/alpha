@@ -140,11 +140,11 @@ export async function POST(req: Request) {
             if (isFirstSubscription(existing ?? null) && resendConfigured()) {
               try {
                 const origin =
-                  process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://youngalgy.com";
+                  process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
                 await sendWelcomeEmail({
                   to: email,
                   firstName,
-                  inboxUrl: `${origin}/alpha/inbox`,
+                  inboxUrl: `${origin}/inbox`,
                   userId, // adds List-Unsubscribe headers (deliverability)
                 });
               } catch (e) {

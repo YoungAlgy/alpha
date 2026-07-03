@@ -109,7 +109,7 @@ export function ProfileEditor() {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch("/alpha/api/account/profile", {
+      const res = await fetch("/api/account/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
