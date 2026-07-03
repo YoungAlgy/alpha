@@ -27,6 +27,13 @@ const ENTRIES: Entry[] = [
     tag: "new",
   },
   {
+    date: "2026-07-03",
+    title: "Emails come from the new address too",
+    body:
+      "Your letters now arrive from alpha@everyday.report and sign-in codes from noreply@everyday.report, matching the new home. If your inbox filters by sender, update it. Everything else is unchanged.",
+    tag: "improved",
+  },
+  {
     date: "2026-07-01",
     title: "Custom topics get their capitals right",
     body:

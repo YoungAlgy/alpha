@@ -155,7 +155,7 @@ export default function AdminAccountsPage() {
               <Stat
                 label="Email"
                 value="Resend"
-                sub="alpha@youngalgy.com"
+                sub="alpha@everyday.report"
               />
               <Stat
                 label="Send cron"
