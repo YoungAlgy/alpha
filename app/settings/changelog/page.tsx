@@ -20,6 +20,27 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-07-01",
+    title: "Custom topics get their capitals right",
+    body:
+      "If you typed your own topic with a slash or a dash in it, only the first word came out capitalized and \"ai\" stayed \"Ai\". Now every part of a slashed or dashed phrase gets capitalized, and common acronyms like AI, ML, SEO, and the sports leagues read the way they should.",
+    tag: "fixed",
+  },
+  {
+    date: "2026-07-01",
+    title: "The wordmark dot is gold on every theme now",
+    body:
+      "The little dot after alpha. is meant to stay gold no matter your theme. On most themes it was picking up your theme color instead. It's gold everywhere again. We also tidied a few spots that still wrote \"Alpha\" with a big A so the name reads the same across the app, the letter, and the legal pages.",
+    tag: "fixed",
+  },
+  {
+    date: "2026-07-01",
+    title: "Deleting your account no longer hits a dead page",
+    body:
+      "Deleting your account did the delete fine but then dropped you on a 404 instead of a clean goodbye. Fixed, so you land where you should.",
+    tag: "fixed",
+  },
+  {
     date: "2026-06-25",
     title: "Letters read more like a person wrote them",
     body:
