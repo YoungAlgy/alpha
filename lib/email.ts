@@ -2,7 +2,7 @@ import { Resend } from "resend";
 import type { Issue } from "@/lib/types";
 import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
 
-// Single provider: Resend, sending from the verified alpha@youngalgy.com
+// Single provider: Resend, sending from the verified everyday.report domain
 // domain. (We previously carried an AWS SES branch as a dual-provider cutover
 // path, but AWS denied production access and we standardized on Resend —
 // the SES code was dead and has been removed.)
@@ -100,7 +100,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   // List-Unsubscribe + List-Unsubscribe-Post (RFC 2369 + 8058) tell Gmail /
   // Apple Mail / Outlook to surface a one-click unsubscribe button. The Post
   // variant tells them they can use POST without navigating away from the inbox.
-  const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@youngalgy.com>";
+  const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@everyday.report>";
   const resendHeaders: Record<string, string> = {
     // Unique per (subscriber, issue): issue.id alone is firstName+weekOf, which
     // collides across same-named subscribers. Prefix with the user id when we
@@ -147,7 +147,7 @@ export async function sendOpsAlert(subject: string, body: string): Promise<void>
   try {
     if (!resendConfiguredInternal()) return;
     const to = process.env.OPS_ALERT_EMAIL?.trim() || "youngalgy@gmail.com";
-    const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@youngalgy.com>";
+    const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@everyday.report>";
     await resendClient().emails.send({
       from: resendFrom,
       to,
@@ -332,7 +332,7 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
   if (!resendConfiguredInternal()) throw new Error("No email provider configured");
   const html = renderWelcomeHTML(params);
   const text = renderWelcomeText(params);
-  const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@youngalgy.com>";
+  const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@everyday.report>";
   const headers: Record<string, string> = {};
   if (params.userId) {
     const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";

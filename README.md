@@ -15,7 +15,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 | AI | Claude Sonnet 4.6 via `@anthropic-ai/sdk` |
 | Web search | Brave Search API ($5/mo free credit covers V0) |
 | Payments | Stripe — dedicated Alpha account (`acct_1TWfDlAhrDpDN9sH`), not shared with Ava |
-| Email | Resend (`alpha@youngalgy.com` — SPF/DKIM/DMARC verified). SES was dropped (AWS denied prod access); its code is removed. |
+| Email | Resend — letters from `"alpha." <alpha@everyday.report>`, sign-in (Supabase SMTP) from `noreply@everyday.report`. Domain verified via Vercel DNS. Old sender was alpha@youngalgy.com (that domain now removed from Resend — free plan holds 1 domain). |
 
 ## Architecture highlights
 
@@ -92,7 +92,7 @@ Required for full functionality (see `.env.local`):
 ```
 ANTHROPIC_API_KEY=             # Claude
 RESEND_API_KEY=                # Email (sole provider)
-RESEND_FROM=Alpha <alpha@youngalgy.com>
+RESEND_FROM="alpha." <alpha@everyday.report>
 STRIPE_SECRET_KEY=             # Stripe (Alpha account)
 STRIPE_WEBHOOK_SECRET=         # whsec_... for the webhook endpoint
 BRAVE_SEARCH_API_KEY=          # Brave Search
@@ -133,7 +133,7 @@ The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalg
 ## Operational notes
 
 - **Stripe** — dedicated Alpha account, fully Alpha-branded checkout. FOUNDER coupon (100%-off forever, owner-curated promo codes) for testing.
-- **Email** — Resend is the sole provider, sending as `"alpha." <alpha@youngalgy.com>` (SPF/DKIM/DMARC verified on youngalgy.com). SES was dropped entirely (AWS denied production access) and its code removed — there is no fallback provider.
+- **Email** — Resend is the sole provider. Letters send as `"alpha." <alpha@everyday.report>`; Supabase sign-in emails (custom SMTP through Resend) send as `"alpha." <noreply@everyday.report>`. The everyday.report sending domain is verified via records in the Vercel-managed DNS zone (`npx vercel dns ls everyday.report`).
 - **Supabase** — free tier in "Algy" org. Daily traffic prevents the 7-day idle pause.
 
 ## Project memory
