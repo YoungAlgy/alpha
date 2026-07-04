@@ -1,5 +1,6 @@
 import type { BraveResult } from "@/lib/brave";
 import { hostTier, tierRank, type SourceTier } from "./source-authority";
+import { normalizeUrl } from "./url-guard";
 
 // Dedup + authority-rank raw Brave results into a shortlist. Pure (no I/O) so
 // it's unit-testable. The expensive part (reading the article) happens after —
@@ -25,17 +26,18 @@ function hostOf(url: string): string {
   }
 }
 
-// Host + path + query, fragment dropped — matches url-guard's normalizeUrl
-// identity (query distinguishes ?v= / ?p= / ?id=), so a query-distinguished
-// real source isn't collapsed away here while the guard treats it as distinct.
+// Delegates to url-guard's normalizeUrl so this is the EXACT SAME identity
+// excludeUrls (built via normalizeUrl in assemble.ts/blurb-cache.ts) compares
+// against — falls back to the raw url on a parse failure normalizeUrl can't
+// key (matches this function's old always-a-string contract, used by seen.has
+// below). A hand-rolled parallel implementation lived here before and had
+// drifted from normalizeUrl: it didn't strip amp./m./mobile. mirror
+// subdomains or tracking params, so an already-cited article re-surfacing
+// with a utm_ param or from an AMP mirror silently failed to match the
+// exclusion set below and could ship again — the exact repeat this file's
+// excludeUrls support exists to prevent.
 function urlKey(url: string): string {
-  try {
-    const u = new URL(url);
-    const path = u.pathname.replace(/\/+$/, "") || "/";
-    return `${hostOf(url)}${path}${u.search}`;
-  } catch {
-    return url;
-  }
+  return normalizeUrl(url) ?? url;
 }
 
 // A bare site root (path "/" and no query) is a portal, not an article. Brave

@@ -123,6 +123,26 @@ const withExclusion = rankAndDedup(
 check("excluded url dropped before host cap is applied", !withExclusion.some((r) => r.host === "reuters.com" && r.title.startsWith("cited")));
 check("both NEW same-host articles survive (cap didn't starve them)", withExclusion.filter((r) => r.host === "reuters.com").length === 2);
 
+// excludeUrls is built via url-guard's normalizeUrl (strips tracking params +
+// amp/m/mobile mirror subdomains). rankAndDedup's own key MUST use the exact
+// same identity, or an already-cited article re-surfacing with a utm_ param
+// or from an AMP mirror silently dodges the exclusion set and ships again —
+// the repeat this mechanism exists to prevent. Regression for a real bug: an
+// earlier hand-rolled urlKey() here didn't strip either, so this failed.
+const citedIdentity = new Set(["example.com/story-abc"]);
+const dodgeAttempt = rankAndDedup(
+  [
+    { title: "same story, utm-tagged", url: "https://www.example.com/story-abc?utm_source=newsletter", description: "", age: "1 day ago" },
+    { title: "same story, amp mirror", url: "https://amp.example.com/story-abc", description: "", age: "1 day ago" },
+    { title: "genuinely new", url: "https://example.com/story-xyz", description: "", age: "1 day ago" },
+  ],
+  2,
+  citedIdentity
+);
+check("utm-tagged repeat of a cited url is excluded", !dodgeAttempt.some((r) => r.title === "same story, utm-tagged"));
+check("amp-mirror repeat of a cited url is excluded", !dodgeAttempt.some((r) => r.title === "same story, amp mirror"));
+check("genuinely new article still survives", dodgeAttempt.some((r) => r.title === "genuinely new"));
+
 // (4) looksLikeProse (via fetchArticleText would need network; test sanitize+shape proxy)
 console.log("(4) chrome vs prose (sanitize keeps shape)");
 const chrome = sanitizeContent("Publish\nPages\nLayers\nAssets\nSearch\nHome\nWork\nServices\nAbout\nContact");
