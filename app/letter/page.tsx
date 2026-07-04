@@ -37,23 +37,31 @@ export default async function LetterPage({
   searchParams: Promise<{ t?: string }>;
 }) {
   const { t } = await searchParams;
-  const userId = t ? verifyLetterToken(t) : null;
+  const payload = t ? verifyLetterToken(t) : null;
 
-  if (!userId) return <LinkProblem reason="expired" />;
+  if (!payload) return <LinkProblem reason="expired" />;
+  const { userId, weekOf } = payload;
 
   let issue: Issue | null = null;
   let theme: ThemeId = "forest";
   try {
     const sb = await supabaseServiceClient();
+    // v2 tokens name ONE issue — load exactly that letter, so every email's
+    // link opens the letter that email announced. (The old always-latest
+    // query made every link in every email open the same newest letter — a
+    // subscriber reported all her letters looking "exactly the same".)
+    // Legacy v1 tokens carry no weekOf and fall back to latest, matching
+    // their historical behavior.
+    let issueQuery = sb
+      .from("issues")
+      .select("week_of, volume, number, editor_intro, sections")
+      .eq("user_id", userId);
+    if (weekOf) {
+      issueQuery = issueQuery.eq("week_of", weekOf);
+    }
     const [{ data: userRow }, { data: issueRow }] = await Promise.all([
       sb.from("users").select("first_name, city, theme").eq("id", userId).maybeSingle(),
-      sb
-        .from("issues")
-        .select("week_of, volume, number, editor_intro, sections")
-        .eq("user_id", userId)
-        .order("week_of", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+      issueQuery.order("week_of", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (issueRow) {
       const row = issueRow as IssueRow;

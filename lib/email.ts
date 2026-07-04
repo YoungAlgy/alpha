@@ -65,8 +65,16 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   const subject = subjectLine(params.firstName, params.issueNumber, params.issue.weekOf);
   const preheader = previewFromIssue(params.issue);
   const teaser = params.issue.editorIntro.slice(0, 320).trim();
+  // Topic label + the lead item's actual headline. The old label-only list
+  // made every email look IDENTICAL day to day (a reader's topics never
+  // change, so "IN THIS ISSUE • Personal finance • Real estate ..." read the
+  // same in every letter — a subscriber thought she was getting the same
+  // letter repeatedly). The headline is what proves each day is new.
   const sectionList = params.issue.sections
-    .map((s) => `• ${s.topicLabel}`)
+    .map((s) => {
+      const lead = s.items?.[0]?.headline?.trim();
+      return lead ? `• ${s.topicLabel} — ${lead}` : `• ${s.topicLabel}`;
+    })
     .join("\n");
 
   // Build the unsubscribe URL once and reuse it everywhere (HTML link, plain

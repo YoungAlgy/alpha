@@ -229,7 +229,7 @@ export async function POST(req: Request) {
             issue,
             inboxUrl,
             // Tokenized view-in-browser CTA. Opens the letter with no session.
-            letterUrl: persistence?.userId ? buildLetterUrl(persistence.userId, origin) : null,
+            letterUrl: persistence?.userId ? buildLetterUrl(persistence.userId, origin, weekOf) : null,
             issueNumber,
             userId: persistence?.userId ?? null,
           });

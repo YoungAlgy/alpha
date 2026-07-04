@@ -314,7 +314,7 @@ export async function GET(req: Request) {
             inboxUrl,
             // Tokenized view-in-browser link: the CTA opens the letter directly
             // with no session — no more "No letter yet" on a signed-out device.
-            letterUrl: buildLetterUrl(row.id, origin),
+            letterUrl: buildLetterUrl(row.id, origin, weekOf),
             issueNumber: (priorIssueCount.get(row.id) ?? 0) + 1,
             userId: row.id,
           });

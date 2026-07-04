@@ -41,6 +41,21 @@ function safeUrl(url: string | undefined): string | null {
   }
 }
 
+// The dateline. Cron-generated issues arrive pre-formatted ("Tuesday, June
+// 30, 2026"); the tokenized /letter page passes the raw DB date ("2026-06-30")
+// — format that case too, so every view carries an unmistakable human date
+// (a subscriber couldn't tell her letters apart; the day must be loud).
+function formatDateline(weekOf: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekOf)) return weekOf; // already formatted
+  return new Date(`${weekOf}T12:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function Digest({ issue }: DigestProps) {
   return (
     <article className="alpha-body max-w-2xl mx-auto px-6 py-20 md:py-28">
@@ -48,7 +63,7 @@ export function Digest({ issue }: DigestProps) {
         className="alpha-mono mb-14 text-center"
         style={{ color: "var(--ink-soft)" }}
       >
-        {issue.weekOf}
+        {formatDateline(issue.weekOf)}
       </div>
 
       <h1 className="alpha-display text-4xl md:text-5xl font-bold mb-6 tracking-tight">
