@@ -1,10 +1,19 @@
 import type { TopicSignal } from "./types";
 
-// V0 mock sources. Each entry carries the raw weekly signal for one topic,
+// V0 mock sources. Each entry carries curated EVERGREEN signal for one topic,
 // INCLUDING real URLs we know exist. Claude may only cite URLs that appear
 // in the signal — it must not invent new ones. In V1 these get replaced by
 // Brave Search + curated RSS.
-
+//
+// This is the LAST-RESORT filler (see assemble.ts's genFiller): it only ever
+// fires when a reader's own topics AND the generic-fallback tail (see
+// buildGenerationPool) both come up dry via live search — in practice, only
+// during a total Brave outage. Deliberately worded with NO "this week" /
+// dated framing (was originally written and dated "week of May 17, 2026" —
+// harmless while genuinely rare-path filler, but actively misleading if ever
+// shown on, say, a September send with specific numbers/events pinned to
+// May). WEEK_OF below is an internal cache-lookup tag only, never shown to
+// the reader or asserted as "current" in the prompt text itself.
 const WEEK_OF = "2026-05-17";
 
 export const MOCK_SIGNALS: TopicSignal[] = [
@@ -12,7 +21,7 @@ export const MOCK_SIGNALS: TopicSignal[] = [
     topicId: "healthcare-recruiting",
     weekOf: WEEK_OF,
     context: `
-This week in US healthcare recruiting (week of May 17, 2026):
+A snapshot of US healthcare recruiting:
 
 NEWS:
 - HCA Florida Gainesville Hospital opened May 5; orbital practices on the SW 41st Boulevard campus filed three FL-licensed PA postings this week. Historical pattern: orbital hires lag the main facility by 14-30 days. (https://www.fiercehealthcare.com)
@@ -34,7 +43,7 @@ WORTH READING / WATCHING:
     topicId: "sales-persuasion",
     weekOf: WEEK_OF,
     context: `
-This week in sales psychology (week of May 17, 2026):
+A snapshot of sales psychology:
 
 WORTH WATCHING:
 - Codie Sanchez + Daniel Priestley + Sahil Bloom roundtable on Diary of a CEO — her "1% / 9% / 90% pricing pyramid" framework went viral. (https://www.youtube.com/@TheDiaryOfACEO)
@@ -55,7 +64,7 @@ POSTS / THREADS:
     topicId: "founder-operator",
     weekOf: WEEK_OF,
     context: `
-This week in founder / operator wisdom (week of May 17, 2026):
+A snapshot of founder / operator wisdom:
 
 LISTEN:
 - My First Million on the systematic undervaluation of $1-3M one-person businesses. (https://www.mfmpod.com)
@@ -79,7 +88,7 @@ POSTS:
     topicId: "ai-news",
     weekOf: WEEK_OF,
     context: `
-This week in AI — news, releases & tools for work (week of May 17, 2026):
+A snapshot of AI — news, releases & tools for work:
 
 NEWS / RELEASES:
 - Anthropic released a new Claude model variant with extended context. (https://www.anthropic.com/news)
@@ -116,9 +125,9 @@ POSTS:
     topicId: "fl-gardening",
     weekOf: WEEK_OF,
     context: `
-This week in Florida gardening (week of May 17, 2026):
+A snapshot of Florida gardening:
 
-THIS WEEK'S WEATHER WINDOW:
+WEATHER WINDOW:
 - NOAA Tampa Bay forecast: Tuesday-Wednesday dry, Thursday-Sunday sustained afternoon rain. Best transplant window for native milkweed (Asclepias tuberosa, A. incarnata) since March. (https://www.weather.gov/tbw)
 
 WORTH READING:
@@ -142,7 +151,7 @@ POSTS:
     topicId: "inspiring-people",
     weekOf: WEEK_OF,
     context: `
-This week in inspiring profiles (week of May 17, 2026):
+A snapshot of inspiring profiles:
 
 WORTH READING:
 - New Yorker profile of Sahil Bloom — deeper than the book tour version, on building audience before product. (https://www.newyorker.com)
@@ -162,7 +171,7 @@ POSTS:
     topicId: "longevity-wellness",
     weekOf: WEEK_OF,
     context: `
-This week in longevity & wellness (week of May 17, 2026):
+A snapshot of longevity & wellness:
 
 LISTEN:
 - Peter Attia podcast on heat exposure (sauna) — recommends 20 min, 4x/week at 180°F based on long-term cohort data. (https://peterattiamd.com)
@@ -187,7 +196,7 @@ POSTS:
     topicId: "nutrition-food",
     weekOf: WEEK_OF,
     context: `
-This week in nutrition (week of May 17, 2026):
+A snapshot of nutrition:
 
 WORTH READING:
 - NEJM RCT: olive oil ≥4 tbsp/day reduced cardiovascular events by 19% over 5 years across baseline diets. (https://www.nejm.org)
@@ -213,7 +222,7 @@ LISTEN:
     topicId: "books-worth-your-time",
     weekOf: WEEK_OF,
     context: `
-This week in books (week of May 17, 2026):
+A snapshot of books:
 
 NEW RELEASES:
 - Naval published "The Almanack II" — collected wisdom from the last 5 years. Reportedly better-edited than the first. (https://www.navalmanack.com)
@@ -234,7 +243,7 @@ WHERE TO READ THEM:
     topicId: "music",
     weekOf: WEEK_OF,
     context: `
-This week in music (week of May 17, 2026):
+A snapshot of music:
 
 NEWS:
 - Spotify Q1: 685M MAU, 268M paying. AI-generated music share of streams: industry estimates 8-12%. (https://newsroom.spotify.com)
@@ -320,7 +329,7 @@ WHERE THE NEWS BREAKS:
     topicId: "movies-tv",
     weekOf: WEEK_OF,
     context: `
-This week in movies & TV (week of May 17, 2026):
+A snapshot of movies & TV:
 
 WORTH WATCHING:
 - Severance Season 3 premiered on Apple TV+, near-universal praise. (https://tv.apple.com)
@@ -343,7 +352,7 @@ READ:
     topicId: "style-fashion",
     weekOf: WEEK_OF,
     context: `
-This week in style (week of May 17, 2026):
+A snapshot of style:
 
 NEWS / TRENDS:
 - Highsnobiety: workwear silhouettes (Carhartt, Dickies, MakerHaus) at the high end of menswear. Loro Piana referenced "thoughtful worker" in spring lookbook. (https://www.highsnobiety.com)
@@ -362,7 +371,7 @@ APPS / TOOLS:
     topicId: "sports-betting",
     weekOf: WEEK_OF,
     context: `
-This week in sports & betting markets (week of May 17, 2026):
+A snapshot of sports & betting markets:
 
 EDGES / SHARP ACTION:
 - Unabated.com weekly sharp report: NBA totals showing systematic under-bias at books that haven't adjusted to slower pace post-rules change. (https://unabated.com)
@@ -399,7 +408,7 @@ POSTS:
     topicId: "marketing-growth",
     weekOf: WEEK_OF,
     context: `
-This week in marketing & growth (week of May 17, 2026):
+A snapshot of marketing & growth:
 
 WORTH READING:
 - Lenny's Newsletter weekly: "PMF metrics — what to actually measure." (https://www.lennysnewsletter.com)
@@ -425,7 +434,7 @@ POSTS:
     topicId: "personal-finance",
     weekOf: WEEK_OF,
     context: `
-This week in personal finance, investing & side income (week of May 17, 2026):
+A snapshot of personal finance, investing & side income:
 
 WORTH READING:
 - The Money Guy Show's 2026 Financial Order of Operations update. (https://moneyguy.com)
@@ -463,7 +472,7 @@ POSTS:
     topicId: "real-estate",
     weekOf: WEEK_OF,
     context: `
-This week in real estate (week of May 17, 2026):
+A snapshot of real estate:
 
 NEWS:
 - 30-year mortgage rates settled at 6.4% this week — first sub-6.5% close of 2026. (https://www.bankrate.com)
@@ -489,7 +498,7 @@ POSTS:
     topicId: "macro-markets",
     weekOf: WEEK_OF,
     context: `
-This week in macro & markets (week of May 17, 2026):
+A snapshot of macro & markets:
 
 NEWS:
 - Fed minutes show committee split on June cut — most members favor holding. (https://www.federalreserve.gov)
@@ -515,7 +524,7 @@ POSTS:
     topicId: "mental-health",
     weekOf: WEEK_OF,
     context: `
-This week in mental health (week of May 17, 2026):
+A snapshot of mental health:
 
 WORTH READING:
 - New JAMA Psychiatry paper on SSRIs vs. talk therapy long-term outcomes. (https://jamanetwork.com)
@@ -542,7 +551,7 @@ POSTS:
     topicId: "womens-health",
     weekOf: WEEK_OF,
     context: `
-This week in women's health (week of May 17, 2026):
+A snapshot of women's health:
 
 WORTH READING:
 - Dr. Stacy Sims's substack on training around the menstrual cycle. (https://www.drstacysims.com)
@@ -569,7 +578,7 @@ POSTS:
     topicId: "psychology-behavior",
     weekOf: WEEK_OF,
     context: `
-This week in psychology & behavior (week of May 17, 2026):
+A snapshot of psychology & behavior:
 
 WORTH READING:
 - Adam Grant on the "ideal self" trap in goal-setting. (https://adamgrant.net)
@@ -595,7 +604,7 @@ POSTS:
     topicId: "parenting",
     weekOf: WEEK_OF,
     context: `
-This week in parenting (week of May 17, 2026):
+A snapshot of parenting:
 
 WORTH READING:
 - Emily Oster's ParentData weekly on screen time research. (https://www.parentdata.org)
@@ -623,7 +632,7 @@ POSTS:
     topicId: "startups-vc",
     weekOf: WEEK_OF,
     context: `
-This week in startups & VC (week of May 17, 2026):
+A snapshot of startups & VC:
 
 NEWS:
 - a16z launches new $7B fund focused on AI applications layer. (https://a16z.com)
@@ -655,7 +664,7 @@ POSTS:
     topicId: "faith-meaning",
     weekOf: WEEK_OF,
     context: `
-This week in faith & meaning (week of May 17, 2026):
+A snapshot of faith & meaning:
 
 WORTH READING:
 - Christianity Today weekly on biblical literacy decline. (https://www.christianitytoday.com)
@@ -684,7 +693,7 @@ POSTS:
     topicId: "web3-updates",
     weekOf: WEEK_OF,
     context: `
-This week in Web3 (week of May 17, 2026). URLs below are real — cite them, never invent:
+A snapshot of Web3. URLs below are real — cite them, never invent:
 
 PROTOCOL / NEWS:
 - Ethereum Foundation blog — protocol roadmap, upgrade notes, research posts. (https://blog.ethereum.org)
@@ -719,7 +728,7 @@ POSTS:
     topicId: "trading-cards",
     weekOf: WEEK_OF,
     context: `
-This week in trading cards (week of May 17, 2026). URLs below are real — cite them, never invent:
+A snapshot of trading cards. URLs below are real — cite them, never invent:
 
 MARKET DATA / PRICES:
 - Card Ladder — sales-history price tracking and market indexes across sports cards; the hobby's reference chart. (https://www.cardladder.com)
@@ -744,7 +753,7 @@ NEWS / ANALYSIS:
     topicId: "gardening-plants",
     weekOf: WEEK_OF,
     context: `
-This week in gardening & houseplants (week of May 17, 2026). URLs below are real — cite them, never invent:
+A snapshot of gardening & houseplants. URLs below are real — cite them, never invent:
 
 GROW / HOW-TO:
 - Epic Gardening — practical houseplant, raised-bed, and vegetable guides from Kevin Espiritu's team; seasonal what-to-plant. (https://www.epicgardening.com)
@@ -760,7 +769,7 @@ POLLINATORS / NATIVE:
     topicId: "sustainable-living",
     weekOf: WEEK_OF,
     context: `
-This week in sustainable living (week of May 17, 2026). URLs below are real — cite them, never invent:
+A snapshot of sustainable living. URLs below are real — cite them, never invent:
 
 EVERYDAY / HOME:
 - Treehugger — practical low-waste home, energy, and repair guides plus sustainability news. (https://www.treehugger.com)
