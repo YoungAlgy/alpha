@@ -192,11 +192,21 @@ export async function generateIssue(
     throw new Error("All topic sections failed to generate");
   }
 
+  // Sections whose topicId isn't in the reader's OWN pool came from the
+  // generic-fallback tail (buildGenerationPool) — a stand-in shown because
+  // their real topics were quiet, not something they chose. The editor's note
+  // needs this so it doesn't force a "this connects to your city/job" touch
+  // onto a topic the reader never picked (see generateEditorNote's own
+  // fallbackTopicIds param).
+  const fallbackTopicIds = new Set(
+    blurbs.filter((b) => !pool.includes(b.topicId as TopicId)).map((b) => b.topicId)
+  );
+
   // Step 2 — personalized editor's note weaving the sections. If it fails,
   // fall back to a clean standalone intro rather than sinking the letter.
   let editorIntro: string;
   try {
-    editorIntro = await generateEditorNote(user, blurbs);
+    editorIntro = await generateEditorNote(user, blurbs, fallbackTopicIds);
   } catch (e) {
     console.warn(`[assemble] editor note failed, using fallback intro: ${e instanceof Error ? e.message : e}`);
     const labels = blurbs.map((b) => b.topicLabel.toLowerCase());

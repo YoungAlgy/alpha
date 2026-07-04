@@ -84,13 +84,27 @@ export async function POST(req: Request) {
     httpClient: Stripe.createNodeHttpClient(),
   });
 
-  // Find the active subscription for this customer
+  // Find this customer's live subscription. status:"active" ONLY missed two
+  // real, reachable states: a 100%-off comp/trial checkout (checkout/route.ts
+  // supports this via payment_method_collection:"if_required") sits in
+  // "trialing", and a subscriber whose card just started failing sits in
+  // "past_due" for Stripe's multi-week Smart Retry window during which the
+  // webhook's invoice.payment_failed handler deliberately keeps their access
+  // live (see that handler's own comment) — both are real, hasActiveAccess()
+  // -passing users who'd otherwise hit a false "no subscription" error just
+  // for trying to change their tier. Matches lib/stripe-cancel.ts's own
+  // status:"all" + explicit-status-set pattern rather than a single string.
+  const LIVE_FOR_MANAGEMENT: ReadonlySet<Stripe.Subscription.Status> = new Set([
+    "active",
+    "trialing",
+    "past_due",
+  ]);
   const subs = await stripe.subscriptions.list({
     customer: row.stripe_customer_id,
-    status: "active",
-    limit: 1,
+    status: "all",
+    limit: 10,
   });
-  const sub = subs.data[0];
+  const sub = subs.data.find((s) => LIVE_FOR_MANAGEMENT.has(s.status));
   if (!sub) {
     return NextResponse.json(
       { error: "No active subscription on file." },

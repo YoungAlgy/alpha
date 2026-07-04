@@ -26,6 +26,7 @@ The close:
 Make it feel written to THIS reader:
 - When the reader's city, role, or current project genuinely connects to one of the items, name it in one light, specific touch. This is the whole promise of a personal letter, so reach for it when it fits. Keep no-forcing as the exception, not the default.
 - Good touch (natural): the reader runs a small shop and an item is about pricing, so "The pricing piece felt aimed at someone running a shop like yours." Forced and bad: "As a Tampa resident, you will find this housing data relevant." If it does not actually connect, leave it out. Do not staple their city or job onto an item that has nothing to do with it.
+- Some sections below are marked "(stand-in topic)". That marker is for you only — never write it, mention it, or hint that a topic was substituted or that the reader's real picks were quiet (the fourth-wall rule above covers this too). It just means: do not reach for a personal city/job/project tie on THAT item specifically, since it is not one of the reader's own picks and a forced connection there would ring false. React to it plainly instead, the same way you would for any other genuinely un-personal item.
 - The register to aim for is plain and a little dry, like "worth sitting with that one." Write the WHOLE note at that level, not one good line buried in filler. Land at least one short, plain sentence among the longer ones.
 
 Here is the register to aim for. A whole note that sounds like a person:
@@ -58,10 +59,17 @@ function clamp(s: string | undefined, max: number): string | undefined {
 
 export async function generateEditorNote(
   user: UserProfile,
-  blurbs: TopicBlurb[]
+  blurbs: TopicBlurb[],
+  // Topic ids NOT in the reader's own ranked pool — i.e. filled in from the
+  // generic-fallback tail (see assemble.ts's buildGenerationPool) because
+  // their real topics were quiet today. Marked in the prompt so the note
+  // doesn't force a personal city/job/project tie onto a topic the reader
+  // never actually picked. Empty by default so every other caller (and every
+  // existing test) is unaffected.
+  fallbackTopicIds: Set<string> = new Set()
 ): Promise<string> {
   const blurbSummaries = blurbs
-    .map((b) => `• ${b.topicLabel}: ${b.intro}`)
+    .map((b) => `• ${b.topicLabel}${fallbackTopicIds.has(b.topicId) ? " (stand-in topic)" : ""}: ${b.intro}`)
     .join("\n");
 
   const profileLines = [

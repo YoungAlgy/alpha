@@ -12,7 +12,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 | Styling | Tailwind CSS 4 + CSS custom properties (10 themes) |
 | Hosting | Vercel (project `alpha`) |
 | DB / Auth | Supabase (project `xpqxhdciaoicsnyyfshy` in the "Algy" org) |
-| AI | Claude Sonnet 4.6 via `@anthropic-ai/sdk` |
+| AI | Claude Sonnet 5 (topic blurbs) + Claude Opus 4.8 (editor's note) via `@anthropic-ai/sdk` |
 | Web search | Brave Search API ($5/mo free credit covers V0) |
 | Payments | Stripe — dedicated Alpha account (`acct_1TWfDlAhrDpDN9sH`), not shared with Ava |
 | Email | Resend — letters from `"alpha." <alpha@everyday.report>`, sign-in (Supabase SMTP) from `noreply@everyday.report`. Domain verified via Vercel DNS. Old sender was alpha@youngalgy.com (that domain now removed from Resend — free plan holds 1 domain). |
