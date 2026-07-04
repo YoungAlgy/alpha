@@ -6,7 +6,7 @@ import { poolCap } from "@/lib/engine/select-sections";
 import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
-import { braveRateLimitedCount, resetBraveRateLimitedCount } from "@/lib/brave";
+import { braveRateLimitedCount } from "@/lib/brave";
 import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId } from "@/lib/types";
@@ -35,6 +35,22 @@ function bearerMatches(authHeader: string | null, expected: string): boolean {
 // but is self-bounded, so it can't leak indefinitely). withDeadline is the
 // shared helper (also used by the onboarding /api/generate route).
 const PER_USER_DEADLINE_MS = 110_000;
+
+// Time-budget safety valve. The loop below is sequential (topic-blurb caching
+// is what bounds cost, not parallelism), so at enough subscribers a run of
+// near-deadline generations can approach the 800s maxDuration cap. Reserve
+// enough of it to (a) let the LAST subscriber we DO start run its full
+// PER_USER_DEADLINE_MS before we'd hit the wall, and (b) leave real margin
+// after that for the summary + ops-alert email. Past this point, remaining
+// subscribers are DEFERRED (recorded, not attempted) rather than risking a
+// Vercel hard-kill mid-loop — which would silently truncate the send with no
+// ops alert (that code never runs after a kill) and no auto-resume (tomorrow's
+// cron computes a NEW weekOf, so it never revisits today's unprocessed tail).
+// This is an interim safety net, not the full fix (chunked sends via a cursor
+// param + multiple cron slots) — sufficient at the current subscriber count,
+// revisit if the list grows enough to actually hit it in practice.
+const CRON_SAFETY_MARGIN_MS = PER_USER_DEADLINE_MS + 60_000;
+const CRON_TIME_BUDGET_MS = maxDuration * 1000 - CRON_SAFETY_MARGIN_MS;
 
 interface SubscriberRow {
   id: string;
@@ -124,10 +140,11 @@ export async function GET(req: Request) {
 
   const rows = (subscribers ?? []) as SubscriberRow[];
   const startedAt = Date.now();
-  // Fresh Brave-degradation counter for THIS run (module state survives a warm
-  // lambda across invocations; without the reset, yesterday's 429s would
-  // re-alert today even after an upgrade fixed the quota).
-  resetBraveRateLimitedCount();
+  // Snapshot the monotonic counter now; THIS run's 429 count is the delta at
+  // the end minus this baseline. Diffing (not resetting) is what makes this
+  // safe under two overlapping invocations on the same warm lambda — see the
+  // comment on braveRateLimitedCount in lib/brave.ts.
+  const braveBaseline = braveRateLimitedCount();
   let sent = 0;
   let skippedNoName = 0;
   let skippedEmptyPool = 0;
@@ -139,6 +156,10 @@ export async function GET(req: Request) {
   // live-access filter, so anything here is a paying reader silently receiving
   // no letter — surfaced in the summary + an ops alert so it can't go unnoticed.
   const skippedBlankSubscribers: string[] = [];
+  // Subscribers who WOULD have gotten a real send but the time budget ran out
+  // first (see CRON_TIME_BUDGET_MS) — surfaced the same way, so a run that
+  // starts approaching the cap is loud instead of a silent Vercel kill.
+  const deferred: string[] = [];
 
   // ONE dry-topic cache shared across every subscriber in THIS run — passed
   // into each generateIssue call so a topic with no fresh news spends its
@@ -197,8 +218,11 @@ export async function GET(req: Request) {
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
   // total Claude time is bounded by topics-this-week, not users × topics.
   // NOTE for scale: at ~100+ subscribers the per-user generation time will
-  // press against maxDuration — the path is chunked sends (cursor param +
-  // multiple cron slots), not parallelism (Claude rate limits bind first).
+  // press against maxDuration. CRON_TIME_BUDGET_MS (below) is the interim
+  // safety net — it stops starting new subscribers before that becomes a
+  // silent Vercel kill, deferring the rest loudly instead. The real fix at
+  // that scale is still chunked sends (cursor param + multiple cron slots),
+  // not parallelism (Claude rate limits bind first) — not built yet.
   for (const row of rows) {
     // letterSize = sections they pay for. The topics array is their ranked
     // POOL — clamp it to poolCap (letterSize + backups, ≤25) so generation
@@ -234,6 +258,17 @@ export async function GET(req: Request) {
     if (!force && alreadyDelivered.has(row.id)) {
       skippedAlreadyDelivered++;
       console.log(`[cron/weekly-send] skipped (already delivered this period) → ${row.email}`);
+      continue;
+    }
+
+    // Time budget: stop STARTING new subscribers once we're close enough to
+    // maxDuration that finishing this one could still blow the cap (see
+    // CRON_TIME_BUDGET_MS). Checked here (after the cheap skip-checks above)
+    // so a subscriber who didn't actually need work isn't misreported as
+    // deferred.
+    if (Date.now() - startedAt > CRON_TIME_BUDGET_MS) {
+      deferred.push(row.email);
+      console.warn(`[cron/weekly-send] DEFERRED (time budget exhausted) → ${row.email}`);
       continue;
     }
 
@@ -383,7 +418,7 @@ export async function GET(req: Request) {
   }
 
   const elapsedMs = Date.now() - startedAt;
-  const braveRateLimited = braveRateLimitedCount();
+  const braveRateLimited = braveRateLimitedCount() - braveBaseline;
   const summary = {
     weekOf,
     subscribers: rows.length,
@@ -392,6 +427,7 @@ export async function GET(req: Request) {
     skippedEmptyPool,
     skippedBlankSubscribers,
     skippedAlreadyDelivered,
+    deferred,
     failed,
     braveRateLimited,
     elapsedMs,
@@ -399,13 +435,13 @@ export async function GET(req: Request) {
   };
   console.log("[cron/weekly-send] summary:", JSON.stringify(summary));
 
-  // A paid subscriber getting nothing, a hard send failure, or Brave quota
+  // A paid subscriber getting nothing, a hard send failure, Brave quota
   // exhaustion (letters silently degrade to stale filler — a subscriber
-  // reported exactly this class of repeat content) should be LOUD — not
-  // buried in logs the owner won't read until a letter is noticed missing.
-  // Best-effort single email per run (sendOpsAlert never throws), only when
-  // something actually went wrong.
-  if (skippedBlankSubscribers.length > 0 || failed > 0 || braveRateLimited > 0) {
+  // reported exactly this class of repeat content), or subscribers deferred
+  // for time should be LOUD — not buried in logs the owner won't read until a
+  // letter is noticed missing. Best-effort single email per run (sendOpsAlert
+  // never throws), only when something actually went wrong.
+  if (skippedBlankSubscribers.length > 0 || failed > 0 || braveRateLimited > 0 || deferred.length > 0) {
     const lines = [
       `weekOf=${weekOf}  sent=${sent}  subscribers=${rows.length}  failed=${failed}`,
       skippedBlankSubscribers.length
@@ -417,9 +453,12 @@ export async function GET(req: Request) {
       braveRateLimited > 0
         ? `Brave returned 429 on ${braveRateLimited} queries — monthly search quota likely exhausted; letters are degrading to filler. Fix: upgrade the Brave plan (https://api.search.brave.com), ~$5-10/mo at this volume.`
         : "",
+      deferred.length
+        ? `Time budget exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${deferred.join(", ")}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically). This is a scale signal — the subscriber list is big enough that the daily run is pressing against Vercel's time cap.`
+        : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed${braveRateLimited > 0 ? ", Brave quota hit" : ""}`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed${braveRateLimited > 0 ? ", Brave quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred (time budget)` : ""}`,
       lines.join("\n")
     );
   }

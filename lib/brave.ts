@@ -10,12 +10,19 @@ const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 // came back 429 (quota/rate exhaustion) this invocation. Without this, an
 // exhausted Brave quota silently turns every letter into stale filler with no
 // operator-visible trace — generation "succeeds" all the way down.
+//
+// This counter is MONOTONIC (never reset) rather than reset-per-invocation on
+// purpose: two overlapping cron invocations on the same warm lambda (a Vercel
+// retry racing the scheduled run, a manual re-trigger) would otherwise race —
+// whichever resets last zeroes out the other's in-flight count, corrupting
+// the ops-alert signal. A caller that wants "how many 429s during MY run"
+// should snapshot braveRateLimitedCount() at the start and end and diff the
+// two — a rare overlap then just double-counts shared load into both
+// invocations' deltas (a harmless, conservative-direction inaccuracy) rather
+// than silently losing one invocation's count entirely.
 let rateLimited429 = 0;
 export function braveRateLimitedCount(): number {
   return rateLimited429;
-}
-export function resetBraveRateLimitedCount(): void {
-  rateLimited429 = 0;
 }
 
 export interface BraveResult {
