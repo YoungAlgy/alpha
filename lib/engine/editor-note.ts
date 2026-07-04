@@ -1,4 +1,5 @@
-import { anthropicClient, EDITOR_NOTE_MODEL } from "./client";
+import { anthropicClient, EDITOR_NOTE_MODEL, isAnthropicUnavailable } from "./client";
+import { geminiConfigured, geminiGenerateText } from "./gemini-client";
 import { sanitizeVoice, containsMetaLeak } from "./voice-guard";
 import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
@@ -98,29 +99,53 @@ ${blurbSummaries}
 ${tone ? `\n${tone}\n` : ""}
 Write the editor's note for this reader's letter today.`;
 
-  const response = await anthropicClient().messages.create({
-    model: EDITOR_NOTE_MODEL,
-    // 1000, not 500: Opus 4.8 narrates more than Sonnet did and its tokenizer
-    // spends ~1-1.35x more tokens on the same text — a 3-5 sentence note fits
-    // comfortably, but the old ceiling left no headroom for a verbose day.
-    max_tokens: 1000,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userPrompt }],
-  });
-
-  // A truncated note is a broken note (mid-sentence cutoff shipped straight
-  // into a subscriber's email, and nothing downstream would notice — the
-  // voice/meta guards pass on truncated text). Throw; the assembler's catch
-  // falls back to its clean derived intro.
-  if (response.stop_reason === "max_tokens") {
-    throw new Error("editor note hit max_tokens — refusing to ship a truncated note");
+  async function callClaude(): Promise<string> {
+    const response = await anthropicClient().messages.create({
+      model: EDITOR_NOTE_MODEL,
+      // 1000, not 500: Opus 4.8 narrates more than Sonnet did and its tokenizer
+      // spends ~1-1.35x more tokens on the same text — a 3-5 sentence note fits
+      // comfortably, but the old ceiling left no headroom for a verbose day.
+      max_tokens: 1000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
+    });
+    // A truncated note is a broken note (mid-sentence cutoff shipped straight
+    // into a subscriber's email, and nothing downstream would notice — the
+    // voice/meta guards pass on truncated text). Throw; the assembler's catch
+    // falls back to its clean derived intro.
+    if (response.stop_reason === "max_tokens") {
+      throw new Error("editor note hit max_tokens — refusing to ship a truncated note");
+    }
+    return response.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { type: "text"; text: string }).text)
+      .join("\n")
+      .trim();
   }
 
-  const note = response.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { type: "text"; text: string }).text)
-    .join("\n")
-    .trim();
+  let note: string;
+  try {
+    note = await callClaude();
+  } catch (e) {
+    // Anthropic itself unavailable (no credits, rate-limited, an outage) —
+    // Gemini writes the note instead, via the SAME prompt. Last resort: this
+    // is the most voice-critical part of the letter, tuned against Claude
+    // specifically, so Gemini's note reads slightly different here —
+    // accepted, since the alternative is the assembler's generic derived
+    // intro for every reader that day instead of just this one being a
+    // little less personal.
+    if (isAnthropicUnavailable(e) && geminiConfigured()) {
+      console.warn(`[editor-note] Anthropic unavailable (status ${e.status}), falling back to Gemini`);
+      try {
+        note = (await geminiGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
+      } catch (geminiErr) {
+        console.warn(`[editor-note] Gemini fallback also failed: ${geminiErr instanceof Error ? geminiErr.message : geminiErr}`);
+        throw e; // surface the ORIGINAL Anthropic error — more informative for ops
+      }
+    } else {
+      throw e;
+    }
+  }
 
   // Deterministic voice guard: strip any em/en dash, semicolon, or curly quote
   // the model slipped in despite the prompt (cheap models did so more than Sonnet; kept as defense in depth).

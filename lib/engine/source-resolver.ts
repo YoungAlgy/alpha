@@ -4,6 +4,8 @@ import { fetchArticleText, deepReadEnabled } from "./fetch-content";
 import { TOPIC_QUERIES, zodiacQueries } from "./topic-queries";
 import { getSignal } from "./mock-signals";
 import { normalizeUrl } from "./url-guard";
+import { geminiConfigured } from "./gemini-client";
+import { resolveTopicSignalViaGemini } from "./gemini-search";
 import { isCustomTopic, customTopicText, isZodiacTopicId } from "@/lib/topics";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
@@ -68,12 +70,42 @@ export async function resolveTopicSignal(
       : TOPIC_QUERIES[topicId as FixedTopicId];
 
   if (braveConfigured() && queries && queries.length > 0) {
+    // Track whether THIS topic's OWN queries got rate-limited, via a
+    // per-call callback (lib/brave.ts's onRateLimited) rather than the
+    // module-level braveRateLimitedCount(). Multiple topics run concurrently
+    // in a generation wave (assemble.ts batches several via Promise.all), so
+    // a shared counter's before/after delta can't tell "MY queries 429'd"
+    // apart from "a DIFFERENT topic's queries 429'd while mine were running"
+    // — that would misroute a genuinely quiet topic (Brave fine, nothing new)
+    // into the Gemini fallback instead of the existing backup-topic behavior.
+    let rateLimitedThisTopic = false;
     try {
-      const live = await fetchLiveSignal(topicId, queries, weekOf, opts?.freshness, opts?.excludeUrls);
+      const live = await fetchLiveSignal(
+        topicId,
+        queries,
+        weekOf,
+        opts?.freshness,
+        opts?.excludeUrls,
+        () => { rateLimitedThisTopic = true; }
+      );
       if (live) return live;
     } catch (e) {
       console.warn(`[source-resolver] Brave failed for ${topicId}:`, e);
       // fall through to mock (fixed topics only)
+    }
+    // Gemini's grounded search is a genuinely separate provider — worth
+    // trying ONLY when Brave's OWN quota is the actual problem. A topic that
+    // came back dry because Brave is fine but there is truly nothing new
+    // should still fall through to a fresher backup topic (the existing
+    // dry-topic behavior in select-sections.ts), not get force-filled here.
+    if (rateLimitedThisTopic && geminiConfigured()) {
+      console.warn(`[source-resolver] Brave rate-limited for ${topicId}, trying Gemini grounded search`);
+      try {
+        const grounded = await resolveTopicSignalViaGemini(topicId, weekOf, queries.join("; "), opts?.excludeUrls);
+        if (grounded) return grounded;
+      } catch (e) {
+        console.warn(`[source-resolver] Gemini grounded search failed for ${topicId}:`, e);
+      }
     }
   }
   // liveOnly: caller wants to know if this topic has FRESH signal this period
@@ -103,7 +135,10 @@ async function fetchLiveSignal(
   // with nothing NEW in the last few days comes back empty and the ranked-pool
   // selector backfills it from a fresher topic instead of repeating stale news.
   freshness: BraveSearchOptions["freshness"] = "pw",
-  excludeUrls?: Set<string>
+  excludeUrls?: Set<string>,
+  // Fires once per 429 among THIS topic's own queries — see the caller's
+  // comment on rateLimitedThisTopic in resolveTopicSignal.
+  onRateLimited?: () => void
 ): Promise<TopicSignal | undefined> {
   if (!queries || queries.length === 0) return undefined;
 
@@ -112,7 +147,7 @@ async function fetchLiveSignal(
   const perQuery = await Promise.all(
     queries.map(async (q) => {
       try {
-        return await braveSearch(q, { count: PER_QUERY_COUNT, freshness });
+        return await braveSearch(q, { count: PER_QUERY_COUNT, freshness, onRateLimited });
       } catch (e) {
         console.warn(
           `[source-resolver] brave query failed (${topicId}): "${q}": ${e instanceof Error ? e.message : e}`

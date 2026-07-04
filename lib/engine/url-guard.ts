@@ -30,7 +30,7 @@ const MIRROR_SUBDOMAIN_RE = /^(?:www|amp|m|mobile)\./;
 // those must stay so distinct pages stay distinct.
 const TRACKING_PARAMS = new Set([
   "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
-  "gclid", "fbclid", "dclid", "msclkid", "mc_cid", "mc_eid", "igshid",
+  "gclid", "fbclid", "dclid", "msclkid", "mc_cid", "mc_eid", "igshid", "ito",
 ]);
 
 // Normalize a URL to a comparison key. Returns null for non-http(s) or
@@ -43,7 +43,13 @@ export function normalizeUrl(raw: string): string | null {
     const u = new URL(raw.trim());
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     const host = u.hostname.toLowerCase().replace(MIRROR_SUBDOMAIN_RE, "");
-    let path = u.pathname.replace(/\/+$/, ""); // drop trailing slash(es)
+    // Path lowercased too (unlike the query string below, which stays
+    // case-sensitive since a base64-ish id param could legitimately be
+    // case-sensitive) — real-world CMSs commonly vary path case for the
+    // identical page, and treating that as "a different URL" let a same-story
+    // duplicate (e.g. from two independently-resolved redirect citations)
+    // dodge the dedup/exclusion checks that rely on this identity.
+    let path = u.pathname.toLowerCase().replace(/\/+$/, ""); // drop trailing slash(es)
     if (path === "") path = "/";
     for (const p of TRACKING_PARAMS) u.searchParams.delete(p);
     const query = u.searchParams.toString();

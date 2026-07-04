@@ -9,12 +9,16 @@ import { withDeadline } from "@/lib/with-deadline";
 import type { Issue, UserProfile, TopicId } from "@/lib/types";
 import type { TopicBlurb } from "./types";
 
-// Per-topic generation deadline. The model call is bounded per-attempt (60s) but
-// the SDK retry + topic-blurb's parse-retry can stack a single blurb past 2
-// minutes. This caps ONE topic so a pathologically slow one is treated as
-// "quiet" and BACKFILLED from a fresher backup, rather than dominating the
-// parallel wave and forcing the outer route/cron deadline to drop the WHOLE
-// letter. The reject lands in selectLetterSections' per-topic .catch → null.
+// Per-topic deadline covering the WHOLE search+generate path (both
+// resolveTopicSignal attempts, including its own possible Gemini
+// grounded-search fallback, plus generateTopicBlurb, including ITS possible
+// Gemini text fallback). The model call is bounded per-attempt (60s) but the
+// SDK retry + topic-blurb's parse-retry can stack a single blurb past 2
+// minutes, and a Brave rate-limit can add a further ~20s Gemini round trip on
+// top. This caps ONE topic so a pathologically slow one is treated as "quiet"
+// and BACKFILLED from a fresher backup, rather than dominating the parallel
+// wave and forcing the outer route/cron deadline to drop the WHOLE letter.
+// The reject lands in selectLetterSections' per-topic .catch → null.
 const TOPIC_GEN_DEADLINE_MS = 75_000;
 
 /** The reader's own ranked pool (mains + their picked backups), plus a short
@@ -124,32 +128,42 @@ export async function generateIssue(
     if (cached && cached.items.length > 0) return { ...cached, topicLabel: topicLabel(id) };
     const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
     if (dryCache.has(dryKey)) return null; // searched dry earlier this batch — no re-search
-    const excludeUrls = citedByTopic.get(id);
-    let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls });
-    // Dry in the tight since-last-send window? Retry ONCE at past-week before
-    // giving up the slot. With the exclusion set filtering out everything
-    // already cited, whatever the wide pass finds is guaranteed new to the
-    // reader — this keeps daily letters full of real articles instead of
-    // sliding into the static filler (whose repeats a subscriber noticed).
-    if (!signal && freshness && freshness !== "pw") {
-      signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls });
-    }
-    if (!signal) {
-      dryCache.add(dryKey);
-      return null; // no fresh signal — skip, no model call
-    }
-    const blurb = await withDeadline(
-      generateTopicBlurb(id, weekOf, signal),
+
+    // The WHOLE search+generate path is under one deadline, not just the model
+    // call. resolveTopicSignal can itself fall to Gemini's grounded search when
+    // Brave is rate-limited (source-resolver.ts) — that fallback has no deadline
+    // of its own, so without wrapping it here a slow/hung Gemini call could
+    // stack on top of a slow Claude call and blow well past what
+    // TOPIC_GEN_DEADLINE_MS was meant to cap for this topic's contribution to
+    // the parallel wave.
+    return withDeadline(
+      (async () => {
+        const excludeUrls = citedByTopic.get(id);
+        let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls });
+        // Dry in the tight since-last-send window? Retry ONCE at past-week before
+        // giving up the slot. With the exclusion set filtering out everything
+        // already cited, whatever the wide pass finds is guaranteed new to the
+        // reader — this keeps daily letters full of real articles instead of
+        // sliding into the static filler (whose repeats a subscriber noticed).
+        if (!signal && freshness && freshness !== "pw") {
+          signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls });
+        }
+        if (!signal) {
+          dryCache.add(dryKey);
+          return null; // no fresh signal — skip, no model call
+        }
+        const blurb = await generateTopicBlurb(id, weekOf, signal);
+        // Only cache a real section. If the guard dropped every link (0 items),
+        // don't cache the empty result — otherwise every later subscriber to this
+        // topic would read the empty blurb back as a "hit" and ship a link-less
+        // section. Return null so the selector backfills this topic instead.
+        if (blurb.items.length === 0) return null;
+        setCachedBlurb(blurb).catch(() => undefined);
+        return blurb;
+      })(),
       TOPIC_GEN_DEADLINE_MS,
       `topic-blurb ${id}`
     );
-    // Only cache a real section. If the guard dropped every link (0 items),
-    // don't cache the empty result — otherwise every later subscriber to this
-    // topic would read the empty blurb back as a "hit" and ship a link-less
-    // section. Return null so the selector backfills this topic instead.
-    if (blurb.items.length === 0) return null;
-    setCachedBlurb(blurb).catch(() => undefined);
-    return blurb;
   }
 
   // Last-resort filler from the curated mock (catalog topics only) — keeps the

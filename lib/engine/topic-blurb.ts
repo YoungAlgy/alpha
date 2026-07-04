@@ -1,4 +1,5 @@
-import { anthropicClient, BLURB_MODEL } from "./client";
+import { anthropicClient, BLURB_MODEL, isAnthropicUnavailable } from "./client";
+import { geminiConfigured, geminiGenerateText } from "./gemini-client";
 import { topicLabel } from "@/lib/topics";
 import { extractSignalUrls, enforceSignalUrls } from "./url-guard";
 import { sanitizeVoice, containsMetaLeak, findLexicalTells } from "./voice-guard";
@@ -202,20 +203,41 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     return extractJson(text);
   }
 
+  // Same prompts, Gemini as the writer — a genuinely separate vendor, used
+  // ONLY when Anthropic itself is unavailable (see isAnthropicUnavailable).
+  // Last resort: this app's whole voice-tuning system (this prompt,
+  // voice-guard, meta-leak guard) was built and validated against Claude
+  // specifically over many sessions, so Gemini's prose reads slightly
+  // different here — accepted, since the alternative is shipping no section
+  // at all for this topic.
+  async function callGeminiAndParse(): Promise<ParsedBlurb> {
+    const text = await geminiGenerateText(SYSTEM_PROMPT, userPrompt, 4000);
+    return extractJson(text);
+  }
+
   let parsed: ParsedBlurb;
   try {
     parsed = await callAndParse();
   } catch (e) {
-    // Retry ONLY parse-shaped failures (prose-wrapped/malformed JSON). An API
-    // rejection (4xx/5xx after SDK retries) or a truncation is deterministic —
-    // retrying doubles the spend for the same failure on every topic in the
-    // pool. Those propagate up and the selector treats the topic as quiet.
-    const parseShaped =
-      !(e instanceof BlurbTruncatedError) &&
-      !(e && typeof e === "object" && "status" in e); // SDK APIError carries .status
-    if (!parseShaped) throw e;
-    console.warn(`[topic-blurb] ${topicId} ${weekOf}: parse failed, retrying once: ${e instanceof Error ? e.message : e}`);
-    parsed = await callAndParse();
+    if (isAnthropicUnavailable(e) && geminiConfigured()) {
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Anthropic unavailable (status ${e.status}), falling back to Gemini`);
+      try {
+        parsed = await callGeminiAndParse();
+      } catch (geminiErr) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini fallback also failed: ${geminiErr instanceof Error ? geminiErr.message : geminiErr}`);
+        throw e; // surface the ORIGINAL Anthropic error — more informative for ops
+      }
+    } else {
+      // Retry ONLY parse-shaped failures (prose-wrapped/malformed JSON). An
+      // API rejection (4xx/5xx after SDK retries) or a truncation is
+      // deterministic — retrying doubles the spend for the same failure on
+      // every topic in the pool. Those propagate up and the selector treats
+      // the topic as quiet.
+      const parseShaped = !(e instanceof BlurbTruncatedError) && !isAnthropicUnavailable(e);
+      if (!parseShaped) throw e;
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: parse failed, retrying once: ${e instanceof Error ? e.message : e}`);
+      parsed = await callAndParse();
+    }
   }
 
   // Deterministic voice guard on all reader-facing prose (headline, body, ref

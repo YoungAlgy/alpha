@@ -40,3 +40,19 @@ export const BLURB_MODEL = pickModel("ALPHA_BLURB_MODEL", DEFAULT_MODEL);
 // voice-critical part of the letter, so it rides Opus 4.8 — the strongest
 // writing model — for about $2/mo at daily cadence.
 export const EDITOR_NOTE_MODEL = pickModel("ALPHA_EDITOR_MODEL", "claude-opus-4-8");
+
+// The shared signal topic-blurb.ts and editor-note.ts both use to tell
+// "Anthropic itself is unavailable" (no credits, rate-limited, an outage —
+// fall back to Gemini) apart from a request-shaped problem on OUR side.
+// Deliberately NARROW to infra-shaped statuses only (401 bad key, 403
+// forbidden, 429 rate-limited, 5xx server-side) — NOT 400 or other 4xx. A 400
+// (e.g. a content-policy rejection, or a malformed/oversized payload bug)
+// means WE sent something wrong, not that the vendor is down; retrying the
+// IDENTICAL prompt via Gemini would either hit a similar rejection or produce
+// a degraded result for a request Claude correctly refused, silently masking
+// a real bug behind a misleading "Anthropic unavailable" log line.
+export function isAnthropicUnavailable(e: unknown): e is { status: number } {
+  if (typeof e !== "object" || e === null || !("status" in e)) return false;
+  const status = (e as { status: unknown }).status;
+  return typeof status === "number" && (status === 401 || status === 403 || status === 429 || status >= 500);
+}

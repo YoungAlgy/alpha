@@ -41,6 +41,15 @@ export interface BraveSearchOptions {
   freshness?: "pd" | "pw" | "pm" | "py" | `${string}to${string}`;
   country?: string;
   safesearch?: "off" | "moderate" | "strict";
+  // Fires in ADDITION to the global rateLimited429 counter above, scoped to
+  // just THIS call. The global counter is shared across every topic running
+  // concurrently in a generation wave (assemble.ts batches several topics via
+  // Promise.all) — a caller that needs "did MY OWN queries get rate-limited"
+  // (the Gemini search-fallback trigger in source-resolver.ts) can't use the
+  // global counter's before/after delta for that, since a DIFFERENT topic's
+  // 429 in the same wave would show up in the delta too. This callback lets a
+  // caller track its own attempts in its own closure instead.
+  onRateLimited?: () => void;
 }
 
 export function braveConfigured(): boolean {
@@ -82,7 +91,10 @@ export async function braveSearch(
   }
 
   if (!res.ok) {
-    if (res.status === 429) rateLimited429 += 1;
+    if (res.status === 429) {
+      rateLimited429 += 1;
+      opts.onRateLimited?.();
+    }
     const text = await res.text().catch(() => "");
     throw new Error(`Brave Search ${res.status}: ${text.slice(0, 200)}`);
   }
