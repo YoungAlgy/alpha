@@ -67,9 +67,11 @@ check("regression: the old regex-scan WOULD have dropped the paren URL", !isAllo
 
 // (2) Authority tiering
 console.log("(2) authority tiering");
-check("nytimes.com → trusted", hostTier("nytimes.com") === "trusted");
+check("nytimes.com → denied (hard paywall)", hostTier("nytimes.com") === "denied");
+check("apnews.com → trusted", hostTier("apnews.com") === "trusted");
 check("simonwillison.net → trusted", hostTier("simonwillison.net") === "trusted");
-check("sub.businessinsider.com → trusted (subdomain)", hostTier("markets.businessinsider.com") === "trusted");
+check("sub.arstechnica.com → trusted (subdomain)", hostTier("some.arstechnica.com") === "trusted");
+check("markets.businessinsider.com → denied (paywalled subdomain)", hostTier("markets.businessinsider.com") === "denied");
 check("randomblog.xyz → neutral", hostTier("randomblog.xyz") === "neutral");
 check("vettedconsumer.com → denied", hostTier("vettedconsumer.com") === "denied");
 check("SEO listicle path (neutral host) → denied", hostTier("someblog.com", "https://someblog.com/best-ai-tools-2026/") === "denied");
@@ -77,7 +79,7 @@ check("SEO listicle path (neutral host) → denied", hostTier("someblog.com", "h
 // "review"/"vs"/"best" + a year, and excluding them was a real regression.
 check("trusted host + review slug → STILL trusted", hostTier("theverge.com", "https://www.theverge.com/reviews/2026/1/1/iphone-18-review") === "trusted");
 check("trusted host + vs-year slug → STILL trusted", hostTier("actionnetwork.com", "https://www.actionnetwork.com/nfl/chiefs-vs-bills-odds-2026") === "trusted");
-check("trusted host + best-year slug → STILL trusted", hostTier("wsj.com", "https://www.wsj.com/tech/best-ai-tools-2026") === "trusted");
+check("trusted host + best-year slug → STILL trusted", hostTier("cnbc.com", "https://www.cnbc.com/tech/best-ai-tools-2026") === "trusted");
 check("tierRank trusted < neutral", tierRank("trusted") < tierRank("neutral"));
 
 // (3) rankAndDedup
@@ -85,15 +87,15 @@ console.log("(3) rankAndDedup");
 const ranked = rankAndDedup([
   { title: "junk", url: "https://vettedconsumer.com/x", description: "", age: "1 hour ago" },
   { title: "neutral A", url: "https://randomblog.xyz/a", description: "", age: "5 hours ago" },
-  { title: "trusted late", url: "https://www.nytimes.com/2026/06/19/tech.html", description: "", age: "3 days ago" },
-  { title: "dup of trusted", url: "https://nytimes.com/2026/06/19/tech.html/", description: "", age: "1 hour ago" },
+  { title: "trusted late", url: "https://www.npr.org/2026/06/19/tech.html", description: "", age: "3 days ago" },
+  { title: "dup of trusted", url: "https://npr.org/2026/06/19/tech.html/", description: "", age: "1 hour ago" },
   { title: "trusted 2", url: "https://www.reuters.com/markets/abc", description: "", age: "2 days ago" },
   { title: "host cap a", url: "https://reuters.com/markets/b", description: "", age: "1 day ago" },
   { title: "host cap c", url: "https://reuters.com/markets/c", description: "", age: "1 day ago" },
 ]);
 check("denied (vettedconsumer) excluded", !ranked.some((r) => r.host.includes("vettedconsumer")));
 check("trusted ranks before neutral", ranked[0].tier === "trusted");
-check("dedup collapses nytimes dup", ranked.filter((r) => r.host === "nytimes.com").length === 1);
+check("dedup collapses npr dup", ranked.filter((r) => r.host === "npr.org").length === 1);
 check("per-host cap (reuters ≤ 2)", ranked.filter((r) => r.host === "reuters.com").length <= 2);
 check("neutral still present (randomblog)", ranked.some((r) => r.host === "randomblog.xyz" && r.tier === "neutral"));
 // Query-distinguished URLs are kept distinct (dedup key now includes the query,
@@ -103,6 +105,23 @@ const qd = rankAndDedup([
   { title: "vid b", url: "https://www.youtube.com/watch?v=BBB", description: "", age: "1 day ago" },
 ]);
 check("query-distinguished URLs survive dedup as 2", qd.length === 2);
+
+// excludeUrls (already-cited articles) must be dropped BEFORE the per-host cap
+// is accounted, not after — otherwise an excluded article consumes a host's
+// cap slot and starves out a legitimate new one from the same host. 3
+// reuters.com results, cap 2, first one excluded: both survivors must be NEW.
+const excludeSet = new Set(["reuters.com/markets/cited"]);
+const withExclusion = rankAndDedup(
+  [
+    { title: "cited (should not count against cap)", url: "https://www.reuters.com/markets/cited", description: "", age: "1 day ago" },
+    { title: "new a", url: "https://reuters.com/markets/new-a", description: "", age: "1 day ago" },
+    { title: "new b", url: "https://reuters.com/markets/new-b", description: "", age: "1 day ago" },
+  ],
+  2,
+  excludeSet
+);
+check("excluded url dropped before host cap is applied", !withExclusion.some((r) => r.host === "reuters.com" && r.title.startsWith("cited")));
+check("both NEW same-host articles survive (cap didn't starve them)", withExclusion.filter((r) => r.host === "reuters.com").length === 2);
 
 // (4) looksLikeProse (via fetchArticleText would need network; test sanitize+shape proxy)
 console.log("(4) chrome vs prose (sanitize keeps shape)");

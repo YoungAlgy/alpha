@@ -4,7 +4,7 @@ import { resolveTopicSignal, resolveMockSignal } from "./source-resolver";
 import { getCachedBlurbs, getRecentlyCitedUrls, setCachedBlurb } from "./blurb-cache";
 import { normalizeUrl } from "./url-guard";
 import { selectLetterSections } from "./select-sections";
-import { topicLabel, mapTopicsForUser } from "@/lib/topics";
+import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { Issue, UserProfile, TopicId } from "@/lib/types";
 import type { TopicBlurb } from "./types";
@@ -17,15 +17,19 @@ import type { TopicBlurb } from "./types";
 // letter. The reject lands in selectLetterSections' per-topic .catch → null.
 const TOPIC_GEN_DEADLINE_MS = 75_000;
 
-// Topics that came back DRY this invocation, keyed (topic, period, window).
-// Module-level on purpose: the cron processes all subscribers in ONE
-// invocation, and without this a dry topic re-spends its 3 Brave queries (x2
-// with the wide retry) for EVERY subscriber who shares it — the multiplier
-// that pushes daily-cadence search volume past the free tier. Positive
-// results don't need this (the blurb cache already dedupes them); only
-// dryness was uncached. Keys include the period so a warm lambda serving
-// tomorrow's run never reuses today's verdicts.
-const dryThisRun = new Set<string>();
+/** The reader's own ranked pool (mains + their picked backups), plus a short
+ *  ordered tail of GENERIC_FALLBACK_TOPICS not already in it. Pass 1 in
+ *  selectLetterSections only reaches into the tail when the reader's own
+ *  topics don't already fill the letter, so a normal day (the overwhelming
+ *  common case) costs nothing extra — this only fires the day someone's
+ *  actual picks all come up dry, so every reader still gets a full,
+ *  freshly-generated letter instead of a stub, and the stand-in section reads
+ *  as broadly relevant rather than a narrow topic nobody but them chose.
+ *  Exported standalone (no Claude/Brave) so it's unit-testable in isolation. */
+export function buildGenerationPool(readerPool: TopicId[]): TopicId[] {
+  const extra = GENERIC_FALLBACK_TOPICS.filter((id) => !readerPool.includes(id));
+  return [...readerPool, ...extra];
+}
 
 export async function generateIssue(
   user: UserProfile,
@@ -41,6 +45,21 @@ export async function generateIssue(
   // date range so a topic with no NEW info reads as empty and gets backfilled
   // from a fresher one instead of repeating the same news across sends.
   freshness?: import("@/lib/brave").BraveSearchOptions["freshness"],
+  // Topics that came back DRY this invocation, keyed (topic, period, window).
+  // CALLER-OWNED, not module state: the cron creates ONE Set and passes it to
+  // every subscriber's generateIssue call in its loop, so a dry topic re-spends
+  // its 3 Brave queries (x2 with the wide retry) only ONCE per shared batch,
+  // not once per subscriber — the multiplier that pushes daily-cadence search
+  // volume past the free tier. Positive results don't need this (the blurb
+  // cache already dedupes them); only dryness was uncached.
+  //
+  // Passing nothing (the onboarding /api/generate path, one subscriber per
+  // call) defaults to a fresh Set scoped to just this call. A PRIOR module-
+  // level Set here leaked a dry verdict from one subscriber's onboarding call
+  // into a LATER, unrelated subscriber's onboarding call on the same warm
+  // serverless instance — a stale/wrong "no news" skip with no connection to
+  // that reader's actual search.
+  dryCache: Set<string> = new Set<string>(),
 ): Promise<Issue> {
   // Map the pickable "zodiac" topic to the reader's per-sign id, dropping it when
   // there's no birthday (see mapTopicsForUser). If the WHOLE pool maps to empty
@@ -51,7 +70,16 @@ export async function generateIssue(
   if (pool.length === 0) {
     throw new Error("No usable topics after mapping (e.g. zodiac with no birthday)");
   }
+  // NOTE: size is driven by the reader's OWN pool length (or their paid
+  // letterSize), never the fallback-extended genPool below — the fallback
+  // tail exists to fill slots the reader's own topics leave empty, not to
+  // grow the letter itself.
   const size = Math.max(1, letterSize ?? pool.length);
+
+  // The pool actually searched/generated against: the reader's pool plus a
+  // generic fallback tail (see buildGenerationPool) so a dry day never leaves
+  // a slot empty or falls back to a topic nobody but them picked.
+  const genPool = buildGenerationPool(pool);
 
   // ONE round trip each for the whole pool's cache reads and its recently-
   // cited URLs, instead of one per topic inside genLive's per-wave calls below.
@@ -59,13 +87,16 @@ export async function generateIssue(
   // letter never re-covers an article this topic already cited — the fix for
   // a subscriber seeing the same articles across letters, and what makes the
   // wider-window retry below safe (older-but-uncovered is still new to HER).
+  // Covers genPool (not just the reader's own topics) so a fallback topic's
+  // cache/exclusion set is warm too, in case another subscriber already
+  // triggered it today.
   const CITED_LOOKBACK_DAYS = 14;
   const sinceIso = new Date(
     Date.parse(`${weekOf}T12:00:00Z`) - CITED_LOOKBACK_DAYS * 86400000
   ).toISOString().slice(0, 10);
   const [cachedBlurbs, citedRaw] = await Promise.all([
-    getCachedBlurbs(pool as TopicId[], weekOf),
-    getRecentlyCitedUrls(pool as TopicId[], sinceIso, weekOf),
+    getCachedBlurbs(genPool as TopicId[], weekOf),
+    getRecentlyCitedUrls(genPool as TopicId[], sinceIso, weekOf),
   ]);
   // Normalize once to the url-guard identity the resolver compares against.
   const citedByTopic = new Map<string, Set<string>>();
@@ -92,7 +123,7 @@ export async function generateIssue(
     // backfill instead.
     if (cached && cached.items.length > 0) return { ...cached, topicLabel: topicLabel(id) };
     const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
-    if (dryThisRun.has(dryKey)) return null; // searched dry earlier this run — no re-search
+    if (dryCache.has(dryKey)) return null; // searched dry earlier this batch — no re-search
     const excludeUrls = citedByTopic.get(id);
     let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls });
     // Dry in the tight since-last-send window? Retry ONCE at past-week before
@@ -104,7 +135,7 @@ export async function generateIssue(
       signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls });
     }
     if (!signal) {
-      dryThisRun.add(dryKey);
+      dryCache.add(dryKey);
       return null; // no fresh signal — skip, no model call
     }
     const blurb = await withDeadline(
@@ -150,7 +181,7 @@ export async function generateIssue(
   // backups for the quiet ones, filler only as a last resort. Each generator
   // is individually error-trapped inside the selector, so one failed topic is
   // treated as "quiet" and backfilled rather than sinking the whole letter.
-  const selection = await selectLetterSections(pool, size, genLive, genFiller);
+  const selection = await selectLetterSections(genPool, size, genLive, genFiller);
   const blurbs = selection.chosen.map((c) => c.value);
   if (selection.skippedDry.length > 0) {
     console.warn(

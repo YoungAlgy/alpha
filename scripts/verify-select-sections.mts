@@ -80,6 +80,23 @@ const ids = (r: { chosen: { topicId: string }[] }) => r.chosen.map((c) => c.topi
   check("(7) rank order even if 'a' resolves last", ids(r) === "a,b,c");
 }
 
+// (9) Pool longer than needed (e.g. a generic-fallback tail): once one dry
+// topic pulls in exactly one backfill and the letter fills, entries past that
+// point must NOT be reported as skippedDry — they were never attempted, so
+// they aren't "quiet," just unreached.
+{
+  const calls: string[] = [];
+  const r = await selectLetterSections(
+    ["a", "bad", "c", "backfill-used", "never-reached"],
+    3,
+    liveGen(new Set(["bad"]), calls),
+    fillerGen()
+  );
+  check("(9) fills to size, backfill pulled in, rank order kept", ids(r) === "a,c,backfill-used");
+  check("(9) only the actually-dry topic reported as skippedDry", r.skippedDry.join(",") === "bad");
+  check("(9) unreached trailing entry never even called", !calls.includes("never-reached"));
+}
+
 // (8) poolCap: letterSize + a fixed 5 backups, capped at the catalog max.
 check("(8) poolCap(5) = 10 (5 favorites + 5 backups)", poolCap(5) === 10);
 check("(8) poolCap(10) = 15 (add a bundle, still 5 backups)", poolCap(10) === 15);

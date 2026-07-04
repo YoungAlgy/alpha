@@ -92,7 +92,7 @@ Hard rules:
 - Never invent URLs. If a URL is not in the signal, leave the ref out.
 - Never invent statistics, dates, prices, or names. If it is not in the signal, do not claim it.
 - Do not start headlines with "How," "Why," "The X You Need To Know," or "X Reasons."
-- Do not recap the news cycle. Tell the reader why they should care about THIS thing this week.
+- Do not recap the news cycle. Tell the reader why they should care about THIS thing right now.
 
 Write like a person, not an AI (strict). The voice guard only catches punctuation, so YOU must catch the words and patterns below. Re-read your draft and fix any before returning.
 - NO em dashes or en dashes anywhere. Use periods and commas.

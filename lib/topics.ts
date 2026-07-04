@@ -71,6 +71,26 @@ export const TOPIC_BY_ID: Record<FixedTopicId, TopicMeta> = Object.fromEntries(
   TOPICS.map((t) => [t.id, t])
 ) as Record<FixedTopicId, TopicMeta>;
 
+/** Last-resort stand-ins for a reader's OWN topics when every one of them
+ *  (mains + backups) comes up dry for the day. Ordered broad-to-narrow: money
+ *  and markets move every single day, so they lead, and every entry here is
+ *  something any reader would find worth reading on some level. Deliberately
+ *  excludes anything narrow/demographic/personal (women's health, parenting,
+ *  faith, mental health, sports betting, music sub-genres, niche hobbies) —
+ *  a reader who never chose that topic shouldn't have it land in their letter
+ *  as an unrequested substitute just because it's in the catalog. See
+ *  assemble.ts's buildGenerationPool for how this gets used. */
+export const GENERIC_FALLBACK_TOPICS: FixedTopicId[] = [
+  "personal-finance",
+  "macro-markets",
+  "ai-news",
+  "psychology-behavior",
+  "books-worth-your-time",
+  "inspiring-people",
+  "real-estate",
+  "movies-tv",
+];
+
 /** Broad parent topics that expand into specific sub-topic chips in the picker.
  *  Each child is a real catalog id (hand-written queries + curated mock), so
  *  everyone who taps "EDM" lands on the SAME shared id and shares one cached

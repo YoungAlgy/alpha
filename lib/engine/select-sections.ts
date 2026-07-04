@@ -38,6 +38,12 @@ export async function selectLetterSections<T>(
   const chosen: ChosenSection<T>[] = [];
   const live = (id: string) => genLive(id).catch(() => null);
   const filler = (id: string) => genFiller(id).catch(() => null);
+  // Which pool ids Pass 1 actually generated against — distinct from "not
+  // chosen." A pool longer than `size` (e.g. a generic-fallback tail appended
+  // past the reader's own topics) often has entries the cursor never reaches
+  // once earlier topics already filled the letter; those were never checked,
+  // so they are not "quiet" and must not be reported as skippedDry.
+  const attempted = new Set<string>();
 
   // Pass 1 — walk the pool in rank order, in parallel waves sized to what's
   // still needed, keeping topics that produced FRESH content. Common case
@@ -48,6 +54,7 @@ export async function selectLetterSections<T>(
     const start = cursor;
     const batch = pool.slice(start, start + needed);
     cursor += batch.length;
+    batch.forEach((id) => attempted.add(id));
     const results = await Promise.all(batch.map(live));
     batch.forEach((topicId, k) => {
       const value = results[k];
@@ -57,7 +64,7 @@ export async function selectLetterSections<T>(
     });
   }
 
-  const skippedDry = pool.filter((id) => !chosen.some((c) => c.topicId === id));
+  const skippedDry = pool.filter((id) => attempted.has(id) && !chosen.some((c) => c.topicId === id));
 
   // Pass 2 — last resort. The pool's live signal didn't fill the letter (a
   // quiet period). Fill remaining slots with filler for the top dry topics so

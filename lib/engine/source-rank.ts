@@ -52,13 +52,30 @@ function isBareRoot(url: string): boolean {
   }
 }
 
-export function rankAndDedup(results: BraveResult[], maxPerHost = 2): RankedSource[] {
+export function rankAndDedup(
+  results: BraveResult[],
+  maxPerHost = 2,
+  // Already-cited urlKeys (same identity as url-guard's normalizeUrl) to drop
+  // BEFORE the per-host cap is accounted. Filtering these out after capping
+  // would let an excluded article consume a host's cap slot and starve out a
+  // legitimate new one from the same host — the whole point of the cap is to
+  // keep the shortlist varied, so it must only count candidates that can
+  // actually survive to the letter.
+  excludeUrls?: Set<string>
+): RankedSource[] {
   const enriched = results
     .map((r, i) => {
       const host = hostOf(r.url);
       return { r, i, host, key: urlKey(r.url), tier: hostTier(host, r.url) };
     })
-    .filter((e) => e.host && e.key && e.tier !== "denied" && !isBareRoot(e.r.url));
+    .filter(
+      (e) =>
+        e.host &&
+        e.key &&
+        e.tier !== "denied" &&
+        !isBareRoot(e.r.url) &&
+        !(excludeUrls && excludeUrls.has(e.key))
+    );
 
   // Authority first, then Brave's own relevance order.
   enriched.sort((a, b) => tierRank(a.tier) - tierRank(b.tier) || a.i - b.i);

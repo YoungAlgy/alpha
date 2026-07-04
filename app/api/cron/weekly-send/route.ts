@@ -51,7 +51,8 @@ interface SubscriberRow {
   topic_quota: number | null;
 }
 
-// Multi-send cadence entrypoint (Sun + Tue + Thu). Vercel Cron sends an
+// Daily send entrypoint (every day since 2026-07-03; previously Sun/Tue/Thu).
+// Vercel Cron sends an
 // Authorization header of `Bearer ${CRON_SECRET}` automatically when the env
 // var is set. We refuse anything else, so this can't be hit from the open web.
 //
@@ -82,20 +83,20 @@ export async function GET(req: Request) {
 
   // Allow ?weekOf=YYYY-MM-DD override (useful for backfills + admin testing
   // when the schedule hasn't fired yet). Defaults to today (the send date).
-  // CRON: a SINGLE Vercel cron drives all three sends, "0 14 * * 0,2,4" (Sun,
-  // Tue, Thu at 14:00 UTC). It must be one entry: Vercel keys cron jobs by path,
-  // so the earlier attempt at two entries differing only by ?slot=... query
-  // collapsed to one job and the midweek send never fired. The handler derives
-  // the period from today's date, so one schedule covers every send day.
+  // CRON: a SINGLE Vercel cron drives every send, "0 14 * * *" (14:00 UTC,
+  // daily). It must be one entry: Vercel keys cron jobs by path, so an earlier
+  // attempt at multiple entries differing only by a ?slot=... query collapsed
+  // to one job and a scheduled send never fired. The handler derives the
+  // period from today's date, so one schedule covers every send day.
   const url = new URL(req.url);
   const weekOfOverride = url.searchParams.get("weekOf");
   const weekOf =
     weekOfOverride && /^\d{4}-\d{2}-\d{2}$/.test(weekOfOverride)
       ? weekOfOverride
       : currentPeriodIso();
-  // Search window for this send: everything new since the previous send in the
-  // cadence (Thu->Sun is 3 days, Sun->Tue and Tue->Thu are 2). A topic with
-  // nothing new in that window reads as empty and gets backfilled.
+  // Search window for this send: everything new since the previous send, which
+  // at daily cadence is always exactly 1 day back. A topic with nothing new in
+  // that window reads as empty and gets backfilled.
   const freshness = sinceLastSendWindow(weekOf);
   const sb = await supabaseServiceClient();
 
@@ -138,6 +139,12 @@ export async function GET(req: Request) {
   // live-access filter, so anything here is a paying reader silently receiving
   // no letter — surfaced in the summary + an ops alert so it can't go unnoticed.
   const skippedBlankSubscribers: string[] = [];
+
+  // ONE dry-topic cache shared across every subscriber in THIS run — passed
+  // into each generateIssue call so a topic with no fresh news spends its
+  // Brave queries once per batch, not once per subscriber. Created fresh per
+  // invocation (not module state) so it can never leak into a different run.
+  const dryCache = new Set<string>();
 
   // Allow ?force=1 to override the delivered_at idempotency gate (only the
   // admin will ever hit this with the CRON_SECRET in hand; useful for explicit
@@ -245,7 +252,7 @@ export async function GET(req: Request) {
 
     try {
       const issue = await withDeadline(
-        generateIssue(profile, weekOf, letterSize, freshness),
+        generateIssue(profile, weekOf, letterSize, freshness, dryCache),
         PER_USER_DEADLINE_MS,
         `generateIssue(${row.email})`
       );

@@ -122,18 +122,15 @@ async function fetchLiveSignal(
     })
   );
 
-  // 2. Dedup + diversity-rank into a shortlist, then drop anything this topic
+  // 2. Dedup + diversity-rank into a shortlist, dropping anything this topic
   //    already cited recently (the cross-send repeat guard — Brave's freshness
   //    window alone re-surfaces the same article across sends when a page's
-  //    date metadata is off). Compare on the SAME normalizeUrl identity the
-  //    citable allow-set uses so a match can't be dodged by a fragment.
-  let ranked = rankAndDedup(perQuery.flat());
-  if (excludeUrls && excludeUrls.size > 0) {
-    ranked = ranked.filter((s) => {
-      const n = normalizeUrl(s.url);
-      return !(n && excludeUrls.has(n));
-    });
-  }
+  //    date metadata is off) BEFORE the per-host cap is applied — rankAndDedup
+  //    takes excludeUrls directly so an already-cited article can't consume a
+  //    host's cap slot and starve out a legitimate new one from the same host.
+  //    Compare on the SAME normalizeUrl identity the citable allow-set uses so
+  //    a match can't be dodged by a fragment.
+  const ranked = rankAndDedup(perQuery.flat(), 2, excludeUrls);
   if (ranked.length === 0) {
     console.warn(`[source-resolver] live signal for ${topicId} had 0 results — falling back to mock`);
     return undefined;

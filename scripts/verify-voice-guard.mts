@@ -1,9 +1,10 @@
 // One-off verification of the deterministic writing-voice guard.
 // 1) Unit-checks sanitizeVoice on a crafted string with every banned glyph.
-// 2) Runs a REAL generation (Brave signal + Haiku) for one topic blurb AND the
-//    editor note, then scans every reader-facing string for the banned glyphs.
-//    The generation prompts already ask the model to avoid these, but Haiku
-//    slips. The code guard must make the OUTPUT clean regardless.
+// 2) Runs a REAL generation (Brave signal + the live blurb/editor models) for
+//    one topic blurb AND the editor note, then scans every reader-facing
+//    string for the banned glyphs. The generation prompts already ask the
+//    model to avoid these, but a model still slips. The code guard must make
+//    the OUTPUT clean regardless.
 //
 // Run: npx tsx scripts/verify-voice-guard.mts
 import { readFileSync } from "node:fs";
@@ -18,6 +19,7 @@ const { sanitizeVoice, containsMetaLeak, findLexicalTells } = await import("../l
 const { resolveTopicSignal } = await import("../lib/engine/source-resolver.ts");
 const { generateTopicBlurb } = await import("../lib/engine/topic-blurb.ts");
 const { generateEditorNote } = await import("../lib/engine/editor-note.ts");
+const { BLURB_MODEL, EDITOR_NOTE_MODEL } = await import("../lib/engine/client.ts");
 
 function weekOfNow(): string {
   const d = new Date();
@@ -113,7 +115,7 @@ const topicId = "personal-finance"; // one of Gigi's topics; concrete, news-rich
 console.log(`\nResolving signal for ${topicId} (${weekOf})...`);
 const signal = await resolveTopicSignal(topicId as never, weekOf);
 
-console.log("Generating topic blurb on Haiku...");
+console.log(`Generating topic blurb on ${BLURB_MODEL}...`);
 const blurb = await generateTopicBlurb(topicId as never, weekOf, signal);
 
 const blurbStrings: string[] = [blurb.intro];
@@ -126,7 +128,7 @@ for (const it of blurb.items) {
   }
 }
 
-console.log("Generating editor note on Haiku...");
+console.log(`Generating editor note on ${EDITOR_NOTE_MODEL}...`);
 const note = await generateEditorNote(
   {
     id: "verify",
@@ -151,7 +153,7 @@ for (let i = 0; i < allStrings.length; i++) {
 
 console.log(`\nScanned ${allStrings.length} generated strings.`);
 if (liveHits.length) {
-  console.error("LIVE FAIL: banned glyphs survived in real Haiku output:");
+  console.error(`LIVE FAIL: banned glyphs survived in real ${BLURB_MODEL}/${EDITOR_NOTE_MODEL} output:`);
   for (const h of liveHits) console.error("  - " + h);
   // Show the offending strings so the regex can be tightened if needed.
   for (let i = 0; i < allStrings.length; i++) {

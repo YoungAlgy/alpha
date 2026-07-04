@@ -16,6 +16,23 @@
 
 const URL_RE = /https?:\/\/[^\s"'<>)\]}]+/gi;
 
+// Cosmetic subdomain prefixes that mirror the SAME content as the canonical
+// host (Google AMP pages, mobile-optimized pages) — collapsed just like
+// "www." so a same-story AMP/mobile URL matches its canonical counterpart
+// instead of reading as a different host.
+const MIRROR_SUBDOMAIN_RE = /^(?:www|amp|m|mobile)\./;
+
+// Cross-site attribution/tracking params that never distinguish WHICH content
+// a page shows, only where the visitor came from — stripped so a same-story
+// URL that differs ONLY by a tracking param still matches. Deliberately a
+// short, well-known set rather than dropping the query wholesale: some sites
+// use a query param to identify the content itself (?v=, ?p=, ?id=), and
+// those must stay so distinct pages stay distinct.
+const TRACKING_PARAMS = new Set([
+  "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
+  "gclid", "fbclid", "dclid", "msclkid", "mc_cid", "mc_eid", "igshid",
+]);
+
 // Normalize a URL to a comparison key. Returns null for non-http(s) or
 // unparseable. Exported so a KNOWN url (e.g. a curated source link) can be keyed
 // directly — building an allow-set by regex-scanning text would truncate a path
@@ -25,11 +42,13 @@ export function normalizeUrl(raw: string): string | null {
   try {
     const u = new URL(raw.trim());
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    const host = u.hostname.toLowerCase().replace(MIRROR_SUBDOMAIN_RE, "");
     let path = u.pathname.replace(/\/+$/, ""); // drop trailing slash(es)
     if (path === "") path = "/";
-    // Keep query (distinguishes ?v=, ?p=, ?id=); drop fragment (cosmetic).
-    return `${host}${path}${u.search}`;
+    for (const p of TRACKING_PARAMS) u.searchParams.delete(p);
+    const query = u.searchParams.toString();
+    // Keep any remaining query (distinguishes ?v=, ?p=, ?id=); drop fragment (cosmetic).
+    return `${host}${path}${query ? `?${query}` : ""}`;
   } catch {
     return null;
   }

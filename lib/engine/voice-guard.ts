@@ -1,6 +1,6 @@
 // Deterministic enforcement of the no-AI-tells writing voice on generated prose.
 // The generation prompts already ASK the model to avoid em/en dashes, semicolons,
-// and curly quotes, but Haiku (and any model) follows that imperfectly — and these
+// and curly quotes, but any model follows that imperfectly — and these
 // are a HARD reader-facing rule. So we also strip the mechanical violations in
 // code, the same way url-guard enforces the citable-URL rule instead of trusting
 // the prompt alone. Structural tells ("X, not Y", rule-of-three) can't be safely
@@ -23,8 +23,8 @@ export function sanitizeVoice(s: string): string {
 // META-LEAK GUARD. The single worst tell a reader can hit is the letter narrating
 // its OWN sourcing: "this week's signal is thin", "without seeing the full essay",
 // a note listing the raw junk inputs. It instantly proves a machine assembled the
-// letter with no human in the loop. The prompt now forbids it, but Haiku slips, so
-// (like url-guard) we ENFORCE it in code: any reader-facing string that matches one
+// letter with no human in the loop. The prompt now forbids it, but a model still
+// slips sometimes, so (like url-guard) we ENFORCE it in code: any reader-facing string that matches one
 // of these is dropped (an item) or replaced (the section intro) before it ships.
 //
 // Patterns target the META use only, and are deliberately PRECISION-biased: a
