@@ -16,6 +16,11 @@ export async function GET() {
       !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
       (!!process.env.SUPABASE_SECRET_KEY || !!process.env.SUPABASE_SERVICE_ROLE_KEY),
     brave: !!process.env.BRAVE_SEARCH_API_KEY,
+    // Fallback provider, not primary — false just means the Brave-outage /
+    // Anthropic-outage fallbacks are inert, NOT that the app is down. Surfaced
+    // so a rotated/dropped key is visible at a glance BEFORE an outage is the
+    // thing that reveals the fallback never armed.
+    gemini: !!process.env.GEMINI_API_KEY,
   };
   return NextResponse.json({
     ok: true,
