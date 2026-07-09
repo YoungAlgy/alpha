@@ -111,6 +111,15 @@ export async function geminiGroundedSearch(query: string): Promise<GeminiGrounde
     contents: [{ parts: [{ text: query }] }],
     tools: [{ google_search: {} }],
   });
+  // Unlike geminiGenerateText (whose OWN output is truncation-guarded), this
+  // text becomes the RESEARCH the blurb writer trusts as fact — so a grounded
+  // answer that didn't finish cleanly (MAX_TOKENS, SAFETY, RECITATION, ...) is
+  // worse than none: a mid-thought cut can drop the qualifying clause or the
+  // number that changes the meaning. Bail so the topic falls through to a
+  // fresher backup instead of being written from a half-answer. (undefined and
+  // "STOP" are the only clean finishes; anything else is a partial stop.)
+  const finish = candidate?.finishReason;
+  if (finish && finish !== "STOP") return undefined;
   const answerText = candidate?.content?.parts?.map((p) => p.text ?? "").join("\n").trim() ?? "";
   const chunks = candidate?.groundingMetadata?.groundingChunks ?? [];
   const citations = chunks

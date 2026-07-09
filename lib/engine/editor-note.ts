@@ -135,7 +135,7 @@ Write the editor's note for this reader's letter today.`;
     // intro for every reader that day instead of just this one being a
     // little less personal.
     if (isAnthropicUnavailable(e) && geminiConfigured()) {
-      console.warn(`[editor-note] Anthropic unavailable (status ${e.status}), falling back to Gemini`);
+      console.warn(`[editor-note] Anthropic unavailable (status ${e.status ?? "connection"}), falling back to Gemini`);
       try {
         note = (await geminiGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
       } catch (geminiErr) {

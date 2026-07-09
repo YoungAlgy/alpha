@@ -215,28 +215,42 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     return extractJson(text);
   }
 
+  // Claude unavailable → Gemini writes it instead (same prompt). Shared by the
+  // FIRST attempt and the parse-retry below, so an outage that first surfaces on
+  // the retry still reaches the fallback rather than silently dropping the topic.
+  async function geminiOrRethrow(err: unknown): Promise<ParsedBlurb> {
+    if (isAnthropicUnavailable(err) && geminiConfigured()) {
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Anthropic unavailable (status ${err.status ?? "connection"}), falling back to Gemini`);
+      try {
+        return await callGeminiAndParse();
+      } catch (geminiErr) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini fallback also failed: ${geminiErr instanceof Error ? geminiErr.message : geminiErr}`);
+        throw err; // surface the ORIGINAL Anthropic error — more informative for ops
+      }
+    }
+    throw err;
+  }
+
   let parsed: ParsedBlurb;
   try {
     parsed = await callAndParse();
   } catch (e) {
-    if (isAnthropicUnavailable(e) && geminiConfigured()) {
-      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Anthropic unavailable (status ${e.status}), falling back to Gemini`);
-      try {
-        parsed = await callGeminiAndParse();
-      } catch (geminiErr) {
-        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini fallback also failed: ${geminiErr instanceof Error ? geminiErr.message : geminiErr}`);
-        throw e; // surface the ORIGINAL Anthropic error — more informative for ops
-      }
+    if (isAnthropicUnavailable(e)) {
+      parsed = await geminiOrRethrow(e);
+    } else if (e instanceof BlurbTruncatedError) {
+      // Deterministic — a retry truncates the same way. Propagate; the selector
+      // treats the topic as quiet and backfills a fresher one.
+      throw e;
     } else {
-      // Retry ONLY parse-shaped failures (prose-wrapped/malformed JSON). An
-      // API rejection (4xx/5xx after SDK retries) or a truncation is
-      // deterministic — retrying doubles the spend for the same failure on
-      // every topic in the pool. Those propagate up and the selector treats
-      // the topic as quiet.
-      const parseShaped = !(e instanceof BlurbTruncatedError) && !isAnthropicUnavailable(e);
-      if (!parseShaped) throw e;
+      // Parse-shaped (prose-wrapped / malformed JSON). Retry Claude ONCE. If the
+      // retry itself hits an outage (Anthropic went down between the two calls),
+      // route THAT through the same Gemini fallback instead of dropping the topic.
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: parse failed, retrying once: ${e instanceof Error ? e.message : e}`);
-      parsed = await callAndParse();
+      try {
+        parsed = await callAndParse();
+      } catch (retryErr) {
+        parsed = await geminiOrRethrow(retryErr);
+      }
     }
   }
 

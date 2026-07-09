@@ -13,8 +13,9 @@
 //      wrappers, not the real source URL. Verified live: a plain HEAD request
 //      with redirect:"follow" resolves to the real destination in one hop.
 //      Every citation is resolved BEFORE any filtering can even see the real
-//      host — filtering the redirect URL itself would be a no-op, since the
-//      host is always vertexaisearch.cloud.google.com.
+//      host. resolveRedirect DROPS any citation whose HEAD did not actually
+//      leave the proxy host (a non-3xx answer leaves res.url on the wrapper),
+//      so an opaque grounding-redirect URL can never survive to be cited.
 //   2. Filtering is necessarily POST-hoc, not pre-hoc: a citation whose
 //      RESOLVED host is paywalled/junk (the same hostTier check the Brave
 //      path uses) or already cited to this reader recently (excludeUrls) is
@@ -34,6 +35,8 @@ import type { TopicId } from "@/lib/types";
 // Bounds how many redirect-resolution HEAD requests one fallback call makes.
 const MAX_CITATIONS = 8;
 
+const GROUNDING_PROXY_HOST = "vertexaisearch.cloud.google.com";
+
 // Resolve one grounding-redirect URL to its real destination. Best-effort: a
 // citation that fails to resolve (timeout, dead redirect) is just dropped
 // rather than failing the whole topic over one bad link.
@@ -44,7 +47,27 @@ async function resolveRedirect(url: string): Promise<string | null> {
       redirect: "follow",
       signal: AbortSignal.timeout(6_000),
     });
-    return res.url || null;
+    const real = res.url;
+    if (!real) return null;
+    // If we're STILL on Google's grounding proxy, the redirect never actually
+    // resolved — fetch only auto-follows 3xx, so a HEAD that hits a 200
+    // meta-refresh/JS interstitial, a 405 (HEAD unsupported), or an expired-link
+    // 4xx leaves res.url pointing back at the opaque proxy wrapper. That URL
+    // must never be cited to a reader, so drop it like any unresolvable link.
+    // We deliberately do NOT gate on res.ok otherwise: once we've left the
+    // proxy, a real publisher that answers HEAD with 403/405 (bot-blocking) but
+    // serves the page on GET is still a good citation — HEAD status is not a
+    // liveness signal, and the primary Brave path cites without one either.
+    let host: string;
+    try {
+      host = new URL(real).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+    if (host === GROUNDING_PROXY_HOST || host.endsWith(`.${GROUNDING_PROXY_HOST}`)) {
+      return null;
+    }
+    return real;
   } catch {
     return null;
   }

@@ -94,6 +94,37 @@ const note = await generateEditorNote(
 );
 check("(2) editor note is non-trivial", note.length > 20);
 
+// --- 3) Error classification (isAnthropicUnavailable) ------------------------
+// Pure/deterministic. Guards the two failure shapes that MUST route to the
+// generation fallback but historically didn't: a connection/timeout error
+// (status undefined) and the "credit balance too low" 400 (a billing outage,
+// not a bad payload) — while a genuine content 400 must still NOT fall back.
+console.log("(3) Anthropic error classification");
+const { isAnthropicUnavailable } = await import("../lib/engine/client.ts");
+const Anthropic = (await import("@anthropic-ai/sdk")).default;
+const { APIConnectionTimeoutError } = await import("@anthropic-ai/sdk");
+
+const creditBody = {
+  type: "error",
+  error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Claude API. Please go to Plans & Billing to upgrade or purchase credits." },
+};
+const contentBody = {
+  type: "error",
+  error: { type: "invalid_request_error", message: "messages: at least one message is required" },
+};
+const creditErr = new Anthropic.BadRequestError(400, creditBody, undefined, undefined, "invalid_request_error");
+const contentErr = new Anthropic.BadRequestError(400, contentBody, undefined, undefined, "invalid_request_error");
+
+check("(3) connection/timeout error (no status) => unavailable", isAnthropicUnavailable(new APIConnectionTimeoutError()) === true);
+check("(3) 400 credit-balance => unavailable", isAnthropicUnavailable(creditErr) === true);
+check("(3) 400 content/payload => NOT unavailable", isAnthropicUnavailable(contentErr) === false);
+check("(3) 401 => unavailable", isAnthropicUnavailable({ status: 401 }) === true);
+check("(3) 403 => unavailable", isAnthropicUnavailable({ status: 403 }) === true);
+check("(3) 429 => unavailable", isAnthropicUnavailable({ status: 429 }) === true);
+check("(3) 503 => unavailable", isAnthropicUnavailable({ status: 503 }) === true);
+check("(3) 404 => NOT unavailable", isAnthropicUnavailable({ status: 404 }) === false);
+check("(3) plain parse error (no status) => NOT unavailable", isAnthropicUnavailable(new Error("No JSON object found")) === false);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("GEMINI-FALLBACK VERIFICATION FAILED");

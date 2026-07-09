@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { APIConnectionError } from "@anthropic-ai/sdk";
 
 let _client: Anthropic | null = null;
 
@@ -41,18 +41,64 @@ export const BLURB_MODEL = pickModel("ALPHA_BLURB_MODEL", DEFAULT_MODEL);
 // writing model — for about $2/mo at daily cadence.
 export const EDITOR_NOTE_MODEL = pickModel("ALPHA_EDITOR_MODEL", "claude-opus-4-8");
 
-// The shared signal topic-blurb.ts and editor-note.ts both use to tell
-// "Anthropic itself is unavailable" (no credits, rate-limited, an outage —
-// fall back to Gemini) apart from a request-shaped problem on OUR side.
-// Deliberately NARROW to infra-shaped statuses only (401 bad key, 403
-// forbidden, 429 rate-limited, 5xx server-side) — NOT 400 or other 4xx. A 400
-// (e.g. a content-policy rejection, or a malformed/oversized payload bug)
-// means WE sent something wrong, not that the vendor is down; retrying the
-// IDENTICAL prompt via Gemini would either hit a similar rejection or produce
-// a degraded result for a request Claude correctly refused, silently masking
-// a real bug behind a misleading "Anthropic unavailable" log line.
-export function isAnthropicUnavailable(e: unknown): e is { status: number } {
+// The shared classifier topic-blurb.ts and editor-note.ts both use to tell
+// "Anthropic itself is unavailable" (fall back to Gemini) apart from a
+// request-shaped problem on OUR side (a real bug — surface it, don't mask it).
+//
+// UNAVAILABLE (fall back to Gemini):
+//  - A network failure or a hung-then-timed-out request. The SDK throws
+//    APIConnectionError / APIConnectionTimeoutError, which carry NO http status
+//    (status === undefined). This is the MOST COMMON real "Anthropic is down"
+//    shape, so a status-only check would miss the exact outage the fallback
+//    exists for — hence the instanceof branch first.
+//  - 401 (bad/expired key), 403 (forbidden), 429 (rate-limited), any 5xx.
+//  - 400 "credit balance is too low": Anthropic reports a depleted PREPAID
+//    balance as a 400 invalid_request_error, not a 402/429. It is a billing
+//    outage (NOT our payload's fault) and the literal "no credits" case this
+//    fallback was built for, so match it specifically by message.
+//
+// NOT unavailable (surface the bug — a Gemini retry would hide it):
+//  - Any OTHER 400 / 4xx: a content-policy rejection, a malformed/oversized
+//    payload bug. Retrying the identical prompt via Gemini would either hit a
+//    similar rejection or ship a degraded result Claude correctly refused,
+//    behind a misleading "Anthropic unavailable" log line.
+export function isAnthropicUnavailable(e: unknown): e is { status?: number } {
+  // No HTTP status at all — a connection/timeout error. THE common outage shape.
+  if (isConnectionError(e)) return true;
   if (typeof e !== "object" || e === null || !("status" in e)) return false;
   const status = (e as { status: unknown }).status;
-  return typeof status === "number" && (status === 401 || status === 403 || status === 429 || status >= 500);
+  if (typeof status !== "number") return false;
+  if (status === 401 || status === 403 || status === 429 || status >= 500) return true;
+  // A 400 counts ONLY when it's the credit-balance/billing case, never a
+  // content-policy or malformed-payload 400.
+  return status === 400 && isCreditBalanceError(e);
+}
+
+// APIConnectionError / APIConnectionTimeoutError (a network failure or a
+// hung-then-timed-out request) carry no HTTP status. instanceof is the fast
+// path, but it silently breaks when the SDK loads as TWO copies — a CJS/ESM
+// dual-package split, which really happens (e.g. a CJS require in one module,
+// an ESM import in another) and would reopen the exact "outage not detected"
+// gap this guards. So ALSO match the SDK's stable class-name chain, which is
+// identical across both builds. Both checks are gated to real Error objects,
+// and this only ever runs on an error thrown by the Anthropic client, so a
+// same-named foreign class can't reach here.
+function isConnectionError(e: unknown): boolean {
+  if (e instanceof APIConnectionError) return true;
+  if (!(e instanceof Error)) return false;
+  for (let p = Object.getPrototypeOf(e); p; p = Object.getPrototypeOf(p)) {
+    const name = p.constructor?.name;
+    if (name === "APIConnectionError" || name === "APIConnectionTimeoutError") return true;
+  }
+  return false;
+}
+
+// Anthropic's depleted-balance error is a 400 whose response body carries
+// "Your credit balance is too low to access the Claude API...". The SDK folds
+// that body into the Error's message (APIError.makeMessage JSON-stringifies the
+// body when it has no top-level .message), so the phrase reliably appears in
+// e.message. Match that distinctive substring — a content 400 never carries it.
+function isCreditBalanceError(e: unknown): boolean {
+  const msg = (e as { message?: unknown }).message;
+  return typeof msg === "string" && /credit balance/i.test(msg);
 }
