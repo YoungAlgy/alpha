@@ -151,19 +151,71 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
 // empty topic pool) or a send hard-fails — the exact silent drop that
 // otherwise only surfaces when the owner happens to notice a missing letter
 // days later. Never throws: a broken alert must never break the send path.
+//
+// Two independent channels, tried in order: Resend (email), then a webhook
+// if Resend fails or isn't configured. Without the second channel, a full
+// Resend outage would silently take out the ONE mechanism meant to surface
+// that exact kind of outage — subscriber sends and the alert about them
+// failing together, with nothing left to notice either. OPS_ALERT_WEBHOOK_URL
+// is optional; leave it unset and this is identical to the old Resend-only
+// behavior.
 export async function sendOpsAlert(subject: string, body: string): Promise<void> {
+  const viaResend = await sendOpsAlertViaResend(subject, body);
+  if (!viaResend) await sendOpsAlertViaWebhook(subject, body);
+}
+
+async function sendOpsAlertViaResend(subject: string, body: string): Promise<boolean> {
   try {
-    if (!resendConfiguredInternal()) return;
+    if (!resendConfiguredInternal()) return false;
     const to = process.env.OPS_ALERT_EMAIL?.trim() || "youngalgy@gmail.com";
     const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@everyday.report>";
-    await resendClient().emails.send({
+    // The SDK returns { data, error } on an API-level failure (bad/expired key,
+    // etc.) — it does NOT throw, same as sendLetterNotification/sendWelcomeEmail
+    // below. Missing this check was the actual bug the verify script caught:
+    // an invalid key "succeeded" silently and the webhook fallback never fired.
+    const result = await resendClient().emails.send({
       from: resendFrom,
       to,
       subject,
       text: body,
     });
+    if (result.error) {
+      console.warn("[ops-alert] Resend failed:", result.error.message);
+      return false;
+    }
+    return true;
   } catch (e) {
-    console.warn("[ops-alert] failed:", e instanceof Error ? e.message : e);
+    console.warn("[ops-alert] Resend failed:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
+// Discord and Slack incoming webhooks both accept a plain JSON POST; sending
+// both `content` (Discord's field) and `text` (Slack's field) is harmless
+// either way — each platform ignores the field it doesn't recognize, so this
+// works with whichever free webhook Algy sets up without the code needing to
+// know which. No SDK, no signup beyond creating the webhook URL (Discord:
+// Server Settings > Integrations > Webhooks; Slack: api.slack.com/apps >
+// Incoming Webhooks). Same never-throws contract as the Resend path.
+async function sendOpsAlertViaWebhook(subject: string, body: string): Promise<boolean> {
+  try {
+    const url = process.env.OPS_ALERT_WEBHOOK_URL?.trim();
+    if (!url) return false;
+    const message = `**[alpha ops alert]** ${subject}\n\n${body}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: message, text: message }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      console.warn(`[ops-alert] webhook failed: ${res.status}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("[ops-alert] webhook failed:", e instanceof Error ? e.message : e);
+    return false;
   }
 }
 
