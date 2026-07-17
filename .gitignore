@@ -42,3 +42,8 @@ next-env.d.ts
 
 # supabase CLI local cache (project ref, pooler URL, version pins)
 supabase/.temp/
+
+# Cloudflare / OpenNext build artifacts
+.wrangler/
+.open-next/
+cloudflare-env.d.ts
