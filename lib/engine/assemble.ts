@@ -158,7 +158,20 @@ export async function generateIssue(
         // topic would read the empty blurb back as a "hit" and ship a link-less
         // section. Return null so the selector backfills this topic instead.
         if (blurb.items.length === 0) return null;
-        setCachedBlurb(blurb).catch(() => undefined);
+        // AWAITED, not fire-and-forget: this write feeds getRecentlyCitedUrls'
+        // cross-send repeat guard (a subscriber never seeing the same article
+        // twice within 14 days). An unawaited write here can be silently
+        // abandoned once the enclosing request finishes and the platform tears
+        // the invocation down — verified live against production data: whole
+        // days had ZERO topic_blurbs writes across every topic despite letters
+        // generating and delivering fine that day, which is exactly what
+        // dropped cache writes look like, and it broke the repeat guard for
+        // real (a subscriber was shown the same 2-3 sources re-worded on
+        // consecutive days because the exclusion set never saw what she was
+        // actually sent). setCachedBlurb itself never throws — it catches its
+        // own errors and warns — so this can't turn a real send into a
+        // failure; it only makes sure the write gets a real chance to finish.
+        await setCachedBlurb(blurb);
         return blurb;
       })(),
       TOPIC_GEN_DEADLINE_MS,

@@ -7,9 +7,18 @@
 const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 
 // Degradation signal for the cron's end-of-run ops summary: how many queries
-// came back 429 (quota/rate exhaustion) this invocation. Without this, an
-// exhausted Brave quota silently turns every letter into stale filler with no
-// operator-visible trace — generation "succeeds" all the way down.
+// came back quota-exhausted this invocation — either 429 (per-request rate
+// limit) or 402 (the paid plan's monthly spend cap exceeded; verified live
+// against the real API: {"status":402,"code":"USAGE_LIMIT_EXCEEDED",
+// "meta":{"usage_limit_type":"monthly", ...}}). Both mean the same thing to a
+// caller: Brave will not serve this query. Originally only 429 was counted
+// here, which meant a real monthly-cap outage (402) was invisible to both the
+// ops alert AND the Gemini search fallback in source-resolver.ts (its trigger
+// used this same signal) — Brave could be completely down for the rest of a
+// billing period with no operator-visible trace and no fallback ever firing.
+// Without counting either, an exhausted Brave quota silently turns every
+// letter into stale filler with no operator-visible trace — generation
+// "succeeds" all the way down.
 //
 // This counter is MONOTONIC (never reset) rather than reset-per-invocation on
 // purpose: two overlapping cron invocations on the same warm lambda (a Vercel
@@ -42,13 +51,15 @@ export interface BraveSearchOptions {
   country?: string;
   safesearch?: "off" | "moderate" | "strict";
   // Fires in ADDITION to the global rateLimited429 counter above, scoped to
-  // just THIS call. The global counter is shared across every topic running
-  // concurrently in a generation wave (assemble.ts batches several topics via
-  // Promise.all) — a caller that needs "did MY OWN queries get rate-limited"
-  // (the Gemini search-fallback trigger in source-resolver.ts) can't use the
-  // global counter's before/after delta for that, since a DIFFERENT topic's
-  // 429 in the same wave would show up in the delta too. This callback lets a
-  // caller track its own attempts in its own closure instead.
+  // just THIS call, on EITHER quota-exhaustion shape (429 or 402 — see the
+  // counter's comment above). The global counter is shared across every topic
+  // running concurrently in a generation wave (assemble.ts batches several
+  // topics via Promise.all) — a caller that needs "did MY OWN queries get
+  // quota-exhausted" (the Gemini search-fallback trigger in
+  // source-resolver.ts) can't use the global counter's before/after delta for
+  // that, since a DIFFERENT topic's failure in the same wave would show up in
+  // the delta too. This callback lets a caller track its own attempts in its
+  // own closure instead.
   onRateLimited?: () => void;
 }
 
@@ -91,7 +102,10 @@ export async function braveSearch(
   }
 
   if (!res.ok) {
-    if (res.status === 429) {
+    // 429 = per-request rate limit. 402 = the plan's spend cap exceeded for
+    // the billing period (USAGE_LIMIT_EXCEEDED) — verified live against the
+    // real API. Both mean Brave will not serve this query; both must count.
+    if (res.status === 429 || res.status === 402) {
       rateLimited429 += 1;
       opts.onRateLimited?.();
     }
