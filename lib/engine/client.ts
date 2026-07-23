@@ -36,6 +36,16 @@ function pickModel(envVar: string, fallback: string): string {
 // short call per reader.
 export const BLURB_MODEL = pickModel("ALPHA_BLURB_MODEL", DEFAULT_MODEL);
 
+// The cheap middle tier in topic-blurb.ts's cost-tiering waterfall (Gemini
+// free -> Haiku cheap -> Sonnet last resort). This was alpha's actual
+// production blurb model for weeks before the deliberate 2026-07-03 upgrade
+// to Sonnet 5 ("blurbs are the actual product") — not a novel or unvalidated
+// choice, a known-good one being reintroduced as a cost lever now that live
+// testing shows Gemini's free tier alone escalates too often (its own rate
+// limit under volume, plus a real gap respecting the banned-AI-tell list) to
+// deliver meaningful savings on its own.
+export const BLURB_CHEAP_MODEL = pickModel("ALPHA_BLURB_CHEAP_MODEL", "claude-haiku-4-5");
+
 // The editor's note is ONE short call per reader and the most personal,
 // voice-critical part of the letter, so it rides Opus 4.8 — the strongest
 // writing model — for about $2/mo at daily cadence.

@@ -1,5 +1,5 @@
-import { anthropicClient, BLURB_MODEL, isAnthropicUnavailable } from "./client";
-import { geminiConfigured, geminiGenerateText } from "./gemini-client";
+import { anthropicClient, BLURB_MODEL, BLURB_CHEAP_MODEL } from "./client";
+import { geminiConfigured, geminiGenerateText, GeminiTruncatedError } from "./gemini-client";
 import { topicLabel } from "@/lib/topics";
 import { extractSignalUrls, enforceSignalUrls } from "./url-guard";
 import { sanitizeVoice, containsMetaLeak, findLexicalTells } from "./voice-guard";
@@ -165,17 +165,58 @@ Write today's ${label} section. Do not say "this week" — the letter is daily. 
 
 Up to three items, and ship two or even one rather than padding with a weak or repetitive item. VARY the kinds across them. Include URLs only from the signal above. Make each item feel like a small piece of education with something concrete to click or try.`;
 
-  // Generate + parse, retrying ONCE on a malformed-JSON response. The model is
-  // told "JSON only" but occasionally wraps it in prose or truncates; a single
-  // retry recovers the transient case before we give up and skip the topic.
-  async function callAndParse(): Promise<ParsedBlurb> {
+  // COST TIERING: try the free model first, escalate to the paid one only when
+  // it's actually needed. Gemini drafts every topic blurb by default; Claude
+  // only gets called when Gemini's draft doesn't survive the SAME guards every
+  // draft has to pass regardless of which model wrote it (url-guard,
+  // meta-leak-guard, below) — i.e. "needs it" is judged objectively, not by a
+  // vibe. This inverts the OLD default (Claude primary, Gemini only on an
+  // Anthropic outage) now that Gemini has been proven live to produce
+  // guard-passing output on this exact prompt (see verify-gemini-fallback.mts).
+  // Blurbs are the highest-volume call in the app (one per topic per day,
+  // shared across every subscriber to it via the cache), so this is where
+  // the cost tiering actually matters — see editor-note.ts for why the much
+  // smaller, more personal editor's-note call deliberately stays on the
+  // strong model as the letter's "final edit," not tiered.
+
+  // Gemini attempt, with ONE retry on a parse-shaped failure (mirrors Claude's
+  // own retry-once pattern below). Free, so a second try costs nothing and
+  // meaningfully raises Gemini's effective success rate before paying for the
+  // next tier. Returns null (never throws) on any failure — the caller
+  // escalates to Haiku.
+  async function tryGemini(): Promise<ParsedBlurb | null> {
+    async function attempt(): Promise<ParsedBlurb> {
+      const text = await geminiGenerateText(SYSTEM_PROMPT, userPrompt, 4000);
+      return extractJson(text);
+    }
+    try {
+      return await attempt();
+    } catch (e) {
+      if (e instanceof GeminiTruncatedError) {
+        // Deterministic — a retry truncates the same way. Straight to Haiku.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft truncated, escalating to Haiku`);
+        return null;
+      }
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft failed, retrying once: ${e instanceof Error ? e.message : e}`);
+      try {
+        return await attempt();
+      } catch (e2) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini retry also failed, escalating to Haiku: ${e2 instanceof Error ? e2.message : e2}`);
+        return null;
+      }
+    }
+  }
+
+  // Claude, parameterized by model — shared by both the Haiku (cheap) and
+  // Sonnet (last-resort) tiers below, same call shape either way.
+  async function callClaudeAndParse(model: string): Promise<ParsedBlurb> {
     const response = await anthropicClient().messages.create({
-      model: BLURB_MODEL,
+      model,
       max_tokens: 4000,
-      // thinking disabled EXPLICITLY: Sonnet 5 runs adaptive thinking when the
-      // field is omitted, which for this JSON-emitting task would spend billed
-      // output tokens on reasoning and eat into max_tokens for zero quality
-      // gain on a tightly-templated blurb.
+      // thinking disabled EXPLICITLY: both models run adaptive thinking when
+      // the field is omitted, which for this JSON-emitting task would spend
+      // billed output tokens on reasoning and eat into max_tokens for zero
+      // quality gain on a tightly-templated blurb.
       thinking: { type: "disabled" },
       // cache_control on the big static system prompt (~4k tokens). Honest
       // economics: pass-1 blurb calls fire in a parallel wave, and concurrent
@@ -185,16 +226,16 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       // fronted by its own search+deep-read, so they rarely start in the same
       // instant), and the onboarding /api/generate path. Net effect is a
       // modest saving, not the naive "everything after call one is cached".
+      // Anthropic caches per (model, content), so Haiku and Sonnet each keep
+      // their own cache entry for the same prompt text — no cross-model reuse,
+      // but also no interference between the two tiers.
       system: [
         { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
       ],
       messages: [{ role: "user", content: userPrompt }],
     });
     if (response.stop_reason === "max_tokens") {
-      // Truncated output can't be valid JSON — and if it somehow parsed, it
-      // would ship a cut-off body. Throw as NOT-retryable-by-parse: a second
-      // identical call would truncate the same way.
-      throw new BlurbTruncatedError(`${topicId} ${weekOf}: hit max_tokens`);
+      throw new BlurbTruncatedError(`${topicId} ${weekOf}: hit max_tokens (${model})`);
     }
     const text = response.content
       .filter((b) => b.type === "text")
@@ -203,136 +244,174 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     return extractJson(text);
   }
 
-  // Same prompts, Gemini as the writer — a genuinely separate vendor, used
-  // ONLY when Anthropic itself is unavailable (see isAnthropicUnavailable).
-  // Last resort: this app's whole voice-tuning system (this prompt,
-  // voice-guard, meta-leak guard) was built and validated against Claude
-  // specifically over many sessions, so Gemini's prose reads slightly
-  // different here — accepted, since the alternative is shipping no section
-  // at all for this topic.
-  async function callGeminiAndParse(): Promise<ParsedBlurb> {
-    const text = await geminiGenerateText(SYSTEM_PROMPT, userPrompt, 4000);
-    return extractJson(text);
-  }
-
-  // Claude unavailable → Gemini writes it instead (same prompt). Shared by the
-  // FIRST attempt and the parse-retry below, so an outage that first surfaces on
-  // the retry still reaches the fallback rather than silently dropping the topic.
-  async function geminiOrRethrow(err: unknown): Promise<ParsedBlurb> {
-    if (isAnthropicUnavailable(err) && geminiConfigured()) {
-      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Anthropic unavailable (status ${err.status ?? "connection"}), falling back to Gemini`);
-      try {
-        return await callGeminiAndParse();
-      } catch (geminiErr) {
-        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini fallback also failed: ${geminiErr instanceof Error ? geminiErr.message : geminiErr}`);
-        throw err; // surface the ORIGINAL Anthropic error — more informative for ops
+  // Haiku — the cheap middle tier. Retries ONCE on a malformed-JSON response,
+  // same as every tier; never throws past that — a failure here just means
+  // "escalate to Sonnet," mirroring tryGemini's shape below.
+  async function tryHaiku(): Promise<ParsedBlurb | null> {
+    try {
+      return await callClaudeAndParse(BLURB_CHEAP_MODEL);
+    } catch (e) {
+      if (e instanceof BlurbTruncatedError) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Haiku draft truncated, escalating to Sonnet`);
+        return null;
       }
-    }
-    throw err;
-  }
-
-  let parsed: ParsedBlurb;
-  try {
-    parsed = await callAndParse();
-  } catch (e) {
-    if (isAnthropicUnavailable(e)) {
-      parsed = await geminiOrRethrow(e);
-    } else if (e instanceof BlurbTruncatedError) {
-      // Deterministic — a retry truncates the same way. Propagate; the selector
-      // treats the topic as quiet and backfills a fresher one.
-      throw e;
-    } else {
-      // Parse-shaped (prose-wrapped / malformed JSON). Retry Claude ONCE. If the
-      // retry itself hits an outage (Anthropic went down between the two calls),
-      // route THAT through the same Gemini fallback instead of dropping the topic.
-      console.warn(`[topic-blurb] ${topicId} ${weekOf}: parse failed, retrying once: ${e instanceof Error ? e.message : e}`);
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Haiku draft failed, retrying once: ${e instanceof Error ? e.message : e}`);
       try {
-        parsed = await callAndParse();
-      } catch (retryErr) {
-        parsed = await geminiOrRethrow(retryErr);
+        return await callClaudeAndParse(BLURB_CHEAP_MODEL);
+      } catch (e2) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Haiku retry also failed, escalating to Sonnet: ${e2 instanceof Error ? e2.message : e2}`);
+        return null;
       }
     }
   }
 
-  // Deterministic voice guard on all reader-facing prose (headline, body, ref
-  // labels/notes). URLs are left untouched so the citable-URL guard below still
-  // matches. The intro is sanitized at the return.
-  const mapped = parsed.items.map((it) => ({
-    kind: narrowKind(it.kind),
-    headline: sanitizeVoice(it.headline),
-    body: sanitizeVoice(it.body),
-    primaryRef: it.primaryRef
-      ? { ...it.primaryRef, label: sanitizeVoice(it.primaryRef.label) }
-      : undefined,
-    supplementaryRefs:
-      Array.isArray(it.supplementaryRefs) && it.supplementaryRefs.length > 0
-        ? it.supplementaryRefs.map((r) => ({
-            ...r,
-            label: sanitizeVoice(r.label),
-            note: r.note ? sanitizeVoice(r.note) : r.note,
-          }))
+  // Sonnet — the last resort. Retries ONCE on a malformed-JSON response;
+  // truncation is deterministic and propagates straight up (the selector
+  // treats the topic as quiet and backfills a fresher one — no tier left to
+  // escalate to beyond this one).
+  async function trySonnet(): Promise<ParsedBlurb> {
+    try {
+      return await callClaudeAndParse(BLURB_MODEL);
+    } catch (e) {
+      if (e instanceof BlurbTruncatedError) throw e;
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet parse failed, retrying once: ${e instanceof Error ? e.message : e}`);
+      return await callClaudeAndParse(BLURB_MODEL);
+    }
+  }
+
+  // Applies the SAME guards to a draft regardless of which model wrote it:
+  // deterministic voice sanitize, the code-level URL guard (drops any URL not
+  // in the signal's citable allow-set — the model's OWN output is untrusted
+  // either way, this isn't Claude-specific), and the meta-leak guard (drops
+  // any item that narrates the letter's own sourcing). Returns the finished
+  // intro + items; an empty `items` is the objective "this draft wasn't good
+  // enough" signal the cost-tiering above escalates on.
+  function finalizeBlurb(parsed: ParsedBlurb): { intro: string; items: TopicBlurb["items"]; tells: string[] } {
+    const mapped = parsed.items.map((it) => ({
+      kind: narrowKind(it.kind),
+      headline: sanitizeVoice(it.headline),
+      body: sanitizeVoice(it.body),
+      primaryRef: it.primaryRef
+        ? { ...it.primaryRef, label: sanitizeVoice(it.primaryRef.label) }
         : undefined,
-  }));
+      supplementaryRefs:
+        Array.isArray(it.supplementaryRefs) && it.supplementaryRefs.length > 0
+          ? it.supplementaryRefs.map((r) => ({
+              ...r,
+              label: sanitizeVoice(r.label),
+              note: r.note ? sanitizeVoice(r.note) : r.note,
+            }))
+          : undefined,
+    }));
 
-  // SACRED GUARD (code-level, not just prompt): drop any URL the model returned
-  // that is not in the citable allow-set, so a hallucinated — OR a smuggled —
-  // link physically cannot reach a letter. The allow-set is the resolver's
-  // EXPLICIT chosen source URLs (signal.citableUrls) when present, NOT a scan of
-  // the context: a third party controls source titles/descriptions and could
-  // otherwise plant a citable URL in the free text. Only the curated mock path
-  // (no attacker-controlled text) falls back to scanning. See lib/engine/url-guard.ts.
-  const allowed = signal.citableUrls ?? extractSignalUrls(signal.context);
-  const { items, dropped } = enforceSignalUrls(mapped, allowed);
-  if (dropped > 0) {
+    // SACRED GUARD (code-level, not just prompt): drop any URL the model
+    // returned that is not in the citable allow-set, so a hallucinated — OR a
+    // smuggled — link physically cannot reach a letter. The allow-set is the
+    // resolver's EXPLICIT chosen source URLs (signal.citableUrls) when
+    // present, NOT a scan of the context: a third party controls a source's
+    // title/description and could otherwise plant a citable URL in the free
+    // text. Only the curated mock path (no attacker-controlled text) falls
+    // back to scanning. See lib/engine/url-guard.ts.
+    const allowed = signal.citableUrls ?? extractSignalUrls(signal.context);
+    const { items, dropped } = enforceSignalUrls(mapped, allowed);
+    if (dropped > 0) {
+      console.warn(
+        `[url-guard] ${topicId} ${weekOf}: dropped ${dropped} URL(s) not present in signal (model hallucination blocked)`
+      );
+    }
+
+    // META-LEAK GUARD (code-level, like url-guard). Drop any item that
+    // narrates the letter's own sourcing/process ("this week's signal is
+    // thin", a note listing the raw inputs, "without seeing the full text").
+    // The prompt forbids it but a model can still slip, and a single leak
+    // tells the reader a machine made this. Dropping a leaky item leaves a
+    // shorter section, which is the correct thin-topic behavior. If every
+    // item drops, the blurb returns empty — the cost-tiering above escalates
+    // on that, and if this WAS already the Claude/last-resort call, the
+    // assembler backfills.
+    const cleanItems = items.filter((it) => {
+      const blob = [
+        it.headline,
+        it.body,
+        it.primaryRef?.label,
+        ...(it.supplementaryRefs?.flatMap((r) => [r.label, r.note]) ?? []),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      if (containsMetaLeak(blob)) {
+        console.warn(`[voice-guard] ${topicId} ${weekOf}: dropped meta-leak item "${it.headline}"`);
+        return false;
+      }
+      return true;
+    });
+
+    // The intro can't be "dropped", so a leaking one is replaced with a
+    // neutral line (rare backstop; the prompt makes intro leaks unlikely).
+    let intro = sanitizeVoice(parsed.intro);
+    if (containsMetaLeak(intro)) {
+      console.warn(`[voice-guard] ${topicId} ${weekOf}: intro meta-leak, replaced with neutral intro`);
+      intro = `Worth your time on ${label.toLowerCase()} today.`;
+    }
+
+    // No auto-rewrite here (a clumsy swap reads worse than the word) — but NOT
+    // pure observability either. This IS the cost-tiering's quality gate for
+    // the Gemini path below: these are words the prompt explicitly bans
+    // because they're literal AI-tells (leverage, robust, optimize, ...), and
+    // Claude reliably avoids them while Gemini does not — verified live, a
+    // real Gemini draft slipped "robust" and "leverage" in its very first
+    // test run. A subscriber reading one of these is the exact "sounds like a
+    // machine wrote this" failure this whole voice system exists to prevent,
+    // so it counts as "not good enough" the same way an empty section does.
+    const tells = findLexicalTells([intro, ...cleanItems.map((it) => `${it.headline} ${it.body}`)].join(" "));
+    if (tells.length > 0) {
+      console.warn(`[voice-guard] ${topicId} ${weekOf}: lexical tells slipped: ${tells.join(", ")}`);
+    }
+
+    return { intro, items: cleanItems, tells };
+  }
+
+  if (geminiConfigured()) {
+    const geminiParsed = await tryGemini();
+    if (geminiParsed) {
+      const finalized = finalizeBlurb(geminiParsed);
+      if (finalized.items.length > 0 && finalized.tells.length === 0) {
+        return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
+      }
+      console.warn(
+        finalized.items.length === 0
+          ? `[topic-blurb] ${topicId} ${weekOf}: Gemini draft had 0 usable items after guards, escalating to Haiku`
+          : `[topic-blurb] ${topicId} ${weekOf}: Gemini draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Haiku`
+      );
+    }
+  }
+
+  const haikuParsed = await tryHaiku();
+  if (haikuParsed) {
+    const finalized = finalizeBlurb(haikuParsed);
+    if (finalized.items.length > 0 && finalized.tells.length === 0) {
+      return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
+    }
     console.warn(
-      `[url-guard] ${topicId} ${weekOf}: dropped ${dropped} URL(s) not present in signal (model hallucination blocked)`
+      finalized.items.length === 0
+        ? `[topic-blurb] ${topicId} ${weekOf}: Haiku draft had 0 usable items after guards, escalating to Sonnet`
+        : `[topic-blurb] ${topicId} ${weekOf}: Haiku draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Sonnet`
     );
   }
 
-  // META-LEAK GUARD (code-level, like url-guard). Drop any item that narrates the
-  // letter's own sourcing/process ("this week's signal is thin", a note listing
-  // the raw inputs, "without seeing the full text"). The prompt forbids it but
-  // Haiku slips, and a single leak tells the reader a machine made this. Dropping
-  // a leaky item leaves a shorter section, which is the correct thin-topic behavior.
-  // If every item drops, the blurb returns empty and the assembler backfills.
-  const cleanItems = items.filter((it) => {
-    const blob = [
-      it.headline,
-      it.body,
-      it.primaryRef?.label,
-      ...(it.supplementaryRefs?.flatMap((r) => [r.label, r.note]) ?? []),
-    ]
-      .filter(Boolean)
-      .join(" ");
-    if (containsMetaLeak(blob)) {
-      console.warn(`[voice-guard] ${topicId} ${weekOf}: dropped meta-leak item "${it.headline}"`);
-      return false;
-    }
-    return true;
-  });
-
-  // The intro can't be "dropped", so a leaking one is replaced with a neutral line
-  // (rare backstop; the prompt makes intro leaks unlikely).
-  let intro = sanitizeVoice(parsed.intro);
-  if (containsMetaLeak(intro)) {
-    console.warn(`[voice-guard] ${topicId} ${weekOf}: intro meta-leak, replaced with neutral intro`);
-    intro = `Worth your time on ${label.toLowerCase()} today.`;
+  const sonnetParsed = await trySonnet();
+  let finalized = finalizeBlurb(sonnetParsed);
+  // Sonnet is the end of the line — nothing left to escalate to — but it is
+  // NOT immune to the tells check: verified live, a real Sonnet draft slipped
+  // one. Give it exactly one fresh retry rather than shipping the slip
+  // unconditionally; if the retry ALSO trips it, ship that — a persistent
+  // single-word slip is a real but minor voice imperfection, not worth an
+  // unbounded loop or dropping the whole topic over.
+  if (finalized.items.length > 0 && finalized.tells.length > 0) {
+    console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet draft slipped a banned word (${finalized.tells.join(", ")}), retrying once`);
+    const retryParsed = await trySonnet();
+    finalized = finalizeBlurb(retryParsed);
   }
-
-  // Observability only (no auto-rewrite — a clumsy swap reads worse than the word).
-  // Surfaces the residual banned-word / pivot-phrase rate so we can watch it.
-  const tells = findLexicalTells([intro, ...cleanItems.map((it) => `${it.headline} ${it.body}`)].join(" "));
-  if (tells.length > 0) {
-    console.warn(`[voice-guard] ${topicId} ${weekOf}: lexical tells slipped (prompt-only): ${tells.join(", ")}`);
-  }
-
-  return {
-    topicId,
-    topicLabel: label,
-    weekOf,
-    intro,
-    items: cleanItems,
-  };
+  return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
 }
 
 interface ParsedItem {
