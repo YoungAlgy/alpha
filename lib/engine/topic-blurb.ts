@@ -370,32 +370,49 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     return { intro, items: cleanItems, tells };
   }
 
+  // Gives a tier ONE more fresh attempt when its draft slipped a banned word
+  // (items.length > 0, but tells.length > 0) before giving up on that tier —
+  // separate from tryGemini/tryHaiku's OWN internal retry, which only covers
+  // an API/parse failure, not a quality miss. Worth doing at every tier
+  // cheaper than the next one: a free 2nd Gemini try can rescue a case that
+  // would otherwise cost a paid Haiku call; a cheap 2nd Haiku try can rescue
+  // one that would otherwise cost the much pricier Sonnet call. Returns the
+  // finalized (guard-passed) result to ship, or null to escalate for real.
+  async function settleTier(
+    firstParsed: ParsedBlurb,
+    retryFn: () => Promise<ParsedBlurb | null>,
+    tierName: string,
+    nextTierName: string
+  ): Promise<{ intro: string; items: TopicBlurb["items"] } | null> {
+    let finalized = finalizeBlurb(firstParsed);
+    if (finalized.items.length > 0 && finalized.tells.length > 0) {
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: ${tierName} draft slipped a banned word (${finalized.tells.join(", ")}), retrying once before escalating`);
+      const retryParsed = await retryFn();
+      if (retryParsed) finalized = finalizeBlurb(retryParsed);
+    }
+    if (finalized.items.length > 0 && finalized.tells.length === 0) {
+      return { intro: finalized.intro, items: finalized.items };
+    }
+    console.warn(
+      finalized.items.length === 0
+        ? `[topic-blurb] ${topicId} ${weekOf}: ${tierName} draft had 0 usable items after guards, escalating to ${nextTierName}`
+        : `[topic-blurb] ${topicId} ${weekOf}: ${tierName} draft still slipping a banned word after retry (${finalized.tells.join(", ")}), escalating to ${nextTierName}`
+    );
+    return null;
+  }
+
   if (geminiConfigured()) {
     const geminiParsed = await tryGemini();
     if (geminiParsed) {
-      const finalized = finalizeBlurb(geminiParsed);
-      if (finalized.items.length > 0 && finalized.tells.length === 0) {
-        return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
-      }
-      console.warn(
-        finalized.items.length === 0
-          ? `[topic-blurb] ${topicId} ${weekOf}: Gemini draft had 0 usable items after guards, escalating to Haiku`
-          : `[topic-blurb] ${topicId} ${weekOf}: Gemini draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Haiku`
-      );
+      const settled = await settleTier(geminiParsed, tryGemini, "Gemini", "Haiku");
+      if (settled) return { topicId, topicLabel: label, weekOf, ...settled };
     }
   }
 
   const haikuParsed = await tryHaiku();
   if (haikuParsed) {
-    const finalized = finalizeBlurb(haikuParsed);
-    if (finalized.items.length > 0 && finalized.tells.length === 0) {
-      return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
-    }
-    console.warn(
-      finalized.items.length === 0
-        ? `[topic-blurb] ${topicId} ${weekOf}: Haiku draft had 0 usable items after guards, escalating to Sonnet`
-        : `[topic-blurb] ${topicId} ${weekOf}: Haiku draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Sonnet`
-    );
+    const settled = await settleTier(haikuParsed, tryHaiku, "Haiku", "Sonnet");
+    if (settled) return { topicId, topicLabel: label, weekOf, ...settled };
   }
 
   const sonnetParsed = await trySonnet();
