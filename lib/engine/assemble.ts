@@ -64,6 +64,31 @@ export async function generateIssue(
   // serverless instance — a stale/wrong "no news" skip with no connection to
   // that reader's actual search.
   dryCache: Set<string> = new Set<string>(),
+  // In-flight de-dup, keyed the SAME as dryCache (topic|weekOf|freshness).
+  // CALLER-OWNED, same sharing model as dryCache — the cron passes ONE Map to
+  // every generateIssue call in a run (including the fast-fallback backup
+  // layer's own call for the SAME subscriber). Closes a real gap found in
+  // review (2026-07-29): withDeadline never cancels the underlying work, so a
+  // timed-out live attempt keeps searching/generating in the background —
+  // without this, the fast-fallback layer's smaller topic slice (a guaranteed
+  // prefix-overlap with the orphaned attempt's first wave) would start a
+  // FULL SECOND search+generation chain for topics already in flight, paying
+  // twice on the exact rate-limited accounts the fallback exists to relieve.
+  // A later subscriber reaching the same still-in-flight topic gets the same
+  // benefit (closes the related dryCache-staleness gap: a topic slow enough
+  // to miss its own deadline previously forced every later subscriber in the
+  // batch to redo the identical slow search until it happened to finish).
+  // Each caller still races its OWN TOPIC_GEN_DEADLINE_MS against the shared
+  // promise (below) rather than inheriting whichever caller started it, so a
+  // fresh caller isn't bound by a stale deadline that's already elapsed.
+  // ONE divergence from dryCache's sharing model, despite the "same" framing
+  // above: dryCache is append-only for the whole run, but an inFlight entry
+  // is deliberately evicted once its outcome is anything other than a
+  // genuine reusable result (a rejection, or a resolved null that ISN'T a
+  // real dry verdict — see genLive's cleanup below) so a later caller gets
+  // its own independent attempt instead of inheriting one bad draw for the
+  // rest of the run.
+  inFlight: Map<string, Promise<TopicBlurb | null>> = new Map(),
 ): Promise<Issue> {
   // Map the pickable "zodiac" topic to the reader's per-sign id, dropping it when
   // there's no birthday (see mapTopicsForUser). If the WHOLE pool maps to empty
@@ -129,15 +154,23 @@ export async function generateIssue(
     const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
     if (dryCache.has(dryKey)) return null; // searched dry earlier this batch — no re-search
 
-    // The WHOLE search+generate path is under one deadline, not just the model
-    // call. resolveTopicSignal can itself fall to Gemini's grounded search when
-    // Brave is rate-limited (source-resolver.ts) — that fallback has no deadline
-    // of its own, so without wrapping it here a slow/hung Gemini call could
-    // stack on top of a slow Claude call and blow well past what
-    // TOPIC_GEN_DEADLINE_MS was meant to cap for this topic's contribution to
-    // the parallel wave.
-    return withDeadline(
-      (async () => {
+    // Reuse an already-running search+generate for this exact key instead of
+    // starting a duplicate one (see inFlight's own comment on generateIssue's
+    // signature). The stored promise is the RAW underlying work, NOT
+    // deadline-wrapped — each caller (the one that started it, or a later
+    // reuser) races its OWN fresh TOPIC_GEN_DEADLINE_MS against this SAME
+    // shared promise below, so a late reuser isn't bound by a deadline that's
+    // already mostly elapsed for whoever started the work.
+    let raw = inFlight.get(dryKey);
+    if (!raw) {
+      // The WHOLE search+generate path is under one deadline, not just the
+      // model call. resolveTopicSignal can itself fall to Gemini's grounded
+      // search when Brave is rate-limited (source-resolver.ts) — that
+      // fallback has no deadline of its own, so without bounding it here a
+      // slow/hung Gemini call could stack on top of a slow Claude call and
+      // blow well past what TOPIC_GEN_DEADLINE_MS was meant to cap for this
+      // topic's contribution to the parallel wave.
+      raw = (async () => {
         const excludeUrls = citedByTopic.get(id);
         let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls });
         // Dry in the tight since-last-send window? Retry ONCE at past-week before
@@ -157,6 +190,14 @@ export async function generateIssue(
         // don't cache the empty result — otherwise every later subscriber to this
         // topic would read the empty blurb back as a "hit" and ship a link-less
         // section. Return null so the selector backfills this topic instead.
+        // Deliberately NOT dryCache.add(dryKey) here — unlike the true
+        // "!signal" dry case a few lines up, this is a MODEL OUTPUT quality
+        // miss, not "no news this period." A fresh generation attempt (a
+        // different model sample, non-deterministic) could easily survive the
+        // guards next time, so this must NOT be remembered as a settled
+        // verdict for the rest of the run the way genuine dryness is — the
+        // cleanup below relies on this NOT being in dryCache to tell the two
+        // resolved-null cases apart.
         if (blurb.items.length === 0) return null;
         // AWAITED, not fire-and-forget: this write feeds getRecentlyCitedUrls'
         // cross-send repeat guard (a subscriber never seeing the same article
@@ -173,10 +214,39 @@ export async function generateIssue(
         // failure; it only makes sure the write gets a real chance to finish.
         await setCachedBlurb(blurb);
         return blurb;
-      })(),
-      TOPIC_GEN_DEADLINE_MS,
-      `topic-blurb ${id}`
-    );
+      })();
+      // Evict this attempt from inFlight on any outcome that ISN'T a genuine,
+      // reusable verdict — otherwise ONE subscriber's bad draw permanently
+      // poisons this topic for EVERY later subscriber this run, worse than
+      // the pre-fix behavior where each subscriber got its own independent
+      // shot. Two such outcomes, found in review (2026-07-29, round 2 — the
+      // first shipped without the second, a real gap):
+      //   1. REJECTED — generateTopicBlurb's last-resort Sonnet call has no
+      //      catch of its own (a truncation, a rate-limit, or a failed retry
+      //      all propagate), so this can genuinely throw.
+      //   2. RESOLVED to null via the guard-dropped-to-zero-items branch
+      //      above — a model-output quality miss, NOT the true "!signal" dry
+      //      case a few lines up. It resolves (doesn't throw), so a bare
+      //      .catch() alone would never see it; checked here by testing
+      //      dryCache, since only the genuine dry case adds to it.
+      // A REAL result (a blurb, or a genuinely dry null) is deliberately left
+      // cached: harmless either way, since it's already separately recorded
+      // (setCachedBlurb / dryCache.add), both checked earlier in this
+      // function before inFlight is ever consulted — so re-finding it here
+      // for a rare very-late reuser costs nothing and changes nothing.
+      raw.then(
+        (result) => {
+          if (result === null && !dryCache.has(dryKey) && inFlight.get(dryKey) === raw) {
+            inFlight.delete(dryKey);
+          }
+        },
+        () => {
+          if (inFlight.get(dryKey) === raw) inFlight.delete(dryKey);
+        }
+      );
+      inFlight.set(dryKey, raw);
+    }
+    return withDeadline(raw, TOPIC_GEN_DEADLINE_MS, `topic-blurb ${id}`);
   }
 
   // Last-resort filler from the curated mock (catalog topics only) — keeps the
@@ -231,6 +301,20 @@ export async function generateIssue(
 
   // Step 2 — personalized editor's note weaving the sections. If it fails,
   // fall back to a clean standalone intro rather than sinking the letter.
+  //
+  // KNOWN, NOT-YET-FIXED GAP (round 2 review, 2026-07-29): this call is NOT
+  // deduped by inFlight — it's personalized per subscriber (can't be shared
+  // the way a topic blurb is), so on a Layer-1 fast-fallback timeout, both the
+  // orphaned live attempt (still running detached — withDeadline never
+  // cancels it) and the fallback's own generateIssue() call each pay for
+  // their own independent editor's-note Anthropic call. inFlight's dedup only
+  // covers the search+topic-blurb portion of a timeout's cost, not this one.
+  // Real fix needs cancellation threaded into the orphaned attempt (skip this
+  // call once a fallback has taken over for that subscriber) — cross-cutting,
+  // same complexity class as the AbortController work already deferred for
+  // the search+blurb path; not rushing it in. Cost is bounded (one extra
+  // Opus call, not a whole search+generation chain) and only recurs on an
+  // actual timeout, not every send.
   let editorIntro: string;
   try {
     editorIntro = await generateEditorNote(user, blurbs, fallbackTopicIds);

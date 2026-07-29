@@ -50,6 +50,13 @@ export interface SendLetterParams {
    *  the email still sends but won't include unsubscribe links/headers — only
    *  use this for legacy callers that don't have a user id available. */
   userId?: string | null;
+  /** Folded into the idempotency key below so a same-(userId,weekOf) retry
+   *  with genuinely DIFFERENT content (e.g. the cron's live send failing on
+   *  our side after Resend already accepted it, then a backup layer sending
+   *  different content for the same day) can never get silently deduped by
+   *  Resend against the earlier attempt. Omit for same-content retries where
+   *  dedup IS the desired behavior (the default, "live", covers that case). */
+  idempotencyKind?: string;
 }
 
 // V0 email: a short editorial notification with the editor's note as a teaser
@@ -119,14 +126,20 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     resendHeaders["List-Unsubscribe"] = `<${unsubUrl}>`;
     resendHeaders["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
-  // Idempotency key: stable per (subscriber, send date). If a send for the same
-  // (user, week_of) is retried — a Vercel cron retry racing the scheduled run,
-  // the rollback path re-opening the delivered_at claim, an admin re-trigger —
-  // Resend collapses it provider-side and the subscriber gets ONE letter, not
-  // two. Only set when userId is known (the normal cron + generate paths both
-  // pass it); legacy callers without a userId behave exactly as before.
+  // Idempotency key: stable per (subscriber, send date, kind). If a send for
+  // the same (user, week_of, kind) is retried — a Vercel cron retry racing the
+  // scheduled run, the rollback path re-opening the delivered_at claim, an
+  // admin re-trigger — Resend collapses it provider-side and the subscriber
+  // gets ONE letter, not two. `kind` is included (not just user+date) so a
+  // DIFFERENT-content retry — the cron's live send failing on our side after
+  // Resend already accepted it, then a backup layer sending different content
+  // for the same day — gets its own key instead of being silently deduped
+  // against the earlier, different attempt (2026-07-29 review finding: the
+  // three-layer backup system's core guarantee only holds if this can't
+  // happen). Only set when userId is known (the normal cron + generate paths
+  // both pass it); legacy callers without a userId behave exactly as before.
   const idempotencyKey = params.userId
-    ? `alpha-letter-${params.userId}-${params.issue.weekOf}`
+    ? `alpha-letter-${params.userId}-${params.issue.weekOf}-${params.idempotencyKind ?? "live"}`
     : undefined;
   const result = await resendClient().emails.send(
     {

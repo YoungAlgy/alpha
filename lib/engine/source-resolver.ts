@@ -1,4 +1,5 @@
-import { braveConfigured, braveSearch, type BraveSearchOptions } from "@/lib/brave";
+import { braveConfigured, braveSearch, type BraveResult, type BraveSearchOptions } from "@/lib/brave";
+import { youConfigured, youSearch } from "@/lib/you-search";
 import { rankAndDedup } from "./source-rank";
 import { fetchArticleText, deepReadEnabled } from "./fetch-content";
 import { TOPIC_QUERIES, zodiacQueries } from "./topic-queries";
@@ -38,6 +39,24 @@ export function cleanField(s: string): string {
 // when configured, falls back to hand-written mock signals otherwise.
 // Cache-friendly: blurbs persist to topic_blurbs so every subscriber to a
 // topic (including identical custom text) shares the generation cost.
+
+// Shared try/warn/fall-through shape for the two SECONDARY fallback tiers
+// (Gemini, You.com) below — both are "attempt, return on success, log and
+// fall through on any failure," differing only in the call and the label.
+// Brave itself stays inline in resolveTopicSignal: it also needs to set
+// rateLimitedThisTopic as a side effect, which doesn't fit this shape cleanly.
+async function tryFallback(
+  topicId: string,
+  label: string,
+  fn: () => Promise<TopicSignal | undefined>
+): Promise<TopicSignal | undefined> {
+  try {
+    return await fn();
+  } catch (e) {
+    console.warn(`[source-resolver] ${label} failed for ${topicId}:`, e);
+    return undefined;
+  }
+}
 
 // A custom ("your own thing") topic has no catalog query set — derive a few
 // from the user's free text. freshness:"pw" at the call site handles recency.
@@ -93,18 +112,48 @@ export async function resolveTopicSignal(
       console.warn(`[source-resolver] Brave failed for ${topicId}:`, e);
       // fall through to mock (fixed topics only)
     }
-    // Gemini's grounded search is a genuinely separate provider — worth
-    // trying ONLY when Brave's OWN quota is the actual problem. A topic that
-    // came back dry because Brave is fine but there is truly nothing new
-    // should still fall through to a fresher backup topic (the existing
-    // dry-topic behavior in select-sections.ts), not get force-filled here.
-    if (rateLimitedThisTopic && geminiConfigured()) {
-      console.warn(`[source-resolver] Brave rate-limited for ${topicId}, trying Gemini grounded search`);
-      try {
-        const grounded = await resolveTopicSignalViaGemini(topicId, weekOf, queries.join("; "), opts?.excludeUrls);
+    // Gemini's grounded search and You.com are both genuinely separate
+    // providers from Brave — worth trying ONLY when Brave's OWN quota is the
+    // actual problem. A topic that came back dry because Brave is fine but
+    // there is truly nothing new should still fall through to a fresher
+    // backup topic (the existing dry-topic behavior in select-sections.ts),
+    // not get force-filled here.
+    if (rateLimitedThisTopic) {
+      if (geminiConfigured()) {
+        console.warn(`[source-resolver] Brave rate-limited for ${topicId}, trying Gemini grounded search`);
+        const grounded = await tryFallback(topicId, "Gemini grounded search", () =>
+          resolveTopicSignalViaGemini(topicId, weekOf, queries.join("; "), opts?.excludeUrls)
+        );
         if (grounded) return grounded;
-      } catch (e) {
-        console.warn(`[source-resolver] Gemini grounded search failed for ${topicId}:`, e);
+      }
+      // You.com is tried LAST, after Gemini — Gemini's grounded search is a
+      // richer signal (a synthesized answer, not just headlines) when it
+      // works. But Gemini's free tier has been observed persistently
+      // exhausted in real production (2026-07-29 incident), so without this
+      // a Brave+Gemini double-outage leaves a topic with nothing at all —
+      // exactly what happened that day. You.com shares Brave's per-query
+      // result shape, so it reuses the SAME ranking/dedup pipeline — with
+      // deep-read OFF (see fetchLiveSignal's deepRead param): this branch
+      // only fires as the 3rd-tier last resort, and in the cron it's most
+      // often reached from inside the fast-fallback layer racing a tight
+      // deadline, so snippet-only headlines (same as the "MORE THIS WEEK"
+      // breadth list elsewhere) trade a bit of prose depth for guaranteed speed.
+      if (youConfigured()) {
+        console.warn(`[source-resolver] Brave rate-limited for ${topicId}, trying You.com search`);
+        const viaYou = await tryFallback(topicId, "You.com search", () =>
+          fetchLiveSignal(
+            topicId,
+            queries,
+            weekOf,
+            opts?.freshness,
+            opts?.excludeUrls,
+            undefined,
+            youSearch,
+            "You.com Search",
+            false
+          )
+        );
+        if (viaYou) return viaYou;
       }
     }
   }
@@ -138,19 +187,37 @@ async function fetchLiveSignal(
   excludeUrls?: Set<string>,
   // Fires once per 429 among THIS topic's own queries — see the caller's
   // comment on rateLimitedThisTopic in resolveTopicSignal.
-  onRateLimited?: () => void
+  onRateLimited?: () => void,
+  // Pluggable search provider — defaults to Brave. Passing youSearch here
+  // reuses this entire ranking/dedup/deep-read pipeline for the You.com
+  // fallback tier instead of duplicating it (both return the same BraveResult
+  // shape: real discrete per-result URLs, unlike Gemini's synthesized answer).
+  search: (q: string, opts: BraveSearchOptions) => Promise<BraveResult[]> = braveSearch,
+  providerLabel = "Brave Search",
+  // Full-text deep-read (below) adds a real multi-second tax (up to
+  // DEEP_READ_N parallel article fetches, each individually bounded but
+  // still additive latency before this call can return). Fine for the
+  // primary Brave path, which has no tight caller-side deadline racing it —
+  // but You.com only ever runs as the 3rd-tier LAST RESORT (see
+  // resolveTopicSignal), specifically inside the cron's fast-fallback layer
+  // racing FAST_FALLBACK_DEADLINE_MS. That tier already has snippet-only
+  // headlines working fine elsewhere in this same function (the "MORE THIS
+  // WEEK" breadth list) — trading prose depth for guaranteed speed is the
+  // right call for a tier whose whole reason to exist is racing a deadline.
+  deepRead = true
 ): Promise<TopicSignal | undefined> {
   if (!queries || queries.length === 0) return undefined;
 
   // 1. Cast a wide net — every query in parallel, more candidates than we'll
-  //    use, so the ranker has something to choose from. Brave allows bursts.
+  //    use, so the ranker has something to choose from. Brave/You.com both
+  //    allow bursts.
   const perQuery = await Promise.all(
     queries.map(async (q) => {
       try {
-        return await braveSearch(q, { count: PER_QUERY_COUNT, freshness, onRateLimited });
+        return await search(q, { count: PER_QUERY_COUNT, freshness, onRateLimited });
       } catch (e) {
         console.warn(
-          `[source-resolver] brave query failed (${topicId}): "${q}": ${e instanceof Error ? e.message : e}`
+          `[source-resolver] ${providerLabel} query failed (${topicId}): "${q}": ${e instanceof Error ? e.message : e}`
         );
         return [];
       }
@@ -183,7 +250,7 @@ async function fetchLiveSignal(
   // 3. Read the top trusted sources IN FULL (parallel, best-effort). A failed /
   //    timed-out / non-article fetch falls back to that source's snippet, so the
   //    letter is written from real article text where possible and never blocks.
-  const contents = deepReadEnabled()
+  const contents = deepReadEnabled() && deepRead
     ? await Promise.all(deep.map((s) => fetchArticleText(s.url).catch(() => null)))
     : deep.map(() => null);
   const readCount = contents.filter(Boolean).length;
@@ -221,7 +288,7 @@ async function fetchLiveSignal(
   const header =
     deep.length > 0
       ? `Recent signal for ${subject} (as of ${weekOf}), gathered live and READ IN FULL where possible (${readCount}/${deep.length} trusted sources fetched). You have the ACTUAL article text for the top sources below — read it and surface the real insight, do not just paraphrase a headline.`
-      : `Recent signal for ${subject} (as of ${weekOf}), gathered live from Brave Search. Headlines and snippets only this period.`;
+      : `Recent signal for ${subject} (as of ${weekOf}), gathered live from ${providerLabel}. Headlines and snippets only this period.`;
   const context = `${header}\n\n${parts.join("\n\n")}\n\nAll URLs labeled SOURCE or listed above are real and citable. Do NOT invent URLs.`;
 
   // The citable allow-set = the resolver's chosen SOURCE urls ONLY (deep + more),

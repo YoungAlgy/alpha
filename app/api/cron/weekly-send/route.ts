@@ -8,9 +8,11 @@ import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/em
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { braveRateLimitedCount } from "@/lib/brave";
+import { youRateLimitedCount } from "@/lib/you-search";
 import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId, Issue } from "@/lib/types";
+import type { TopicBlurb } from "@/lib/engine/types";
 import { clampQuota } from "@/lib/types";
 import { coerceGender } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
@@ -49,8 +51,20 @@ const PER_USER_DEADLINE_MS = 110_000;
 // with fewer topics since they run in parallel and the SLOWEST one that
 // needs the full tier-escalation chain sets the wall-clock time regardless
 // of pool size — fewer topics mainly lowers the ODDS several hit that worst
-// case at once, not the per-call floor. 60s leaves real margin over that.
-const FAST_FALLBACK_DEADLINE_MS = 60_000;
+// case at once, not the per-call floor.
+//
+// MUST exceed assemble.ts's own TOPIC_GEN_DEADLINE_MS (75s) — this call is
+// generateIssue() itself, whose Pass-1 wave is individually capped at 75s per
+// topic, plus a sequential editor's-note call after that. An outer deadline
+// SHORTER than an inner one it wraps means this layer can spuriously fail
+// (and fall through to the stale-resend layer) on a topic that was about to
+// legitimately succeed via its own inner deadline — the same
+// outer-must-exceed-inner mistake CRON_SAFETY_MARGIN_MS below exists to avoid
+// for PER_USER_DEADLINE_MS. 90s = 75s inner ceiling + 15s margin for the
+// editor's note + overhead (found in review, 2026-07-29 — the original 60s
+// was measured against a run that never actually reached the 75s per-topic
+// ceiling, so the gap went unnoticed).
+const FAST_FALLBACK_DEADLINE_MS = 90_000;
 // How many of the reader's top-ranked topics the fast fallback attempts.
 // Fewer topics means less concurrent load on the same Anthropic/Gemini
 // account, which is the actual mechanism that made the full pool slow in
@@ -181,8 +195,12 @@ export async function GET(req: Request) {
   // Snapshot the monotonic counter now; THIS run's 429 count is the delta at
   // the end minus this baseline. Diffing (not resetting) is what makes this
   // safe under two overlapping invocations on the same warm lambda — see the
-  // comment on braveRateLimitedCount in lib/brave.ts.
+  // comment on braveRateLimitedCount in lib/brave.ts. Same reasoning for
+  // You.com's counter (lib/you-search.ts) — without this baseline+delta, a
+  // struggling 3rd search tier would have zero operator-visible signal, the
+  // same gap Brave's own counter exists to close.
   const braveBaseline = braveRateLimitedCount();
+  const youBaseline = youRateLimitedCount();
   let sent = 0;
   // Live generation failed/timed out but a backup layer covered it (see the
   // catch block below) — counted separately from `sent`/`failed` so the
@@ -218,6 +236,15 @@ export async function GET(req: Request) {
   // Brave queries once per batch, not once per subscriber. Created fresh per
   // invocation (not module state) so it can never leak into a different run.
   const dryCache = new Set<string>();
+  // ONE in-flight de-dup map shared the same way as dryCache — see its own
+  // comment on generateIssue's signature (assemble.ts). Closes a real gap
+  // (2026-07-29 review): withDeadline never cancels the underlying work, so a
+  // timed-out live attempt keeps searching/generating in the background —
+  // without this, the fast-fallback layer's smaller topic slice (a guaranteed
+  // prefix-overlap with the timed-out attempt's first wave) would pay for the
+  // identical search+generation a second time on the exact rate-limited
+  // accounts the fallback exists to relieve.
+  const inFlight = new Map<string, Promise<TopicBlurb | null>>();
 
   // Allow ?force=1 to override the delivered_at idempotency gate (only the
   // admin will ever hit this with the CRON_SECRET in hand; useful for explicit
@@ -416,6 +443,11 @@ export async function GET(req: Request) {
           letterUrl: buildLetterUrl(row.id, origin, weekOf),
           issueNumber: (priorIssueCount.get(row.id) ?? 0) + 1,
           userId: row.id,
+          // A backup kind must never share the live send's idempotency key —
+          // see the comment on idempotencyKey in lib/email.ts. "live" is the
+          // default there, so this is only needed for the backup kinds, but
+          // passing it always keeps the two call sites obviously in sync.
+          idempotencyKind: kind,
         });
       } catch (sendErr) {
         if (!force && claimedAt) {
@@ -478,7 +510,7 @@ export async function GET(req: Request) {
 
     try {
       const issue = await withDeadline(
-        generateIssue(profile, weekOf, letterSize, freshness, dryCache),
+        generateIssue(profile, weekOf, letterSize, freshness, dryCache, inFlight),
         PER_USER_DEADLINE_MS,
         `generateIssue(${row.email})`
       );
@@ -518,6 +550,24 @@ export async function GET(req: Request) {
       let backupIssue: Issue | null = null;
       let backupKind: "backup-shared" | "backup-fresh" | "backup-stale" | null = null;
 
+      // Shared shell for a manually-built backup Issue (layers 0 and 2 —
+      // layer 1 gets a real Issue straight from generateIssue() and doesn't
+      // need this). Factored out so the two call sites can't drift apart on
+      // these fields independently — same reasoning as runPersistAndSend
+      // above being one shared function instead of two near-copies.
+      function buildBackupIssue(editorIntro: string, sections: Issue["sections"]): Issue {
+        return {
+          id: `${profile.firstName.toLowerCase()}-${weekOf}-backup`,
+          volume: 1,
+          number: 1,
+          weekOf: formatWeekOf(weekOf),
+          recipientFirstName: profile.firstName,
+          recipientCity: profile.city,
+          editorIntro,
+          sections,
+        };
+      }
+
       // LAYER 0 — cache-borrow: check for content ALREADY cached today
       // across broadly-appealing topics (GENERIC_FALLBACK_TOPICS — the same
       // deliberately non-personal, non-niche tail used for ordinary
@@ -531,6 +581,9 @@ export async function GET(req: Request) {
       try {
         const cached = await getCachedBlurbs(GENERIC_FALLBACK_TOPICS, weekOf);
         const available = [...cached.values()].filter((b) => b.items.length > 0);
+        // Floor of 2: a 1-section backup letter reads too thin to send as a
+        // real issue — falls through to layer 1's fast fresh retry instead of
+        // shipping something that thin.
         if (available.length >= 2) {
           const chosen = available.slice(0, FAST_FALLBACK_TOPIC_COUNT);
           // A short, sentence-friendly form, not the full catalog label
@@ -539,21 +592,15 @@ export async function GET(req: Request) {
           const labels = chosen.map((b) => b.topicId.replace(/-/g, " "));
           const list =
             labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : labels[0];
-          backupIssue = {
-            id: `${profile.firstName.toLowerCase()}-${weekOf}-backup`,
-            volume: 1,
-            number: 1,
-            weekOf: formatWeekOf(weekOf),
-            recipientFirstName: profile.firstName,
-            recipientCity: profile.city,
-            editorIntro: `Your usual letter needs a bit more time today, so here's what's fresh right now across ${list}.`,
-            sections: chosen.map((b) => ({
+          backupIssue = buildBackupIssue(
+            `Your usual letter needs a bit more time today, so here's what's fresh right now across ${list}.`,
+            chosen.map((b) => ({
               topicId: b.topicId,
               topicLabel: topicLabel(b.topicId),
               intro: b.intro,
               items: b.items,
-            })),
-          };
+            }))
+          );
           backupKind = "backup-shared";
           console.warn(`[cron/weekly-send] cache-borrow succeeded → ${row.email} (${chosen.length} shared topics)`);
         }
@@ -574,7 +621,7 @@ export async function GET(req: Request) {
           const smallPool = pool.slice(0, FAST_FALLBACK_TOPIC_COUNT);
           if (smallPool.length > 0) {
             backupIssue = await withDeadline(
-              generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache),
+              generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache, inFlight),
               FAST_FALLBACK_DEADLINE_MS,
               `fast-fallback(${row.email})`
             );
@@ -607,16 +654,10 @@ export async function GET(req: Request) {
             .limit(1)
             .maybeSingle();
           if (prior?.sections) {
-            backupIssue = {
-              id: `${profile.firstName.toLowerCase()}-${weekOf}-backup`,
-              volume: 1,
-              number: 1,
-              weekOf: formatWeekOf(weekOf),
-              recipientFirstName: profile.firstName,
-              recipientCity: profile.city,
-              editorIntro: "Quick note: today's letter is running behind, so here's a repeat of your last one while it catches up.",
-              sections: prior.sections,
-            };
+            backupIssue = buildBackupIssue(
+              "Quick note: today's letter is running behind, so here's a repeat of your last one while it catches up.",
+              prior.sections
+            );
             backupKind = "backup-stale";
           }
         } catch (lookupErr) {
@@ -642,6 +683,7 @@ export async function GET(req: Request) {
 
   const elapsedMs = Date.now() - startedAt;
   const braveRateLimited = braveRateLimitedCount() - braveBaseline;
+  const youRateLimited = youRateLimitedCount() - youBaseline;
   const summary = {
     weekOf,
     subscribers: rows.length,
@@ -659,6 +701,7 @@ export async function GET(req: Request) {
     deferred,
     failed,
     braveRateLimited,
+    youRateLimited,
     elapsedMs,
     failures: failures.slice(0, 25),
   };
@@ -694,6 +737,15 @@ export async function GET(req: Request) {
         : "",
       braveRateLimited > 0
         ? `Brave returned 429 on ${braveRateLimited} queries — monthly search quota likely exhausted; letters are degrading to filler. Fix: upgrade the Brave plan (https://api.search.brave.com), ~$5-10/mo at this volume.`
+        : "",
+      // Can only be nonzero when braveRateLimited is also nonzero this same
+      // run (You.com only ever gets tried after Brave itself 429s/402s — see
+      // resolveTopicSignal in source-resolver.ts), so this never fires the
+      // alert on its own — it's a severity signal layered on top of the
+      // Brave line above: even the 3rd, genuinely independent search tier is
+      // hitting its own limit.
+      youRateLimited > 0
+        ? `You.com (the 3rd search tier) ALSO returned 429 on ${youRateLimited} queries this run — the fallback chain is running three-deep and still straining. Worth checking the You.com dashboard for remaining credit.`
         : "",
       deferred.length
         ? `Time budget exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${deferred.join(", ")}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically). This is a scale signal — the subscriber list is big enough that the daily run is pressing against Vercel's time cap.`

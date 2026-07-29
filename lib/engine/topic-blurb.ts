@@ -11,6 +11,16 @@ function narrowKind(k: string | undefined): BlurbItemKind {
   return VALID_KINDS.includes(k as BlurbItemKind) ? (k as BlurbItemKind) : "note";
 }
 
+// Narrow "is this specifically a 429" check for Haiku/Sonnet's retry-skip
+// (below) — deliberately NOT client.ts's isAnthropicUnavailable, which is a
+// broader "should we fall back to Gemini for the whole call" classifier used
+// elsewhere; this only needs the one deterministic-quota-wall signal. The SDK
+// attaches a numeric .status to its error objects (see client.ts's own
+// isAnthropicUnavailable for the same pattern).
+function isRateLimited(e: unknown): boolean {
+  return typeof e === "object" && e !== null && "status" in e && (e as { status: unknown }).status === 429;
+}
+
 const SYSTEM_PROMPT = `You are the editor of Alpha, a personal letter that helps a curious, intelligent reader learn and stay sharp on the topics they care about.
 
 Write as a specific kind of editor: someone who reads a lot, has taste, and is not impressed by hype. You explain what is worth knowing and then trust the reader to do what they want with it. You never sell. You are never named and you never refer to yourself. You just write the section.
@@ -267,6 +277,15 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Haiku draft truncated, escalating to Sonnet`);
         return null;
       }
+      if (isRateLimited(e)) {
+        // Same reasoning as tryGemini's 429-skip above (2026-07-29 review):
+        // a 429 on THIS account is deterministic within the same request
+        // window — an immediate retry on the SAME model hits the identical
+        // wall, pure wasted latency under exactly the concurrent-multi-topic
+        // load that caused the original incident.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Haiku rate-limited (429), skipping the retry, escalating to Sonnet`);
+        return null;
+      }
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: Haiku draft failed, retrying once: ${e instanceof Error ? e.message : e}`);
       try {
         return await callClaudeAndParse(BLURB_CHEAP_MODEL);
@@ -286,6 +305,13 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       return await callClaudeAndParse(BLURB_MODEL);
     } catch (e) {
       if (e instanceof BlurbTruncatedError) throw e;
+      if (isRateLimited(e)) {
+        // Nowhere left to escalate either way (last tier), but skipping the
+        // doomed retry still saves real latency under concurrent load — same
+        // reasoning as tryGemini/tryHaiku above.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet rate-limited (429), skipping the retry`);
+        throw e;
+      }
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet parse failed, retrying once: ${e instanceof Error ? e.message : e}`);
       return await callClaudeAndParse(BLURB_MODEL);
     }
