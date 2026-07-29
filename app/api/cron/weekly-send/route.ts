@@ -9,6 +9,8 @@ import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { braveRateLimitedCount } from "@/lib/brave";
 import { youRateLimitedCount } from "@/lib/you-search";
+import { groqRateLimitedCount } from "@/lib/engine/groq-client";
+import { deepseekRateLimitedCount } from "@/lib/engine/deepseek-client";
 import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId, Issue } from "@/lib/types";
@@ -198,9 +200,15 @@ export async function GET(req: Request) {
   // comment on braveRateLimitedCount in lib/brave.ts. Same reasoning for
   // You.com's counter (lib/you-search.ts) — without this baseline+delta, a
   // struggling 3rd search tier would have zero operator-visible signal, the
-  // same gap Brave's own counter exists to close.
+  // same gap Brave's own counter exists to close. Groq/DeepSeek (2026-07-29)
+  // are content-GENERATION fallbacks rather than search, but the same gap
+  // applies: without this, a struggling free/backstop tier degrades every
+  // reader straight to Haiku/Sonnet spend (or the stale-resend layer, if
+  // Anthropic isn't funded) with zero operator-visible signal.
   const braveBaseline = braveRateLimitedCount();
   const youBaseline = youRateLimitedCount();
+  const groqBaseline = groqRateLimitedCount();
+  const deepseekBaseline = deepseekRateLimitedCount();
   let sent = 0;
   // Live generation failed/timed out but a backup layer covered it (see the
   // catch block below) — counted separately from `sent`/`failed` so the
@@ -684,6 +692,8 @@ export async function GET(req: Request) {
   const elapsedMs = Date.now() - startedAt;
   const braveRateLimited = braveRateLimitedCount() - braveBaseline;
   const youRateLimited = youRateLimitedCount() - youBaseline;
+  const groqRateLimited = groqRateLimitedCount() - groqBaseline;
+  const deepseekRateLimited = deepseekRateLimitedCount() - deepseekBaseline;
   const summary = {
     weekOf,
     subscribers: rows.length,
@@ -702,6 +712,8 @@ export async function GET(req: Request) {
     failed,
     braveRateLimited,
     youRateLimited,
+    groqRateLimited,
+    deepseekRateLimited,
     elapsedMs,
     failures: failures.slice(0, 25),
   };
@@ -713,7 +725,14 @@ export async function GET(req: Request) {
   // for time should be LOUD — not buried in logs the owner won't read until a
   // letter is noticed missing. Best-effort single email per run (sendOpsAlert
   // never throws), only when something actually went wrong.
-  if (skippedBlankSubscribers.length > 0 || failed > 0 || braveRateLimited > 0 || deferred.length > 0) {
+  if (
+    skippedBlankSubscribers.length > 0 ||
+    failed > 0 ||
+    braveRateLimited > 0 ||
+    groqRateLimited > 0 ||
+    deepseekRateLimited > 0 ||
+    deferred.length > 0
+  ) {
     // A "failed" subscriber isn't necessarily one who got nothing anymore —
     // some were caught by a backup layer. genuinelyMissed is the real
     // severity signal: failed minus however many were rescued either way.
@@ -747,12 +766,29 @@ export async function GET(req: Request) {
       youRateLimited > 0
         ? `You.com (the 3rd search tier) ALSO returned 429 on ${youRateLimited} queries this run — the fallback chain is running three-deep and still straining. Worth checking the You.com dashboard for remaining credit.`
         : "",
+      // UNLIKE youRateLimited above, Groq/DeepSeek are content-GENERATION
+      // fallbacks (2026-07-29), not chained behind Brave's search tiers — Groq
+      // gets tried whenever GEMINI's own generation quota is tapped out,
+      // completely independent of whether search succeeded. So this CAN be
+      // the only rate-limit signal on a run where Brave was fine, which is
+      // why it's in the alert's trigger condition above (not just appended
+      // like You.com's nested case).
+      groqRateLimited > 0
+        ? `Groq (2nd content-generation tier) returned 429 on ${groqRateLimited} calls this run — its free-tier quota is under pressure. Escalates automatically to DeepSeek, so likely not a reader-visible problem yet, but worth watching if it keeps climbing.`
+        : "",
+      // DeepSeek is meant to be UNCAPPED (a funded balance, concurrency-limited
+      // only) — a real 429 here means even the backstop tier is straining,
+      // which is a materially more serious signal than Groq's free-tier limit
+      // above.
+      deepseekRateLimited > 0
+        ? `DeepSeek (the uncapped backstop tier) returned 429 on ${deepseekRateLimited} calls this run — that shouldn't normally happen on a funded account. Worth checking the DeepSeek dashboard for balance/concurrency issues.`
+        : "",
       deferred.length
         ? `Time budget exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${deferred.join(", ")}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically). This is a scale signal — the subscriber list is big enough that the daily run is pressing against Vercel's time cap.`
         : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred (time budget)` : ""}`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred (time budget)` : ""}`,
       lines.join("\n")
     );
   }

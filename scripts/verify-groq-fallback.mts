@@ -36,13 +36,22 @@ const { groqGenerateText, groqConfigured, truncateForGroq } = await import("../l
 console.log("(1) groqGenerateText raw client");
 check("(1) groqConfigured() is true (GROQ_API_KEY set)", groqConfigured());
 
-const text = await groqGenerateText(
-  "You are a helpful assistant. Respond in plain prose, no markdown.",
-  "In one short sentence, what is the capital of France?",
-  200
-);
-check("(1) returns non-empty real text", text.trim().length > 0);
-check("(1) mentions Paris (a real, sensible answer, not garbage)", /paris/i.test(text));
+// try/catch here (not just later sections): an uncaught throw would crash
+// the whole script before sections 2-4 even ran, the same class of bug
+// already fixed once in this file's earlier sections.
+try {
+  const text = await groqGenerateText(
+    "You are a helpful assistant. Respond in plain prose, no markdown.",
+    "In one short sentence, what is the capital of France?",
+    200
+  );
+  check("(1) returns non-empty real text", text.trim().length > 0);
+  check("(1) mentions Paris (a real, sensible answer, not garbage)", /paris/i.test(text));
+} catch (e) {
+  console.error(`  (1) groqGenerateText threw: ${e instanceof Error ? e.message : e}`);
+  check("(1) returns non-empty real text", false);
+  check("(1) mentions Paris (a real, sensible answer, not garbage)", false);
+}
 
 // --- 2) truncateForGroq actually keeps REAL content under Groq's real cap ---
 // Real regression test: a first version of this cap trusted gpt-tokenizer's
@@ -84,10 +93,15 @@ check(
   truncateForGroq("a short system prompt", small) === small
 );
 
-// --- 3) topic-blurb.ts's real escalation reaches Groq -----------------------
+// --- 3) topic-blurb.ts's real escalation reaches Groq or DeepSeek ----------
 // Gemini forced down (invalid key); Anthropic already forced down from the
-// top of this script. A real blurb can ONLY come from Groq in this state.
-console.log("(3) topic-blurb.ts escalation: Gemini down, Anthropic down -> Groq produces the blurb");
+// top of this script. A real blurb can ONLY come from Groq or DeepSeek in
+// this state (updated 2026-07-29 when DeepSeek joined the chain — this is a
+// genuinely harder bar than production ever faces, since production always
+// has Anthropic as a further rescue net when it's funded; a failure here
+// means BOTH free/cheap tiers failed on this specific run, not that either
+// is broken).
+console.log("(3) topic-blurb.ts escalation: Gemini down, Anthropic down -> Groq or DeepSeek produces the blurb");
 const realGeminiKey = process.env.GEMINI_API_KEY;
 process.env.GEMINI_API_KEY = "NOT-A-REAL-KEY-forced-failure-test";
 try {

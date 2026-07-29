@@ -32,18 +32,53 @@ const { deepseekGenerateText, deepseekConfigured } = await import("../lib/engine
 console.log("(1) deepseekGenerateText raw client");
 check("(1) deepseekConfigured() is true (DEEPSEEK_API_KEY set)", deepseekConfigured());
 
-const text = await deepseekGenerateText(
-  "You are a helpful assistant. Respond in plain prose, no markdown.",
-  "In one short sentence, what is the capital of France?",
-  100
-);
-check("(1) returns non-empty real text", text.trim().length > 0);
-check("(1) mentions Paris (a real, sensible answer, not garbage)", /paris/i.test(text));
-// A tight 100-token budget would fail (DeepSeekTruncatedError, caught as a
-// thrown rejection above) if thinking mode's reasoning tokens were eating
-// into it the way Groq's default did on editor-note's 1000-token budget —
-// reaching this line at all is itself evidence thinking is off.
-console.log("  (info) reached this point without a truncation error under a tight 100-token budget");
+// try/catch (not just later sections): an uncaught throw here would crash the
+// whole script before sections 2-3 even ran — the same class of bug already
+// fixed once in verify-groq-fallback.mts's earlier sections.
+try {
+  const text = await deepseekGenerateText(
+    "You are a helpful assistant. Respond in plain prose, no markdown.",
+    "In one short sentence, what is the capital of France?",
+    100
+  );
+  check("(1) returns non-empty real text", text.trim().length > 0);
+  check("(1) mentions Paris (a real, sensible answer, not garbage)", /paris/i.test(text));
+} catch (e) {
+  console.error(`  (1) deepseekGenerateText threw: ${e instanceof Error ? e.message : e}`);
+  check("(1) returns non-empty real text", false);
+  check("(1) mentions Paris (a real, sensible answer, not garbage)", false);
+}
+
+// A trivial "capital of France" question is weak evidence for thinking mode
+// specifically: even WITH reasoning enabled, a model can answer that in a
+// handful of tokens, so surviving a loose budget doesn't actually prove
+// thinking is off. Use DeepSeek's OWN documented reasoning-trigger example
+// instead (api-docs.deepseek.com/guides/thinking_mode uses this exact
+// question to demonstrate chain-of-thought) under a genuinely tight budget —
+// if thinking were still on, the reasoning tokens alone would very likely
+// blow through 60 tokens before any answer, throwing DeepSeekTruncatedError.
+try {
+  const { deepseekGenerateText: gen2 } = await import("../lib/engine/deepseek-client.ts");
+  const reasoningText = await gen2(
+    "You are a helpful assistant. Respond in plain prose, no markdown.",
+    "9.11 and 9.8, which is greater? Answer in one short sentence.",
+    60
+  );
+  // Deliberately NOT asserting the answer is correct: deepseek-v4-flash is a
+  // fast, non-reasoning-by-default model, and this specific question is a
+  // well-known trap that thinking mode exists to help avoid (that's WHY
+  // DeepSeek's own docs use it) — a flash-tier model getting it wrong is
+  // itself consistent with (even mild evidence FOR) thinking being off, not
+  // a bug. Confirmed live: deepseek-v4-flash answered "9.11 is greater than
+  // 9.8" (factually wrong) here, which is exactly the failure mode you'd
+  // expect WITHOUT chain-of-thought. What actually matters for this check is
+  // completing at all under a tight budget without DeepSeekTruncatedError.
+  console.log(`  (info) reasoning-trigger answer: ${JSON.stringify(reasoningText.trim())}`);
+  check("(1) reasoning-trigger question answered within a tight 60-token budget (thinking is genuinely off)", reasoningText.trim().length > 0);
+} catch (e) {
+  console.error(`  (1) reasoning-trigger check threw: ${e instanceof Error ? e.message : e}`);
+  check("(1) reasoning-trigger question answered within a tight 60-token budget (thinking is genuinely off)", false);
+}
 
 // --- 2) topic-blurb.ts's real escalation reaches DeepSeek -------------------
 // Gemini AND Groq forced down (invalid key / invalid key); Anthropic already

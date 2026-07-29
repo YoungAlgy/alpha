@@ -45,7 +45,13 @@ interface DeepSeekResponse {
 async function failDeepSeek(res: Response): Promise<never> {
   if (res.status === 429) rateLimitedCount += 1;
   const text = await res.text().catch(() => "");
-  throw new Error(`DeepSeek ${MODEL} ${res.status}: ${text.slice(0, 300)}`);
+  const err = new Error(`DeepSeek ${MODEL} ${res.status}: ${text.slice(0, 300)}`);
+  // Attach the real numeric status so callers can check e.status === 429
+  // directly (topic-blurb.ts's isRateLimited, the same check already used for
+  // Haiku/Sonnet's Anthropic errors and Groq's own failGroq) instead of
+  // pattern-matching the message string.
+  (err as Error & { status?: number }).status = res.status;
+  throw err;
 }
 
 // Plain text generation (topic-blurb / editor-note WRITING, same role as

@@ -13,12 +13,15 @@ function narrowKind(k: string | undefined): BlurbItemKind {
   return VALID_KINDS.includes(k as BlurbItemKind) ? (k as BlurbItemKind) : "note";
 }
 
-// Narrow "is this specifically a 429" check for Haiku/Sonnet's retry-skip
-// (below) — deliberately NOT client.ts's isAnthropicUnavailable, which is a
-// broader "should we fall back to Gemini for the whole call" classifier used
-// elsewhere; this only needs the one deterministic-quota-wall signal. The SDK
-// attaches a numeric .status to its error objects (see client.ts's own
-// isAnthropicUnavailable for the same pattern).
+// Narrow "is this specifically a 429" check, shared by every tier's
+// retry-skip below (Haiku/Sonnet via the Anthropic SDK, Groq/DeepSeek via
+// their own thin clients) — deliberately NOT client.ts's
+// isAnthropicUnavailable, which is a broader "should we fall back to Gemini
+// for the whole call" classifier used elsewhere; this only needs the one
+// deterministic-quota-wall signal. The Anthropic SDK attaches a numeric
+// .status to its error objects natively; groq-client.ts/deepseek-client.ts's
+// failGroq/failDeepSeek attach the same shape deliberately so this one check
+// works for all four tiers instead of each needing its own error-shape logic.
 function isRateLimited(e: unknown): boolean {
   return typeof e === "object" && e !== null && "status" in e && (e as { status: unknown }).status === 429;
 }
@@ -249,13 +252,13 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq draft truncated, escalating to DeepSeek`);
         return null;
       }
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/ 429:/.test(msg)) {
+      if (isRateLimited(e)) {
         // Same reasoning as tryGemini's 429-skip above — deterministic within
         // this request window, an immediate retry can't succeed.
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq quota exhausted (429), skipping the retry, escalating to DeepSeek`);
         return null;
       }
+      const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq draft failed, retrying once: ${msg}`);
       try {
         return await attempt();
@@ -285,11 +288,11 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek draft truncated, escalating to Haiku`);
         return null;
       }
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/ 429:/.test(msg)) {
+      if (isRateLimited(e)) {
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek quota exhausted (429), skipping the retry, escalating to Haiku`);
         return null;
       }
+      const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek draft failed, retrying once: ${msg}`);
       try {
         return await attempt();
@@ -611,5 +614,26 @@ function extractJson(text: string): ParsedBlurb {
     throw new Error("No JSON object found in model output:\n" + text.slice(0, 400));
   }
   const json = text.slice(start, end + 1);
-  return JSON.parse(json);
+  const parsed: unknown = JSON.parse(json);
+  // Shape-validate before trusting it as a ParsedBlurb — real-world case that
+  // surfaced this (2026-07-29): a heavily-truncated draft (Groq's halving
+  // retry, cutting mid-context) can still produce syntactically-VALID JSON
+  // that's missing `items` entirely (e.g. `{}` or `{"intro": "..."}`).
+  // JSON.parse alone doesn't catch that, so it used to reach finalizeBlurb
+  // with items===undefined and crash on `.map()` — a raw TypeError that
+  // skips every tier's own try/catch (which already retries once, then
+  // escalates to the next tier) and gets caught only by the OUTERMOST
+  // genLive(id).catch(() => null) in select-sections.ts, silently discarding
+  // the whole topic instead of giving the existing retry/escalation logic a
+  // chance to recover it. Throwing a plain Error here routes it back through
+  // that already-correct machinery instead.
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !Array.isArray((parsed as { items?: unknown }).items) ||
+    typeof (parsed as { intro?: unknown }).intro !== "string"
+  ) {
+    throw new Error("Model output parsed as JSON but is not a valid blurb shape (missing intro/items):\n" + json.slice(0, 400));
+  }
+  return parsed as ParsedBlurb;
 }
