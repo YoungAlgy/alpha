@@ -36,6 +36,26 @@ function bearerMatches(authHeader: string | null, expected: string): boolean {
 // shared helper (also used by the onboarding /api/generate route).
 const PER_USER_DEADLINE_MS = 110_000;
 
+// Second-chance budget when the FULL attempt above fails or times out — a
+// small, fast, genuinely FRESH retry before ever falling back to stale
+// content (see the catch block below). Reuses the same generation pipeline,
+// just a smaller topic pool, so a real provider outage still fails fast here
+// too; this specifically catches the "unusually slow this run, but the
+// providers ARE actually up" case — exactly what caused the 2026-07-29
+// incident — with real content instead of a repeat. Measured live (3 real
+// topics, current degraded conditions — Brave capped, Gemini quota
+// exhausted) at ~32s twice in a row; note the floor doesn't shrink linearly
+// with fewer topics since they run in parallel and the SLOWEST one that
+// needs the full tier-escalation chain sets the wall-clock time regardless
+// of pool size — fewer topics mainly lowers the ODDS several hit that worst
+// case at once, not the per-call floor. 60s leaves real margin over that.
+const FAST_FALLBACK_DEADLINE_MS = 60_000;
+// How many of the reader's top-ranked topics the fast fallback attempts.
+// Fewer topics means less concurrent load on the same Anthropic/Gemini
+// account, which is the actual mechanism that made the full pool slow in
+// the first place — not just "less to generate."
+const FAST_FALLBACK_TOPIC_COUNT = 3;
+
 // Bounds the persist-and-send tail (issue upsert, delivered_at claim, the
 // Resend send, and its rollback-on-failure) that runs after generateIssue
 // succeeds. Before this, that tail had NO timeout at all — a genuinely hung
@@ -163,18 +183,21 @@ export async function GET(req: Request) {
   // comment on braveRateLimitedCount in lib/brave.ts.
   const braveBaseline = braveRateLimitedCount();
   let sent = 0;
-  // Live generation failed/timed out, but the subscriber still got a REAL
-  // letter — their most recent previously-delivered one, resent (see the
-  // catch block below). Counted separately from `sent`/`failed` so the
+  // Live generation failed/timed out but a backup layer covered it (see the
+  // catch block below) — counted separately from `sent`/`failed` so the
   // summary distinguishes "the pipeline had a problem, but nobody got
-  // nothing" from either a clean run or a genuine miss.
-  let backupSent = 0;
+  // nothing" from either a clean run or a genuine miss. Split by which layer
+  // rescued it: fresh (a small fast retry, real new content) vs stale (a
+  // repeat of their last letter, the true last resort).
+  let backupFreshSent = 0;
+  let backupStaleSent = 0;
   let skippedNoName = 0;
   let skippedEmptyPool = 0;
   let skippedAlreadyDelivered = 0;
   let failed = 0;
   const failures: Array<{ email: string; error: string }> = [];
-  const backupSentEmails: string[] = [];
+  const backupFreshSentEmails: string[] = [];
+  const backupStaleSentEmails: string[] = [];
   // Emails of ACTIVE PAID subscribers who got NOTHING this send (blank name or
   // empty topic pool). Every row in this loop already passed the subscribed +
   // live-access filter, so anything here is a paying reader silently receiving
@@ -312,11 +335,10 @@ export async function GET(req: Request) {
     // Persist + send ONE issue for this subscriber, bounded by
     // PERSIST_AND_SEND_DEADLINE_MS (see its comment above) so a hung
     // Supabase/Resend call can't park this whole loop. Shared by the normal
-    // live-generated send below AND the backup-resend fallback in the catch
-    // block — identical idempotency/claim/rollback guarantees either way;
-    // the only difference is which Issue gets persisted and which counter
-    // (sent vs backupSent) it credits.
-    async function runPersistAndSend(issue: Issue, isBackup: boolean): Promise<void> {
+    // live-generated send below AND both backup layers in the catch block —
+    // identical idempotency/claim/rollback guarantees every time; the only
+    // difference is which Issue gets persisted and which counter it credits.
+    async function runPersistAndSend(issue: Issue, kind: "live" | "backup-fresh" | "backup-stale"): Promise<void> {
       // Upsert the issue so re-runs are idempotent on (user_id, week_of).
       // THROW on failure (caught by the caller) — if this row doesn't exist,
       // the email must NOT go out: the delivered_at CLAIM below targets this
@@ -431,10 +453,14 @@ export async function GET(req: Request) {
       // early-return above so a dev/misconfig run with Resend unset doesn't
       // over-report for letters that never went out.
       const labels = issue.sections.map((s) => s.topicLabel).filter(Boolean).join(" · ");
-      if (isBackup) {
-        backupSent++;
-        backupSentEmails.push(row.email);
-        console.log(`[cron/weekly-send] sent BACKUP (resend of a prior letter) → ${row.email} (${labels})`);
+      if (kind === "backup-fresh") {
+        backupFreshSent++;
+        backupFreshSentEmails.push(row.email);
+        console.log(`[cron/weekly-send] sent BACKUP-FRESH (small fast retry) → ${row.email} (${labels})`);
+      } else if (kind === "backup-stale") {
+        backupStaleSent++;
+        backupStaleSentEmails.push(row.email);
+        console.log(`[cron/weekly-send] sent BACKUP-STALE (resend of a prior letter) → ${row.email} (${labels})`);
       } else {
         sent++;
         console.log(`[cron/weekly-send] sent → ${row.email} (${labels})`);
@@ -463,7 +489,7 @@ export async function GET(req: Request) {
       // them as failed) — accepted: the actual delivered_at claim and the
       // actual email are correct either way, this only risks a cosmetic
       // inaccuracy in one day's summary, not a duplicate or a silent miss.
-      const persistAndSend = runPersistAndSend(issue, false);
+      const persistAndSend = runPersistAndSend(issue, "live");
       after(persistAndSend.catch(() => undefined));
       await withDeadline(persistAndSend, PERSIST_AND_SEND_DEADLINE_MS, `persist+send(${row.email})`);
     } catch (e) {
@@ -472,44 +498,85 @@ export async function GET(req: Request) {
       failures.push({ email: row.email, error: msg });
       console.error(`[cron/weekly-send] FAILED → ${row.email}: ${msg}`);
 
-      // BACKUP: live generation failed or timed out (incident 2026-07-29 —
-      // see memory). Rather than this subscriber getting NOTHING today, try
-      // resending their most recent successfully-delivered letter. Zero new
-      // AI calls, so this can't fail the same way the live path just did —
-      // it's a plain DB read + the same persist/send path already proven
-      // above, not a new generation attempt. If they've never received a
-      // letter before there's nothing to fall back to and this is a no-op
-      // (stays a hard failure, same as today). The intro is honest about
-      // being a repeat rather than pretending it's fresh.
+      // Two-layer backup (incident 2026-07-29 — see memory). A stale resend
+      // ALONE isn't good enough: if the underlying problem persists across
+      // days, every subscriber would get the identical repeat letter
+      // day after day — recreating the exact "same content every time"
+      // complaint that started this whole investigation. So try for real,
+      // FRESH content first, and only fall back to a repeat as the true
+      // last resort.
+      let backupIssue: Issue | null = null;
+      let backupIsFresh = false;
+
+      // LAYER 1 — fast fallback: a small, tightly-bounded retry through the
+      // SAME (now-fixed) generation pipeline, just fewer topics. Catches the
+      // "unusually slow this run but the providers ARE up" case — the actual
+      // mechanism behind the incident — with real content, not a repeat. A
+      // genuine full provider outage still fails this fast (bounded by
+      // FAST_FALLBACK_DEADLINE_MS) and falls through to layer 2 below.
       try {
-        const { data: prior } = await sb
-          .from("issues")
-          .select("sections")
-          .eq("user_id", row.id)
-          .not("delivered_at", "is", null)
-          .lt("week_of", weekOf)
-          .order("week_of", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (prior?.sections) {
-          const backupIssue: Issue = {
-            id: `${profile.firstName.toLowerCase()}-${weekOf}-backup`,
-            volume: 1,
-            number: 1,
-            weekOf: formatWeekOf(weekOf),
-            recipientFirstName: profile.firstName,
-            recipientCity: profile.city,
-            editorIntro: "Quick note: today's letter is running behind, so here's a repeat of your last one while it catches up.",
-            sections: prior.sections,
-          };
-          const backupSend = runPersistAndSend(backupIssue, true);
+        const smallPool = pool.slice(0, FAST_FALLBACK_TOPIC_COUNT);
+        if (smallPool.length > 0) {
+          backupIssue = await withDeadline(
+            generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache),
+            FAST_FALLBACK_DEADLINE_MS,
+            `fast-fallback(${row.email})`
+          );
+          backupIsFresh = true;
+          console.warn(`[cron/weekly-send] fast fallback succeeded → ${row.email} (${smallPool.length} topics)`);
+        }
+      } catch (fastErr) {
+        console.warn(
+          `[cron/weekly-send] fast fallback ALSO failed → ${row.email}: ${fastErr instanceof Error ? fastErr.message : fastErr}`
+        );
+      }
+
+      // LAYER 2 — true last resort: even the small fresh retry failed (a
+      // genuine outage, not just slowness). Resend their most recent
+      // successfully-delivered letter rather than nothing. Zero new AI
+      // calls, so it can't fail the same way either layer above just did.
+      // No prior letter (a brand-new subscriber) means nothing to fall back
+      // to — stays a hard failure, same as today. Honest that it's a repeat.
+      if (!backupIssue) {
+        try {
+          const { data: prior } = await sb
+            .from("issues")
+            .select("sections")
+            .eq("user_id", row.id)
+            .not("delivered_at", "is", null)
+            .lt("week_of", weekOf)
+            .order("week_of", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (prior?.sections) {
+            backupIssue = {
+              id: `${profile.firstName.toLowerCase()}-${weekOf}-backup`,
+              volume: 1,
+              number: 1,
+              weekOf: formatWeekOf(weekOf),
+              recipientFirstName: profile.firstName,
+              recipientCity: profile.city,
+              editorIntro: "Quick note: today's letter is running behind, so here's a repeat of your last one while it catches up.",
+              sections: prior.sections,
+            };
+          }
+        } catch (lookupErr) {
+          console.error(
+            `[cron/weekly-send] backup lookup failed → ${row.email}: ${lookupErr instanceof Error ? lookupErr.message : lookupErr}`
+          );
+        }
+      }
+
+      if (backupIssue) {
+        try {
+          const backupSend = runPersistAndSend(backupIssue, backupIsFresh ? "backup-fresh" : "backup-stale");
           after(backupSend.catch(() => undefined));
           await withDeadline(backupSend, PERSIST_AND_SEND_DEADLINE_MS, `backup-send(${row.email})`);
+        } catch (backupErr) {
+          console.error(
+            `[cron/weekly-send] backup send failed → ${row.email}: ${backupErr instanceof Error ? backupErr.message : backupErr}`
+          );
         }
-      } catch (backupErr) {
-        console.error(
-          `[cron/weekly-send] backup resend ALSO failed → ${row.email}: ${backupErr instanceof Error ? backupErr.message : backupErr}`
-        );
       }
     }
   }
@@ -520,8 +587,10 @@ export async function GET(req: Request) {
     weekOf,
     subscribers: rows.length,
     sent,
-    backupSent,
-    backupSentEmails,
+    backupFreshSent,
+    backupFreshSentEmails,
+    backupStaleSent,
+    backupStaleSentEmails,
     skippedNoName,
     skippedEmptyPool,
     skippedBlankSubscribers,
@@ -542,19 +611,22 @@ export async function GET(req: Request) {
   // never throws), only when something actually went wrong.
   if (skippedBlankSubscribers.length > 0 || failed > 0 || braveRateLimited > 0 || deferred.length > 0) {
     // A "failed" subscriber isn't necessarily one who got nothing anymore —
-    // some of them were caught by the backup-resend fallback. genuinelyMissed
-    // is the real severity signal: failed minus however many were rescued.
-    const genuinelyMissed = failed - backupSent;
+    // some were caught by a backup layer. genuinelyMissed is the real
+    // severity signal: failed minus however many were rescued either way.
+    const genuinelyMissed = failed - backupFreshSent - backupStaleSent;
     const lines = [
-      `weekOf=${weekOf}  sent=${sent}  backupSent=${backupSent}  subscribers=${rows.length}  failed=${failed}  genuinelyMissed=${genuinelyMissed}`,
-      backupSent > 0
-        ? `Live generation failed for ${failed} subscriber(s), but ${backupSent} of them got a real letter anyway — their most recent prior letter, resent (they were told it's a repeat): ${backupSentEmails.join(", ")}.`
+      `weekOf=${weekOf}  sent=${sent}  backupFreshSent=${backupFreshSent}  backupStaleSent=${backupStaleSent}  subscribers=${rows.length}  failed=${failed}  genuinelyMissed=${genuinelyMissed}`,
+      backupFreshSent > 0
+        ? `Live generation failed for ${failed} subscriber(s), but ${backupFreshSent} of them got a real, FRESH (shorter) letter anyway via the fast-fallback retry: ${backupFreshSentEmails.join(", ")}.`
+        : "",
+      backupStaleSent > 0
+        ? `${backupStaleSent} subscriber(s) needed the true last resort — their most recent prior letter, resent (they were told it's a repeat): ${backupStaleSentEmails.join(", ")}. Worth a closer look if this keeps happening — it means even the small fast retry is failing, not just the full one.`
         : "",
       skippedBlankSubscribers.length
         ? `PAID subscribers who got NOTHING (blank name / empty topics): ${skippedBlankSubscribers.join(", ")}`
         : "",
       failures.length
-        ? `Underlying generation failures (root cause, investigate this even if backupSent covered them): ${failures.map((f) => `${f.email} (${f.error})`).join("; ")}`
+        ? `Underlying generation failures (root cause, investigate this even if a backup layer covered it): ${failures.map((f) => `${f.email} (${f.error})`).join("; ")}`
         : "",
       braveRateLimited > 0
         ? `Brave returned 429 on ${braveRateLimited} queries — monthly search quota likely exhausted; letters are degrading to filler. Fix: upgrade the Brave plan (https://api.search.brave.com), ~$5-10/mo at this volume.`
