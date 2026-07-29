@@ -1,5 +1,6 @@
-import { anthropicClient, EDITOR_NOTE_MODEL, isAnthropicUnavailable } from "./client";
+import { anthropicClient, anthropicConfigured, EDITOR_NOTE_MODEL, isAnthropicUnavailable } from "./client";
 import { geminiConfigured, geminiGenerateText } from "./gemini-client";
+import { groqConfigured, groqGenerateText } from "./groq-client";
 import { sanitizeVoice, containsMetaLeak } from "./voice-guard";
 import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
@@ -123,28 +124,47 @@ Write the editor's note for this reader's letter today.`;
       .trim();
   }
 
-  let note: string;
-  try {
-    note = await callClaude();
-  } catch (e) {
-    // Anthropic itself unavailable (no credits, rate-limited, an outage) —
-    // Gemini writes the note instead, via the SAME prompt. Last resort: this
-    // is the most voice-critical part of the letter, tuned against Claude
-    // specifically, so Gemini's note reads slightly different here —
-    // accepted, since the alternative is the assembler's generic derived
-    // intro for every reader that day instead of just this one being a
-    // little less personal.
-    if (isAnthropicUnavailable(e) && geminiConfigured()) {
-      console.warn(`[editor-note] Anthropic unavailable (status ${e.status ?? "connection"}), falling back to Gemini`);
-      try {
-        note = (await geminiGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
-      } catch (geminiErr) {
-        console.warn(`[editor-note] Gemini fallback also failed: ${geminiErr instanceof Error ? geminiErr.message : geminiErr}`);
-        throw e; // surface the ORIGINAL Anthropic error — more informative for ops
-      }
-    } else {
-      throw e;
+  let note: string | undefined;
+  let anthropicErr: unknown;
+  // Anthropic not even configured (2026-07-29: Algy may deliberately not be
+  // funding it) is treated the SAME as Anthropic being unavailable mid-call —
+  // both mean "fall through to the free tiers below," not "throw
+  // immediately." Without this check, an unset ANTHROPIC_API_KEY throws a
+  // plain Error that isAnthropicUnavailable's status/connection-error checks
+  // don't recognize, so this fallback chain would never even run and every
+  // reader would get the assembler's generic derived intro instead of a real
+  // written note from whatever tier IS available.
+  if (anthropicConfigured()) {
+    try {
+      note = await callClaude();
+    } catch (e) {
+      if (!isAnthropicUnavailable(e)) throw e; // a real bug in OUR payload, not an outage — surface it
+      anthropicErr = e;
+      console.warn(`[editor-note] Anthropic unavailable (status ${(e as { status?: number }).status ?? "connection"}), falling back`);
     }
+  }
+
+  if (note === undefined && geminiConfigured()) {
+    try {
+      note = (await geminiGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
+    } catch (geminiErr) {
+      console.warn(`[editor-note] Gemini fallback failed: ${geminiErr instanceof Error ? geminiErr.message : geminiErr}`);
+    }
+  }
+
+  if (note === undefined && groqConfigured()) {
+    try {
+      note = (await groqGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
+    } catch (groqErr) {
+      console.warn(`[editor-note] Groq fallback failed: ${groqErr instanceof Error ? groqErr.message : groqErr}`);
+    }
+  }
+
+  if (note === undefined) {
+    // Nothing worked. Surface the original Anthropic error when there was
+    // one (more informative for ops); otherwise Anthropic was never
+    // configured and every free tier also failed/was unconfigured.
+    throw anthropicErr ?? new Error("editor note: no configured provider produced a note");
   }
 
   // Deterministic voice guard: strip any em/en dash, semicolon, or curly quote

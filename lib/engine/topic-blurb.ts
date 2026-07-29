@@ -1,5 +1,6 @@
-import { anthropicClient, BLURB_MODEL, BLURB_CHEAP_MODEL } from "./client";
+import { anthropicClient, anthropicConfigured, BLURB_MODEL, BLURB_CHEAP_MODEL } from "./client";
 import { geminiConfigured, geminiGenerateText, GeminiTruncatedError } from "./gemini-client";
+import { groqConfigured, groqGenerateText, GroqTruncatedError } from "./groq-client";
 import { topicLabel } from "@/lib/topics";
 import { extractSignalUrls, enforceSignalUrls } from "./url-guard";
 import { sanitizeVoice, containsMetaLeak, findLexicalTells } from "./voice-guard";
@@ -203,8 +204,8 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       return await attempt();
     } catch (e) {
       if (e instanceof GeminiTruncatedError) {
-        // Deterministic — a retry truncates the same way. Straight to Haiku.
-        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft truncated, escalating to Haiku`);
+        // Deterministic — a retry truncates the same way. Straight to Groq.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft truncated, escalating to Groq`);
         return null;
       }
       const msg = e instanceof Error ? e.message : String(e);
@@ -216,14 +217,49 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         // ~20s for zero benefit while diagnosing a real incident (2026-07-29):
         // subscribers missed letters because a full letter's per-topic
         // waterfall stacked past the per-subscriber deadline.
-        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini quota exhausted (429), skipping the retry, escalating to Haiku`);
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini quota exhausted (429), skipping the retry, escalating to Groq`);
         return null;
       }
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft failed, retrying once: ${msg}`);
       try {
         return await attempt();
       } catch (e2) {
-        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini retry also failed, escalating to Haiku: ${e2 instanceof Error ? e2.message : e2}`);
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini retry also failed, escalating to Groq: ${e2 instanceof Error ? e2.message : e2}`);
+        return null;
+      }
+    }
+  }
+
+  // Groq attempt — a second free/no-card tier, tried between Gemini and
+  // Haiku (2026-07-29, per Algy: Anthropic must stay optional, so the chain
+  // needs a real shot at fresh content that doesn't depend on it being
+  // funded). Same retry-once-on-parse-failure shape as tryGemini above,
+  // never throws — a failure here just means "escalate to Haiku (or, if
+  // Anthropic isn't configured, this topic is done)".
+  async function tryGroq(): Promise<ParsedBlurb | null> {
+    async function attempt(): Promise<ParsedBlurb> {
+      const text = await groqGenerateText(SYSTEM_PROMPT, userPrompt, 4000);
+      return extractJson(text);
+    }
+    try {
+      return await attempt();
+    } catch (e) {
+      if (e instanceof GroqTruncatedError) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq draft truncated, escalating to Haiku`);
+        return null;
+      }
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/ 429:/.test(msg)) {
+        // Same reasoning as tryGemini's 429-skip above — deterministic within
+        // this request window, an immediate retry can't succeed.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq quota exhausted (429), skipping the retry, escalating to Haiku`);
+        return null;
+      }
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq draft failed, retrying once: ${msg}`);
+      try {
+        return await attempt();
+      } catch (e2) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq retry also failed, escalating to Haiku: ${e2 instanceof Error ? e2.message : e2}`);
         return null;
       }
     }
@@ -432,10 +468,42 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       }
       console.warn(
         finalized.items.length === 0
-          ? `[topic-blurb] ${topicId} ${weekOf}: Gemini draft had 0 usable items after guards, escalating to Haiku`
-          : `[topic-blurb] ${topicId} ${weekOf}: Gemini draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Haiku`
+          ? `[topic-blurb] ${topicId} ${weekOf}: Gemini draft had 0 usable items after guards, escalating to Groq`
+          : `[topic-blurb] ${topicId} ${weekOf}: Gemini draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Groq`
       );
     }
+  }
+
+  // Groq — a second free tier, genuinely independent of both Google and
+  // Anthropic (2026-07-29). Tried regardless of whether Anthropic is
+  // configured: it's free either way, so there's no reason to skip it even
+  // when Haiku/Sonnet are also available below.
+  if (groqConfigured()) {
+    const groqParsed = await tryGroq();
+    if (groqParsed) {
+      const finalized = finalizeBlurb(groqParsed);
+      if (finalized.items.length > 0 && finalized.tells.length === 0) {
+        return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
+      }
+      console.warn(
+        finalized.items.length === 0
+          ? `[topic-blurb] ${topicId} ${weekOf}: Groq draft had 0 usable items after guards, escalating to Haiku`
+          : `[topic-blurb] ${topicId} ${weekOf}: Groq draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Haiku`
+      );
+    }
+  }
+
+  // Haiku/Sonnet only attempted when Anthropic is actually funded. When
+  // Algy deliberately isn't funding it (key removed — the clean way to turn
+  // it off), skip straight past two guaranteed-failing tiers instead of
+  // paying for two wasted attempts (each with its own internal retry) before
+  // reaching the same "nothing left" outcome. This is what makes "the
+  // Anthropic option exists but the system doesn't depend on it" real: with
+  // it off, the topic just ends here and select-sections.ts backfills a
+  // fresher one, exactly like any other tier running dry — never a crash,
+  // never silently shipping nothing.
+  if (!anthropicConfigured()) {
+    throw new Error(`${topicId} ${weekOf}: every configured free tier failed and Anthropic is not configured`);
   }
 
   const haikuParsed = await tryHaiku();

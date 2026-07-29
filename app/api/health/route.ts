@@ -25,6 +25,11 @@ export async function GET() {
     // above — false means that last-resort tier is inert, not that the app
     // is down.
     you: !!process.env.YOU_API_KEY,
+    // 2nd content-GENERATION tier (Gemini -> Groq -> Haiku -> Sonnet). Own
+    // separate account/quota from Anthropic and Google — false means a
+    // Gemini-exhausted, Anthropic-unfunded day has no real fallback left
+    // besides the stale-resend backup layer.
+    groq: !!process.env.GROQ_API_KEY,
   };
   return NextResponse.json({
     ok: true,

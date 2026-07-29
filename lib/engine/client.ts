@@ -2,6 +2,19 @@ import Anthropic, { APIConnectionError } from "@anthropic-ai/sdk";
 
 let _client: Anthropic | null = null;
 
+// Whether Anthropic is even worth attempting — checked BEFORE calling
+// Haiku/Sonnet in topic-blurb.ts's escalation chain so that when Algy
+// deliberately isn't funding Anthropic (removes the key, the clean way to
+// toggle it off), the chain skips straight past two guaranteed-failing tiers
+// instead of paying the latency of two wasted attempts (each with its own
+// internal retry) before reaching the real answer. Does NOT catch the
+// "key present but balance drained to zero" case — that can only be
+// discovered by a real call failing (see isAnthropicUnavailable) — but
+// removing the key is the expected way to toggle funding off deliberately.
+export function anthropicConfigured(): boolean {
+  return !!process.env.ANTHROPIC_API_KEY;
+}
+
 export function anthropicClient(): Anthropic {
   if (_client) return _client;
   const apiKey = process.env.ANTHROPIC_API_KEY;

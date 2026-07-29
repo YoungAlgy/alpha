@@ -77,12 +77,12 @@ process.env.GEMINI_API_KEY = realGeminiKey;
 allBlurbs.push(blurb2);
 check(
   "(2) escalation past Gemini WAS logged",
-  w2.some((w) => w.includes("escalating to Haiku"))
+  w2.some((w) => w.includes("escalating to Groq"))
 );
 check("(2) blurb still produced", blurb2.items.length > 0);
 
-// --- 3) Gemini forced down again: escalation reaches Haiku (real, not stale)
-console.log("(3) Gemini forced down (2nd independent run) — escalation reaches Haiku again");
+// --- 3) Gemini forced down again: escalation reaches the next tier (real, not stale)
+console.log("(3) Gemini forced down (2nd independent run) — escalation reaches the next tier again");
 process.env.GEMINI_API_KEY = "NOT-A-REAL-KEY-forced-failure-test-0000000000";
 const { result: blurb3, warnings: w3 } = await captureWarnings(() =>
   generateTopicBlurb("ai-news" as never, weekOf, signal)
@@ -91,7 +91,7 @@ process.env.GEMINI_API_KEY = realGeminiKey;
 allBlurbs.push(blurb3);
 check(
   "(3) escalation past Gemini WAS logged",
-  w3.some((w) => w.includes("escalating to Haiku"))
+  w3.some((w) => w.includes("escalating to Groq"))
 );
 check("(3) blurb still produced", blurb3.items.length > 0);
 console.log(
