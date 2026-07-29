@@ -399,7 +399,24 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   // intro + items; an empty `items` is the objective "this draft wasn't good
   // enough" signal the cost-tiering above escalates on.
   function finalizeBlurb(parsed: ParsedBlurb): { intro: string; items: TopicBlurb["items"]; tells: string[] } {
-    const mapped = parsed.items.map((it) => ({
+    // SHAPE GUARD (code-level, like url-guard/meta-leak below): extractJson
+    // only validates that `items` is an array and `intro` is a string — an
+    // individual element can still be malformed (e.g. `{}`, or a `headline`
+    // the model omitted) while the array itself is well-formed. sanitizeVoice
+    // tolerates non-string input silently (`if (!s) return s`), so a bad item
+    // wouldn't crash, but WOULD ship "undefined undefined" as visible text —
+    // a subscriber-facing failure worse than dropping the one bad item, which
+    // is exactly what url-guard/meta-leak already do for other kinds of bad
+    // items. Same "drop the item, keep the rest" philosophy.
+    const shapeValidItems = parsed.items.filter(
+      (it) => typeof it?.headline === "string" && it.headline.trim().length > 0 && typeof it?.body === "string" && it.body.trim().length > 0
+    );
+    if (shapeValidItems.length < parsed.items.length) {
+      console.warn(
+        `[topic-blurb] ${topicId} ${weekOf}: dropped ${parsed.items.length - shapeValidItems.length} malformed item(s) (missing headline/body)`
+      );
+    }
+    const mapped = shapeValidItems.map((it) => ({
       kind: narrowKind(it.kind),
       headline: sanitizeVoice(it.headline),
       body: sanitizeVoice(it.body),
