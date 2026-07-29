@@ -25,11 +25,16 @@ export async function GET() {
     // above — false means that last-resort tier is inert, not that the app
     // is down.
     you: !!process.env.YOU_API_KEY,
-    // 2nd content-GENERATION tier (Gemini -> Groq -> Haiku -> Sonnet). Own
-    // separate account/quota from Anthropic and Google — false means a
-    // Gemini-exhausted, Anthropic-unfunded day has no real fallback left
-    // besides the stale-resend backup layer.
+    // 2nd content-GENERATION tier (Gemini -> Groq -> DeepSeek -> Haiku ->
+    // Sonnet). Own separate account/quota from Anthropic and Google — false
+    // means a Gemini-exhausted, Anthropic-unfunded day is one tier closer to
+    // the stale-resend backup layer.
     groq: !!process.env.GROQ_API_KEY,
+    // 3rd content-GENERATION tier, the uncapped backstop behind Groq — no
+    // daily/per-minute cap the way Gemini/Groq's free tiers have. false
+    // means a Gemini-AND-Groq-exhausted, Anthropic-unfunded day has no real
+    // fallback left besides the stale-resend backup layer.
+    deepseek: !!process.env.DEEPSEEK_API_KEY,
   };
   return NextResponse.json({
     ok: true,

@@ -1,6 +1,7 @@
 import { anthropicClient, anthropicConfigured, EDITOR_NOTE_MODEL, isAnthropicUnavailable } from "./client";
 import { geminiConfigured, geminiGenerateText } from "./gemini-client";
 import { groqConfigured, groqGenerateText } from "./groq-client";
+import { deepseekConfigured, deepseekGenerateText } from "./deepseek-client";
 import { sanitizeVoice, containsMetaLeak } from "./voice-guard";
 import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
@@ -157,6 +158,14 @@ Write the editor's note for this reader's letter today.`;
       note = (await groqGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
     } catch (groqErr) {
       console.warn(`[editor-note] Groq fallback failed: ${groqErr instanceof Error ? groqErr.message : groqErr}`);
+    }
+  }
+
+  if (note === undefined && deepseekConfigured()) {
+    try {
+      note = (await deepseekGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
+    } catch (deepseekErr) {
+      console.warn(`[editor-note] DeepSeek fallback failed: ${deepseekErr instanceof Error ? deepseekErr.message : deepseekErr}`);
     }
   }
 

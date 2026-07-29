@@ -1,6 +1,7 @@
 import { anthropicClient, anthropicConfigured, BLURB_MODEL, BLURB_CHEAP_MODEL } from "./client";
 import { geminiConfigured, geminiGenerateText, GeminiTruncatedError } from "./gemini-client";
 import { groqConfigured, groqGenerateText, GroqTruncatedError } from "./groq-client";
+import { deepseekConfigured, deepseekGenerateText, DeepSeekTruncatedError } from "./deepseek-client";
 import { topicLabel } from "@/lib/topics";
 import { extractSignalUrls, enforceSignalUrls } from "./url-guard";
 import { sanitizeVoice, containsMetaLeak, findLexicalTells } from "./voice-guard";
@@ -245,21 +246,55 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       return await attempt();
     } catch (e) {
       if (e instanceof GroqTruncatedError) {
-        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq draft truncated, escalating to Haiku`);
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq draft truncated, escalating to DeepSeek`);
         return null;
       }
       const msg = e instanceof Error ? e.message : String(e);
       if (/ 429:/.test(msg)) {
         // Same reasoning as tryGemini's 429-skip above — deterministic within
         // this request window, an immediate retry can't succeed.
-        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq quota exhausted (429), skipping the retry, escalating to Haiku`);
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq quota exhausted (429), skipping the retry, escalating to DeepSeek`);
         return null;
       }
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq draft failed, retrying once: ${msg}`);
       try {
         return await attempt();
       } catch (e2) {
-        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq retry also failed, escalating to Haiku: ${e2 instanceof Error ? e2.message : e2}`);
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq retry also failed, escalating to DeepSeek: ${e2 instanceof Error ? e2.message : e2}`);
+        return null;
+      }
+    }
+  }
+
+  // DeepSeek attempt — the uncapped backstop tier, tried between Groq and
+  // Haiku (2026-07-29). Unlike Gemini/Groq's free tiers, DeepSeek has no
+  // daily/per-minute cap to run into — this is the tier that makes "the
+  // letters keep going out no matter what" actually true rather than
+  // "usually true." Same retry-once-on-parse-failure shape as tryGroq above,
+  // never throws — a failure here just means "escalate to Haiku (or, if
+  // Anthropic isn't configured, this topic is done)".
+  async function tryDeepSeek(): Promise<ParsedBlurb | null> {
+    async function attempt(): Promise<ParsedBlurb> {
+      const text = await deepseekGenerateText(SYSTEM_PROMPT, userPrompt, 4000);
+      return extractJson(text);
+    }
+    try {
+      return await attempt();
+    } catch (e) {
+      if (e instanceof DeepSeekTruncatedError) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek draft truncated, escalating to Haiku`);
+        return null;
+      }
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/ 429:/.test(msg)) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek quota exhausted (429), skipping the retry, escalating to Haiku`);
+        return null;
+      }
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek draft failed, retrying once: ${msg}`);
+      try {
+        return await attempt();
+      } catch (e2) {
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek retry also failed, escalating to Haiku: ${e2 instanceof Error ? e2.message : e2}`);
         return null;
       }
     }
@@ -487,8 +522,26 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       }
       console.warn(
         finalized.items.length === 0
-          ? `[topic-blurb] ${topicId} ${weekOf}: Groq draft had 0 usable items after guards, escalating to Haiku`
-          : `[topic-blurb] ${topicId} ${weekOf}: Groq draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Haiku`
+          ? `[topic-blurb] ${topicId} ${weekOf}: Groq draft had 0 usable items after guards, escalating to DeepSeek`
+          : `[topic-blurb] ${topicId} ${weekOf}: Groq draft slipped a banned word (${finalized.tells.join(", ")}), escalating to DeepSeek`
+      );
+    }
+  }
+
+  // DeepSeek — the uncapped backstop, tried regardless of whether Anthropic
+  // is configured (2026-07-29): cheap either way, and there's no reason to
+  // skip a working tier just because a later one also exists.
+  if (deepseekConfigured()) {
+    const deepseekParsed = await tryDeepSeek();
+    if (deepseekParsed) {
+      const finalized = finalizeBlurb(deepseekParsed);
+      if (finalized.items.length > 0 && finalized.tells.length === 0) {
+        return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
+      }
+      console.warn(
+        finalized.items.length === 0
+          ? `[topic-blurb] ${topicId} ${weekOf}: DeepSeek draft had 0 usable items after guards, escalating to Haiku`
+          : `[topic-blurb] ${topicId} ${weekOf}: DeepSeek draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Haiku`
       );
     }
   }
