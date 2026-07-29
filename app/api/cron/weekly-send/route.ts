@@ -3,11 +3,12 @@ import crypto from "crypto";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { generateIssue, formatWeekOf } from "@/lib/engine/assemble";
 import { poolCap } from "@/lib/engine/select-sections";
+import { getCachedBlurbs } from "@/lib/engine/blurb-cache";
 import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { braveRateLimitedCount } from "@/lib/brave";
-import { topicLabel, mapTopicsForUser } from "@/lib/topics";
+import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId, Issue } from "@/lib/types";
 import { clampQuota } from "@/lib/types";
@@ -187,8 +188,11 @@ export async function GET(req: Request) {
   // catch block below) — counted separately from `sent`/`failed` so the
   // summary distinguishes "the pipeline had a problem, but nobody got
   // nothing" from either a clean run or a genuine miss. Split by which layer
-  // rescued it: fresh (a small fast retry, real new content) vs stale (a
-  // repeat of their last letter, the true last resort).
+  // rescued it: shared (borrowed from broadly-appealing content another
+  // topic already cached today — zero new AI calls, the fastest/most
+  // reliable), fresh (a small fast retry, real new content this reader's
+  // own), or stale (a repeat of their last letter, the true last resort).
+  let backupSharedSent = 0;
   let backupFreshSent = 0;
   let backupStaleSent = 0;
   let skippedNoName = 0;
@@ -196,6 +200,7 @@ export async function GET(req: Request) {
   let skippedAlreadyDelivered = 0;
   let failed = 0;
   const failures: Array<{ email: string; error: string }> = [];
+  const backupSharedSentEmails: string[] = [];
   const backupFreshSentEmails: string[] = [];
   const backupStaleSentEmails: string[] = [];
   // Emails of ACTIVE PAID subscribers who got NOTHING this send (blank name or
@@ -338,7 +343,7 @@ export async function GET(req: Request) {
     // live-generated send below AND both backup layers in the catch block —
     // identical idempotency/claim/rollback guarantees every time; the only
     // difference is which Issue gets persisted and which counter it credits.
-    async function runPersistAndSend(issue: Issue, kind: "live" | "backup-fresh" | "backup-stale"): Promise<void> {
+    async function runPersistAndSend(issue: Issue, kind: "live" | "backup-shared" | "backup-fresh" | "backup-stale"): Promise<void> {
       // Upsert the issue so re-runs are idempotent on (user_id, week_of).
       // THROW on failure (caught by the caller) — if this row doesn't exist,
       // the email must NOT go out: the delivered_at CLAIM below targets this
@@ -453,7 +458,11 @@ export async function GET(req: Request) {
       // early-return above so a dev/misconfig run with Resend unset doesn't
       // over-report for letters that never went out.
       const labels = issue.sections.map((s) => s.topicLabel).filter(Boolean).join(" · ");
-      if (kind === "backup-fresh") {
+      if (kind === "backup-shared") {
+        backupSharedSent++;
+        backupSharedSentEmails.push(row.email);
+        console.log(`[cron/weekly-send] sent BACKUP-SHARED (borrowed from today's cache) → ${row.email} (${labels})`);
+      } else if (kind === "backup-fresh") {
         backupFreshSent++;
         backupFreshSentEmails.push(row.email);
         console.log(`[cron/weekly-send] sent BACKUP-FRESH (small fast retry) → ${row.email} (${labels})`);
@@ -498,15 +507,61 @@ export async function GET(req: Request) {
       failures.push({ email: row.email, error: msg });
       console.error(`[cron/weekly-send] FAILED → ${row.email}: ${msg}`);
 
-      // Two-layer backup (incident 2026-07-29 — see memory). A stale resend
-      // ALONE isn't good enough: if the underlying problem persists across
-      // days, every subscriber would get the identical repeat letter
+      // Three-layer backup (incident 2026-07-29 — see memory). A stale
+      // resend ALONE isn't good enough: if the underlying problem persists
+      // across days, every subscriber would get the identical repeat letter
       // day after day — recreating the exact "same content every time"
-      // complaint that started this whole investigation. So try for real,
-      // FRESH content first, and only fall back to a repeat as the true
-      // last resort.
+      // complaint that started this whole investigation. So try the
+      // cheapest/fastest/most-reliable real option first, then a small
+      // fresh live retry, and only fall back to a repeat as the true last
+      // resort.
       let backupIssue: Issue | null = null;
-      let backupIsFresh = false;
+      let backupKind: "backup-shared" | "backup-fresh" | "backup-stale" | null = null;
+
+      // LAYER 0 — cache-borrow: check for content ALREADY cached today
+      // across broadly-appealing topics (GENERIC_FALLBACK_TOPICS — the same
+      // deliberately non-personal, non-niche tail used for ordinary
+      // backfill, not this reader's own narrow picks — "relevant to anyone,
+      // not just what they chose" per Algy). Zero new AI calls, a single
+      // fast DB read, and doesn't depend on ANY provider being up — the
+      // cheapest, fastest, and most reliable option, so it's tried FIRST.
+      // Genuinely fresh (today's real content), just not this reader's own
+      // topics. Empty most of the time this run is the FIRST subscriber
+      // processed (nothing cached yet) — falls through to layer 1 then.
+      try {
+        const cached = await getCachedBlurbs(GENERIC_FALLBACK_TOPICS, weekOf);
+        const available = [...cached.values()].filter((b) => b.items.length > 0);
+        if (available.length >= 2) {
+          const chosen = available.slice(0, FAST_FALLBACK_TOPIC_COUNT);
+          // A short, sentence-friendly form, not the full catalog label
+          // (e.g. topicLabel("ai-news") is "AI: news, releases & tools for
+          // work" — reads fine as a menu entry, awkward mid-sentence).
+          const labels = chosen.map((b) => b.topicId.replace(/-/g, " "));
+          const list =
+            labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : labels[0];
+          backupIssue = {
+            id: `${profile.firstName.toLowerCase()}-${weekOf}-backup`,
+            volume: 1,
+            number: 1,
+            weekOf: formatWeekOf(weekOf),
+            recipientFirstName: profile.firstName,
+            recipientCity: profile.city,
+            editorIntro: `Your usual letter needs a bit more time today, so here's what's fresh right now across ${list}.`,
+            sections: chosen.map((b) => ({
+              topicId: b.topicId,
+              topicLabel: topicLabel(b.topicId),
+              intro: b.intro,
+              items: b.items,
+            })),
+          };
+          backupKind = "backup-shared";
+          console.warn(`[cron/weekly-send] cache-borrow succeeded → ${row.email} (${chosen.length} shared topics)`);
+        }
+      } catch (cacheErr) {
+        console.warn(
+          `[cron/weekly-send] cache-borrow check failed → ${row.email}: ${cacheErr instanceof Error ? cacheErr.message : cacheErr}`
+        );
+      }
 
       // LAYER 1 — fast fallback: a small, tightly-bounded retry through the
       // SAME (now-fixed) generation pipeline, just fewer topics. Catches the
@@ -514,29 +569,32 @@ export async function GET(req: Request) {
       // mechanism behind the incident — with real content, not a repeat. A
       // genuine full provider outage still fails this fast (bounded by
       // FAST_FALLBACK_DEADLINE_MS) and falls through to layer 2 below.
-      try {
-        const smallPool = pool.slice(0, FAST_FALLBACK_TOPIC_COUNT);
-        if (smallPool.length > 0) {
-          backupIssue = await withDeadline(
-            generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache),
-            FAST_FALLBACK_DEADLINE_MS,
-            `fast-fallback(${row.email})`
+      if (!backupIssue) {
+        try {
+          const smallPool = pool.slice(0, FAST_FALLBACK_TOPIC_COUNT);
+          if (smallPool.length > 0) {
+            backupIssue = await withDeadline(
+              generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache),
+              FAST_FALLBACK_DEADLINE_MS,
+              `fast-fallback(${row.email})`
+            );
+            backupKind = "backup-fresh";
+            console.warn(`[cron/weekly-send] fast fallback succeeded → ${row.email} (${smallPool.length} topics)`);
+          }
+        } catch (fastErr) {
+          console.warn(
+            `[cron/weekly-send] fast fallback ALSO failed → ${row.email}: ${fastErr instanceof Error ? fastErr.message : fastErr}`
           );
-          backupIsFresh = true;
-          console.warn(`[cron/weekly-send] fast fallback succeeded → ${row.email} (${smallPool.length} topics)`);
         }
-      } catch (fastErr) {
-        console.warn(
-          `[cron/weekly-send] fast fallback ALSO failed → ${row.email}: ${fastErr instanceof Error ? fastErr.message : fastErr}`
-        );
       }
 
       // LAYER 2 — true last resort: even the small fresh retry failed (a
-      // genuine outage, not just slowness). Resend their most recent
-      // successfully-delivered letter rather than nothing. Zero new AI
-      // calls, so it can't fail the same way either layer above just did.
-      // No prior letter (a brand-new subscriber) means nothing to fall back
-      // to — stays a hard failure, same as today. Honest that it's a repeat.
+      // genuine outage, not just slowness), and nothing else was cached
+      // today either. Resend their most recent successfully-delivered
+      // letter rather than nothing. Zero new AI calls, so it can't fail the
+      // same way either layer above just did. No prior letter (a brand-new
+      // subscriber) means nothing to fall back to — stays a hard failure,
+      // same as today. Honest that it's a repeat.
       if (!backupIssue) {
         try {
           const { data: prior } = await sb
@@ -559,6 +617,7 @@ export async function GET(req: Request) {
               editorIntro: "Quick note: today's letter is running behind, so here's a repeat of your last one while it catches up.",
               sections: prior.sections,
             };
+            backupKind = "backup-stale";
           }
         } catch (lookupErr) {
           console.error(
@@ -567,9 +626,9 @@ export async function GET(req: Request) {
         }
       }
 
-      if (backupIssue) {
+      if (backupIssue && backupKind) {
         try {
-          const backupSend = runPersistAndSend(backupIssue, backupIsFresh ? "backup-fresh" : "backup-stale");
+          const backupSend = runPersistAndSend(backupIssue, backupKind);
           after(backupSend.catch(() => undefined));
           await withDeadline(backupSend, PERSIST_AND_SEND_DEADLINE_MS, `backup-send(${row.email})`);
         } catch (backupErr) {
@@ -587,6 +646,8 @@ export async function GET(req: Request) {
     weekOf,
     subscribers: rows.length,
     sent,
+    backupSharedSent,
+    backupSharedSentEmails,
     backupFreshSent,
     backupFreshSentEmails,
     backupStaleSent,
@@ -613,14 +674,17 @@ export async function GET(req: Request) {
     // A "failed" subscriber isn't necessarily one who got nothing anymore —
     // some were caught by a backup layer. genuinelyMissed is the real
     // severity signal: failed minus however many were rescued either way.
-    const genuinelyMissed = failed - backupFreshSent - backupStaleSent;
+    const genuinelyMissed = failed - backupSharedSent - backupFreshSent - backupStaleSent;
     const lines = [
-      `weekOf=${weekOf}  sent=${sent}  backupFreshSent=${backupFreshSent}  backupStaleSent=${backupStaleSent}  subscribers=${rows.length}  failed=${failed}  genuinelyMissed=${genuinelyMissed}`,
+      `weekOf=${weekOf}  sent=${sent}  backupSharedSent=${backupSharedSent}  backupFreshSent=${backupFreshSent}  backupStaleSent=${backupStaleSent}  subscribers=${rows.length}  failed=${failed}  genuinelyMissed=${genuinelyMissed}`,
+      backupSharedSent > 0
+        ? `Live generation failed for ${failed} subscriber(s); ${backupSharedSent} of them got fresh, real content borrowed from a broadly-appealing topic already cached today (zero new AI calls): ${backupSharedSentEmails.join(", ")}.`
+        : "",
       backupFreshSent > 0
-        ? `Live generation failed for ${failed} subscriber(s), but ${backupFreshSent} of them got a real, FRESH (shorter) letter anyway via the fast-fallback retry: ${backupFreshSentEmails.join(", ")}.`
+        ? `${backupFreshSent} needed the next layer — a real, FRESH (shorter) letter via the small fast-fallback retry: ${backupFreshSentEmails.join(", ")}.`
         : "",
       backupStaleSent > 0
-        ? `${backupStaleSent} subscriber(s) needed the true last resort — their most recent prior letter, resent (they were told it's a repeat): ${backupStaleSentEmails.join(", ")}. Worth a closer look if this keeps happening — it means even the small fast retry is failing, not just the full one.`
+        ? `${backupStaleSent} subscriber(s) needed the true last resort — their most recent prior letter, resent (they were told it's a repeat): ${backupStaleSentEmails.join(", ")}. Worth a closer look if this keeps happening — it means even the cache-borrow and the fast retry are both failing, not just the full generation.`
         : "",
       skippedBlankSubscribers.length
         ? `PAID subscribers who got NOTHING (blank name / empty topics): ${skippedBlankSubscribers.join(", ")}`
