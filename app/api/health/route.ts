@@ -21,10 +21,14 @@ export async function GET() {
     // so a rotated/dropped key is visible at a glance BEFORE an outage is the
     // thing that reveals the fallback never armed.
     gemini: !!process.env.GEMINI_API_KEY,
+    // 3rd search tier (Brave -> Gemini -> You.com), same reasoning as gemini
+    // above — false means that last-resort tier is inert, not that the app
+    // is down.
+    you: !!process.env.YOU_API_KEY,
   };
   return NextResponse.json({
     ok: true,
-    version: "alpha-v0.62",
+    version: "alpha-v0.63",
     timestamp: new Date().toISOString(),
     checks,
   });
