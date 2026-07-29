@@ -197,7 +197,19 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft truncated, escalating to Haiku`);
         return null;
       }
-      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft failed, retrying once: ${e instanceof Error ? e.message : e}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/ 429:/.test(msg)) {
+        // Quota-exhausted is deterministic within the same request — an
+        // immediate retry hits the identical wall (quota resets are
+        // time-windowed, not per-attempt), so it's pure wasted latency, not a
+        // real second chance. Verified this was live-costing every topic
+        // ~20s for zero benefit while diagnosing a real incident (2026-07-29):
+        // subscribers missed letters because a full letter's per-topic
+        // waterfall stacked past the per-subscriber deadline.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini quota exhausted (429), skipping the retry, escalating to Haiku`);
+        return null;
+      }
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft failed, retrying once: ${msg}`);
       try {
         return await attempt();
       } catch (e2) {
@@ -370,49 +382,47 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     return { intro, items: cleanItems, tells };
   }
 
-  // Gives a tier ONE more fresh attempt when its draft slipped a banned word
-  // (items.length > 0, but tells.length > 0) before giving up on that tier —
-  // separate from tryGemini/tryHaiku's OWN internal retry, which only covers
-  // an API/parse failure, not a quality miss. Worth doing at every tier
-  // cheaper than the next one: a free 2nd Gemini try can rescue a case that
-  // would otherwise cost a paid Haiku call; a cheap 2nd Haiku try can rescue
-  // one that would otherwise cost the much pricier Sonnet call. Returns the
-  // finalized (guard-passed) result to ship, or null to escalate for real.
-  async function settleTier(
-    firstParsed: ParsedBlurb,
-    retryFn: () => Promise<ParsedBlurb | null>,
-    tierName: string,
-    nextTierName: string
-  ): Promise<{ intro: string; items: TopicBlurb["items"] } | null> {
-    let finalized = finalizeBlurb(firstParsed);
-    if (finalized.items.length > 0 && finalized.tells.length > 0) {
-      console.warn(`[topic-blurb] ${topicId} ${weekOf}: ${tierName} draft slipped a banned word (${finalized.tells.join(", ")}), retrying once before escalating`);
-      const retryParsed = await retryFn();
-      if (retryParsed) finalized = finalizeBlurb(retryParsed);
-    }
-    if (finalized.items.length > 0 && finalized.tells.length === 0) {
-      return { intro: finalized.intro, items: finalized.items };
-    }
-    console.warn(
-      finalized.items.length === 0
-        ? `[topic-blurb] ${topicId} ${weekOf}: ${tierName} draft had 0 usable items after guards, escalating to ${nextTierName}`
-        : `[topic-blurb] ${topicId} ${weekOf}: ${tierName} draft still slipping a banned word after retry (${finalized.tells.join(", ")}), escalating to ${nextTierName}`
-    );
-    return null;
-  }
-
+  // REVERTED 2026-07-29: a "retry-on-slip before escalating" pass on Gemini
+  // and Haiku (added 2026-07-23, commit ced68cee) doubled each cheap tier's
+  // worst-case attempts. Verified in isolation as fine (9-21s for one topic)
+  // but NEVER tested under real concurrent multi-topic load, which is what
+  // actually matters — a full letter runs every topic's tiers in parallel,
+  // so the doubled worst-case compounded across topics. Reproduced live: a
+  // real 10-topic letter (Algy's actual pool) took 129.8s against the 110s
+  // per-subscriber deadline, which is EXACTLY the failure mode that put
+  // subscribers here — no issue row gets written at all when that deadline
+  // trips, matching the missing-letter pattern this incident traced. Cost
+  // optimization is real but not worth this: the app functioning correctly
+  // is the higher priority, stated explicitly when this whole effort started.
+  // Straight escalation restored: each tier gets exactly ONE shot (still with
+  // its own internal retry-on-API/parse-failure only, not on a quality slip)
+  // before moving to the next.
   if (geminiConfigured()) {
     const geminiParsed = await tryGemini();
     if (geminiParsed) {
-      const settled = await settleTier(geminiParsed, tryGemini, "Gemini", "Haiku");
-      if (settled) return { topicId, topicLabel: label, weekOf, ...settled };
+      const finalized = finalizeBlurb(geminiParsed);
+      if (finalized.items.length > 0 && finalized.tells.length === 0) {
+        return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
+      }
+      console.warn(
+        finalized.items.length === 0
+          ? `[topic-blurb] ${topicId} ${weekOf}: Gemini draft had 0 usable items after guards, escalating to Haiku`
+          : `[topic-blurb] ${topicId} ${weekOf}: Gemini draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Haiku`
+      );
     }
   }
 
   const haikuParsed = await tryHaiku();
   if (haikuParsed) {
-    const settled = await settleTier(haikuParsed, tryHaiku, "Haiku", "Sonnet");
-    if (settled) return { topicId, topicLabel: label, weekOf, ...settled };
+    const finalized = finalizeBlurb(haikuParsed);
+    if (finalized.items.length > 0 && finalized.tells.length === 0) {
+      return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
+    }
+    console.warn(
+      finalized.items.length === 0
+        ? `[topic-blurb] ${topicId} ${weekOf}: Haiku draft had 0 usable items after guards, escalating to Sonnet`
+        : `[topic-blurb] ${topicId} ${weekOf}: Haiku draft slipped a banned word (${finalized.tells.join(", ")}), escalating to Sonnet`
+    );
   }
 
   const sonnetParsed = await trySonnet();
