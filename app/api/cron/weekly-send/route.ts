@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import crypto from "crypto";
 import { supabaseServiceClient } from "@/lib/supabase/server";
-import { generateIssue } from "@/lib/engine/assemble";
+import { generateIssue, formatWeekOf } from "@/lib/engine/assemble";
 import { poolCap } from "@/lib/engine/select-sections";
 import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
@@ -9,7 +9,7 @@ import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
 import { braveRateLimitedCount } from "@/lib/brave";
 import { topicLabel, mapTopicsForUser } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
-import type { UserProfile, TopicId } from "@/lib/types";
+import type { UserProfile, TopicId, Issue } from "@/lib/types";
 import { clampQuota } from "@/lib/types";
 import { coerceGender } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
@@ -163,11 +163,18 @@ export async function GET(req: Request) {
   // comment on braveRateLimitedCount in lib/brave.ts.
   const braveBaseline = braveRateLimitedCount();
   let sent = 0;
+  // Live generation failed/timed out, but the subscriber still got a REAL
+  // letter — their most recent previously-delivered one, resent (see the
+  // catch block below). Counted separately from `sent`/`failed` so the
+  // summary distinguishes "the pipeline had a problem, but nobody got
+  // nothing" from either a clean run or a genuine miss.
+  let backupSent = 0;
   let skippedNoName = 0;
   let skippedEmptyPool = 0;
   let skippedAlreadyDelivered = 0;
   let failed = 0;
   const failures: Array<{ email: string; error: string }> = [];
+  const backupSentEmails: string[] = [];
   // Emails of ACTIVE PAID subscribers who got NOTHING this send (blank name or
   // empty topic pool). Every row in this loop already passed the subscribed +
   // live-access filter, so anything here is a paying reader silently receiving
@@ -302,6 +309,138 @@ export async function GET(req: Request) {
       email: row.email,
     };
 
+    // Persist + send ONE issue for this subscriber, bounded by
+    // PERSIST_AND_SEND_DEADLINE_MS (see its comment above) so a hung
+    // Supabase/Resend call can't park this whole loop. Shared by the normal
+    // live-generated send below AND the backup-resend fallback in the catch
+    // block — identical idempotency/claim/rollback guarantees either way;
+    // the only difference is which Issue gets persisted and which counter
+    // (sent vs backupSent) it credits.
+    async function runPersistAndSend(issue: Issue, isBackup: boolean): Promise<void> {
+      // Upsert the issue so re-runs are idempotent on (user_id, week_of).
+      // THROW on failure (caught by the caller) — if this row doesn't exist,
+      // the email must NOT go out: the delivered_at CLAIM below targets this
+      // exact row, so a missing row means no claim and no send. Skipping the
+      // send means the next run retries the whole user cleanly.
+      const { error: issueUpsertErr } = await sb.from("issues").upsert(
+        {
+          user_id: row.id,
+          week_of: weekOf,
+          volume: issue.volume,
+          number: issue.number,
+          editor_intro: issue.editorIntro,
+          sections: issue.sections,
+        },
+        { onConflict: "user_id,week_of" }
+      );
+      if (issueUpsertErr) {
+        throw new Error(`issue upsert failed: ${issueUpsertErr.message}`);
+      }
+
+      // Send the letter via Resend (lib/email.ts).
+      if (!resendConfigured()) return;
+
+      // ATOMIC delivered_at CLAIM — the race-safe idempotency guard. The
+      // prefetch Set above is a cheap fast-path for the common SEQUENTIAL
+      // rerun; it does NOT stop two OVERLAPPING invocations (a Vercel retry
+      // racing the scheduled run, or a manual run racing the cron) from both
+      // seeing the user as undelivered and both sending a duplicate. This
+      // UPDATE ... WHERE delivered_at IS NULL is an atomic compare-and-swap:
+      // Postgres row-locks the issue so exactly ONE concurrent invocation
+      // flips the stamp and proceeds; the loser updates 0 rows and skips. We
+      // stamp BEFORE the send (was: best-effort stamp after) and roll back on
+      // send failure — trading the old "stamp-fail/crash -> DUPLICATE" for a
+      // far rarer "hard crash between claim and send -> missed once". A missed
+      // letter is less harmful than a duplicate. ?force=1 bypasses the claim.
+      let claimedAt: string | null = null;
+      if (!force) {
+        claimedAt = new Date().toISOString();
+        const { data: claimRows, error: claimErr } = await sb
+          .from("issues")
+          .update({ delivered_at: claimedAt })
+          .eq("user_id", row.id)
+          .eq("week_of", weekOf)
+          .is("delivered_at", null)
+          .select("user_id");
+        if (claimErr) {
+          throw new Error(`delivered_at claim failed: ${claimErr.message}`);
+        }
+        if ((claimRows?.length ?? 0) === 0) {
+          skippedAlreadyDelivered++;
+          console.log(`[cron/weekly-send] skipped (claimed by a concurrent run) → ${row.email}`);
+          return;
+        }
+      }
+
+      const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
+      const inboxUrl = `${origin}/inbox`;
+      try {
+        await sendLetterNotification({
+          to: row.email,
+          // profile.firstName, not row.first_name: the null-check guard
+          // above narrows row.first_name in the outer loop body, but that
+          // narrowing doesn't carry into this nested function, and
+          // profile.firstName is already the guaranteed-non-null string.
+          firstName: profile.firstName,
+          issue,
+          inboxUrl,
+          // Tokenized view-in-browser link: the CTA opens the letter directly
+          // with no session — no more "No letter yet" on a signed-out device.
+          letterUrl: buildLetterUrl(row.id, origin, weekOf),
+          issueNumber: (priorIssueCount.get(row.id) ?? 0) + 1,
+          userId: row.id,
+        });
+      } catch (sendErr) {
+        if (!force && claimedAt) {
+          // Release the claim so the next run retries this user cleanly.
+          // Predicate-guarded on OUR exact claim timestamp so we only ever
+          // retract the stamp THIS invocation set — never one a concurrent
+          // run wrote, which would risk nulling a real, just-sent delivery.
+          const { error: rollbackErr } = await sb
+            .from("issues")
+            .update({ delivered_at: null })
+            .eq("user_id", row.id)
+            .eq("week_of", weekOf)
+            .eq("delivered_at", claimedAt);
+          if (rollbackErr) {
+            console.warn(
+              `[cron/weekly-send] send failed AND claim rollback failed for ${row.email}: ${rollbackErr.message} — may be skipped (missed) next run.`
+            );
+          }
+        }
+        throw sendErr;
+      }
+
+      if (force) {
+        // The force path skipped the claim; stamp after a successful resend so
+        // a later normal run doesn't treat this user as undelivered and send
+        // again. Best-effort — force is an admin-driven one-off.
+        const { error: stampErr } = await sb
+          .from("issues")
+          .update({ delivered_at: new Date().toISOString() })
+          .eq("user_id", row.id)
+          .eq("week_of", weekOf);
+        if (stampErr) {
+          console.warn(
+            `[cron/weekly-send] force resend sent but delivered_at stamp failed for ${row.email}: ${stampErr.message}`
+          );
+        }
+      }
+
+      // Count + log only on an ACTUAL send — inside resendConfigured's
+      // early-return above so a dev/misconfig run with Resend unset doesn't
+      // over-report for letters that never went out.
+      const labels = issue.sections.map((s) => s.topicLabel).filter(Boolean).join(" · ");
+      if (isBackup) {
+        backupSent++;
+        backupSentEmails.push(row.email);
+        console.log(`[cron/weekly-send] sent BACKUP (resend of a prior letter) → ${row.email} (${labels})`);
+      } else {
+        sent++;
+        console.log(`[cron/weekly-send] sent → ${row.email} (${labels})`);
+      }
+    }
+
     try {
       const issue = await withDeadline(
         generateIssue(profile, weekOf, letterSize, freshness, dryCache),
@@ -309,152 +448,22 @@ export async function GET(req: Request) {
         `generateIssue(${row.email})`
       );
 
-      // Persist + send, bounded by PERSIST_AND_SEND_DEADLINE_MS (see its
-      // comment) so a hung Supabase/Resend call can't park this whole loop.
-      // A timeout here throws into the per-subscriber catch below exactly
-      // like any other failure. Registered with Next's after() UNCONDITIONALLY
-      // (not just on timeout) so Vercel is told to keep this invocation's
-      // lambda alive until the promise settles even if it's still running
-      // once the whole cron GET returns its response — without this, a
-      // subscriber whose persist+send outlives the response risks getting its
-      // execution environment torn down mid-write (e.g. between claiming
-      // delivered_at and actually sending), which could leave a claim stuck
-      // with no email ever sent — a genuine silent-miss regression that did
-      // not exist before this block was pulled out from the main sequential
-      // await chain. after() on an already-settled promise is a harmless
-      // no-op, so this is safe to call every time, not just in the timeout
-      // path. NOTE: sent/failed/failures below can still end up double
-      // -counting a subscriber whose send succeeds in the background AFTER
-      // the timeout branch already ran (this run's ops-alert email may then
-      // wrongly list them as failed) — accepted: the actual delivered_at
-      // claim and the actual email are correct either way, this only risks a
-      // cosmetic inaccuracy in one day's summary, not a duplicate or a
-      // silent miss, and a fully precise fix needs deferred cross-subscriber
-      // reconciliation that isn't proportionate to add tonight.
-      const persistAndSend = (async () => {
-          // Upsert the issue so re-runs are idempotent on (user_id, week_of).
-          // THROW on failure (caught by the per-user catch below) — if this row
-          // doesn't exist, the email must NOT go out: the delivered_at CLAIM below
-          // targets this exact row, so a missing row means no claim and no send.
-          // Skipping the send means the next run retries the whole user cleanly.
-          const { error: issueUpsertErr } = await sb.from("issues").upsert(
-            {
-              user_id: row.id,
-              week_of: weekOf,
-              volume: issue.volume,
-              number: issue.number,
-              editor_intro: issue.editorIntro,
-              sections: issue.sections,
-            },
-            { onConflict: "user_id,week_of" }
-          );
-          if (issueUpsertErr) {
-            throw new Error(`issue upsert failed: ${issueUpsertErr.message}`);
-          }
-
-          // Send the letter via Resend (lib/email.ts).
-          if (!resendConfigured()) return;
-
-          // ATOMIC delivered_at CLAIM — the race-safe idempotency guard. The
-          // prefetch Set above is a cheap fast-path for the common SEQUENTIAL
-          // rerun; it does NOT stop two OVERLAPPING invocations (a Vercel retry
-          // racing the scheduled run, or a manual run racing the cron) from both
-          // seeing the user as undelivered and both sending a duplicate. This
-          // UPDATE ... WHERE delivered_at IS NULL is an atomic compare-and-swap:
-          // Postgres row-locks the issue so exactly ONE concurrent invocation
-          // flips the stamp and proceeds; the loser updates 0 rows and skips. We
-          // stamp BEFORE the send (was: best-effort stamp after) and roll back on
-          // send failure — trading the old "stamp-fail/crash -> DUPLICATE" for a
-          // far rarer "hard crash between claim and send -> missed once". A missed
-          // letter is less harmful than a duplicate. ?force=1 bypasses the claim.
-          let claimedAt: string | null = null;
-          if (!force) {
-            claimedAt = new Date().toISOString();
-            const { data: claimRows, error: claimErr } = await sb
-              .from("issues")
-              .update({ delivered_at: claimedAt })
-              .eq("user_id", row.id)
-              .eq("week_of", weekOf)
-              .is("delivered_at", null)
-              .select("user_id");
-            if (claimErr) {
-              throw new Error(`delivered_at claim failed: ${claimErr.message}`);
-            }
-            if ((claimRows?.length ?? 0) === 0) {
-              skippedAlreadyDelivered++;
-              console.log(`[cron/weekly-send] skipped (claimed by a concurrent run) → ${row.email}`);
-              return;
-            }
-          }
-
-          const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
-          const inboxUrl = `${origin}/inbox`;
-          try {
-            await sendLetterNotification({
-              to: row.email,
-              // profile.firstName, not row.first_name: the null-check guard
-              // above narrows row.first_name in the outer loop body, but that
-              // narrowing doesn't carry into this nested closure, and
-              // profile.firstName is already the guaranteed-non-null string.
-              firstName: profile.firstName,
-              issue,
-              inboxUrl,
-              // Tokenized view-in-browser link: the CTA opens the letter directly
-              // with no session — no more "No letter yet" on a signed-out device.
-              letterUrl: buildLetterUrl(row.id, origin, weekOf),
-              issueNumber: (priorIssueCount.get(row.id) ?? 0) + 1,
-              userId: row.id,
-            });
-          } catch (sendErr) {
-            if (!force && claimedAt) {
-              // Release the claim so the next run retries this user cleanly.
-              // Predicate-guarded on OUR exact claim timestamp so we only ever
-              // retract the stamp THIS invocation set — never one a concurrent
-              // run wrote, which would risk nulling a real, just-sent delivery.
-              const { error: rollbackErr } = await sb
-                .from("issues")
-                .update({ delivered_at: null })
-                .eq("user_id", row.id)
-                .eq("week_of", weekOf)
-                .eq("delivered_at", claimedAt);
-              if (rollbackErr) {
-                console.warn(
-                  `[cron/weekly-send] send failed AND claim rollback failed for ${row.email}: ${rollbackErr.message} — may be skipped (missed) next run.`
-                );
-              }
-            }
-            throw sendErr;
-          }
-
-          if (force) {
-            // The force path skipped the claim; stamp after a successful resend so
-            // a later normal run doesn't treat this user as undelivered and send
-            // again. Best-effort — force is an admin-driven one-off.
-            const { error: stampErr } = await sb
-              .from("issues")
-              .update({ delivered_at: new Date().toISOString() })
-              .eq("user_id", row.id)
-              .eq("week_of", weekOf);
-            if (stampErr) {
-              console.warn(
-                `[cron/weekly-send] force resend sent but delivered_at stamp failed for ${row.email}: ${stampErr.message}`
-              );
-            }
-          }
-
-          // Count + log only on an ACTUAL send — inside resendConfigured's
-          // early-return above so a dev/misconfig run with Resend unset
-          // doesn't over-report `sent` for letters that never went out.
-          sent++;
-          // Log the sections that actually made the letter (top fresh topics +
-          // any backfill), not the whole pool.
-          const labels = issue.sections
-            .map((s) => s.topicLabel)
-            .filter(Boolean)
-            .join(" · ");
-          console.log(`[cron/weekly-send] sent → ${row.email} (${labels})`);
-        })();
-
+      // Registered with Next's after() UNCONDITIONALLY (not just on timeout)
+      // so Vercel is told to keep this invocation's lambda alive until the
+      // promise settles even if it's still running once the whole cron GET
+      // returns its response — without this, a subscriber whose persist+send
+      // outlives the response risks getting its execution environment torn
+      // down mid-write (e.g. between claiming delivered_at and actually
+      // sending), which could leave a claim stuck with no email ever sent.
+      // after() on an already-settled promise is a harmless no-op, so this is
+      // safe to call every time, not just in the timeout path. NOTE:
+      // sent/failed/failures below can still end up double-counting a
+      // subscriber whose send succeeds in the background AFTER the timeout
+      // branch already ran (this run's ops-alert email may then wrongly list
+      // them as failed) — accepted: the actual delivered_at claim and the
+      // actual email are correct either way, this only risks a cosmetic
+      // inaccuracy in one day's summary, not a duplicate or a silent miss.
+      const persistAndSend = runPersistAndSend(issue, false);
       after(persistAndSend.catch(() => undefined));
       await withDeadline(persistAndSend, PERSIST_AND_SEND_DEADLINE_MS, `persist+send(${row.email})`);
     } catch (e) {
@@ -462,6 +471,46 @@ export async function GET(req: Request) {
       const msg = e instanceof Error ? e.message : "unknown";
       failures.push({ email: row.email, error: msg });
       console.error(`[cron/weekly-send] FAILED → ${row.email}: ${msg}`);
+
+      // BACKUP: live generation failed or timed out (incident 2026-07-29 —
+      // see memory). Rather than this subscriber getting NOTHING today, try
+      // resending their most recent successfully-delivered letter. Zero new
+      // AI calls, so this can't fail the same way the live path just did —
+      // it's a plain DB read + the same persist/send path already proven
+      // above, not a new generation attempt. If they've never received a
+      // letter before there's nothing to fall back to and this is a no-op
+      // (stays a hard failure, same as today). The intro is honest about
+      // being a repeat rather than pretending it's fresh.
+      try {
+        const { data: prior } = await sb
+          .from("issues")
+          .select("sections")
+          .eq("user_id", row.id)
+          .not("delivered_at", "is", null)
+          .lt("week_of", weekOf)
+          .order("week_of", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (prior?.sections) {
+          const backupIssue: Issue = {
+            id: `${profile.firstName.toLowerCase()}-${weekOf}-backup`,
+            volume: 1,
+            number: 1,
+            weekOf: formatWeekOf(weekOf),
+            recipientFirstName: profile.firstName,
+            recipientCity: profile.city,
+            editorIntro: "Quick note: today's letter is running behind, so here's a repeat of your last one while it catches up.",
+            sections: prior.sections,
+          };
+          const backupSend = runPersistAndSend(backupIssue, true);
+          after(backupSend.catch(() => undefined));
+          await withDeadline(backupSend, PERSIST_AND_SEND_DEADLINE_MS, `backup-send(${row.email})`);
+        }
+      } catch (backupErr) {
+        console.error(
+          `[cron/weekly-send] backup resend ALSO failed → ${row.email}: ${backupErr instanceof Error ? backupErr.message : backupErr}`
+        );
+      }
     }
   }
 
@@ -471,6 +520,8 @@ export async function GET(req: Request) {
     weekOf,
     subscribers: rows.length,
     sent,
+    backupSent,
+    backupSentEmails,
     skippedNoName,
     skippedEmptyPool,
     skippedBlankSubscribers,
@@ -490,13 +541,20 @@ export async function GET(req: Request) {
   // letter is noticed missing. Best-effort single email per run (sendOpsAlert
   // never throws), only when something actually went wrong.
   if (skippedBlankSubscribers.length > 0 || failed > 0 || braveRateLimited > 0 || deferred.length > 0) {
+    // A "failed" subscriber isn't necessarily one who got nothing anymore —
+    // some of them were caught by the backup-resend fallback. genuinelyMissed
+    // is the real severity signal: failed minus however many were rescued.
+    const genuinelyMissed = failed - backupSent;
     const lines = [
-      `weekOf=${weekOf}  sent=${sent}  subscribers=${rows.length}  failed=${failed}`,
+      `weekOf=${weekOf}  sent=${sent}  backupSent=${backupSent}  subscribers=${rows.length}  failed=${failed}  genuinelyMissed=${genuinelyMissed}`,
+      backupSent > 0
+        ? `Live generation failed for ${failed} subscriber(s), but ${backupSent} of them got a real letter anyway — their most recent prior letter, resent (they were told it's a repeat): ${backupSentEmails.join(", ")}.`
+        : "",
       skippedBlankSubscribers.length
         ? `PAID subscribers who got NOTHING (blank name / empty topics): ${skippedBlankSubscribers.join(", ")}`
         : "",
       failures.length
-        ? `Send failures: ${failures.map((f) => `${f.email} (${f.error})`).join("; ")}`
+        ? `Underlying generation failures (root cause, investigate this even if backupSent covered them): ${failures.map((f) => `${f.email} (${f.error})`).join("; ")}`
         : "",
       braveRateLimited > 0
         ? `Brave returned 429 on ${braveRateLimited} queries — monthly search quota likely exhausted; letters are degrading to filler. Fix: upgrade the Brave plan (https://api.search.brave.com), ~$5-10/mo at this volume.`
@@ -506,7 +564,7 @@ export async function GET(req: Request) {
         : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed${braveRateLimited > 0 ? ", Brave quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred (time budget)` : ""}`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred (time budget)` : ""}`,
       lines.join("\n")
     );
   }

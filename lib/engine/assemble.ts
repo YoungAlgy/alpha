@@ -270,7 +270,7 @@ export async function generateIssue(
   return issue;
 }
 
-function formatWeekOf(iso: string): string {
+export function formatWeekOf(iso: string): string {
   // 2026-05-17 → "Sunday, May 17, 2026"
   const d = new Date(iso + "T12:00:00");
   return d.toLocaleDateString("en-US", {
