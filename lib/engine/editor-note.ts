@@ -60,6 +60,24 @@ function clamp(s: string | undefined, max: number): string | undefined {
   return t.length > max ? t.slice(0, max) : t;
 }
 
+// Shared shape for the Gemini/Groq/DeepSeek fallback tiers below — unlike
+// topic-blurb.ts's tryGemini/tryGroq/tryDeepSeek/tryHaiku (which genuinely
+// differ per tier: truncation-class error types, retry-once-on-parse-failure,
+// 429-skip-retry), these three blocks have zero behavioral difference beyond
+// which client function runs and what the log line calls it — a single
+// attempt, trimmed, logged and swallowed on failure. Not configured is the
+// same as "skip this tier," mirroring the config-gated pattern already used
+// for Claude/Gemini/Groq/DeepSeek above and in topic-blurb.ts.
+async function tryTextTier(label: string, configured: boolean, generate: () => Promise<string>): Promise<string | undefined> {
+  if (!configured) return undefined;
+  try {
+    return (await generate()).trim();
+  } catch (e) {
+    console.warn(`[editor-note] ${label} fallback failed: ${e instanceof Error ? e.message : e}`);
+    return undefined;
+  }
+}
+
 export async function generateEditorNote(
   user: UserProfile,
   blurbs: TopicBlurb[],
@@ -145,28 +163,16 @@ Write the editor's note for this reader's letter today.`;
     }
   }
 
-  if (note === undefined && geminiConfigured()) {
-    try {
-      note = (await geminiGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
-    } catch (geminiErr) {
-      console.warn(`[editor-note] Gemini fallback failed: ${geminiErr instanceof Error ? geminiErr.message : geminiErr}`);
-    }
+  if (note === undefined) {
+    note = await tryTextTier("Gemini", geminiConfigured(), () => geminiGenerateText(SYSTEM_PROMPT, userPrompt, 1000));
   }
 
-  if (note === undefined && groqConfigured()) {
-    try {
-      note = (await groqGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
-    } catch (groqErr) {
-      console.warn(`[editor-note] Groq fallback failed: ${groqErr instanceof Error ? groqErr.message : groqErr}`);
-    }
+  if (note === undefined) {
+    note = await tryTextTier("Groq", groqConfigured(), () => groqGenerateText(SYSTEM_PROMPT, userPrompt, 1000));
   }
 
-  if (note === undefined && deepseekConfigured()) {
-    try {
-      note = (await deepseekGenerateText(SYSTEM_PROMPT, userPrompt, 1000)).trim();
-    } catch (deepseekErr) {
-      console.warn(`[editor-note] DeepSeek fallback failed: ${deepseekErr instanceof Error ? deepseekErr.message : deepseekErr}`);
-    }
+  if (note === undefined) {
+    note = await tryTextTier("DeepSeek", deepseekConfigured(), () => deepseekGenerateText(SYSTEM_PROMPT, userPrompt, 1000));
   }
 
   if (note === undefined) {

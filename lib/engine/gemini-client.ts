@@ -64,7 +64,12 @@ async function callGemini(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Gemini ${model} ${res.status}: ${text.slice(0, 300)}`);
+    const err = new Error(`Gemini ${model} ${res.status}: ${text.slice(0, 300)}`);
+    // Attach the real numeric status so callers can check e.status === 429
+    // directly (topic-blurb.ts's isRateLimited, shared across all five
+    // generation tiers) instead of pattern-matching the message string.
+    (err as Error & { status?: number }).status = res.status;
+    throw err;
   }
   const data = (await res.json()) as GeminiResponse;
   return data.candidates?.[0];

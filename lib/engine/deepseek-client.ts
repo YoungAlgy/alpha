@@ -18,6 +18,8 @@
 // 2026-07-29), vastly larger than anything alpha's topic-blurb/editor-note
 // prompts ever approach, so there's no realistic way to hit a real ceiling.
 
+import { throwCompatError, extractCompatText, type CompatResponse } from "./openai-compat";
+
 const ENDPOINT = "https://api.deepseek.com/chat/completions";
 const MODEL = "deepseek-v4-flash";
 
@@ -34,24 +36,10 @@ export function deepseekRateLimitedCount(): number {
 
 export class DeepSeekTruncatedError extends Error {}
 
-interface DeepSeekChoice {
-  message?: { content?: string };
-  finish_reason?: string;
-}
-interface DeepSeekResponse {
-  choices?: DeepSeekChoice[];
-}
-
-async function failDeepSeek(res: Response): Promise<never> {
-  if (res.status === 429) rateLimitedCount += 1;
-  const text = await res.text().catch(() => "");
-  const err = new Error(`DeepSeek ${MODEL} ${res.status}: ${text.slice(0, 300)}`);
-  // Attach the real numeric status so callers can check e.status === 429
-  // directly (topic-blurb.ts's isRateLimited, the same check already used for
-  // Haiku/Sonnet's Anthropic errors and Groq's own failGroq) instead of
-  // pattern-matching the message string.
-  (err as Error & { status?: number }).status = res.status;
-  throw err;
+function failDeepSeek(res: Response): Promise<never> {
+  return throwCompatError("DeepSeek", MODEL, res, () => {
+    rateLimitedCount += 1;
+  });
 }
 
 // Plain text generation (topic-blurb / editor-note WRITING, same role as
@@ -93,16 +81,6 @@ export async function deepseekGenerateText(
 
   if (!res.ok) return failDeepSeek(res);
 
-  const data = (await res.json()) as DeepSeekResponse;
-  const choice = data.choices?.[0];
-  // "length" is OpenAI-schema's truncation signal (mirrors Claude's
-  // stop_reason==="max_tokens", Gemini's finishReason==="MAX_TOKENS", and
-  // Groq's own finish_reason==="length") — never trust a cut-off response as
-  // if it finished cleanly.
-  if (choice?.finish_reason === "length") {
-    throw new DeepSeekTruncatedError(`DeepSeek hit its ${maxOutputTokens}-token output ceiling`);
-  }
-  const text = choice?.message?.content ?? "";
-  if (!text.trim()) throw new Error("DeepSeek returned no text");
-  return text;
+  const data = (await res.json()) as CompatResponse;
+  return extractCompatText(data, "DeepSeek", maxOutputTokens, DeepSeekTruncatedError);
 }

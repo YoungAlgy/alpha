@@ -19,6 +19,7 @@
 // either would silently break in about two weeks.
 
 import { encode, decode } from "gpt-tokenizer";
+import { throwCompatError, extractCompatText, type CompatResponse } from "./openai-compat";
 
 const ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -94,14 +95,6 @@ export function truncateForGroq(systemPrompt: string, userPrompt: string): strin
   return `${cut}\n\n[...additional sources omitted to fit this provider's context limit...]`;
 }
 
-interface GroqChoice {
-  message?: { content?: string };
-  finish_reason?: string;
-}
-interface GroqResponse {
-  choices?: GroqChoice[];
-}
-
 async function postChatCompletion(
   key: string,
   systemPrompt: string,
@@ -137,30 +130,14 @@ async function postChatCompletion(
 }
 
 async function parseGroqSuccess(res: Response, maxOutputTokens: number): Promise<string> {
-  const data = (await res.json()) as GroqResponse;
-  const choice = data.choices?.[0];
-  // "length" is OpenAI-schema's truncation signal (mirrors Claude's
-  // stop_reason==="max_tokens" and Gemini's finishReason==="MAX_TOKENS") —
-  // never trust a cut-off response as if it finished cleanly.
-  if (choice?.finish_reason === "length") {
-    throw new GroqTruncatedError(`Groq hit its ${maxOutputTokens}-token output ceiling`);
-  }
-  const text = choice?.message?.content ?? "";
-  if (!text.trim()) throw new Error("Groq returned no text");
-  return text;
+  const data = (await res.json()) as CompatResponse;
+  return extractCompatText(data, "Groq", maxOutputTokens, GroqTruncatedError);
 }
 
-async function failGroq(res: Response): Promise<never> {
-  if (res.status === 429) rateLimitedCount += 1;
-  const text = await res.text().catch(() => "");
-  const err = new Error(`Groq ${MODEL} ${res.status}: ${text.slice(0, 300)}`);
-  // Attach the real numeric status so callers can check e.status === 429
-  // directly (topic-blurb.ts's isRateLimited, the same check already used for
-  // Haiku/Sonnet's Anthropic errors) instead of pattern-matching the message
-  // string, which is one incidental response-body substring away from a false
-  // positive/negative.
-  (err as Error & { status?: number }).status = res.status;
-  throw err;
+function failGroq(res: Response): Promise<never> {
+  return throwCompatError("Groq", MODEL, res, () => {
+    rateLimitedCount += 1;
+  });
 }
 
 // Plain text generation (topic-blurb / editor-note WRITING, same role as

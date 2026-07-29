@@ -13,15 +13,16 @@ function narrowKind(k: string | undefined): BlurbItemKind {
   return VALID_KINDS.includes(k as BlurbItemKind) ? (k as BlurbItemKind) : "note";
 }
 
-// Narrow "is this specifically a 429" check, shared by every tier's
-// retry-skip below (Haiku/Sonnet via the Anthropic SDK, Groq/DeepSeek via
-// their own thin clients) — deliberately NOT client.ts's
-// isAnthropicUnavailable, which is a broader "should we fall back to Gemini
-// for the whole call" classifier used elsewhere; this only needs the one
-// deterministic-quota-wall signal. The Anthropic SDK attaches a numeric
-// .status to its error objects natively; groq-client.ts/deepseek-client.ts's
-// failGroq/failDeepSeek attach the same shape deliberately so this one check
-// works for all four tiers instead of each needing its own error-shape logic.
+// Narrow "is this specifically a 429" check, shared by every one of the five
+// generation tiers' retry-skip below (Haiku/Sonnet via the Anthropic SDK,
+// Gemini/Groq/DeepSeek via their own thin clients) — deliberately NOT
+// client.ts's isAnthropicUnavailable, which is a broader "should we fall back
+// to Gemini for the whole call" classifier used elsewhere; this only needs
+// the one deterministic-quota-wall signal. The Anthropic SDK attaches a
+// numeric .status to its error objects natively; gemini-client.ts's
+// callGemini and groq-client.ts/deepseek-client.ts's failGroq/failDeepSeek
+// all attach the same shape deliberately so this one check works universally
+// instead of each tier needing its own error-shape logic.
 function isRateLimited(e: unknown): boolean {
   return typeof e === "object" && e !== null && "status" in e && (e as { status: unknown }).status === 429;
 }
@@ -212,8 +213,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft truncated, escalating to Groq`);
         return null;
       }
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/ 429:/.test(msg)) {
+      if (isRateLimited(e)) {
         // Quota-exhausted is deterministic within the same request — an
         // immediate retry hits the identical wall (quota resets are
         // time-windowed, not per-attempt), so it's pure wasted latency, not a
@@ -224,6 +224,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini quota exhausted (429), skipping the retry, escalating to Groq`);
         return null;
       }
+      const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: Gemini draft failed, retrying once: ${msg}`);
       try {
         return await attempt();
@@ -256,6 +257,23 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         // Same reasoning as tryGemini's 429-skip above — deterministic within
         // this request window, an immediate retry can't succeed.
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq quota exhausted (429), skipping the retry, escalating to DeepSeek`);
+        return null;
+      }
+      if (e instanceof BlurbParseError) {
+        // Groq-specific: skip the retry-once here, unlike every other tier.
+        // groqGenerateText already internally retries up to 4 times (halving
+        // content on each 413) before ever returning here, so a parse/shape
+        // failure is very likely the deterministic result of THAT truncation
+        // dance, not one-off model noise — retrying from tryGroq would redo
+        // the ENTIRE up-to-4-round halving loop from scratch on the exact
+        // same input (up to another ~80s of real Groq calls) for a failure
+        // unlikely to resolve differently. This app has already been burned
+        // once by a doubled-retry compounding under concurrent load (see the
+        // REVERTED note below on the Gemini/Haiku retry-on-slip revert) — no
+        // reason to reopen that specific risk for Groq alone, since Gemini/
+        // DeepSeek/Haiku/Sonnet's own retry-once each cost at most one extra
+        // bounded call, not up to four.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq draft unparseable, skipping the retry (would redo its own internal halving loop), escalating to DeepSeek`);
         return null;
       }
       const msg = e instanceof Error ? e.message : String(e);
@@ -624,14 +642,30 @@ interface ParsedBlurb {
 // Thrown when the model hit its output ceiling — deterministic, never retried.
 export class BlurbTruncatedError extends Error {}
 
+// Thrown by extractJson for every one of its own failure modes (no JSON
+// object found, JSON.parse itself failing, or a shape-invalid result) — a
+// distinct class from a generic Error so tryGroq specifically (see below) can
+// recognize "this is a parse/shape failure" and skip its own retry-once,
+// rather than lumping it in with genuinely-transient failures worth retrying.
+export class BlurbParseError extends Error {}
+
 function extractJson(text: string): ParsedBlurb {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start === -1 || end === -1) {
-    throw new Error("No JSON object found in model output:\n" + text.slice(0, 400));
+    throw new BlurbParseError("No JSON object found in model output:\n" + text.slice(0, 400));
   }
   const json = text.slice(start, end + 1);
-  const parsed: unknown = JSON.parse(json);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (e) {
+    // A SyntaxError here (unbalanced quotes/brackets mid-structure) is the
+    // same underlying failure class as the shape-invalid case below — both
+    // are what a truncated/cut-mid-context draft looks like — so it gets the
+    // same treatment: BlurbParseError, not a generic Error.
+    throw new BlurbParseError(`JSON.parse failed on model output: ${e instanceof Error ? e.message : e}\n` + json.slice(0, 400));
+  }
   // Shape-validate before trusting it as a ParsedBlurb — real-world case that
   // surfaced this (2026-07-29): a heavily-truncated draft (Groq's halving
   // retry, cutting mid-context) can still produce syntactically-VALID JSON
@@ -642,15 +676,15 @@ function extractJson(text: string): ParsedBlurb {
   // escalates to the next tier) and gets caught only by the OUTERMOST
   // genLive(id).catch(() => null) in select-sections.ts, silently discarding
   // the whole topic instead of giving the existing retry/escalation logic a
-  // chance to recover it. Throwing a plain Error here routes it back through
-  // that already-correct machinery instead.
+  // chance to recover it. Throwing BlurbParseError here routes it back
+  // through that already-correct machinery instead.
   if (
     typeof parsed !== "object" ||
     parsed === null ||
     !Array.isArray((parsed as { items?: unknown }).items) ||
     typeof (parsed as { intro?: unknown }).intro !== "string"
   ) {
-    throw new Error("Model output parsed as JSON but is not a valid blurb shape (missing intro/items):\n" + json.slice(0, 400));
+    throw new BlurbParseError("Model output parsed as JSON but is not a valid blurb shape (missing intro/items):\n" + json.slice(0, 400));
   }
   return parsed as ParsedBlurb;
 }

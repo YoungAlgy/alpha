@@ -58,8 +58,7 @@ try {
 // if thinking were still on, the reasoning tokens alone would very likely
 // blow through 60 tokens before any answer, throwing DeepSeekTruncatedError.
 try {
-  const { deepseekGenerateText: gen2 } = await import("../lib/engine/deepseek-client.ts");
-  const reasoningText = await gen2(
+  const reasoningText = await deepseekGenerateText(
     "You are a helpful assistant. Respond in plain prose, no markdown.",
     "9.11 and 9.8, which is greater? Answer in one short sentence.",
     60
@@ -108,10 +107,19 @@ try {
   console.error(`  (2) generateTopicBlurb threw: ${e instanceof Error ? e.message : e}`);
   check("(2) a real blurb came back with items", false);
   check("(2) intro is non-trivial", false);
+} finally {
+  // Restore here (not just after section 3) so section 3 re-forces its OWN
+  // precondition instead of silently depending on this section's leftover
+  // state — "force it, don't assume" (see verify-groq-fallback.mts's header
+  // comment), the same pattern that script's own sections 3/4 already use.
+  process.env.GEMINI_API_KEY = realGeminiKey;
+  process.env.GROQ_API_KEY = realGroqKey;
 }
 
 // --- 3) editor-note.ts's real fallback reaches DeepSeek ---------------------
 console.log("(3) editor-note.ts fallback: Anthropic down, Gemini down, Groq down -> DeepSeek writes the note");
+process.env.GEMINI_API_KEY = "NOT-A-REAL-KEY-forced-failure-test";
+process.env.GROQ_API_KEY = "gsk_invalid00000000000000000000000000000000";
 try {
   const { generateEditorNote } = await import("../lib/engine/editor-note.ts");
   const note = await generateEditorNote(
