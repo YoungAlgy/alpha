@@ -18,7 +18,14 @@
 // console.groq.com/docs/deprecations, verified live during research. Using
 // either would silently break in about two weeks.
 
-import { encode, decode } from "gpt-tokenizer";
+// Explicit cl100k_base import (not the top-level "gpt-tokenizer" package,
+// which defaults to o200k_base) -- o200k_base's BPE rank table alone is
+// 2.2MB, cl100k_base's is 1.1MB, and this file already treats the result as
+// an ESTIMATE regardless of which OpenAI encoding is used (gpt-oss-120b has
+// its own real tokenizer, matching neither) -- see the comment on
+// TPM_BUDGET below. Cuts the alpha Worker's biggest single bundle chunk
+// roughly in half with no behavior change.
+import { encode, decode } from "gpt-tokenizer/esm/model/gpt-3.5-turbo";
 import { throwCompatError, extractCompatText, type CompatResponse } from "./openai-compat";
 
 const ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";

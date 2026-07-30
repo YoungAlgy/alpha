@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const runtime = "nodejs";
-
 // Lightweight uptime check. Returns 200 if the app is alive + key env vars
 // are configured. Doesn't reach external services (Supabase, Stripe, etc.)
 // to keep the check fast and avoid cascading failures from downstream blips.
