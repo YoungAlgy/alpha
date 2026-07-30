@@ -13,19 +13,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   async redirects() {
     return [
-      // The apex (and www) exist to be typed; the brand home is the subdomain.
-      {
-        source: "/:path*",
-        has: [{ type: "host" as const, value: "everyday.report" }],
-        destination: "https://alpha.everyday.report/:path*",
-        permanent: true,
-      },
-      {
-        source: "/:path*",
-        has: [{ type: "host" as const, value: "www.everyday.report" }],
-        destination: "https://alpha.everyday.report/:path*",
-        permanent: true,
-      },
+      // The apex/www -> alpha.everyday.report host redirect lives in
+      // middleware.ts now, not here -- see that file's comment for why.
       // Safety net for any straggler still carrying the old /alpha prefix
       // (an old bookmark that reached this host directly, a hardcoded link).
       // Bare /alpha needs its own rule: with zero segments the :path* rule
