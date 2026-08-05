@@ -60,7 +60,13 @@ jobs:
       - name: Check Supabase for real, complete delivery in the last 20 hours
         env:
           SUPABASE_URL: ${{ secrets.WATCHDOG_SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.WATCHDOG_SUPABASE_SECRET_KEY }}
+          # Public anon/publishable key, NOT the full-privilege secret key --
+          # see the watchdog_delivery_check() migration (2026-08-05) for why.
+          # This key being in a GitHub secret is just hygiene/rotation-ease,
+          # not real protection -- it's the same key already compiled into
+          # the app's own client-side bundles, so a leak here isn't a
+          # meaningful new exposure the way the old secret key was.
+          SUPABASE_KEY: ${{ secrets.WATCHDOG_SUPABASE_ANON_KEY }}
           RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -111,39 +117,51 @@ jobs:
 
           # Real counts, not a limit=1 existence check -- a limit=1 check
           # can't tell "everyone got their letter" from "one subscriber got
-          # a letter and the run died 30 seconds later." 5000 is well above
-          # alpha's current subscriber count; raise it if that ever changes.
-          RESPONSE=$(curl -sS \
+          # a letter and the run died 30 seconds later." Both counts come
+          # from ONE call to watchdog_delivery_check() (see the 2026-08-05
+          # migration) instead of two raw table queries -- that RPC is
+          # security definer and returns only these two integers, callable
+          # with the anon key, so this never touches raw rows/PII and never
+          # needs the full-privilege secret key the first version of this
+          # workflow used.
+          RESPONSE=$(curl -sS -X POST \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            "${SUPABASE_URL}/rest/v1/issues?select=id,delivered_at&delivered_at=gte.${CUTOFF}&limit=5000")
+            -H "Content-Type: application/json" \
+            -d "{\"cutoff\": \"${CUTOFF}\"}" \
+            "${SUPABASE_URL}/rest/v1/rpc/watchdog_delivery_check")
           CURL_EXIT=$?
-          echo "Supabase issues response (curl exit ${CURL_EXIT}): ${RESPONSE}"
+          echo "Supabase RPC response (curl exit ${CURL_EXIT}): ${RESPONSE}"
 
-          # Explicit array check, not just `jq 'length'`: a Supabase error
-          # (bad key, RLS issue, etc.) comes back as a JSON OBJECT, and
-          # `length` on an object counts its KEYS -- an error object with 2+
-          # fields would satisfy `> 0` and wrongly read as "deliveries
-          # found." A curl-level failure (network/DNS/TLS down) or a
-          # non-JSON body (an HTML gateway error page) both fail the jq
-          # parse -- treat ALL of these as unable-to-verify, which routes to
-          # the alert path below, not a silent pass.
+          # Node instead of jq for this one -- the expected shape is a
+          # single-element array of an object with two int fields, which is
+          # easy to get subtly wrong in jq and impossible to test locally
+          # (jq isn't installed anywhere on this machine). A curl-level
+          # failure, a non-JSON body, or a response that doesn't match the
+          # expected shape (a Supabase error object, an RLS/grant issue)
+          # all fall through to -1 for both counts, which routes to the
+          # alert path below, not a silent pass.
           if [ "${CURL_EXIT}" -ne 0 ]; then
             DELIVERED_COUNT=-1
-          else
-            DELIVERED_COUNT=$(echo "${RESPONSE}" | jq 'if type == "array" then length else -1 end' 2>/dev/null)
-            [ -n "${DELIVERED_COUNT}" ] || DELIVERED_COUNT=-1
-          fi
-
-          ACTIVE_RESPONSE=$(curl -sS \
-            -H "apikey: ${SUPABASE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            "${SUPABASE_URL}/rest/v1/users?select=id&subscribed_at=not.is.null&cancelled_at=is.null&limit=5000")
-          ACTIVE_CURL_EXIT=$?
-          if [ "${ACTIVE_CURL_EXIT}" -ne 0 ]; then
             ACTIVE_COUNT=-1
           else
-            ACTIVE_COUNT=$(echo "${ACTIVE_RESPONSE}" | jq 'if type == "array" then length else -1 end' 2>/dev/null)
+            COUNTS=$(RESPONSE="${RESPONSE}" node -e "
+              const raw = process.env.RESPONSE || '';
+              let delivered = -1, active = -1;
+              try {
+                const data = JSON.parse(raw);
+                if (Array.isArray(data) && data.length === 1 &&
+                    typeof data[0].delivered_count === 'number' &&
+                    typeof data[0].active_subscriber_count === 'number') {
+                  delivered = data[0].delivered_count;
+                  active = data[0].active_subscriber_count;
+                }
+              } catch (e) {}
+              process.stdout.write(delivered + ' ' + active);
+            ")
+            DELIVERED_COUNT=$(echo "${COUNTS}" | cut -d' ' -f1)
+            ACTIVE_COUNT=$(echo "${COUNTS}" | cut -d' ' -f2)
+            [ -n "${DELIVERED_COUNT}" ] || DELIVERED_COUNT=-1
             [ -n "${ACTIVE_COUNT}" ] || ACTIVE_COUNT=-1
           fi
           echo "Active subscriber count: ${ACTIVE_COUNT}"
