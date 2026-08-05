@@ -17,6 +17,25 @@
   // Defining routes disables the workers.dev preview URL by default -- keep
   // it on, it's the fastest way to verify a deploy before DNS even points here.
   "workers_dev": true,
+  "vars": {
+    // OpenNext's DO revalidation queue bills the full timeout as Durable
+    // Object "duration" on every ISR revalidation, regardless of how fast
+    // the fetch actually completes (acknowledged upstream as "problematic"
+    // in durable-objects/queue.js). Default is 10s; this account was hitting
+    // the free-tier daily DO duration cap every day for ~2 weeks. Lowering
+    // this caps the worst case per-revalidation cost -- self-referenced
+    // fetches to our own Worker should complete in well under 3s normally.
+    "NEXT_CACHE_DO_QUEUE_REVALIDATION_TIMEOUT_MS": "3000"
+  },
+  // Daily digest send, matching vercel.json's cron (0 14 * * * = 14:00 UTC).
+  // Fires src/worker-entry.ts's scheduled() handler, which hits the same
+  // /api/cron/weekly-send route with the same CRON_SECRET auth Vercel Cron
+  // used -- see that file's comment. This is the app's core recurring
+  // feature; before this it existed nowhere on the Cloudflare side, meaning
+  // it was still fully dependent on the Vercel project staying up.
+  "triggers": {
+    "crons": ["0 14 * * *"]
+  },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS",
