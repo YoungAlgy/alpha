@@ -7,28 +7,89 @@ name: Wrangler config guard
 # drops the Cron Trigger config (a migration, a merge, a copy-paste from an
 # older wrangler.jsonc) fails LOUDLY right there in CI, not silently in
 # production days later.
+#
+# Reviewed and hardened 2026-08-05 after an adversarial multi-agent pass
+# found real gaps in the first version: it only checked the crons array was
+# non-empty (a wrong-but-present schedule would've passed silently), it
+# never checked the WORKER_SELF_REFERENCE service binding scheduled() needs
+# to actually do anything (dropping just that binding would leave crons and
+# scheduled() both textually intact -- passing the old checks -- while the
+# handler silently no-ops every single run), and its scheduled( grep would
+# false-pass if the real handler were deleted but this file's own
+# explanatory comment (which contains that literal substring) survived.
+# This version fixes all three, plus tightens the JSONC parsing to match
+# wrangler's own actual leniency instead of failing on things wrangler
+# itself accepts (trailing commas, block comments).
 
 on:
   push:
     branches: [master]
-  pull_request:
-    branches: [master]
   workflow_dispatch: {}
+  # No pull_request trigger: this repo has never used PRs (verified via `gh
+  # api repos/YoungAlgy/alpha/pulls?state=all` -> [] and zero merge commits
+  # in history) -- push:master already covers every commit that could
+  # introduce this regression, so a pull_request trigger here is dead CI
+  # surface with no repo-usage behind it. Re-add it if that ever changes.
+
+permissions:
+  contents: read # only need to read the repo to check config files
 
 jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to a commit SHA (v4's HEAD as of 2026-08-05), not the mutable
+      # `v4` tag -- standard supply-chain hardening, cheap to do since this
+      # is the only external action either workflow in this repo depends on.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Verify wrangler.jsonc has a real, non-empty Cron Trigger
+      - name: Verify wrangler.jsonc has the real, expected Cron Trigger
         run: |
           node <<'EOF'
           const fs = require('fs');
           const raw = fs.readFileSync('wrangler.jsonc', 'utf8');
-          // wrangler.jsonc is JSON-with-comments -- strip // line comments
-          // (this repo's own style, no block comments) so JSON.parse works.
-          const stripped = raw.replace(/\/\/.*$/gm, '');
+
+          // wrangler.jsonc is JSON-with-comments, and wrangler's OWN parser
+          // (confirmed via wrangler-dist/cli.js) accepts line comments,
+          // block comments, AND trailing commas. A naive `//`-strip-then-
+          // JSON.parse would reject things wrangler itself accepts (a
+          // trailing comma from routine editing, a future block comment) --
+          // false-failing this guard for a config wrangler would happily
+          // deploy. This does a proper string-aware strip instead of a
+          // blind regex, so a `//` inside a string value (e.g. a route
+          // pattern containing "https://") doesn't get corrupted either.
+          function stripJsonComments(text) {
+            let out = '';
+            let inString = false;
+            let inLineComment = false;
+            let inBlockComment = false;
+            for (let i = 0; i < text.length; i++) {
+              const c = text[i];
+              const next = text[i + 1];
+              if (inLineComment) {
+                if (c === '\n') { inLineComment = false; out += c; }
+                continue;
+              }
+              if (inBlockComment) {
+                if (c === '*' && next === '/') { inBlockComment = false; i++; }
+                continue;
+              }
+              if (inString) {
+                out += c;
+                if (c === '\\') { out += next; i++; continue; }
+                if (c === '"') inString = false;
+                continue;
+              }
+              if (c === '"') { inString = true; out += c; continue; }
+              if (c === '/' && next === '/') { inLineComment = true; i++; continue; }
+              if (c === '/' && next === '*') { inBlockComment = true; i++; continue; }
+              out += c;
+            }
+            return out;
+          }
+
+          let stripped = stripJsonComments(raw);
+          stripped = stripped.replace(/,(\s*[}\]])/g, '$1'); // trailing commas
 
           let config;
           try {
@@ -38,6 +99,13 @@ jobs:
             process.exit(1);
           }
 
+          // Not just "non-empty" -- an exact match. A schedule that's been
+          // quietly changed to the wrong hour, or corrupted into a
+          // malformed-but-non-empty expression, would pass a bare
+          // non-empty check and still silently break the real send. If
+          // you're changing the schedule on purpose, update EXPECTED_CRONS
+          // here in the same commit.
+          const EXPECTED_CRONS = ['0 14 * * *'];
           const crons = config.triggers && config.triggers.crons;
           if (!Array.isArray(crons) || crons.length === 0) {
             console.error(
@@ -49,17 +117,47 @@ jobs:
             );
             process.exit(1);
           }
+          if (JSON.stringify(crons) !== JSON.stringify(EXPECTED_CRONS)) {
+            console.error(
+              `::error::wrangler.jsonc triggers.crons is ${JSON.stringify(crons)}, expected ` +
+              `${JSON.stringify(EXPECTED_CRONS)}. If this is an intentional schedule change, ` +
+              'update EXPECTED_CRONS in this workflow file in the same commit -- this check ' +
+              'exists so a schedule drift (wrong hour, malformed expression) can\'t silently ' +
+              'pass just because the array happens to be non-empty.'
+            );
+            process.exit(1);
+          }
 
-          console.log('OK: wrangler.jsonc triggers.crons =', JSON.stringify(crons));
+          // The other half of the same dependency: scheduled() is a no-op
+          // (silently -- see worker-entry.ts's guard clause) without this
+          // binding. A future edit could drop just this array while leaving
+          // crons and the scheduled() text both intact, passing every OTHER
+          // check here while still breaking every real cron run.
+          const services = config.services;
+          const hasSelfRef = Array.isArray(services) && services.some((s) => s && s.binding === 'WORKER_SELF_REFERENCE');
+          if (!hasSelfRef) {
+            console.error(
+              '::error::wrangler.jsonc is missing the WORKER_SELF_REFERENCE service binding -- ' +
+              'scheduled() silently no-ops without it (see worker-entry.ts\'s guard clause), and ' +
+              'Cloudflare records that no-op as a successful run. This is the same failure class ' +
+              'as the missing cron trigger: config looks fine, nothing actually happens.'
+            );
+            process.exit(1);
+          }
+
+          console.log('OK: wrangler.jsonc triggers.crons =', JSON.stringify(crons), '+ WORKER_SELF_REFERENCE binding present.');
           EOF
 
-      - name: Verify worker-entry.ts still wires a scheduled() handler
+      - name: Verify worker-entry.ts still implements scheduled()
         run: |
-          # The cron trigger config above is useless if nothing in the
-          # Worker actually implements the handler it invokes -- guard both
-          # halves of the same real dependency, not just one.
-          if ! grep -q 'scheduled(' src/worker-entry.ts; then
-            echo "::error::src/worker-entry.ts no longer exports a scheduled() handler -- wrangler.jsonc's Cron Trigger has nothing to invoke."
+          # Anchored to the real function signature, not a bare substring --
+          # a plain `grep 'scheduled('` would still match this very file's
+          # own explanatory comment ("...fires the scheduled() handler
+          # directly...") even if the real `async scheduled(...)` below it
+          # were deleted, silently false-passing the one check meant to
+          # catch exactly that.
+          if ! grep -qE 'async[[:space:]]+scheduled[[:space:]]*\(' src/worker-entry.ts; then
+            echo "::error::src/worker-entry.ts no longer implements an async scheduled() handler -- wrangler.jsonc's Cron Trigger has nothing real to invoke."
             exit 1
           fi
-          echo "OK: worker-entry.ts still exports scheduled()."
+          echo "OK: worker-entry.ts still implements async scheduled()."

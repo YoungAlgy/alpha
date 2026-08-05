@@ -13,12 +13,37 @@ name: Daily letter watchdog
 # THAT exact failure mode (a migration/config change silently disabling the
 # cron on the app's own host) can't also disable this. It reads Supabase
 # directly -- the one source of truth a broken host can't fake -- rather
-# than trusting the app's own /api/health, which only proves the app is
-# reachable and configured, not that today's send actually happened (it
-# stayed green the whole 5-day outage).
+# than trusting the app's own /api/health for the delivery check (that
+# endpoint only proves the app is reachable and configured, not that
+# today's send actually happened -- it stayed green the whole 5-day
+# outage). /api/health IS used below, but only for the second job, to check
+# something it's actually authoritative about: which of its own API keys
+# are configured.
 #
 # Runs 2 hours after the app's own 14:00 UTC cron, giving it time to
 # actually finish sending to every subscriber before checking.
+#
+# Reviewed and hardened 2026-08-05 (same day) after an adversarial
+# multi-agent pass found real gaps in the first version:
+# - CUTOFF had no explicit UTC marker on its timestamp string, relying on
+#   Supabase's project timezone happening to be UTC rather than saying so.
+# - `set -euo pipefail` combined with an unguarded curl/jq meant a hard
+#   failure (Supabase unreachable, or an HTML error page jq can't parse)
+#   aborted the whole script BEFORE the Resend/GitHub-Issue alerts ran --
+#   exactly the failure mode most likely to correlate with something being
+#   genuinely wrong, and it was the one case that silently lost 2 of the 3
+#   alert channels.
+# - The delivery check was a bare `limit=1` existence check: one delivered
+#   row and 399 silently un-sent subscribers both read as "OK". A hard
+#   crash partway through the per-subscriber send loop (Worker CPU/wall-
+#   clock limit, an unhandled exception) would never reach the app's own
+#   internal ops-alert either, since that only fires after the full loop
+#   finishes. Now compares delivered count against active subscriber count.
+# - Nothing anywhere checked whether the OTHER half of this exact incident
+#   (3 resilience-tier secrets that never migrated off the old host) could
+#   recur -- the app's own /api/health route already computes
+#   checks.groq/deepseek/you/gemini/brave, it just never gated anything and
+#   nothing ever read it. Added a second job that does.
 
 on:
   schedule:
@@ -32,98 +57,232 @@ jobs:
   check-delivery:
     runs-on: ubuntu-latest
     steps:
-      - name: Check Supabase for a real delivery in the last 20 hours
+      - name: Check Supabase for real, complete delivery in the last 20 hours
         env:
           SUPABASE_URL: ${{ secrets.WATCHDOG_SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.WATCHDOG_SUPABASE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # Deliberately NOT `set -e`: curl/jq failures are handled
+          # explicitly below and routed to the alert path, not allowed to
+          # silently abort the script -- see header comment.
+
+          close_issue_if_open() {
+            local search_phrase="$1" resolution_note="$2" open_issue
+            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
+            if [ -n "${open_issue}" ]; then
+              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${resolution_note}"
+              gh issue close "${open_issue}" --repo "${GITHUB_REPOSITORY}"
+            fi
+          }
+
+          open_or_update_issue() {
+            local search_phrase="$1" issue_title="$2" body="$3" open_issue
+            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
+            if [ -n "${open_issue}" ]; then
+              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+            else
+              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${issue_title}" --body "${body}"
+            fi
+          }
+
+          send_resend_alert() {
+            local subject="$1" body="$2" payload
+            payload=$(jq -n --arg from "alpha watchdog <alpha@avahealth.co>" --arg to "youngalgy@gmail.com" \
+              --arg subject "${subject}" --arg text "${body}" \
+              '{from: $from, to: [$to], subject: $subject, text: $text}')
+            curl -sS -X POST 'https://api.resend.com/emails' \
+              -H "Authorization: Bearer ${RESEND_API_KEY}" \
+              -H 'Content-Type: application/json' \
+              -d "${payload}" >/dev/null
+          }
 
           # 20h, not 24h: the check runs ~2h after the expected 14:00 UTC
           # send, so a genuinely missed day's send always falls outside this
           # window by the time the NEXT day's check runs, while still
-          # comfortably covering a send that ran a bit late.
-          CUTOFF=$(date -u -d '20 hours ago' +%Y-%m-%dT%H:%M:%S)
+          # comfortably covering a send that ran a bit late. Explicit `Z`
+          # suffix -- without it this string carries no timezone marker and
+          # Postgres would resolve it against the session's `timezone` GUC
+          # rather than an inherent UTC assumption; matches how the app's
+          # own write path stamps delivered_at (`new Date().toISOString()`).
+          CUTOFF=$(date -u -d '20 hours ago' +%Y-%m-%dT%H:%M:%SZ)
 
+          # Real counts, not a limit=1 existence check -- a limit=1 check
+          # can't tell "everyone got their letter" from "one subscriber got
+          # a letter and the run died 30 seconds later." 5000 is well above
+          # alpha's current subscriber count; raise it if that ever changes.
           RESPONSE=$(curl -sS \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            "${SUPABASE_URL}/rest/v1/issues?select=id,delivered_at&delivered_at=gte.${CUTOFF}&limit=1")
-
-          echo "Supabase response: ${RESPONSE}"
+            "${SUPABASE_URL}/rest/v1/issues?select=id,delivered_at&delivered_at=gte.${CUTOFF}&limit=5000")
+          CURL_EXIT=$?
+          echo "Supabase issues response (curl exit ${CURL_EXIT}): ${RESPONSE}"
 
           # Explicit array check, not just `jq 'length'`: a Supabase error
           # (bad key, RLS issue, etc.) comes back as a JSON OBJECT, and
           # `length` on an object counts its KEYS -- an error object with 2+
-          # fields would satisfy `> 0` and wrongly read as "a delivery was
-          # found." Treat anything that isn't genuinely an array as a check
-          # failure (falls through to the alert path below), not a silent OK.
-          COUNT=$(echo "${RESPONSE}" | jq 'if type == "array" then length else -1 end')
-
-          # Fixed, predictable title -- lets every step below find "the"
-          # watchdog issue instead of creating a fresh one on every single
-          # failed day (which would just bury the real signal in noise the
-          # same way this whole outage went unnoticed in the first place).
-          # Search on a plain-text phrase, not the emoji-prefixed title
-          # itself -- GitHub's search indexing of a leading emoji is an
-          # unnecessary risk for something this search depends on matching
-          # reliably every single day.
-          SEARCH_PHRASE="Daily letter send may be broken"
-          ISSUE_TITLE="🚨 ${SEARCH_PHRASE}"
-          OPEN_ISSUE=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${SEARCH_PHRASE}\" in:title" --state open --json number --jq '.[0].number // empty')
-
-          if [ "${COUNT}" -gt 0 ]; then
-            echo "OK: at least one real delivery since ${CUTOFF}."
-            # Self-healing: if an earlier failure left a watchdog issue open,
-            # a real delivery since then means it's resolved -- close it so
-            # the issue tracker reflects current state, not a stale alarm
-            # someone has to remember to go clean up by hand.
-            if [ -n "${OPEN_ISSUE}" ]; then
-              gh issue comment "${OPEN_ISSUE}" --repo "${GITHUB_REPOSITORY}" \
-                --body "Resolved: a real delivery landed since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
-              gh issue close "${OPEN_ISSUE}" --repo "${GITHUB_REPOSITORY}"
-            fi
-            exit 0
-          elif [ "${COUNT}" -lt 0 ]; then
-            echo "ALERT: Supabase response wasn't a valid array (query/auth problem) -- treating as a failed check, not a silent pass."
+          # fields would satisfy `> 0` and wrongly read as "deliveries
+          # found." A curl-level failure (network/DNS/TLS down) or a
+          # non-JSON body (an HTML gateway error page) both fail the jq
+          # parse -- treat ALL of these as unable-to-verify, which routes to
+          # the alert path below, not a silent pass.
+          if [ "${CURL_EXIT}" -ne 0 ]; then
+            DELIVERED_COUNT=-1
+          else
+            DELIVERED_COUNT=$(echo "${RESPONSE}" | jq 'if type == "array" then length else -1 end' 2>/dev/null)
+            [ -n "${DELIVERED_COUNT}" ] || DELIVERED_COUNT=-1
           fi
 
-          echo "ALERT: no delivered issues found since ${CUTOFF} -- the daily send may be broken."
+          ACTIVE_RESPONSE=$(curl -sS \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            "${SUPABASE_URL}/rest/v1/users?select=id&subscribed_at=not.is.null&cancelled_at=is.null&limit=5000")
+          ACTIVE_CURL_EXIT=$?
+          if [ "${ACTIVE_CURL_EXIT}" -ne 0 ]; then
+            ACTIVE_COUNT=-1
+          else
+            ACTIVE_COUNT=$(echo "${ACTIVE_RESPONSE}" | jq 'if type == "array" then length else -1 end' 2>/dev/null)
+            [ -n "${ACTIVE_COUNT}" ] || ACTIVE_COUNT=-1
+          fi
+          echo "Active subscriber count: ${ACTIVE_COUNT}"
 
-          ALERT_BODY="The daily digest watchdog found no issues.delivered_at since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: is the Cloudflare Cron Trigger still armed (wrangler.jsonc triggers.crons), are all required secrets still present on whatever host is live, and did the last deploy actually go out. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SEARCH_PHRASE="Daily letter send may be broken"
+          ISSUE_TITLE="🚨 ${SEARCH_PHRASE}"
+          PARTIAL_SEARCH_PHRASE="Daily letter send may be incomplete"
+          PARTIAL_ISSUE_TITLE="⚠️ ${PARTIAL_SEARCH_PHRASE}"
 
-          # Channel 1: best-effort direct email via Resend, independent of
-          # alpha's own sendOpsAlert (which lives inside the very app that
-          # might be the thing that's broken). Same destination as the app's
-          # existing ops-alert convention.
+          if [ "${DELIVERED_COUNT}" -lt 0 ]; then
+            echo "ALERT: could not verify delivery (Supabase unreachable or returned something unparseable) -- treating as a failed check, not a silent pass."
+            ALERT_BODY="The daily digest watchdog could not verify delivery: the Supabase query itself failed or returned an unparseable/non-array response (curl exit ${CURL_EXIT}) as of $(date -u +%Y-%m-%dT%H:%M:%SZ). This could mean Supabase is down, credentials rotated, or something else -- but it could also mean the send is broken and this check just can't see it either way. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            send_resend_alert "[alpha] Watchdog could not verify today's delivery" "${ALERT_BODY}"
+            open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+            exit 1
+          fi
+
+          if [ "${DELIVERED_COUNT}" -eq 0 ]; then
+            echo "ALERT: no delivered issues found since ${CUTOFF} -- the daily send may be broken."
+            ALERT_BODY="The daily digest watchdog found no issues.delivered_at since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: is the Cloudflare Cron Trigger still armed (wrangler.jsonc triggers.crons), are all required secrets still present on whatever host is live, and did the last deploy actually go out. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            send_resend_alert "[alpha] No letters delivered in the last 20 hours" "${ALERT_BODY}"
+            open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+            close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Superseded: the full send now appears to have failed outright (0 delivered), not just partially. See the linked broken-send issue instead."
+            exit 1
+          fi
+
+          # Full failure would already have been caught above (DELIVERED_COUNT
+          # would be 0). This catches the OTHER half of a crash mid-send: some
+          # subscribers got their letter and the run died before finishing the
+          # rest -- something a bare existence check can't distinguish from a
+          # clean run, and something the app's own internal ops-alert also
+          # can't catch (it only fires after the full per-subscriber loop
+          # completes, so a hard kill mid-loop skips it too). Only judged when
+          # ACTIVE_COUNT itself was verified (>0); an unverifiable active
+          # count isn't treated as evidence of a partial send.
+          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ "${DELIVERED_COUNT}" -lt $(( ACTIVE_COUNT / 2 )) ]; then
+            echo "ALERT: only ${DELIVERED_COUNT}/${ACTIVE_COUNT} active subscribers got a letter since ${CUTOFF} -- possible partial/crashed send."
+            ALERT_BODY="The daily digest watchdog found only ${DELIVERED_COUNT} delivered issues.delivered_at since ${CUTOFF}, against ${ACTIVE_COUNT} active subscribers (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Some letters clearly went out, so this isn't a total outage -- but this looks like a crashed or interrupted send (Worker CPU/wall-clock limit, an unhandled exception mid-loop), which alpha's own internal ops-alert also would not have caught (it only fires after the full per-subscriber loop finishes). Check the Cloudflare Worker's logs for the last cron invocation. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            send_resend_alert "[alpha] Possible partial letter send (${DELIVERED_COUNT}/${ACTIVE_COUNT})" "${ALERT_BODY}"
+            open_or_update_issue "${PARTIAL_SEARCH_PHRASE}" "${PARTIAL_ISSUE_TITLE}" "${ALERT_BODY}"
+            exit 1
+          fi
+
+          echo "OK: ${DELIVERED_COUNT} delivered since ${CUTOFF} (${ACTIVE_COUNT} active subscribers)."
+          close_issue_if_open "${SEARCH_PHRASE}" "Resolved: a real, apparently-complete delivery landed since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+          close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Resolved: today's delivery count looks complete (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+
+  check-resilience-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check /api/health for resilience-tier keys the primary send doesn't need but the fallback chain does
+        env:
+          RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+
+          # Same two helpers as the delivery-check job -- duplicated rather
+          # than shared because GitHub Actions has no lightweight way to
+          # share a bash function across jobs without a separate composite
+          # action, and this is the only other place that needs them.
+          close_issue_if_open() {
+            local search_phrase="$1" resolution_note="$2" open_issue
+            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
+            if [ -n "${open_issue}" ]; then
+              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${resolution_note}"
+              gh issue close "${open_issue}" --repo "${GITHUB_REPOSITORY}"
+            fi
+          }
+
+          open_or_update_issue() {
+            local search_phrase="$1" issue_title="$2" body="$3" open_issue
+            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
+            if [ -n "${open_issue}" ]; then
+              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+            else
+              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${issue_title}" --body "${body}"
+            fi
+          }
+
+          # This is the ONE place in this whole setup where trusting the
+          # app's own /api/health is actually correct: it's authoritative
+          # about which of its own process.env keys are set, which is
+          # exactly what this checks. The delivery-check job deliberately
+          # does NOT trust this endpoint for "did a send happen" -- see
+          # header comment -- but "is GROQ_API_KEY configured" isn't
+          # something Supabase would ever know either way.
+          RESPONSE=$(curl -sS "https://alpha.everyday.report/api/health")
+          CURL_EXIT=$?
+          echo "/api/health response (curl exit ${CURL_EXIT}): ${RESPONSE}"
+
+          SEARCH_PHRASE="Resilience-tier API key may be missing on Cloudflare"
+          ISSUE_TITLE="⚠️ ${SEARCH_PHRASE}"
+
+          if [ "${CURL_EXIT}" -ne 0 ]; then
+            echo "Could not reach /api/health -- not alerting on this job specifically, the delivery-check job already covers total-outage detection."
+            exit 0
+          fi
+
+          # The exact 3 that went missing in the 2026-08-05 incident, plus
+          # the other 2 keys in the same fallback-tier family (gemini,
+          # brave) -- all 5 are explicitly non-blocking-for-app-uptime per
+          # this route's own comments, which is exactly why nothing else
+          # would ever notice one going missing. Node instead of jq here
+          # (unlike the delivery-check job) -- this filter is involved
+          # enough that a jq syntax slip would be easy to miss and hard to
+          # test locally; this exact logic was verified against sample
+          # /api/health payloads before shipping.
+          MISSING=$(RESPONSE="${RESPONSE}" node -e "
+            const raw = process.env.RESPONSE || '';
+            let missing = 'unparseable';
+            try {
+              const data = JSON.parse(raw);
+              if (data && typeof data === 'object' && data.checks && typeof data.checks === 'object') {
+                const watched = ['groq', 'deepseek', 'you', 'gemini', 'brave'];
+                missing = watched.filter((k) => data.checks[k] === false).join(', ');
+              }
+            } catch (e) {}
+            process.stdout.write(missing);
+          ")
+
+          if [ "${MISSING}" = "unparseable" ]; then
+            echo "Could not parse /api/health's checks object -- not alerting, avoiding a false positive on a response-shape change rather than a real key going missing."
+            exit 0
+          fi
+
+          if [ -z "${MISSING}" ]; then
+            echo "OK: groq/deepseek/you/gemini/brave all configured."
+            close_issue_if_open "${SEARCH_PHRASE}" "Resolved: /api/health now reports all resilience-tier keys configured (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+            exit 0
+          fi
+
+          echo "ALERT: /api/health reports these resilience-tier keys missing: ${MISSING}"
+          ALERT_BODY="alpha's /api/health reports these resilience-tier API keys are NOT configured on the live Cloudflare Worker: ${MISSING} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). This is exactly the second half of the 2026-08-05 outage -- the primary send can still succeed via its remaining providers while this stays silently broken, so nothing else here would catch it. Fix: wrangler secret put <NAME> for each key listed, from whatever host currently holds the real value. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           curl -sS -X POST 'https://api.resend.com/emails' \
             -H "Authorization: Bearer ${RESEND_API_KEY}" \
             -H 'Content-Type: application/json' \
-            -d "{
-              \"from\": \"alpha watchdog <alpha@avahealth.co>\",
-              \"to\": [\"youngalgy@gmail.com\"],
-              \"subject\": \"[alpha] No letters delivered in the last 20 hours\",
-              \"text\": \"${ALERT_BODY}\"
-            }"
-
-          # Channel 2: a persistent GitHub Issue, not just a transient email.
-          # An open issue sits on the repo until someone closes it -- much
-          # harder to lose in an inbox than a single email, and it survives
-          # even if Resend itself is what's having a bad day. Comment on the
-          # existing one instead of piling up a new issue per failed day.
-          if [ -n "${OPEN_ISSUE}" ]; then
-            gh issue comment "${OPEN_ISSUE}" --repo "${GITHUB_REPOSITORY}" \
-              --body "Still broken as of $(date -u +%Y-%m-%dT%H:%M:%SZ). ${ALERT_BODY}"
-          else
-            gh issue create --repo "${GITHUB_REPOSITORY}" \
-              --title "${ISSUE_TITLE}" \
-              --body "${ALERT_BODY}"
-          fi
-
-          # Channel 3: fail the job too, so GitHub's own scheduled-workflow-
-          # failure email (sent to the repo owner automatically, zero setup)
-          # fires as well -- if one channel is having a bad day, the others
-          # might still get through.
+            -d "$(jq -n --arg from "alpha watchdog <alpha@avahealth.co>" --arg to "youngalgy@gmail.com" \
+                  --arg subject "[alpha] Resilience-tier key(s) missing: ${MISSING}" --arg text "${ALERT_BODY}" \
+                  '{from: $from, to: [$to], subject: $subject, text: $text}')" >/dev/null
+          open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
           exit 1

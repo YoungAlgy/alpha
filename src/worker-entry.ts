@@ -102,13 +102,21 @@ export default {
   // `Authorization: Bearer ${CRON_SECRET}` header Vercel Cron used to send
   // automatically — the route's own auth check is unchanged and unaware
   // this call now originates from inside the Worker instead of Vercel's
-  // infrastructure. NOT wired to an actual cron schedule yet and never
-  // invoked outside this file — see the migration writeup for why (this
-  // hits real subscriber data and sends real email; needs an explicit
-  // decision before it ever fires for real).
+  // infrastructure. LIVE since 2026-08-05 (wrangler.jsonc's triggers.crons)
+  // — this fires daily at 14:00 UTC against real subscriber data. See
+  // alpha_cloudflare_cron_outage_2026-08-05 in Claude's memory for why it
+  // sat unwired before that, and don't let this comment go stale again the
+  // way that one did.
   async scheduled(controller: unknown, env: unknown, ctx: unknown): Promise<void> {
     const e = env as { WORKER_SELF_REFERENCE?: { fetch: typeof fetch }; CRON_SECRET?: string }
     if (!e.WORKER_SELF_REFERENCE || !e.CRON_SECRET) {
+      // Silent by design of the surrounding try-less scheduled() contract --
+      // Cloudflare records a non-throwing scheduled() as a successful run,
+      // so this console.error is the ONLY signal this branch ever produces.
+      // wrangler-config-guard.yml's services-binding check (added 2026-08-05)
+      // exists specifically so wrangler.jsonc can't drop WORKER_SELF_REFERENCE
+      // without CI catching it -- if you're reading this because a real cron
+      // run silently no-op'd, check that guard didn't get bypassed or edited.
       console.error('[scheduled] missing WORKER_SELF_REFERENCE binding or CRON_SECRET, skipping cron run')
       return
     }
