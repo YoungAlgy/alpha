@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { supabaseServiceClient } from "@/lib/supabase/server";
+import { withDeadline } from "@/lib/with-deadline";
 
 // Lightweight uptime check. Returns 200 if the app is alive + key env vars
-// are configured. Doesn't reach external services (Supabase, Stripe, etc.)
-// to keep the check fast and avoid cascading failures from downstream blips.
+// are configured. Doesn't reach external services (Stripe, etc.) to keep the
+// check fast and avoid cascading failures from downstream blips -- EXCEPT
+// Supabase, see checkSupabase() below.
 //
 // force-dynamic + no-store: discovered 2026-08-05 that this route could
 // serve a STALE cached response (checks.supabase showing false well after
@@ -15,6 +18,29 @@ import { NextResponse } from "next/server";
 // keep this uncached by default.
 export const dynamic = "force-dynamic";
 
+// Real connectivity, not just "the env vars are non-empty strings". A
+// presence-only check (the old version of this function) is blind to a
+// wrong-but-present URL, a revoked/rotated key that still LOOKS like a key,
+// or a paused/deleted Supabase project -- all of which would leave the app
+// just as broken as the empty-string bug from 2026-08-05 while still
+// reporting supabase:true. Bounded to 3s and fails closed (false) on any
+// error, including missing env vars, so a slow/down Supabase can't hang this
+// route or crash it -- worst case this one field is wrong for 3s, not the
+// whole health check.
+async function checkSupabase(): Promise<boolean> {
+  try {
+    const sb = await supabaseServiceClient();
+    const { error } = await withDeadline(
+      Promise.resolve(sb.from("users").select("id", { count: "exact", head: true })),
+      3000,
+      "health check supabase ping"
+    );
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET() {
   const checks = {
     anthropic: !!process.env.ANTHROPIC_API_KEY,
@@ -22,9 +48,7 @@ export async function GET() {
     emailProvider: process.env.RESEND_API_KEY ? "resend" : "none",
     stripe: !!process.env.STRIPE_SECRET_KEY,
     stripeWebhook: !!process.env.STRIPE_WEBHOOK_SECRET,
-    supabase:
-      !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      (!!process.env.SUPABASE_SECRET_KEY || !!process.env.SUPABASE_SERVICE_ROLE_KEY),
+    supabase: await checkSupabase(),
     brave: !!process.env.BRAVE_SEARCH_API_KEY,
     // Fallback provider, not primary — false just means the Brave-outage /
     // Anthropic-outage fallbacks are inert, NOT that the app is down. Surfaced

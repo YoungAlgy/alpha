@@ -172,6 +172,16 @@ jobs:
             process.exit(1);
           }
 
+          // NOTE: no limits.cpu_ms check here (yet). Attempted 2026-08-05 as
+          // part of investigating a live incident (0 issues sent, 0 errors
+          // recorded, consistent with a silent CPU-time-exceeded isolate
+          // kill), but this account is on Cloudflare's Free Workers plan,
+          // which rejects `limits.cpu_ms` outright at deploy time -- it's
+          // not configurable until upgraded to a paid plan. Re-add this
+          // check (require limits.cpu_ms >= some floor) once that account
+          // decision is made -- see wrangler.jsonc's own comment and
+          // alpha_full_app_review_2026-08-05.md in Claude's memory.
+
           console.log('OK: wrangler.jsonc triggers.crons =', JSON.stringify(crons), '+ WORKER_SELF_REFERENCE binding present.');
           EOF
 

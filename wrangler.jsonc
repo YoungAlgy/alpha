@@ -36,6 +36,20 @@
   "triggers": {
     "crons": ["0 14 * * *"]
   },
+  // NOT SET -- attempted 2026-08-05, Cloudflare rejected the deploy outright:
+  // "CPU limits are not supported for the Free plan." This account is on
+  // Workers FREE, which has a small, FIXED, non-configurable CPU time limit
+  // -- `limits.cpu_ms` can't be set at all until upgraded to a paid Workers
+  // plan (~$5/mo). This is the prime suspect for a real live incident: the
+  // 14:00 UTC cron left 0 errors in Cloudflare's own metrics AND created 0
+  // issue rows for any of the 4 active subscribers -- consistent with a
+  // silent CPU-time-exceeded isolate kill (no catchable error) partway
+  // through the first subscriber's generation, which the app's own internal
+  // budget math (still assuming Vercel Pro's 800s maxDuration, a concept
+  // Cloudflare never reads) has no way to see coming or defer around. Needs
+  // Algy's decision: upgrade the Workers plan to raise this, or restructure
+  // the cron to fit inside the Free plan's tighter ceiling. See
+  // alpha_full_app_review_2026-08-05.md in Claude's memory.
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS",

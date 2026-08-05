@@ -93,6 +93,24 @@ jobs:
           # Deliberately NOT `set -e`: curl/jq failures are handled
           # explicitly below and routed to the alert path, not allowed to
           # silently abort the script -- see header comment.
+          #
+          # BUG FOUND LIVE 2026-08-05: that comment describes the INTENDED
+          # behavior, but GitHub Actions invokes every `run:` step's script
+          # via `bash -e {0}` regardless of what `set` flags the script itself
+          # requests -- confirmed via this exact job's own log ("shell:
+          # /usr/bin/bash -e {0}"). `set -uo pipefail` only adds -u/pipefail;
+          # it does NOT clear an already-active -e. So errexit was ON the
+          # whole time despite this comment's claim, and it did exactly what
+          # -e does: the first `curl -f` failure (a 401 from send_resend_alert
+          # hitting Resend) killed the script immediately, BEFORE
+          # open_or_update_issue() -- the channel this file's own header
+          # calls "the durable one" -- ever ran. Confirmed live: the delivery
+          # check correctly detected 0/4 delivered and printed its ALERT line,
+          # then the whole job died with exit 22, and no GitHub Issue was
+          # created. This explicit `set +e` is what actually makes the
+          # comment's stated intent true -- omitting -e is not the same as
+          # disabling it once the parent shell already turned it on.
+          set +e
 
           close_issue_if_open() {
             local search_phrase="$1" resolution_note="$2" open_issue
@@ -264,6 +282,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
+          # Same set +e requirement as check-delivery's job -- GitHub Actions
+          # invokes this script's shell with -e regardless of what's declared
+          # here, so a curl -f failure inside send_resend_alert would abort
+          # before open_or_update_issue() ever ran. See the check-delivery
+          # job's comment for the live incident that found this.
+          set +e
 
           # Same three helpers as the delivery-check job -- duplicated
           # rather than shared because GitHub Actions has no lightweight
