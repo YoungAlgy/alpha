@@ -86,14 +86,98 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # Skips the expensive checkout/npm ci/build/start below when today's
+      # send is already fully covered -- mainly matters for the 15:00 UTC
+      # offset retry: on the common day the 14:00 primary already delivered
+      # to everyone, this retry used to pay for a full install+build+server
+      # boot just to hit the route and find zero undelivered subscribers.
+      # Added 2026-08-05, deliberately AFTER first declining to (see
+      # alpha_full_app_review_2026-08-05.md in Claude's memory) -- this
+      # pipeline's idempotency/timing invariants are carefully reasoned
+      # about elsewhere in this file, so this pre-check is written to fail
+      # SAFE: any uncertainty (curl error, malformed response, zero active
+      # subscribers) means "proceed with the full pipeline", never "skip".
+      # Skipping is purely a cost optimization; it must never be able to
+      # cause a missed send.
+      #
+      # Bypassed entirely for workflow_dispatch (github.event_name check
+      # below) -- a manual admin run (backfill, ?weekOf= override, testing)
+      # must always execute in full regardless of today's delivery state;
+      # this RPC's cutoff-based check has no idea a manual override even
+      # exists and would give a meaningless answer for one.
+      #
+      # Reuses letter-watchdog.yml's watchdog_delivery_check() RPC (security
+      # definer, anon-callable, returns only two integers -- never touches
+      # raw rows/PII, no need for the full-privilege secret key here either)
+      # rather than adding a new one; same real counts it already trusts.
+      - name: Pre-check — skip if today's send is already fully covered
+        id: precheck
+        if: github.event_name == 'schedule'
+        env:
+          SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set +e
+          # Start of today UTC, not "N hours ago" (the watchdog's own
+          # cutoff) -- this specifically wants "has TODAY's send finished",
+          # not a rolling window.
+          CUTOFF=$(date -u +%Y-%m-%dT00:00:00Z)
+
+          RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"cutoff\": \"${CUTOFF}\"}" \
+            "${SUPABASE_URL}/rest/v1/rpc/watchdog_delivery_check")
+          CURL_EXIT=$?
+          echo "Pre-check RPC response (curl exit ${CURL_EXIT}): ${RESPONSE}"
+
+          if [ "${CURL_EXIT}" -ne 0 ]; then
+            DELIVERED_COUNT=-1
+            ACTIVE_COUNT=-1
+          else
+            COUNTS=$(RESPONSE="${RESPONSE}" node -e "
+              const raw = process.env.RESPONSE || '';
+              let delivered = -1, active = -1;
+              try {
+                const data = JSON.parse(raw);
+                if (Array.isArray(data) && data.length === 1 &&
+                    typeof data[0].delivered_count === 'number' &&
+                    typeof data[0].active_subscriber_count === 'number') {
+                  delivered = data[0].delivered_count;
+                  active = data[0].active_subscriber_count;
+                }
+              } catch {}
+              console.log(delivered + ' ' + active);
+            ")
+            DELIVERED_COUNT=$(echo "${COUNTS}" | cut -d' ' -f1)
+            ACTIVE_COUNT=$(echo "${COUNTS}" | cut -d' ' -f2)
+          fi
+          echo "delivered=${DELIVERED_COUNT} active=${ACTIVE_COUNT}"
+
+          # Only skip on a CONFIDENT positive signal: real active subscribers
+          # exist AND every one of them already has a letter. -1 (any
+          # failure above) and 0 active (can't confirm there's anyone to
+          # check) both fall through to "proceed", not "skip".
+          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ "${DELIVERED_COUNT}" -ge "${ACTIVE_COUNT}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "SKIP: ${DELIVERED_COUNT}/${ACTIVE_COUNT} active subscribers already covered today -- nothing to retry."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "PROCEED: ${DELIVERED_COUNT}/${ACTIVE_COUNT} (or uncertain) -- running the full pipeline."
+          fi
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.precheck.outputs.skip != 'true'
 
       - uses: actions/setup-node@v4
+        if: steps.precheck.outputs.skip != 'true'
         with:
           node-version: '22'
           cache: 'npm'
 
       - name: Pre-flight — every required secret present + Resend actually deliverable
+        if: steps.precheck.outputs.skip != 'true'
         env:
           CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
@@ -119,15 +203,18 @@ jobs:
         run: node scripts/verify-send-preflight.mjs
 
       - name: Install dependencies
+        if: steps.precheck.outputs.skip != 'true'
         run: npm ci
 
       - name: Verify build-time env vars before spending time on a build
+        if: steps.precheck.outputs.skip != 'true'
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
         run: node scripts/verify-build-env.mjs
 
       - uses: actions/cache@v4
+        if: steps.precheck.outputs.skip != 'true'
         with:
           path: .next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
@@ -135,6 +222,7 @@ jobs:
             ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
 
       - name: Build (plain Next.js -- NOT the Cloudflare/OpenNext bundle, just a runnable server)
+        if: steps.precheck.outputs.skip != 'true'
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
@@ -142,6 +230,7 @@ jobs:
         run: npm run build
 
       - name: Start the server and run the real daily send
+        if: steps.precheck.outputs.skip != 'true'
         env:
           CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
