@@ -25,6 +25,9 @@ on:
     - cron: '0 16 * * *'
   workflow_dispatch: {} # manual run button in the Actions tab, for testing
 
+permissions:
+  issues: write # for gh issue create/comment/close below
+
 jobs:
   check-delivery:
     runs-on: ubuntu-latest
@@ -34,6 +37,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.WATCHDOG_SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.WATCHDOG_SUPABASE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -58,8 +62,29 @@ jobs:
           # failure (falls through to the alert path below), not a silent OK.
           COUNT=$(echo "${RESPONSE}" | jq 'if type == "array" then length else -1 end')
 
+          # Fixed, predictable title -- lets every step below find "the"
+          # watchdog issue instead of creating a fresh one on every single
+          # failed day (which would just bury the real signal in noise the
+          # same way this whole outage went unnoticed in the first place).
+          # Search on a plain-text phrase, not the emoji-prefixed title
+          # itself -- GitHub's search indexing of a leading emoji is an
+          # unnecessary risk for something this search depends on matching
+          # reliably every single day.
+          SEARCH_PHRASE="Daily letter send may be broken"
+          ISSUE_TITLE="🚨 ${SEARCH_PHRASE}"
+          OPEN_ISSUE=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${SEARCH_PHRASE}\" in:title" --state open --json number --jq '.[0].number // empty')
+
           if [ "${COUNT}" -gt 0 ]; then
             echo "OK: at least one real delivery since ${CUTOFF}."
+            # Self-healing: if an earlier failure left a watchdog issue open,
+            # a real delivery since then means it's resolved -- close it so
+            # the issue tracker reflects current state, not a stale alarm
+            # someone has to remember to go clean up by hand.
+            if [ -n "${OPEN_ISSUE}" ]; then
+              gh issue comment "${OPEN_ISSUE}" --repo "${GITHUB_REPOSITORY}" \
+                --body "Resolved: a real delivery landed since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+              gh issue close "${OPEN_ISSUE}" --repo "${GITHUB_REPOSITORY}"
+            fi
             exit 0
           elif [ "${COUNT}" -lt 0 ]; then
             echo "ALERT: Supabase response wasn't a valid array (query/auth problem) -- treating as a failed check, not a silent pass."
@@ -67,10 +92,12 @@ jobs:
 
           echo "ALERT: no delivered issues found since ${CUTOFF} -- the daily send may be broken."
 
-          # Best-effort direct email alert via Resend, independent of alpha's
-          # own sendOpsAlert (which lives inside the very app that might be
-          # the thing that's broken). Same destination as the app's existing
-          # ops-alert convention.
+          ALERT_BODY="The daily digest watchdog found no issues.delivered_at since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: is the Cloudflare Cron Trigger still armed (wrangler.jsonc triggers.crons), are all required secrets still present on whatever host is live, and did the last deploy actually go out. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          # Channel 1: best-effort direct email via Resend, independent of
+          # alpha's own sendOpsAlert (which lives inside the very app that
+          # might be the thing that's broken). Same destination as the app's
+          # existing ops-alert convention.
           curl -sS -X POST 'https://api.resend.com/emails' \
             -H "Authorization: Bearer ${RESEND_API_KEY}" \
             -H 'Content-Type: application/json' \
@@ -78,12 +105,25 @@ jobs:
               \"from\": \"alpha watchdog <alpha@avahealth.co>\",
               \"to\": [\"youngalgy@gmail.com\"],
               \"subject\": \"[alpha] No letters delivered in the last 20 hours\",
-              \"text\": \"The daily digest watchdog found no issues.delivered_at since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: is the Cloudflare Cron Trigger still armed (wrangler.jsonc triggers.crons), are all required secrets still present on whatever host is live, and did the last deploy actually go out. GitHub Actions run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"
+              \"text\": \"${ALERT_BODY}\"
             }"
 
-          # Fail the job too, so GitHub's own scheduled-workflow-failure
-          # email (sent to the repo owner automatically, zero setup) is a
-          # second, independent alert channel on top of the Resend email
-          # above -- if one delivery mechanism is having a bad day, the
-          # other might still get through.
+          # Channel 2: a persistent GitHub Issue, not just a transient email.
+          # An open issue sits on the repo until someone closes it -- much
+          # harder to lose in an inbox than a single email, and it survives
+          # even if Resend itself is what's having a bad day. Comment on the
+          # existing one instead of piling up a new issue per failed day.
+          if [ -n "${OPEN_ISSUE}" ]; then
+            gh issue comment "${OPEN_ISSUE}" --repo "${GITHUB_REPOSITORY}" \
+              --body "Still broken as of $(date -u +%Y-%m-%dT%H:%M:%SZ). ${ALERT_BODY}"
+          else
+            gh issue create --repo "${GITHUB_REPOSITORY}" \
+              --title "${ISSUE_TITLE}" \
+              --body "${ALERT_BODY}"
+          fi
+
+          # Channel 3: fail the job too, so GitHub's own scheduled-workflow-
+          # failure email (sent to the repo owner automatically, zero setup)
+          # fires as well -- if one channel is having a bad day, the others
+          # might still get through.
           exit 1
