@@ -120,20 +120,41 @@ Hot-reload across `app/`, `components/`, `lib/`.
 
 ## Deployment
 
-Pushes to `master` auto-deploy via Vercel Git integration. For manual deploys:
+Hosted on Cloudflare Workers (via OpenNext), not Vercel — migrated 2026-08-05 after
+the Workers Free plan's fixed CPU-time limit made the daily send unreliable there.
+Nothing auto-deploys on push; deploys are manual:
 
 ```bash
-vercel deploy
-# preview URL printed
-vercel promote <preview-url>   # explicit promote — confirms before swapping prod
+npm run cf:deploy
 ```
+
+`cf:deploy` chains: verify build env → `opennextjs-cloudflare build` → `opennextjs-cloudflare deploy` → a post-deploy smoke test against the live site (`scripts/smoke-test-deploy.mjs`).
+
+**Must run from a WSL-native checkout, not the `/mnt/c` Windows mount** — `node_modules` here
+has Linux-native binaries (workerd, etc.) that fail outright from Windows. Use the wrapper,
+which also fixes a real bug hit twice on 2026-08-05 (a stale WSL copy silently redeploying
+old config because a changed file wasn't hand-copied over): it force-syncs the WSL checkout
+to match `origin/master` immediately before every deploy, so nothing stale can ship. Commit
+and push from Windows first, then from WSL:
+
+```bash
+bash scripts/deploy-from-wsl.sh
+```
+
+The daily letter send itself does **not** run on Cloudflare (see the CPU-limit note above) —
+it runs on GitHub Actions instead (`.github/workflows/daily-send.yml`, `next build && next start`,
+14:00 UTC primary + 15:00 UTC retry), calling this deployment's `/api/cron/weekly-send` route
+over HTTP. `.github/workflows/letter-watchdog.yml` checks delivery + secrets health daily and
+opens a GitHub Issue on failure.
+
+DNS for `everyday.report` is Cloudflare-managed (migrated from Vercel DNS 2026-07-30).
 
 The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalgy.com/alpha/*` page paths to `alpha.everyday.report/*` and proxies `/alpha/api/*` to this deployment (old email links).
 
 ## Operational notes
 
 - **Stripe** — dedicated Alpha account, fully Alpha-branded checkout. FOUNDER coupon (100%-off forever, owner-curated promo codes) for testing.
-- **Email** — Resend is the sole provider. Letters send as `"alpha." <alpha@everyday.report>`; Supabase sign-in emails (custom SMTP through Resend) send as `"alpha." <noreply@everyday.report>`. The everyday.report sending domain is verified via records in the Vercel-managed DNS zone (`npx vercel dns ls everyday.report`).
+- **Email** — Resend is the sole provider. Letters send as `"alpha." <alpha@everyday.report>`; Supabase sign-in emails (custom SMTP through Resend) send as `"alpha." <noreply@everyday.report>`. The everyday.report sending domain is verified via records in Cloudflare's DNS zone (migrated from Vercel DNS 2026-07-30).
 - **Supabase** — free tier in "Algy" org. Daily traffic prevents the 7-day idle pause.
 
 ## Project memory

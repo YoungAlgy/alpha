@@ -1,0 +1,4 @@
+# scripts/deploy-from-wsl.sh (and any future .sh) must run on WSL/Linux --
+# without this, Windows' core.autocrlf can silently commit CRLF line
+# endings, which makes bash fail with "bad interpreter: ...bash^M".
+*.sh text eol=lf
