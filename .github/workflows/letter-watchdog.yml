@@ -308,6 +308,14 @@ jobs:
           SEND_YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
           SEND_GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
           SEND_BRAVE_SEARCH_API_KEY: ${{ secrets.SEND_BRAVE_SEARCH_API_KEY }}
+          # Added when the ops-alert webhook fallback was wired 2026-08-05 --
+          # resilience-tier like the five above: sendOpsAlert() still works
+          # via Resend without it, this only covers the case where Resend
+          # itself is what's down. Worth watching for the same reason as any
+          # other resilience-tier secret: it can silently go missing later
+          # (a Discord webhook getting deleted/regenerated) with nothing else
+          # here to notice.
+          SEND_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_OPS_ALERT_WEBHOOK_URL }}
         run: |
           set -uo pipefail
           # Same set +e requirement as check-delivery's job -- GitHub Actions
@@ -385,13 +393,13 @@ jobs:
           done
 
           SOFT_MISSING=""
-          for name in SEND_GROQ_API_KEY SEND_DEEPSEEK_API_KEY SEND_YOU_API_KEY SEND_GEMINI_API_KEY SEND_BRAVE_SEARCH_API_KEY; do
+          for name in SEND_GROQ_API_KEY SEND_DEEPSEEK_API_KEY SEND_YOU_API_KEY SEND_GEMINI_API_KEY SEND_BRAVE_SEARCH_API_KEY SEND_OPS_ALERT_WEBHOOK_URL; do
             val="${!name:-}"
             [ -n "${val}" ] || SOFT_MISSING="${SOFT_MISSING}${SOFT_MISSING:+, }${name}"
           done
 
           if [ -z "${HARD_MISSING}" ] && [ -z "${SOFT_MISSING}" ]; then
-            echo "OK: all SEND_* secrets present (anthropic, resend hard-required; groq/deepseek/you/gemini/brave resilience-tier)."
+            echo "OK: all SEND_* secrets present (anthropic, resend hard-required; groq/deepseek/you/gemini/brave/ops-alert-webhook resilience-tier)."
             close_issue_if_open "${SEARCH_PHRASE}" "Resolved: all SEND_* secrets present (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
             exit 0
           fi

@@ -150,6 +150,11 @@ jobs:
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
+          # Optional -- route.ts's sendOpsAlert() falls back to this when
+          # Resend itself is the thing that's broken (see lib/email.ts's
+          # comment on sendOpsAlertViaWebhook). Unset until Algy creates a
+          # Discord/Slack webhook; behaves identically to before until then.
+          OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_OPS_ALERT_WEBHOOK_URL }}
           NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
           WEEK_OF_INPUT: ${{ inputs.weekOf }}
         run: |
