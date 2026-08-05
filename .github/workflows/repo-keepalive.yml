@@ -1,0 +1,58 @@
+name: Repo keepalive
+
+# GitHub automatically disables EVERY scheduled workflow in a repo after 60
+# days with no repository activity -- and per GitHub's own docs, only real
+# COMMITS reset that clock; workflow runs (even scheduled ones firing every
+# day, like letter-watchdog.yml and daily-send.yml) do NOT count, and neither
+# do issue comments/closes (which the watchdog already does daily). Added
+# 2026-08-05 as part of hardening the daily send to run reliably indefinitely,
+# not just for one active-development month -- alpha is under heavy commit
+# activity right now, so this is dormant today, but the day development goes
+# quiet for 45+ days is exactly the day nobody's watching closely enough to
+# notice both daily-send.yml AND letter-watchdog.yml silently going dark at
+# once, with subscribers still being billed for letters that stopped arriving.
+#
+# Runs weekly (cheap, no reason to run daily for a 60-day threshold) and only
+# ever commits when genuinely needed -- checks for a real commit in the last
+# 45 days (a real safety margin before the 60-day cutoff) and does nothing at
+# all if one already exists, so this stays fully dormant during normal active
+# development and never adds noise to the git log.
+
+on:
+  schedule:
+    - cron: '0 12 * * 1' # every Monday, 12:00 UTC -- arbitrary, just weekly
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # need real history to check commit dates, not just the tip
+
+      - name: Commit a keepalive marker only if no real commit landed in the last 45 days
+        run: |
+          set -uo pipefail
+          set +e
+
+          RECENT=$(git log -1 --since="45 days ago" --format=%H 2>/dev/null)
+          if [ -n "${RECENT}" ]; then
+            echo "OK: a real commit landed within the last 45 days (${RECENT:0:8}) -- nothing to do."
+            exit 0
+          fi
+
+          echo "No commits in 45+ days -- the 60-day scheduled-workflow auto-disable is a real near-term risk. Committing a keepalive marker."
+          mkdir -p .github
+          echo "Last automated keepalive: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > .github/KEEPALIVE.md
+          echo "" >> .github/KEEPALIVE.md
+          echo "This file exists only to reset GitHub's 60-day scheduled-workflow auto-disable clock (only real commits count, per GitHub's own docs -- daily-send.yml and letter-watchdog.yml running on schedule do NOT reset it on their own). See .github/workflows/repo-keepalive.yml. If you're seeing frequent updates to this file, it means real development activity has actually stopped for 45+ days -- worth checking daily-send.yml and letter-watchdog.yml are still delivering." >> .github/KEEPALIVE.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/KEEPALIVE.md
+          git commit -m "chore: keepalive marker (no real commit in 45+ days, see workflow comment)"
+          git push
