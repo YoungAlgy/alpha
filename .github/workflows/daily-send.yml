@@ -90,6 +90,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
+          UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
           NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
           WEEK_OF_INPUT: ${{ inputs.weekOf }}
         run: |
