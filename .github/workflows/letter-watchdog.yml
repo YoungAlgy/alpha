@@ -50,11 +50,19 @@ jobs:
 
           echo "Supabase response: ${RESPONSE}"
 
-          COUNT=$(echo "${RESPONSE}" | jq 'length')
+          # Explicit array check, not just `jq 'length'`: a Supabase error
+          # (bad key, RLS issue, etc.) comes back as a JSON OBJECT, and
+          # `length` on an object counts its KEYS -- an error object with 2+
+          # fields would satisfy `> 0` and wrongly read as "a delivery was
+          # found." Treat anything that isn't genuinely an array as a check
+          # failure (falls through to the alert path below), not a silent OK.
+          COUNT=$(echo "${RESPONSE}" | jq 'if type == "array" then length else -1 end')
 
           if [ "${COUNT}" -gt 0 ]; then
             echo "OK: at least one real delivery since ${CUTOFF}."
             exit 0
+          elif [ "${COUNT}" -lt 0 ]; then
+            echo "ALERT: Supabase response wasn't a valid array (query/auth problem) -- treating as a failed check, not a silent pass."
           fi
 
           echo "ALERT: no delivered issues found since ${CUTOFF} -- the daily send may be broken."
