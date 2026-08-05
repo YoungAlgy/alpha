@@ -417,12 +417,29 @@ export async function GET(req: Request) {
     // identical idempotency/claim/rollback guarantees every time; the only
     // difference is which Issue gets persisted and which counter it credits.
     async function runPersistAndSend(issue: Issue, kind: "live" | "backup-shared" | "backup-fresh" | "backup-stale"): Promise<void> {
-      // Upsert the issue so re-runs are idempotent on (user_id, week_of).
-      // THROW on failure (caught by the caller) — if this row doesn't exist,
-      // the email must NOT go out: the delivered_at CLAIM below targets this
-      // exact row, so a missing row means no claim and no send. Skipping the
-      // send means the next run retries the whole user cleanly.
-      const { error: issueUpsertErr } = await sb.from("issues").upsert(
+      // Ensure the row EXISTS so the atomic claim below (an UPDATE) has
+      // something to match — but never overwrite content here.
+      // ignoreDuplicates makes this INSERT ... ON CONFLICT DO NOTHING: if the
+      // row already exists (created by an earlier attempt for this same
+      // subscriber+week, live or backup), this is a no-op. THROW on failure —
+      // same reasoning as before: if the row can't even be created, the email
+      // must NOT go out, since the claim below has nothing to target.
+      //
+      // Found live 2026-08-05 (adversarial audit, same day as the resilience
+      // hardening): the OLD code unconditionally upserted content here on
+      // every call, before the claim. Two calls for the same (user_id,
+      // week_of) — e.g. a live send still finishing in the background past
+      // its deadline (kept alive via after()) racing a backup layer's retry —
+      // would both overwrite this row's content, and whichever wrote LAST won
+      // regardless of which one actually WON the delivered_at claim below (or
+      // whether either even sent an email at all yet). /letter and /inbox
+      // read sections straight from this row, so the wrong content could be
+      // shown even when the right email had already gone out — and in the
+      // failure-ordering variant, a same-day retry could resend the loser's
+      // placeholder content as if it were the real thing. See
+      // alpha_full_app_review_2026-08-05.md in Claude's memory for the full
+      // writeup and scripts/verify-persist-claim-atomicity.mts for the proof.
+      const { error: ensureExistsErr } = await sb.from("issues").upsert(
         {
           user_id: row.id,
           week_of: weekOf,
@@ -431,10 +448,10 @@ export async function GET(req: Request) {
           editor_intro: issue.editorIntro,
           sections: issue.sections,
         },
-        { onConflict: "user_id,week_of" }
+        { onConflict: "user_id,week_of", ignoreDuplicates: true }
       );
-      if (issueUpsertErr) {
-        throw new Error(`issue upsert failed: ${issueUpsertErr.message}`);
+      if (ensureExistsErr) {
+        throw new Error(`issue upsert failed: ${ensureExistsErr.message}`);
       }
 
       // Send the letter via Resend (lib/email.ts). THROW, don't silently
@@ -463,12 +480,27 @@ export async function GET(req: Request) {
       // send failure — trading the old "stamp-fail/crash -> DUPLICATE" for a
       // far rarer "hard crash between claim and send -> missed once". A missed
       // letter is less harmful than a duplicate. ?force=1 bypasses the claim.
+      //
+      // Content fields ride along in THIS same atomic UPDATE now (they used
+      // to be written unconditionally above, before the claim existed at
+      // all — see the ensure-exists comment above for why that was a real
+      // bug). Bundling them here means only the WINNER of the compare-and-
+      // swap ever writes content: the loser's UPDATE matches 0 rows, so
+      // neither its claim nor its content-write happens. No separate
+      // "did we win, now also write content" step is needed or possible to
+      // get wrong.
       let claimedAt: string | null = null;
       if (!force) {
         claimedAt = new Date().toISOString();
         const { data: claimRows, error: claimErr } = await sb
           .from("issues")
-          .update({ delivered_at: claimedAt })
+          .update({
+            delivered_at: claimedAt,
+            volume: issue.volume,
+            number: issue.number,
+            editor_intro: issue.editorIntro,
+            sections: issue.sections,
+          })
           .eq("user_id", row.id)
           .eq("week_of", weekOf)
           .is("delivered_at", null)
@@ -480,6 +512,23 @@ export async function GET(req: Request) {
           skippedAlreadyDelivered++;
           console.log(`[cron/weekly-send] skipped (claimed by a concurrent run) → ${row.email}`);
           return;
+        }
+      } else {
+        // force=1 bypasses the claim entirely (admin one-off) -- write this
+        // call's content unconditionally, matching the original explicit-
+        // override intent (force means "just do it", not "only if I win").
+        const { error: forceWriteErr } = await sb
+          .from("issues")
+          .update({
+            volume: issue.volume,
+            number: issue.number,
+            editor_intro: issue.editorIntro,
+            sections: issue.sections,
+          })
+          .eq("user_id", row.id)
+          .eq("week_of", weekOf);
+        if (forceWriteErr) {
+          throw new Error(`force content write failed: ${forceWriteErr.message}`);
         }
       }
 
