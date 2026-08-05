@@ -60,6 +60,31 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Pre-flight — every required secret present + Resend actually deliverable
+        env:
+          CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.SEND_BRAVE_SEARCH_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.SEND_GROQ_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.SEND_DEEPSEEK_API_KEY }}
+          YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
+          UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
+        # Deliberately runs BEFORE `npm ci` -- no dependencies needed (just
+        # Node's built-in fetch), so a missing/broken secret fails in under a
+        # second instead of after a full install+build+generation run. Added
+        # 2026-08-05 after two real same-day incidents this would have caught
+        # instantly: UNSUBSCRIBE_SECRET missing entirely (every subscriber
+        # failed only after generating real content for all 4), and a broken
+        # Resend key + an unverified sender domain (real AI generation costs
+        # spent locally before anyone noticed delivery was impossible).
+        run: node scripts/verify-send-preflight.mjs
+
       - name: Install dependencies
         run: npm ci
 
