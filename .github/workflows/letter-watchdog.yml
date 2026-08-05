@@ -44,6 +44,25 @@ name: Daily letter watchdog
 #   recur -- the app's own /api/health route already computes
 #   checks.groq/deepseek/you/gemini/brave, it just never gated anything and
 #   nothing ever read it. Added a second job that does.
+#
+# Second hardening pass, same day, after a fresh independent review of the
+# FIRST pass's own fixes (not just the original bugs):
+# - The partial-send threshold used integer division (ACTIVE_COUNT / 2),
+#   which truncates -- at alpha's actual small subscriber count this made
+#   the detector literally unreachable (no DELIVERED_COUNT value could ever
+#   trip it) at ACTIVE_COUNT in {1,2,3}, and let an exact 50% loss slip
+#   through even at ACTIVE_COUNT=4. Rewritten as an exact integer
+#   comparison (DELIVERED_COUNT*2 <= ACTIVE_COUNT) with no truncation.
+# - The DELIVERED_COUNT==0 branch alerted unconditionally, with no check
+#   for ACTIVE_COUNT also being 0 -- if the subscriber base ever
+#   legitimately hits zero, this would've alerted forever with nothing
+#   actually wrong. Now treated as OK.
+# - None of the curl calls set a timeout, so a stalled connection (TCP
+#   accepted, response never completes) could hang the job for hours
+#   instead of failing fast into the alert path. All curls now bound.
+# - The Resend calls didn't check their own exit code -- ironic given this
+#   file's whole point is not silently swallowing failures. Now logged
+#   (not hard-failed, since the GitHub Issue channel is the durable one).
 
 on:
   schedule:
@@ -95,14 +114,19 @@ jobs:
           }
 
           send_resend_alert() {
-            local subject="$1" body="$2" payload
+            local subject="$1" body="$2" payload resend_exit
             payload=$(jq -n --arg from "alpha watchdog <alpha@avahealth.co>" --arg to "youngalgy@gmail.com" \
               --arg subject "${subject}" --arg text "${body}" \
               '{from: $from, to: [$to], subject: $subject, text: $text}')
-            curl -sS -X POST 'https://api.resend.com/emails' \
+            curl -sS -f --max-time 15 --connect-timeout 5 -X POST 'https://api.resend.com/emails' \
               -H "Authorization: Bearer ${RESEND_API_KEY}" \
               -H 'Content-Type: application/json' \
               -d "${payload}" >/dev/null
+            resend_exit=$?
+            # Best-effort: log, don't fail the job over this alone -- the
+            # GitHub Issue channel (open_or_update_issue) is the durable one
+            # and doesn't depend on Resend at all.
+            [ "${resend_exit}" -eq 0 ] || echo "WARNING: Resend alert call failed (curl exit ${resend_exit}) -- the GitHub Issue channel is still the source of truth."
           }
 
           # 20h, not 24h: the check runs ~2h after the expected 14:00 UTC
@@ -124,7 +148,7 @@ jobs:
           # with the anon key, so this never touches raw rows/PII and never
           # needs the full-privilege secret key the first version of this
           # workflow used.
-          RESPONSE=$(curl -sS -X POST \
+          RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
@@ -180,8 +204,18 @@ jobs:
           fi
 
           if [ "${DELIVERED_COUNT}" -eq 0 ]; then
+            # ACTIVE_COUNT==0 alongside DELIVERED_COUNT==0 means there was
+            # legitimately no one to send to (not "the send is broken") --
+            # without this, a subscriber base that ever hits zero would
+            # alert forever with nothing actually wrong.
+            if [ "${ACTIVE_COUNT}" -eq 0 ]; then
+              echo "OK: zero active subscribers right now, so zero deliveries is expected."
+              close_issue_if_open "${SEARCH_PHRASE}" "Resolved: zero active subscribers as of $(date -u +%Y-%m-%dT%H:%M:%SZ), so zero deliveries is expected, not a broken send. Closing automatically."
+              close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Resolved: zero active subscribers as of $(date -u +%Y-%m-%dT%H:%M:%SZ). Closing automatically."
+              exit 0
+            fi
             echo "ALERT: no delivered issues found since ${CUTOFF} -- the daily send may be broken."
-            ALERT_BODY="The daily digest watchdog found no issues.delivered_at since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: is the Cloudflare Cron Trigger still armed (wrangler.jsonc triggers.crons), are all required secrets still present on whatever host is live, and did the last deploy actually go out. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            ALERT_BODY="The daily digest watchdog found no issues.delivered_at since ${CUTOFF} against ${ACTIVE_COUNT} active subscribers (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: is the Cloudflare Cron Trigger still armed (wrangler.jsonc triggers.crons), are all required secrets still present on whatever host is live, and did the last deploy actually go out. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             send_resend_alert "[alpha] No letters delivered in the last 20 hours" "${ALERT_BODY}"
             open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
             close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Superseded: the full send now appears to have failed outright (0 delivered), not just partially. See the linked broken-send issue instead."
@@ -197,7 +231,19 @@ jobs:
           # completes, so a hard kill mid-loop skips it too). Only judged when
           # ACTIVE_COUNT itself was verified (>0); an unverifiable active
           # count isn't treated as evidence of a partial send.
-          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ "${DELIVERED_COUNT}" -lt $(( ACTIVE_COUNT / 2 )) ]; then
+          #
+          # DELIVERED_COUNT*2 <= ACTIVE_COUNT, not DELIVERED_COUNT <
+          # ACTIVE_COUNT/2 -- bash integer division truncates ACTIVE_COUNT/2
+          # toward zero, which at alpha's actual small subscriber count made
+          # this check unreachable (no DELIVERED_COUNT could ever trip it)
+          # for ACTIVE_COUNT in {1,2,3}, and let an exact 50% loss slip
+          # through even at ACTIVE_COUNT=4. Multiplying DELIVERED_COUNT by 2
+          # instead of dividing ACTIVE_COUNT is an exact integer comparison
+          # with no rounding loss, and <= (not <) means an exact half-loss
+          # -- itself a real, worth-investigating signal for a "did the send
+          # crash mid-loop" detector -- correctly fires instead of being
+          # waved through.
+          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ $(( DELIVERED_COUNT * 2 )) -le "${ACTIVE_COUNT}" ]; then
             echo "ALERT: only ${DELIVERED_COUNT}/${ACTIVE_COUNT} active subscribers got a letter since ${CUTOFF} -- possible partial/crashed send."
             ALERT_BODY="The daily digest watchdog found only ${DELIVERED_COUNT} delivered issues.delivered_at since ${CUTOFF}, against ${ACTIVE_COUNT} active subscribers (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Some letters clearly went out, so this isn't a total outage -- but this looks like a crashed or interrupted send (Worker CPU/wall-clock limit, an unhandled exception mid-loop), which alpha's own internal ops-alert also would not have caught (it only fires after the full per-subscriber loop finishes). Check the Cloudflare Worker's logs for the last cron invocation. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             send_resend_alert "[alpha] Possible partial letter send (${DELIVERED_COUNT}/${ACTIVE_COUNT})" "${ALERT_BODY}"
@@ -219,10 +265,11 @@ jobs:
         run: |
           set -uo pipefail
 
-          # Same two helpers as the delivery-check job -- duplicated rather
-          # than shared because GitHub Actions has no lightweight way to
-          # share a bash function across jobs without a separate composite
-          # action, and this is the only other place that needs them.
+          # Same three helpers as the delivery-check job -- duplicated
+          # rather than shared because GitHub Actions has no lightweight
+          # way to share a bash function across jobs without a separate
+          # composite action, and this is the only other place that needs
+          # them.
           close_issue_if_open() {
             local search_phrase="$1" resolution_note="$2" open_issue
             open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
@@ -242,6 +289,25 @@ jobs:
             fi
           }
 
+          # Third duplicated helper -- same Resend payload/curl pattern as
+          # check-delivery's send_resend_alert(), extracted here too rather
+          # than left inline, so both jobs' alert-sending logic lives in the
+          # same shape and a future payload change only needs finding via
+          # "send_resend_alert" in both places, not one function + one
+          # easy-to-miss inline block.
+          send_resend_alert() {
+            local subject="$1" body="$2" payload resend_exit
+            payload=$(jq -n --arg from "alpha watchdog <alpha@avahealth.co>" --arg to "youngalgy@gmail.com" \
+              --arg subject "${subject}" --arg text "${body}" \
+              '{from: $from, to: [$to], subject: $subject, text: $text}')
+            curl -sS -f --max-time 15 --connect-timeout 5 -X POST 'https://api.resend.com/emails' \
+              -H "Authorization: Bearer ${RESEND_API_KEY}" \
+              -H 'Content-Type: application/json' \
+              -d "${payload}" >/dev/null
+            resend_exit=$?
+            [ "${resend_exit}" -eq 0 ] || echo "WARNING: Resend alert call failed (curl exit ${resend_exit}) -- the GitHub Issue channel is still the source of truth."
+          }
+
           # This is the ONE place in this whole setup where trusting the
           # app's own /api/health is actually correct: it's authoritative
           # about which of its own process.env keys are set, which is
@@ -249,7 +315,7 @@ jobs:
           # does NOT trust this endpoint for "did a send happen" -- see
           # header comment -- but "is GROQ_API_KEY configured" isn't
           # something Supabase would ever know either way.
-          RESPONSE=$(curl -sS "https://alpha.everyday.report/api/health")
+          RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 "https://alpha.everyday.report/api/health")
           CURL_EXIT=$?
           echo "/api/health response (curl exit ${CURL_EXIT}): ${RESPONSE}"
 
@@ -296,11 +362,6 @@ jobs:
 
           echo "ALERT: /api/health reports these resilience-tier keys missing: ${MISSING}"
           ALERT_BODY="alpha's /api/health reports these resilience-tier API keys are NOT configured on the live Cloudflare Worker: ${MISSING} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). This is exactly the second half of the 2026-08-05 outage -- the primary send can still succeed via its remaining providers while this stays silently broken, so nothing else here would catch it. Fix: wrangler secret put <NAME> for each key listed, from whatever host currently holds the real value. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          curl -sS -X POST 'https://api.resend.com/emails' \
-            -H "Authorization: Bearer ${RESEND_API_KEY}" \
-            -H 'Content-Type: application/json' \
-            -d "$(jq -n --arg from "alpha watchdog <alpha@avahealth.co>" --arg to "youngalgy@gmail.com" \
-                  --arg subject "[alpha] Resilience-tier key(s) missing: ${MISSING}" --arg text "${ALERT_BODY}" \
-                  '{from: $from, to: [$to], subject: $subject, text: $text}')" >/dev/null
+          send_resend_alert "[alpha] Resilience-tier key(s) missing: ${MISSING}" "${ALERT_BODY}"
           open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
           exit 1
