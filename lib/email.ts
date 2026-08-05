@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import type { CreateEmailResponse } from "resend";
 import type { Issue } from "@/lib/types";
 import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
 
@@ -21,6 +22,65 @@ function resendClient(): Resend {
 // Callers check `resendConfigured()` to decide whether to attempt a send.
 export function resendConfigured(): boolean {
   return resendConfiguredInternal();
+}
+
+// Retry-with-backoff around a single emails.send() call. Added 2026-08-05
+// (resilience audit finding): a single transient Resend error used to
+// propagate straight up to the cron's caller, which for the letter path
+// means throwing away 45 seconds of work and escalating to the full
+// three-layer backup chain (real Anthropic/Gemini/Groq/DeepSeek/Brave spend)
+// for what might have been one rate-limited request that would have
+// succeeded a second later. Cheap to fix at the source instead.
+//
+// Only retries error classes Resend's own docs describe as transient
+// (RESEND_ERROR_CODE_KEY in the SDK's types) or a network-level throw
+// (fetch/timeout failure before any Resend response came back at all) —
+// never a validation/auth/quota error, where retrying identically can only
+// waste the remaining time budget for a guaranteed-identical failure.
+// Idempotency keys make retrying the SAME payload safe by design: Resend
+// collapses a retried send against the same key server-side rather than
+// double-sending (see idempotencyKey's own comment on SendLetterParams).
+const RETRYABLE_RESEND_ERRORS = new Set<string>([
+  "rate_limit_exceeded",
+  "internal_server_error",
+  "application_error",
+  "concurrent_idempotent_requests",
+]);
+const RESEND_RETRY_BACKOFF_MS = [500, 1500]; // 2 retries -> 3 attempts total
+
+// Takes the actual API call as an injected function (not payload/options
+// directly) so tests can exercise the real retry/backoff decision logic
+// against a fake that returns engineered responses, without needing the
+// real Resend SDK to be pointed at anything -- same dependency-injection
+// shape as lib/letter-delivery.ts's deliverLetterOnce(store, send, ...).
+export async function retryResendCall(
+  sendFn: () => Promise<CreateEmailResponse>
+): Promise<CreateEmailResponse> {
+  const maxAttempts = RESEND_RETRY_BACKOFF_MS.length + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const isLastAttempt = attempt === maxAttempts;
+    try {
+      const result = await sendFn();
+      const errorName = result.error?.name;
+      if (!result.error || isLastAttempt || !RETRYABLE_RESEND_ERRORS.has(errorName ?? "")) {
+        return result;
+      }
+      console.warn(
+        `[email] Resend send failed with retryable error "${errorName}" (attempt ${attempt}/${maxAttempts}), retrying: ${result.error!.message}`
+      );
+    } catch (e) {
+      // A throw here means the request never got a Resend response at all
+      // (network failure, timeout) -- also transient, also worth retrying.
+      if (isLastAttempt) throw e;
+      console.warn(
+        `[email] Resend send threw (attempt ${attempt}/${maxAttempts}), retrying: ${e instanceof Error ? e.message : e}`
+      );
+    }
+    const delayMs = RESEND_RETRY_BACKOFF_MS[attempt - 1] + Math.random() * 200;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  // Unreachable: the loop always returns or throws on isLastAttempt above.
+  throw new Error("retryResendCall: exhausted retries without resolving");
 }
 
 // The alpha. wordmark (lowercase serif + gold dot) and the footer line are shared
@@ -141,16 +201,18 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   const idempotencyKey = params.userId
     ? `alpha-letter-${params.userId}-${params.issue.weekOf}-${params.idempotencyKind ?? "live"}`
     : undefined;
-  const result = await resendClient().emails.send(
-    {
-      from: resendFrom,
-      to: params.to,
-      subject,
-      html,
-      text,
-      headers: resendHeaders,
-    },
-    idempotencyKey ? { idempotencyKey } : undefined
+  const result = await retryResendCall(() =>
+    resendClient().emails.send(
+      {
+        from: resendFrom,
+        to: params.to,
+        subject,
+        html,
+        text,
+        headers: resendHeaders,
+      },
+      idempotencyKey ? { idempotencyKey } : undefined
+    )
   );
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);
@@ -413,14 +475,16 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
     headers["List-Unsubscribe"] = `<${unsubUrl}>`;
     headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
-  const result = await resendClient().emails.send({
-    from: resendFrom,
-    to: params.to,
-    subject: "Welcome to alpha. Your first letter is on its way",
-    html,
-    text,
-    headers,
-  });
+  const result = await retryResendCall(() =>
+    resendClient().emails.send({
+      from: resendFrom,
+      to: params.to,
+      subject: "Welcome to alpha. Your first letter is on its way",
+      html,
+      text,
+      headers,
+    })
+  );
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);
   }
