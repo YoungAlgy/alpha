@@ -2,7 +2,7 @@
 
 A $5/mo personal newsletter. Users pick 5 topics from a curated menu of 25 (add-on bundles up to 25 topics, $25/mo); every day (14:00 UTC) we deliver an AI-written letter built from real sources — every cited link must come from that send's live search, enforced in code (lib/engine/url-guard.ts). Each send only looks at what's new since the last one (lib/cadence.ts).
 
-Lives at `alpha.everyday.report` (its own domain, app at the root — no basePath). `everyday.report` redirects there. The old home, `youngalgy.com/alpha/*`, 308-redirects page paths here and still PROXIES `/alpha/api/*` to this deployment so links baked into already-sent emails (unsubscribe GET/POST, one-click List-Unsubscribe-Post) keep working. Old magic-link/email-change callbacks are NOT proxied — they survive only because browsers follow the 308 to `/auth/callback` AND `https://youngalgy.com/alpha/auth/callback**` stays in the Supabase redirect allowlist. Never remove that allowlist entry.
+Lives at `alpha.everyday.report` (its own domain, app at the root — no basePath). `everyday.report` redirects there. The old home, `youngalgy.com/alpha/*`, 308-redirects page paths here, but `/alpha/api/*` is 301-redirected, not proxied — the youngalgy.com Vercel project this used to proxy to is gone. That breaks one-click unsubscribe (GET/POST, List-Unsubscribe-Post) for any letter sent before the 2026-07-03 domain move; see next.config.ts for detail. Old magic-link/email-change callbacks are NOT proxied — they survive only because browsers follow the 308 to `/auth/callback` AND `https://youngalgy.com/alpha/auth/callback**` stays in the Supabase redirect allowlist. Never remove that allowlist entry.
 
 ## Stack
 
@@ -51,7 +51,7 @@ app/
 components/
   ThemeApplier                applies user's theme to <html data-theme> on every route
   Digest                      letter render
-  ThemeSwitcher               in-app theme switcher (not used in V1 — settings does this now)
+  ThemeSwitcher               in-app theme switcher, rendered in settings + inbox pages
   AudioToggle / ReadingProgress / LetterTOC / ScrollFadeIn
   FirstLetterCelebration / InstallPrompt / Footer / LegalLayout
   onboarding/StepShell / ProgressDots / QuestionStep
@@ -82,7 +82,10 @@ lib/
 
 supabase/migrations/          schema migrations (applied via dashboard SQL editor)
 public/                       favicon + manifest + static assets
-proxy.ts                      Supabase session refresh middleware (renamed from middleware.ts for Next 16)
+
+src/
+  worker-entry.ts             Cloudflare Worker entry point wrapping OpenNext's handler —
+                               CSRF defense + Supabase session refresh (replaces the deleted proxy.ts)
 ```
 
 ## Environment
@@ -101,7 +104,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SECRET_KEY=
 NEXT_PUBLIC_APP_URL=https://alpha.everyday.report  # canonical origin for Stripe URLs + ALL email links
 UNSUBSCRIBE_SECRET=            # HMAC secret for unsubscribe + letter-view tokens
-CRON_SECRET=                   # bearer for /api/cron/weekly-send (Vercel Cron sends it)
+CRON_SECRET=                   # bearer for /api/cron/weekly-send (GitHub Actions sends it)
 SUPPORT_FORWARD_EMAIL=         # where /api/support notifications go (optional)
 NEXT_PUBLIC_POSTHOG_KEY=       # analytics (optional — inert if unset)
 ```
@@ -149,7 +152,7 @@ opens a GitHub Issue on failure.
 
 DNS for `everyday.report` is Cloudflare-managed (migrated from Vercel DNS 2026-07-30).
 
-The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalgy.com/alpha/*` page paths to `alpha.everyday.report/*` and proxies `/alpha/api/*` to this deployment (old email links).
+The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalgy.com/alpha/*` page paths to `alpha.everyday.report/*`, but 301-redirects `/alpha/api/*` rather than proxying it, breaking one-click unsubscribe on pre-2026-07-03 email links (see the top of this file and next.config.ts).
 
 ## Operational notes
 

@@ -134,9 +134,10 @@ interface SubscriberRow {
 }
 
 // Daily send entrypoint (every day since 2026-07-03; previously Sun/Tue/Thu).
-// Vercel Cron sends an
-// Authorization header of `Bearer ${CRON_SECRET}` automatically when the env
-// var is set. We refuse anything else, so this can't be hit from the open web.
+// GitHub Actions' daily-send.yml sends the Authorization header of
+// `Bearer ${CRON_SECRET}` via curl (its "Start the server and run the real
+// daily send" step). We refuse anything else, so this can't be hit from the
+// open web.
 //
 // Behavior:
 //   1. Find all users where subscribed_at IS NOT NULL AND access is still live
@@ -152,9 +153,10 @@ interface SubscriberRow {
 //   4. Topic blurbs are cached per (topic_id, send_date) so the first user pays
 //      the Claude cost and the rest reuse — order-of-N-topics calls, not
 //      N-users × N-topics.
-//   5. Per-user failures are caught and counted; the cron always returns 200
-//      so Vercel doesn't keep retrying — failures surface in the response
-//      summary and runtime logs.
+//   5. Per-user failures are caught and counted; the route always returns 200
+//      so a partial run still reads as a completed call — failures surface in
+//      the response summary and runtime logs (daily-send.yml separately fails
+//      the job if that summary shows any subscriber left uncovered).
 export async function GET(req: Request) {
   const expected = process.env.CRON_SECRET?.trim();
   const auth = req.headers.get("authorization");
@@ -165,11 +167,10 @@ export async function GET(req: Request) {
 
   // Allow ?weekOf=YYYY-MM-DD override (useful for backfills + admin testing
   // when the schedule hasn't fired yet). Defaults to today (the send date).
-  // CRON: a SINGLE Vercel cron drives every send, "0 14 * * *" (14:00 UTC,
-  // daily). It must be one entry: Vercel keys cron jobs by path, so an earlier
-  // attempt at multiple entries differing only by a ?slot=... query collapsed
-  // to one job and a scheduled send never fired. The handler derives the
-  // period from today's date, so one schedule covers every send day.
+  // CRON: GitHub Actions' daily-send.yml drives every send, "0 14 * * *"
+  // (14:00 UTC primary) plus an offset "0 15 * * *" retry for a dropped or
+  // failed primary run. The handler derives the period from today's date, so
+  // one schedule covers every send day.
   const url = new URL(req.url);
   const weekOfOverride = url.searchParams.get("weekOf");
   const weekOf =
@@ -313,6 +314,31 @@ export async function GET(req: Request) {
       priorIssueCount.set(r.id, count ?? 0);
     })
   );
+
+  // Prefetch each subscriber's persisted-but-undelivered issue (retry-safety
+  // reuse below, near runPersistAndSend) in ONE query — was a per-subscriber
+  // lookup inside the loop, mirroring the alreadyDelivered fix above.
+  const pendingIssues = new Map<
+    string,
+    { volume: number; number: number; editor_intro: string; sections: Issue["sections"] }
+  >();
+  {
+    const { data: pending } = await sb
+      .from("issues")
+      .select("user_id, volume, number, editor_intro, sections")
+      .eq("week_of", weekOf)
+      .is("delivered_at", null)
+      .in("user_id", rows.map((r) => r.id));
+    for (const p of (pending ?? []) as Array<{
+      user_id: string;
+      volume: number;
+      number: number;
+      editor_intro: string;
+      sections: Issue["sections"];
+    }>) {
+      pendingIssues.set(p.user_id, p);
+    }
+  }
 
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
   // total Claude time is bounded by topics-this-week, not users × topics.
@@ -553,13 +579,7 @@ export async function GET(req: Request) {
     // already-upserted row keeps the payload byte-identical, so the shared
     // idempotency key works as designed and the retry costs zero new AI
     // calls on top of being correct.
-    const { data: persistedRetry } = await sb
-      .from("issues")
-      .select("volume, number, editor_intro, sections")
-      .eq("user_id", row.id)
-      .eq("week_of", weekOf)
-      .is("delivered_at", null)
-      .maybeSingle();
+    const persistedRetry = pendingIssues.get(row.id);
     const reusableSections = persistedRetry?.sections as Issue["sections"] | undefined;
 
     try {

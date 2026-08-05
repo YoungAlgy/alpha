@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
-import { hasActiveAccess } from "@/lib/access";
+import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 
 export const runtime = "nodejs";
-
-const ADMIN_EMAIL = "youngalgy@gmail.com";
 
 interface Stats {
   totalUsers: number;

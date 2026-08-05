@@ -103,8 +103,10 @@ export default {
   // `Authorization: Bearer ${CRON_SECRET}` header Vercel Cron used to send
   // automatically — the route's own auth check is unchanged and unaware
   // this call now originates from inside the Worker instead of Vercel's
-  // infrastructure. LIVE since 2026-08-05 (wrangler.jsonc's triggers.crons)
-  // — this fires daily at 14:00 UTC against real subscriber data. See
+  // infrastructure. DISARMED since 2026-08-05 — wrangler.jsonc deliberately
+  // has no triggers.crons entry (it raced the GitHub Actions cron and burned
+  // free-tier quota before losing that race), so this handler is dormant,
+  // kept ready for a future paid-plan re-activation. See
   // alpha_cloudflare_cron_outage_2026-08-05 in Claude's memory for why it
   // sat unwired before that, and don't let this comment go stale again the
   // way that one did.

@@ -27,13 +27,12 @@ name: Daily letter send
 # this is the identical code path, just executed somewhere with room to
 # actually run it.
 #
-# Deliberately NOT disabling wrangler.jsonc's Cloudflare Cron Trigger. The
-# route's own delivered_at compare-and-swap makes a duplicate/overlapping
-# invocation safe by design (exactly one caller ever wins the claim for a
-# given subscriber+day) -- so leaving Cloudflare's cron armed costs nothing
-# and is free, harmless redundancy: if it ever DOES succeed (e.g. the
-# subscriber list changes in a way that fits under the Free plan's limit),
-# that's a bonus, not a conflict.
+# wrangler.jsonc's Cloudflare Cron Trigger was REMOVED 2026-08-05. It was
+# originally left armed on the theory that it'd be harmless redundancy, but
+# that turned out to be net-negative in practice: it raced this GitHub
+# Actions job at the identical instant daily, burning free-tier API quota
+# before losing the delivered_at claim and getting silently CPU-killed
+# anyway. This GitHub Actions schedule is now the sole trigger.
 
 on:
   schedule:
@@ -127,6 +126,13 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
         run: node scripts/verify-build-env.mjs
+
+      - uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
 
       - name: Build (plain Next.js -- NOT the Cloudflare/OpenNext bundle, just a runnable server)
         env:

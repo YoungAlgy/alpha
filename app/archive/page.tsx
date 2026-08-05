@@ -37,7 +37,8 @@ export default function ArchivePage() {
           const { data, error } = await sb
             .from("issues")
             .select("id, week_of, editor_intro")
-            .order("week_of", { ascending: false });
+            .order("week_of", { ascending: false })
+            .limit(100);
           if (error) {
             setState("error");
             return;

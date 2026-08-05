@@ -2,3 +2,7 @@
 # without this, Windows' core.autocrlf can silently commit CRLF line
 # endings, which makes bash fail with "bad interpreter: ...bash^M".
 *.sh text eol=lf
+
+# .github/workflows/*.yml embed large run: bash blocks, vulnerable to the
+# same CRLF corruption.
+.github/workflows/* text eol=lf

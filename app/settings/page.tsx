@@ -11,10 +11,8 @@ import { ProfileEditor } from "@/components/ProfileEditor";
 import { EmailChanger } from "@/components/EmailChanger";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { hasActiveAccess } from "@/lib/access";
+import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 import { clampQuota } from "@/lib/types";
-
-const ADMIN_EMAIL = "youngalgy@gmail.com";
 
 export default function SettingsPage() {
   const { state, reset } = useOnboarding();

@@ -13,6 +13,8 @@
 // This helper is the single source of truth for that rule (the weekly-send
 // cron expresses the equivalent as a PostgREST `.or` filter — keep them in
 // sync).
+export const ADMIN_EMAIL = "youngalgy@gmail.com";
+
 export function hasActiveAccess(
   cancelledAt: string | null | undefined,
   now: Date = new Date()
