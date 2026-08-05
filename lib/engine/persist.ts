@@ -149,7 +149,25 @@ export async function persistIssueIfPossible(
       }
     }
 
-    // Persist the issue
+    // Persist the issue. ignoreDuplicates -- NOT an unconditional overwrite
+    // -- so a concurrent call for the same (user_id, week_of) can't stomp
+    // content another call already wrote. Real scenario, not hypothetical:
+    // this function's own caller (app/api/generate/route.ts) explicitly
+    // anticipates "double-submits, retries that succeeded the first time
+    // but the client never saw the response" via its idempotent
+    // deliverLetterOnce claim downstream -- but that claim only guards the
+    // SEND, not this write. Two concurrent /api/generate calls for the same
+    // signup would previously both reach here and whichever upserted LAST
+    // won regardless of which one later won the send claim, same failure
+    // class the cron's runPersistAndSend had (see its 2026-08-05 fix and
+    // alpha_full_app_review_2026-08-05.md in Claude's memory). Not a full
+    // fix of that same class -- an ignoreDuplicates guard here can't
+    // guarantee the CLAIM winner's content is what's persisted, only that
+    // content is written once, by whichever caller arrives first, instead
+    // of last-write-wins -- but it's a real improvement for a real risk at
+    // a fraction of the cron fix's complexity, appropriate to this
+    // narrower, one-time-per-user blast radius (a rare double-submit at
+    // onboarding, not the cron's every-single-day systemic exposure).
     const { error: issueErr } = await sb.from("issues").upsert(
       {
         user_id: userId,
@@ -159,7 +177,7 @@ export async function persistIssueIfPossible(
         editor_intro: issue.editorIntro,
         sections: issue.sections,
       },
-      { onConflict: "user_id,week_of" }
+      { onConflict: "user_id,week_of", ignoreDuplicates: true }
     );
     if (issueErr) {
       console.warn("[persist] issue upsert failed:", issueErr.message);
