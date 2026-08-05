@@ -35,13 +35,26 @@ function Inner() {
       return;
     }
 
-    // Only accept a same-origin relative path -- a leading "//" is a
-    // protocol-relative URL (resolves off-origin), and anything not starting
-    // with a single "/" is an absolute URL. Rejecting both closes an open
-    // redirect right after the highest-trust moment in the app: the instant
-    // after a genuine sign-in on the real domain.
+    // Only accept a same-origin destination -- resolved through the real URL
+    // parser, not a hand-rolled regex. A regex check for "doesn't start with
+    // //" is an incomplete same-origin test: browsers normalize a leading
+    // backslash the same as a forward slash for special schemes, so a value
+    // like "/\evil.com" resolves to a cross-origin URL despite passing that
+    // check. Resolving via new URL() and comparing .origin closes the gap
+    // regardless of which character trick is used, right after the
+    // highest-trust moment in the app: the instant after a genuine sign-in.
     const rawNext = params.get("next");
-    const next = rawNext && /^\/(?!\/)/.test(rawNext) ? rawNext : "/inbox";
+    let next = "/inbox";
+    if (rawNext && typeof window !== "undefined") {
+      try {
+        const resolved = new URL(rawNext, window.location.origin);
+        if (resolved.origin === window.location.origin) {
+          next = resolved.pathname + resolved.search + resolved.hash;
+        }
+      } catch {
+        // malformed -- keep the /inbox fallback
+      }
+    }
     const code = params.get("code");
     const hasHashSession =
       typeof window !== "undefined" && window.location.hash.includes("access_token=");

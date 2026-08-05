@@ -75,9 +75,12 @@ const BodySchema = z.object({
 //   - Stripe isn't configured (local dev / the checkout 503 stub path)
 //   - the caller is an authenticated, currently-subscribed user
 //   - a Stripe Checkout session id is supplied AND Stripe says it's paid
-// Fail OPEN on a genuine Stripe infra blip (real session exists, API hiccuped)
-// so a paying customer's first letter is never blocked. Fail CLOSED on a
-// missing / fabricated / unpaid session.
+// Fail CLOSED on every unverified path, including a genuine Stripe infra
+// blip -- ok:true is only ever returned with a real verifiedEmail attached.
+// A Stripe outage means the customer retries in a moment (the checkout
+// session itself doesn't expire quickly); it does NOT mean falling back to
+// trusting the caller's own profile.email, which is exactly how this
+// endpoint had an account-takeover bug (see the POST handler's comment).
 // verifiedEmail is the identity this request is ACTUALLY entitled to act as --
 // the signed-in user's own email, or the email Stripe collected for the paid
 // checkout session. The caller's profile.email must never be trusted for this:
@@ -144,9 +147,18 @@ async function verifyPaid(
     if (e instanceof Stripe.errors.StripeInvalidRequestError) {
       return { ok: false, error: "Couldn't verify payment. Subscribe to receive your letter." };
     }
-    // Genuine Stripe infra error → fail open so a real payer isn't blocked.
-    console.warn("[generate] stripe verify blip, allowing:", e instanceof Error ? e.message : e);
-    return { ok: true, verifiedEmail: null };
+    // Genuine Stripe infra error -- fail CLOSED. Failing open here returned
+    // { ok: true, verifiedEmail: null }, which downstream only skips
+    // overwriting profile.email on a falsy verifiedEmail -- so any caller
+    // could trigger this branch (any non-StripeInvalidRequestError, e.g. a
+    // rate-limit or connection error) with an arbitrary session id and
+    // profile.email, and get a magic link minted for that unverified
+    // address. Reopened the exact account-takeover class this file's own
+    // POST handler comment describes fixing. A transient Stripe blip is
+    // retry-able; an unverified identity being trusted for a magic link is
+    // not an acceptable trade for that convenience.
+    console.warn("[generate] stripe verify blip, failing closed:", e instanceof Error ? e.message : e);
+    return { ok: false, error: "Couldn't verify payment right now. Please try again in a moment." };
   }
 }
 
@@ -234,13 +246,13 @@ export async function POST(req: Request) {
         try {
           // Issue number = prior DELIVERED letters (weeks before this one) + 1.
           // delivered_at NOT NULL so a generated-but-unsent row doesn't inflate it.
-          const { data: priors } = await sb
+          const { count } = await sb
             .from("issues")
-            .select("week_of")
+            .select("*", { count: "exact", head: true })
             .eq("user_id", persistence.userId)
             .lt("week_of", weekOf)
             .not("delivered_at", "is", null);
-          issueNumber = (priors?.length ?? 0) + 1;
+          issueNumber = (count ?? 0) + 1;
         } catch (e) {
           console.warn(
             "[generate] issue-number lookup failed (will still attempt send):",
