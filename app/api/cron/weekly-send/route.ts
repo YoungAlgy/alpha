@@ -290,6 +290,20 @@ export async function GET(req: Request) {
   // unambiguously stuck, not just slow -- nulling delivered_at puts that
   // subscriber back in the normal undelivered pool for THIS run.
   const RECLAIM_SAFETY_MARGIN_MS = 10 * 60 * 1000; // 10 minutes
+  // Grandfather cutoff, same value and same reasoning as
+  // watchdog_delivery_check()'s 2026-08-05 migration: resend_message_id was
+  // added to the schema AFTER today's real 14:00 UTC send already ran on
+  // the old code, so every one of today's genuine deliveries has
+  // delivered_at set and resend_message_id null -- not because they're
+  // stuck, but because the column didn't exist yet. Without this,
+  // re-processing weekOf=2026-08-05 for any reason (a manual admin re-run,
+  // a ?weekOf= backfill) would "reclaim" real, already-delivered letters
+  // and reprocess them. Harmless to send (Resend's idempotency key +
+  // RETRY-SAFETY content reuse dedupe it), but it's still wrong to treat a
+  // real success as broken, and it would fire a false "reclaimed a stuck
+  // claim" ops alert. Irrelevant for every future day's send -- only
+  // matters for reprocessing this exact date.
+  const RECLAIM_GRANDFATHER_CUTOFF = "2026-08-05T19:10:00Z";
   if (!force) {
     const reclaimCutoff = new Date(Date.now() - RECLAIM_SAFETY_MARGIN_MS).toISOString();
     const { data: reclaimed, error: reclaimErr } = await sb
@@ -298,6 +312,7 @@ export async function GET(req: Request) {
       .eq("week_of", weekOf)
       .is("resend_message_id", null)
       .not("delivered_at", "is", null)
+      .gte("delivered_at", RECLAIM_GRANDFATHER_CUTOFF)
       .lt("delivered_at", reclaimCutoff)
       .select("user_id");
     if (reclaimErr) {

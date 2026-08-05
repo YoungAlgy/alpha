@@ -12,10 +12,14 @@
 // back out for exactly that pattern.
 //
 // This exercises the real reclaim query directly against live Supabase
-// (same shape as the route's own query) across four cases: a genuinely
+// (same shape as the route's own query) across five cases: a genuinely
 // stuck old claim (should reclaim), a claim that's recent (still plausibly
 // in-flight -- must NOT reclaim), a genuinely successful old send (has
-// proof -- must NOT reclaim), and an undelivered row (nothing to reclaim).
+// proof -- must NOT reclaim), an undelivered row (nothing to reclaim), and
+// a row dated before the grandfather cutoff that LOOKS stuck (delivered_at
+// set, no proof) but predates resend_message_id existing at all -- must
+// NOT reclaim (added after catching a real gap in review: today's actual
+// pre-fix deliveries all match the "stuck" pattern on the column alone).
 // Run: npx tsx scripts/verify-stuck-claim-reclaim.mts
 import { loadEnvLocal } from "./_load-env.mts";
 loadEnvLocal();
@@ -38,13 +42,15 @@ const check = (label: string, cond: boolean) => {
 };
 
 const RECLAIM_SAFETY_MARGIN_MS = 10 * 60 * 1000;
-// Four synthetic far-future week_of values, one per case, so they can never
+const RECLAIM_GRANDFATHER_CUTOFF = "2026-08-05T19:10:00Z";
+// Five synthetic far-future week_of values, one per case, so they can never
 // collide with each other or a real send date.
 const weekOfStuck = "2099-02-01";
 const weekOfRecent = "2099-02-02";
 const weekOfProven = "2099-02-03";
 const weekOfUndelivered = "2099-02-04";
-const allWeekOfs = [weekOfStuck, weekOfRecent, weekOfProven, weekOfUndelivered];
+const weekOfPreGrandfather = "2099-02-05";
+const allWeekOfs = [weekOfStuck, weekOfRecent, weekOfProven, weekOfUndelivered, weekOfPreGrandfather];
 
 async function reclaim(weekOf: string) {
   const reclaimCutoff = new Date(Date.now() - RECLAIM_SAFETY_MARGIN_MS).toISOString();
@@ -54,6 +60,7 @@ async function reclaim(weekOf: string) {
     .eq("week_of", weekOf)
     .is("resend_message_id", null)
     .not("delivered_at", "is", null)
+    .gte("delivered_at", RECLAIM_GRANDFATHER_CUTOFF)
     .lt("delivered_at", reclaimCutoff)
     .select("user_id");
 }
@@ -86,6 +93,11 @@ try {
   await sb.from("issues").insert({ user_id: userId, week_of: weekOfProven, ...baseContent, delivered_at: oldEnough, resend_message_id: "re_abc123genuine" });
   // Case 4: never claimed at all.
   await sb.from("issues").insert({ user_id: userId, week_of: weekOfUndelivered, ...baseContent, delivered_at: null, resend_message_id: null });
+  // Case 5: looks stuck (delivered_at set, no proof, old) but dated BEFORE
+  // the grandfather cutoff -- must survive untouched, same as today's real
+  // pre-fix deliveries need to.
+  const preGrandfather = "2026-08-05T18:00:00.000Z";
+  await sb.from("issues").insert({ user_id: userId, week_of: weekOfPreGrandfather, ...baseContent, delivered_at: preGrandfather, resend_message_id: null });
 
   console.log("(1) stuck claim (old, no proof) -- should RECLAIM");
   const r1 = await reclaim(weekOfStuck);
@@ -110,6 +122,12 @@ try {
   console.log("(4) never delivered -- nothing to reclaim");
   const r4 = await reclaim(weekOfUndelivered);
   check("(4) zero rows reclaimed", (r4.data?.length ?? 0) === 0);
+
+  console.log("(5) looks stuck but predates the grandfather cutoff -- must NOT reclaim (matches today's real pre-fix deliveries)");
+  const r5 = await reclaim(weekOfPreGrandfather);
+  check("(5) zero rows reclaimed", (r5.data?.length ?? 0) === 0);
+  const { data: row5 } = await sb.from("issues").select("delivered_at").eq("user_id", userId).eq("week_of", weekOfPreGrandfather).single();
+  check("(5) delivered_at is UNTOUCHED (still set)", row5?.delivered_at !== null);
 } finally {
   // Cleanup -- scoped to this user's synthetic week_ofs only, never a bare
   // eq("user_id", ...) (that would delete every real letter this borrowed
