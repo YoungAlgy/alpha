@@ -74,12 +74,22 @@ export async function POST(req: Request) {
       const from = process.env.RESEND_FROM || '"alpha." <onboarding@resend.dev>';
       const { Resend } = await import("resend");
       const resend = new Resend(process.env.RESEND_API_KEY!);
-      await resend.emails.send({
+      const result = await resend.emails.send({
         from,
         to: ownerEmail,
         subject: `[alpha. support] ${body.name || body.email}`,
         text: `From: ${body.name ? `${body.name} <${body.email}>` : body.email}\n\n${body.message}`,
       });
+      // The Resend SDK returns { data, error } on a send failure -- it does
+      // NOT throw (same bug class already found+fixed in lib/email.ts's
+      // sendOpsAlertViaResend during the 2026-08-05 resilience audit). This
+      // catch block never sees a bad key or unverified domain; only an
+      // explicit check on result.error does. The message itself is already
+      // persisted to Supabase above, so nothing is lost -- only the owner
+      // notification silently stops arriving with no warning anywhere.
+      if (result.error) {
+        console.warn("[support] owner notify failed (Resend returned an error, not a throw):", result.error);
+      }
     } catch (e) {
       console.warn("[support] owner notify failed:", e);
     }
