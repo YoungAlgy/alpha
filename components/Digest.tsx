@@ -211,9 +211,11 @@ function Item({ item }: { item: DigestItem }) {
             className="alpha-mono mt-4"
             style={{ color: "var(--ink-soft)" }}
           >
-            {item.sourceUrl ? (
+            {safeUrl(item.sourceUrl) ? (
               <a
-                href={item.sourceUrl}
+                href={safeUrl(item.sourceUrl)!}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="hover:underline"
                 style={{ color: "var(--accent-ink)" }}
               >

@@ -184,8 +184,23 @@ export async function POST(req: Request) {
         // DROPPING a cancel-at-period-end subscriber who is still paid up. Only
         // write a real future end date; otherwise leave null (keep serving the
         // paid-up reader — subscription.deleted will set the real end later).
-        const cancelledAt =
-          cancellingAtPeriodEnd && typeof sub.cancel_at === "number" && sub.cancel_at > 0
+        //
+        // TERMINAL STATUS must never resolve to null. A `subscription.deleted`
+        // event correctly sets cancelled_at=now() when the sub ends. But Stripe
+        // retries a failed `updated`/`created` delivery for ~3 days -- if that
+        // retry lands AFTER `deleted` has already processed, this snapshot's
+        // cancel_at_period_end is false (a terminal sub isn't "canceling at
+        // period end", it already ended), so the un-guarded derivation below
+        // would write cancelled_at=null and silently resurrect a churned
+        // subscriber's paid access indefinitely. Once a sub is in a terminal
+        // status, this handler must agree with subscription.deleted, not undo it.
+        const terminalStatus =
+          sub.status === "canceled" ||
+          sub.status === "incomplete_expired" ||
+          sub.status === "unpaid";
+        const cancelledAt = terminalStatus
+          ? new Date().toISOString()
+          : cancellingAtPeriodEnd && typeof sub.cancel_at === "number" && sub.cancel_at > 0
             ? new Date(sub.cancel_at * 1000).toISOString()
             : null;
         const { data: subRows, error: subErr } = await sb

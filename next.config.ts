@@ -6,10 +6,21 @@ initOpenNextCloudflareForDev();
 const nextConfig: NextConfig = {
   // No basePath: the app lives at the ROOT of its own domain,
   // alpha.everyday.report. It previously carried basePath "/alpha" from its
-  // life as youngalgy.com/alpha; that hub now 308-redirects /alpha/* here
-  // (except /alpha/api/*, which it still PROXIES so links baked into
-  // already-sent emails — unsubscribe, one-click List-Unsubscribe-Post —
-  // keep working forever; those callers don't follow redirects).
+  // life as youngalgy.com/alpha; that hub now 308-redirects /alpha/* here.
+  //
+  // CORRECTION (2026-08-05): this comment used to claim youngalgy.com still
+  // PROXIES /alpha/api/* so old emailed unsubscribe / one-click
+  // List-Unsubscribe-Post links "keep working forever". Verified false: the
+  // youngalgy.com Vercel project this pointed at is gone (404 on every path),
+  // and the live youngalgy.com (now on Cloudflare) 301-redirects /alpha/api/*
+  // here instead of proxying it — a 301 that mail providers' one-click
+  // List-Unsubscribe-Post agents don't follow (per the very justification
+  // this comment used to give), and that would downgrade POST->GET even if
+  // they did. Any letter sent before the 2026-07-03 domain move carries a
+  // youngalgy.com/alpha/api/unsubscribe URL that can no longer be unsubscribed
+  // one-click -- a real deliverability/compliance gap. The actual fix belongs
+  // in youngalgy's live redirect config (point that one path at
+  // alpha.everyday.report instead of 301-ing it), not here.
   reactStrictMode: true,
   async redirects() {
     return [

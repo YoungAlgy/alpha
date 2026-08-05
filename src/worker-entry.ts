@@ -7,7 +7,7 @@
 // the original comments this is ported from.
 //
 // Two jobs carried over unchanged:
-//   1. CSRF defense on 7 state-changing endpoints — this is NOT redundant
+//   1. CSRF defense on 8 state-changing endpoints — this is NOT redundant
 //      with anything else. None of those routes have their own Sec-Fetch-Site
 //      check, so dropping this (the way pitchroom's genuinely-redundant auth
 //      gate was dropped) would be a real security regression on account
@@ -38,6 +38,7 @@ const CSRF_GUARDED_SUFFIXES = [
   '/api/account/delete',
   '/api/account/profile',
   '/api/account/email/reconcile',
+  '/api/account/topics',
   '/api/admin/users',
   '/api/stripe/portal',
   '/api/stripe/update-quantity',
@@ -140,13 +141,28 @@ export default {
     }
 
     // Supabase session refresh, only if configured (matches proxy.ts's own
-    // pass-through fallback when env vars are missing).
+    // pass-through fallback when env vars are missing) AND only for real page/
+    // API routes. wrangler.jsonc's `assets.run_worker_first: true` routes
+    // EVERY request through this Worker first, including every static asset
+    // (/_next/static/*.js, /og-image.png, favicons) -- the old middleware.ts
+    // matcher (`/((?!_next).*)`) used to exclude those, but that matcher sat
+    // above Next and never protected this file, which runs below it. Without
+    // this bypass, a signed-in reader loading /inbox pays one real Supabase
+    // Auth network round trip (getUser() is not a local JWT decode -- see
+    // @supabase/auth-js's GoTrueClient._getUser) per same-origin asset the
+    // page loads, serialized in front of each one. Anonymous traffic already
+    // skips the cost (no session -> AuthSessionMissingError, no fetch); this
+    // just extends the same skip to authed traffic on files that can't
+    // possibly need a refreshed session cookie. A dot in the last path
+    // segment reliably means a static file here -- every real page/API route
+    // in this app is extension-less.
+    const isStaticAsset = /\.[a-zA-Z0-9]+$/.test(url.pathname)
     const e = env as Record<string, string>
     const supabaseUrl = e?.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = e?.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || e?.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
     let setCookieHeaders: string[] = []
-    if (supabaseUrl && supabaseKey) {
+    if (!isStaticAsset && supabaseUrl && supabaseKey) {
       const incomingCookies = parseCookieHeader(request.headers.get('cookie'))
       const supabase = createServerClient(supabaseUrl, supabaseKey, {
         cookies: {

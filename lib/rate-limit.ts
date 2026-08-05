@@ -42,6 +42,17 @@ export function rateLimit(
 }
 
 export function clientKeyFromRequest(req: Request): string {
+  // cf-connecting-ip is set by Cloudflare's edge itself (the app runs as a
+  // Cloudflare Worker) and can't be spoofed by the caller. x-forwarded-for is
+  // NOT safe here: Cloudflare APPENDS the real IP to whatever chain the client
+  // sent rather than replacing it, so req.headers.get("x-forwarded-for") on
+  // this host returns attacker-controlled input if read first -- a caller
+  // sending a fresh random value on every request gets a fresh rate-limit
+  // bucket every time, defeating every limit(...) call in the app. (This was
+  // safe back on Vercel, which overwrites x-forwarded-for; it stopped being
+  // safe the week alpha moved to Cloudflare Workers.)
+  const cf = req.headers.get("cf-connecting-ip");
+  if (cf) return cf.trim();
   const fwd = req.headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0].trim();
   const real = req.headers.get("x-real-ip");

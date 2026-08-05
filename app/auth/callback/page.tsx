@@ -35,7 +35,13 @@ function Inner() {
       return;
     }
 
-    const next = params.get("next") || "/inbox";
+    // Only accept a same-origin relative path -- a leading "//" is a
+    // protocol-relative URL (resolves off-origin), and anything not starting
+    // with a single "/" is an absolute URL. Rejecting both closes an open
+    // redirect right after the highest-trust moment in the app: the instant
+    // after a genuine sign-in on the real domain.
+    const rawNext = params.get("next");
+    const next = rawNext && /^\/(?!\/)/.test(rawNext) ? rawNext : "/inbox";
     const code = params.get("code");
     const hasHashSession =
       typeof window !== "undefined" && window.location.hash.includes("access_token=");

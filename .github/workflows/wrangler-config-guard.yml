@@ -99,6 +99,33 @@ jobs:
             process.exit(1);
           }
 
+          // The single most likely way this whole guard gets silently defeated:
+          // OpenNext's own default `main` is `.open-next/worker.js` (that's what
+          // `opennextjs-cloudflare migrate`, every OpenNext doc, and the template
+          // at node_modules/@opennextjs/cloudflare/templates/wrangler.jsonc all
+          // ship), and that generated file's default export has NO scheduled()
+          // handler -- confirmed by inspecting the real .open-next/worker.js
+          // output. src/worker-entry.ts is a custom entry that wraps it AND adds
+          // scheduled(). If `main` is ever reverted to the OpenNext default (a
+          // re-init, a doc copy-paste, a "clean up the custom entry" edit),
+          // every other check below still passes -- triggers.crons is untouched,
+          // WORKER_SELF_REFERENCE is still bound, worker-entry.ts still exports
+          // async scheduled() -- but none of that file is what's actually
+          // deployed, so the 14:00 UTC cron fires into nothing and the CSRF
+          // guard + Supabase session refresh in worker-entry.ts vanish too.
+          const EXPECTED_MAIN = 'src/worker-entry.ts';
+          if (config.main !== EXPECTED_MAIN) {
+            console.error(
+              `::error::wrangler.jsonc "main" is ${JSON.stringify(config.main)}, expected ` +
+              `${JSON.stringify(EXPECTED_MAIN)}. This is the custom entry that implements ` +
+              'scheduled(), the CSRF guard, and the Supabase session refresh -- every other ' +
+              'check in this guard passes even when "main" points somewhere else, since they ' +
+              'only inspect wrangler.jsonc and worker-entry.ts\'s own source, not what actually ' +
+              'gets bundled and deployed.'
+            );
+            process.exit(1);
+          }
+
           // Not just "non-empty" -- an exact match. A schedule that's been
           // quietly changed to the wrong hour, or corrupted into a
           // malformed-but-non-empty expression, would pass a bare

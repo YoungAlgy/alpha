@@ -49,7 +49,18 @@ const ProfileSchema = z.object({
 
 const BodySchema = z.object({
   profile: ProfileSchema,
-  weekOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // This is the onboarding first-letter endpoint -- the client never sends
+  // weekOf (it always defaults to today, see defaultWeekOf()). Bounded to a
+  // couple days of slop for timezone/clock skew rather than left open: an
+  // unbounded weekOf keys the issues upsert below, so it could overwrite any
+  // already-delivered issue (past or future) in a reader's archive.
+  weekOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
+    const d = new Date(`${s}T00:00:00Z`).getTime();
+    if (Number.isNaN(d)) return false;
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    return Math.abs(today.getTime() - d) <= 2 * 24 * 60 * 60 * 1000;
+  }, "weekOf must be close to today").optional(),
   // Stripe Checkout session id, threaded through from the success_url
   // (/writing?session_id=...). Proves the first letter was paid for.
   sessionId: z.string().max(200).optional(),
@@ -67,11 +78,19 @@ const BodySchema = z.object({
 // Fail OPEN on a genuine Stripe infra blip (real session exists, API hiccuped)
 // so a paying customer's first letter is never blocked. Fail CLOSED on a
 // missing / fabricated / unpaid session.
+// verifiedEmail is the identity this request is ACTUALLY entitled to act as --
+// the signed-in user's own email, or the email Stripe collected for the paid
+// checkout session. The caller's profile.email must never be trusted for this:
+// see the POST handler, which overwrites profile.email with verifiedEmail
+// before it reaches persistIssueIfPossible (magic-link minting) or the
+// notification send. Without that override, either payment-gate branch below
+// would let a caller pass an arbitrary victim email in profile.email, and this
+// endpoint would mint THAT victim a sign-in link and overwrite their profile.
 async function verifyPaid(
   sessionId: string | undefined
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; verifiedEmail: string | null } | { ok: false; error: string }> {
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
-  if (!secret) return { ok: true }; // dev / Stripe-less stub flow
+  if (!secret) return { ok: true, verifiedEmail: null }; // dev / Stripe-less stub flow
 
   // Already-subscribed authed user (future re-generate path)
   try {
@@ -88,7 +107,9 @@ async function verifyPaid(
         .maybeSingle();
       // Access runs through the paid period — a future cancelled_at (cancel-
       // at-period-end) still counts as active. See lib/access.hasActiveAccess.
-      if (data?.subscribed_at && hasActiveAccess(data.cancelled_at)) return { ok: true };
+      if (data?.subscribed_at && hasActiveAccess(data.cancelled_at)) {
+        return { ok: true, verifiedEmail: user.email?.toLowerCase().trim() ?? null };
+      }
     }
   } catch {
     // ignore — fall through to session check
@@ -108,7 +129,14 @@ async function verifyPaid(
       session.payment_status === "paid" ||
       session.payment_status === "no_payment_required"
     ) {
-      return { ok: true };
+      // customer_details.email (post-payment, Stripe-collected) over
+      // customer_email (the pre-fill we sent at session creation) -- same
+      // precedence the webhook already uses (see stripe/webhook/route.ts).
+      const verifiedEmail =
+        (session.customer_details?.email || session.customer_email || "")
+          .toLowerCase()
+          .trim() || null;
+      return { ok: true, verifiedEmail };
     }
     return { ok: false, error: "Payment not completed. Subscribe to receive your letter." };
   } catch (e) {
@@ -118,7 +146,7 @@ async function verifyPaid(
     }
     // Genuine Stripe infra error → fail open so a real payer isn't blocked.
     console.warn("[generate] stripe verify blip, allowing:", e instanceof Error ? e.message : e);
-    return { ok: true };
+    return { ok: true, verifiedEmail: null };
   }
 }
 
@@ -158,6 +186,14 @@ export async function POST(req: Request) {
     // real catalog id, "zodiac", or well-formed custom:<text> -- so this
     // narrowing to TopicId is backed by real validation, not just the shape.
     const profile = body.profile as Parameters<typeof generateIssue>[0];
+    // Never trust the caller-supplied profile.email for identity. Overwrite it
+    // with the email verifyPaid() actually confirmed this request as (the
+    // signed-in user's own email, or the email Stripe collected at checkout).
+    // See verifyPaid's comment -- this is the fix for a real account-takeover
+    // bug where profile.email flowed straight into magic-link generation.
+    if (paid.verifiedEmail) {
+      profile.email = paid.verifiedEmail;
+    }
     // No letterSize passed on purpose: this is the onboarding first letter,
     // where the reader picked exactly their quota of topics (pool == quota), so
     // generating the whole pool == generating their letterSize. If a future
