@@ -1,0 +1,65 @@
+name: Wrangler config guard
+
+# PREVENTION, not detection -- the watchdog (letter-watchdog.yml) catches a
+# failure within 20 hours after the fact; this stops the exact regression
+# that caused the 2026-08-05 outage from ever landing on master unnoticed
+# in the first place. Runs on every push, so a future change that silently
+# drops the Cron Trigger config (a migration, a merge, a copy-paste from an
+# older wrangler.jsonc) fails LOUDLY right there in CI, not silently in
+# production days later.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch: {}
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify wrangler.jsonc has a real, non-empty Cron Trigger
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const raw = fs.readFileSync('wrangler.jsonc', 'utf8');
+          // wrangler.jsonc is JSON-with-comments -- strip // line comments
+          // (this repo's own style, no block comments) so JSON.parse works.
+          const stripped = raw.replace(/\/\/.*$/gm, '');
+
+          let config;
+          try {
+            config = JSON.parse(stripped);
+          } catch (e) {
+            console.error('::error::wrangler.jsonc failed to parse as JSON(C): ' + e.message);
+            process.exit(1);
+          }
+
+          const crons = config.triggers && config.triggers.crons;
+          if (!Array.isArray(crons) || crons.length === 0) {
+            console.error(
+              '::error::wrangler.jsonc has no triggers.crons entries -- this is EXACTLY the ' +
+              'regression that caused the 2026-08-05 5-day letter outage (a host migration left ' +
+              'the Cron Trigger unwired, and nothing caught it for 5 real days). If this change ' +
+              'genuinely removes the daily cron on purpose, that needs to be a deliberate, ' +
+              'explicit decision -- not a silent side effect of something else.'
+            );
+            process.exit(1);
+          }
+
+          console.log('OK: wrangler.jsonc triggers.crons =', JSON.stringify(crons));
+          EOF
+
+      - name: Verify worker-entry.ts still wires a scheduled() handler
+        run: |
+          # The cron trigger config above is useless if nothing in the
+          # Worker actually implements the handler it invokes -- guard both
+          # halves of the same real dependency, not just one.
+          if ! grep -q 'scheduled(' src/worker-entry.ts; then
+            echo "::error::src/worker-entry.ts no longer exports a scheduled() handler -- wrangler.jsonc's Cron Trigger has nothing to invoke."
+            exit 1
+          fi
+          echo "OK: worker-entry.ts still exports scheduled()."
