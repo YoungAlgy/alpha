@@ -126,31 +126,35 @@ jobs:
             process.exit(1);
           }
 
-          // Not just "non-empty" -- an exact match. A schedule that's been
-          // quietly changed to the wrong hour, or corrupted into a
-          // malformed-but-non-empty expression, would pass a bare
-          // non-empty check and still silently break the real send. If
-          // you're changing the schedule on purpose, update EXPECTED_CRONS
-          // here in the same commit.
-          const EXPECTED_CRONS = ['0 14 * * *'];
-          const crons = config.triggers && config.triggers.crons;
-          if (!Array.isArray(crons) || crons.length === 0) {
-            console.error(
-              '::error::wrangler.jsonc has no triggers.crons entries -- this is EXACTLY the ' +
-              'regression that caused the 2026-08-05 5-day letter outage (a host migration left ' +
-              'the Cron Trigger unwired, and nothing caught it for 5 real days). If this change ' +
-              'genuinely removes the daily cron on purpose, that needs to be a deliberate, ' +
-              'explicit decision -- not a silent side effect of something else.'
-            );
-            process.exit(1);
-          }
+          // EXPECTED_CRONS = [] DELIBERATELY, changed live 2026-08-05. The
+          // daily send moved entirely off Cloudflare Workers: this account
+          // is on the Workers FREE plan, whose fixed non-configurable CPU
+          // time limit silently killed the one real cron run this trigger
+          // ever got (0 errors logged, 0 issues created -- see wrangler.
+          // jsonc's own comment on this block for the full incident).
+          // GitHub Actions (.github/workflows/daily-send.yml) is the real,
+          // working trigger now. This check's ORIGINAL purpose — catching
+          // the cron silently vanishing without anyone deciding that on
+          // purpose, which is exactly what caused the 2026-08-05 5-day
+          // outage — still applies in reverse: if a cron entry reappears
+          // here without EXPECTED_CRONS being updated in the same commit,
+          // that is just as undocumented a drift as the original
+          // disappearance was (e.g. a stray re-add racing the working
+          // GitHub Actions trigger at the same instant, burning shared
+          // free-tier API quota for a run that still cannot complete on
+          // this plan). Update this array in the same commit as any
+          // deliberate change either direction.
+          const EXPECTED_CRONS = [];
+          const crons = (config.triggers && config.triggers.crons) || [];
           if (JSON.stringify(crons) !== JSON.stringify(EXPECTED_CRONS)) {
             console.error(
               `::error::wrangler.jsonc triggers.crons is ${JSON.stringify(crons)}, expected ` +
-              `${JSON.stringify(EXPECTED_CRONS)}. If this is an intentional schedule change, ` +
-              'update EXPECTED_CRONS in this workflow file in the same commit -- this check ' +
-              'exists so a schedule drift (wrong hour, malformed expression) can\'t silently ' +
-              'pass just because the array happens to be non-empty.'
+              `${JSON.stringify(EXPECTED_CRONS)} (no Cloudflare cron -- the daily send runs on ` +
+              'GitHub Actions instead, see wrangler.jsonc\'s own comment on this block). If ' +
+              'you\'re intentionally re-arming this (e.g. after a Workers plan upgrade unlocks ' +
+              'limits.cpu_ms), update EXPECTED_CRONS here in the same commit -- this check exists ' +
+              'so a cron reappearing, or the schedule silently changing, can\'t slip through ' +
+              'unnoticed in either direction.'
             );
             process.exit(1);
           }

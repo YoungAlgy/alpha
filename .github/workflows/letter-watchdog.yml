@@ -283,10 +283,31 @@ jobs:
   check-resilience-secrets:
     runs-on: ubuntu-latest
     steps:
-      - name: Check /api/health for resilience-tier keys the primary send doesn't need but the fallback chain does
+      - name: Check the SEND_* secrets the real send actually uses, not Cloudflare's
         env:
           RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
           GH_TOKEN: ${{ github.token }}
+          # Read directly from THIS repo's secrets, not from a curl to the
+          # Cloudflare Worker's /api/health. Repointed live 2026-08-05: the
+          # daily send moved off Cloudflare onto GitHub Actions the same day
+          # this job was written, and /api/health only ever reflected the
+          # Cloudflare Worker's OWN env -- a completely separate SEND_*
+          # secret set that could drift arbitrarily out of sync with zero
+          # signal here. Confirmed live during the same audit: rotating a
+          # Cloudflare secret without touching the matching SEND_* one would
+          # leave this job reporting green forever while the real send's
+          # fallback chain quietly lost a tier -- exactly the "second half
+          # of the 2026-08-05 outage" class this job exists to catch, aimed
+          # at the wrong host. Also now covers resend + anthropic, the two
+          # providers that can kill a send outright and which the old
+          # Cloudflare-health check never watched at all.
+          SEND_ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
+          SEND_RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
+          SEND_GROQ_API_KEY: ${{ secrets.SEND_GROQ_API_KEY }}
+          SEND_DEEPSEEK_API_KEY: ${{ secrets.SEND_DEEPSEEK_API_KEY }}
+          SEND_YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
+          SEND_GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
+          SEND_BRAVE_SEARCH_API_KEY: ${{ secrets.SEND_BRAVE_SEARCH_API_KEY }}
         run: |
           set -uo pipefail
           # Same set +e requirement as check-delivery's job -- GitHub Actions
@@ -346,60 +367,45 @@ jobs:
             [ "${resend_exit}" -eq 0 ] || echo "WARNING: Resend alert call failed (curl exit ${resend_exit}) -- the GitHub Issue channel is still the source of truth."
           }
 
-          # This is the ONE place in this whole setup where trusting the
-          # app's own /api/health is actually correct: it's authoritative
-          # about which of its own process.env keys are set, which is
-          # exactly what this checks. The delivery-check job deliberately
-          # does NOT trust this endpoint for "did a send happen" -- see
-          # header comment -- but "is GROQ_API_KEY configured" isn't
-          # something Supabase would ever know either way.
-          RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 "https://alpha.everyday.report/api/health")
-          CURL_EXIT=$?
-          echo "/api/health response (curl exit ${CURL_EXIT}): ${RESPONSE}"
-
-          SEARCH_PHRASE="Resilience-tier API key may be missing on Cloudflare"
+          SEARCH_PHRASE="SEND_* secret may be missing in GitHub"
           ISSUE_TITLE="⚠️ ${SEARCH_PHRASE}"
 
-          if [ "${CURL_EXIT}" -ne 0 ]; then
-            echo "Could not reach /api/health -- not alerting on this job specifically, the delivery-check job already covers total-outage detection."
+          # Direct presence check against THIS job's own env -- no network
+          # call, nothing to fail to reach, nothing that can silently drift
+          # from what it's supposed to be watching (that drift was the
+          # entire bug this job used to have). resend + anthropic are HARD
+          # required (a send cannot happen at all without them); the other
+          # five are resilience-tier fallbacks (missing one degrades the
+          # chain, doesn't block the send outright) -- same severity split
+          # scripts/verify-send-preflight.mjs already uses.
+          HARD_MISSING=""
+          for name in SEND_ANTHROPIC_API_KEY SEND_RESEND_API_KEY; do
+            val="${!name:-}"
+            [ -n "${val}" ] || HARD_MISSING="${HARD_MISSING}${HARD_MISSING:+, }${name}"
+          done
+
+          SOFT_MISSING=""
+          for name in SEND_GROQ_API_KEY SEND_DEEPSEEK_API_KEY SEND_YOU_API_KEY SEND_GEMINI_API_KEY SEND_BRAVE_SEARCH_API_KEY; do
+            val="${!name:-}"
+            [ -n "${val}" ] || SOFT_MISSING="${SOFT_MISSING}${SOFT_MISSING:+, }${name}"
+          done
+
+          if [ -z "${HARD_MISSING}" ] && [ -z "${SOFT_MISSING}" ]; then
+            echo "OK: all SEND_* secrets present (anthropic, resend hard-required; groq/deepseek/you/gemini/brave resilience-tier)."
+            close_issue_if_open "${SEARCH_PHRASE}" "Resolved: all SEND_* secrets present (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
             exit 0
           fi
 
-          # The exact 3 that went missing in the 2026-08-05 incident, plus
-          # the other 2 keys in the same fallback-tier family (gemini,
-          # brave) -- all 5 are explicitly non-blocking-for-app-uptime per
-          # this route's own comments, which is exactly why nothing else
-          # would ever notice one going missing. Node instead of jq here
-          # (unlike the delivery-check job) -- this filter is involved
-          # enough that a jq syntax slip would be easy to miss and hard to
-          # test locally; this exact logic was verified against sample
-          # /api/health payloads before shipping.
-          MISSING=$(RESPONSE="${RESPONSE}" node -e "
-            const raw = process.env.RESPONSE || '';
-            let missing = 'unparseable';
-            try {
-              const data = JSON.parse(raw);
-              if (data && typeof data === 'object' && data.checks && typeof data.checks === 'object') {
-                const watched = ['groq', 'deepseek', 'you', 'gemini', 'brave'];
-                missing = watched.filter((k) => data.checks[k] === false).join(', ');
-              }
-            } catch (e) {}
-            process.stdout.write(missing);
-          ")
-
-          if [ "${MISSING}" = "unparseable" ]; then
-            echo "Could not parse /api/health's checks object -- not alerting, avoiding a false positive on a response-shape change rather than a real key going missing."
-            exit 0
+          if [ -n "${HARD_MISSING}" ]; then
+            echo "ALERT: hard-required secret(s) missing: ${HARD_MISSING} -- the daily send cannot work at all."
+            ALERT_BODY="These GitHub Actions secrets are missing, and daily-send.yml's own pre-flight (scripts/verify-send-preflight.mjs) will fail the very next scheduled run because of it: ${HARD_MISSING}. Fix: repo Settings -> Secrets and variables -> Actions, add the missing SEND_* secret(s) (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            send_resend_alert "[alpha] HARD-required send secret(s) missing: ${HARD_MISSING}" "${ALERT_BODY}"
+            open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+            exit 1
           fi
 
-          if [ -z "${MISSING}" ]; then
-            echo "OK: groq/deepseek/you/gemini/brave all configured."
-            close_issue_if_open "${SEARCH_PHRASE}" "Resolved: /api/health now reports all resilience-tier keys configured (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
-            exit 0
-          fi
-
-          echo "ALERT: /api/health reports these resilience-tier keys missing: ${MISSING}"
-          ALERT_BODY="alpha's /api/health reports these resilience-tier API keys are NOT configured on the live Cloudflare Worker: ${MISSING} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). This is exactly the second half of the 2026-08-05 outage -- the primary send can still succeed via its remaining providers while this stays silently broken, so nothing else here would catch it. Fix: wrangler secret put <NAME> for each key listed, from whatever host currently holds the real value. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          send_resend_alert "[alpha] Resilience-tier key(s) missing: ${MISSING}" "${ALERT_BODY}"
+          echo "ALERT: resilience-tier secret(s) missing: ${SOFT_MISSING}"
+          ALERT_BODY="These resilience-tier GitHub Actions secrets are missing: ${SOFT_MISSING} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The primary send can still succeed via its remaining providers while this stays broken, so nothing else here would catch it -- this is exactly the second half of the 2026-08-05 outage. Fix: repo Settings -> Secrets and variables -> Actions, add the missing SEND_* secret(s). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          send_resend_alert "[alpha] Resilience-tier send secret(s) missing: ${SOFT_MISSING}" "${ALERT_BODY}"
           open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
           exit 1

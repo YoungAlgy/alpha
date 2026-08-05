@@ -20,7 +20,19 @@ import { coerceGender } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
 
 export const runtime = "nodejs";
-export const maxDuration = 800; // Vercel Pro cap
+// This value no longer means what its name implies. It WAS a Vercel Pro
+// platform directive (Vercel reads `maxDuration` and enforces it); the send
+// now runs via `next start` on GitHub Actions (.github/workflows/
+// daily-send.yml), which reads nothing here and enforces nothing here — the
+// real ceiling is that workflow's own `curl --max-time` (1500s) and job
+// `timeout-minutes` (30). Kept only because CRON_TIME_BUDGET_MS below is
+// still derived from it for the in-route deferral safety valve. Found stale
+// live 2026-08-05: the old value (800, Vercel Pro's real cap) meant the
+// route stopped starting new subscribers at ~630s while the actual host had
+// ~25 minutes of real budget sitting unused — harmless at 4 subscribers,
+// but it would silently start deferring readers well before necessary as
+// the list grows. Set to match the workflow's real curl budget.
+export const maxDuration = 1500;
 
 // Constant-time bearer-token check (avoids the timing side-channel of `===`
 // on a secret; CWE-208). Hash both sides to equal length so timingSafeEqual
@@ -399,8 +411,19 @@ export async function GET(req: Request) {
         throw new Error(`issue upsert failed: ${issueUpsertErr.message}`);
       }
 
-      // Send the letter via Resend (lib/email.ts).
-      if (!resendConfigured()) return;
+      // Send the letter via Resend (lib/email.ts). THROW, don't silently
+      // return — found live 2026-08-05: a silent return here means a missing
+      // RESEND_API_KEY makes the ENTIRE run a no-op that still reports
+      // sent=0/failed=0, fires no ops alert (the trigger condition below
+      // needs failed>0 or similar), and returns HTTP 200 — a full day's
+      // spend on real Anthropic/Gemini/Groq/DeepSeek generation for every
+      // subscriber, with nothing to show for it and no signal anywhere that
+      // anything went wrong. Throwing routes this through the same per-user
+      // catch as every other failure, so it's counted, alerted on, and
+      // (once a persisted-issue-row retry path exists) safely retryable.
+      if (!resendConfigured()) {
+        throw new Error("Resend is not configured (RESEND_API_KEY missing) — cannot send.");
+      }
 
       // ATOMIC delivered_at CLAIM — the race-safe idempotency guard. The
       // prefetch Set above is a cheap fast-path for the common SEQUENTIAL
@@ -516,12 +539,50 @@ export async function GET(req: Request) {
       }
     }
 
+    // RETRY-SAFETY: if a PRIOR run already generated and persisted this
+    // subscriber's issue but never successfully delivered it (a same-day
+    // retry after a transient send failure — see the offset retry trigger),
+    // reuse that exact persisted content instead of regenerating. Found live
+    // 2026-08-05: the per-user editor's note (assemble.ts's
+    // generateEditorNote) is never cached, so a regenerated retry produces a
+    // DIFFERENT payload — but sendLetterNotification's Resend idempotency
+    // key is stable per (user, week_of, kind) (lib/email.ts), so Resend
+    // correctly 409s the mismatched retry as invalid_idempotent_request,
+    // meaning the retry built specifically to rescue a transient Resend
+    // error was GUARANTEED to fail on exactly that case. Reusing the
+    // already-upserted row keeps the payload byte-identical, so the shared
+    // idempotency key works as designed and the retry costs zero new AI
+    // calls on top of being correct.
+    const { data: persistedRetry } = await sb
+      .from("issues")
+      .select("volume, number, editor_intro, sections")
+      .eq("user_id", row.id)
+      .eq("week_of", weekOf)
+      .is("delivered_at", null)
+      .maybeSingle();
+    const reusableSections = persistedRetry?.sections as Issue["sections"] | undefined;
+
     try {
-      const issue = await withDeadline(
-        generateIssue(profile, weekOf, letterSize, freshness, dryCache, inFlight),
-        PER_USER_DEADLINE_MS,
-        `generateIssue(${row.email})`
-      );
+      const issue: Issue =
+        reusableSections && reusableSections.length > 0
+          ? {
+              id: `${profile.firstName.toLowerCase()}-${weekOf}`,
+              volume: persistedRetry!.volume,
+              number: persistedRetry!.number,
+              weekOf: formatWeekOf(weekOf),
+              recipientFirstName: profile.firstName,
+              recipientCity: profile.city,
+              editorIntro: persistedRetry!.editor_intro,
+              sections: reusableSections,
+            }
+          : await withDeadline(
+              generateIssue(profile, weekOf, letterSize, freshness, dryCache, inFlight),
+              PER_USER_DEADLINE_MS,
+              `generateIssue(${row.email})`
+            );
+      if (reusableSections && reusableSections.length > 0) {
+        console.log(`[cron/weekly-send] reusing already-generated issue (retry, zero new AI cost) → ${row.email}`);
+      }
 
       // Registered with Next's after() UNCONDITIONALLY (not just on timeout)
       // so Vercel is told to keep this invocation's lambda alive until the

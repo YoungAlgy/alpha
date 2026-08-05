@@ -37,7 +37,28 @@ name: Daily letter send
 
 on:
   schedule:
-    - cron: '0 14 * * *'
+    - cron: '0 14 * * *' # primary send
+    # Offset retry, added 2026-08-05 as part of a full resilience audit that
+    # specifically verified this is safe: route.ts's delivered_at atomic
+    # compare-and-swap (a second caller updates 0 rows and skips), the
+    # prefetch already-delivered check, and Resend's own per-(user,day,kind)
+    # idempotency key give three independent layers against a duplicate
+    # send, and priorIssueCount ("Issue N") is computed per-user so a
+    # partial first run doesn't miscount either group. A transient npm
+    # registry blip, a dropped/delayed GitHub schedule event (GitHub does
+    # not guarantee on-time delivery), or a momentary Supabase/Resend hiccup
+    # at 14:00 UTC currently means a full missed day with no second attempt
+    # -- this recovers it automatically, same day, without Algy clicking
+    # anything. 15:00 UTC specifically: (a) comfortably past the primary's
+    # 30-minute job timeout so the two runs cannot overlap in practice, (b)
+    # a full hour before letter-watchdog.yml's 16:00 UTC check, so a
+    # successful retry is reflected before the watchdog samples state
+    # instead of the watchdog alerting on pre-retry data, and (c) nowhere
+    # near the 00:00 UTC boundary where lib/cadence.ts's currentPeriodIso()
+    # would roll over to a new day's weekOf and silently generate a SECOND
+    # real letter instead of recovering the missed one. Do not schedule any
+    # retry slot at or after 16:00 UTC without also moving the watchdog.
+    - cron: '0 15 * * *'
   workflow_dispatch:
     inputs:
       weekOf:
@@ -47,6 +68,19 @@ on:
 
 permissions:
   contents: read
+
+# Prevents a manual workflow_dispatch from overlapping a scheduled run (or,
+# in principle, the two schedules overlapping if GitHub ever delivers one
+# late enough to collide with the other). Without this, two concurrent full
+# generation passes would both pay real Anthropic/Gemini/Groq/DeepSeek/Brave
+# costs for the same undelivered subscribers before the delivered_at CAS
+# picks a winner, and their two Resend calls sharing one idempotency key
+# would race into a 409. cancel-in-progress: false -- queue behind the
+# in-flight run rather than kill it; a send that's already claimed rows
+# and started sending should finish, not be torn down mid-send.
+concurrency:
+  group: alpha-daily-send
+  cancel-in-progress: false
 
 jobs:
   send:
@@ -150,12 +184,29 @@ jobs:
           fi
 
           echo "Calling ${URL} ..."
-          RESPONSE=$(curl -sS --max-time 1500 -H "Authorization: Bearer ${CRON_SECRET}" "${URL}")
+          # -w appends the HTTP status as the LAST line of output, separated
+          # from the body so it can't collide with real JSON content.
+          RAW=$(curl -sS --max-time 1500 -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "${URL}")
           CURL_EXIT=$?
-          echo "Response (curl exit ${CURL_EXIT}):"
+          HTTP_STATUS=$(echo "${RAW}" | tail -n 1)
+          RESPONSE=$(echo "${RAW}" | sed '$d')
+          echo "Response (curl exit ${CURL_EXIT}, HTTP ${HTTP_STATUS}):"
           echo "${RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log(d)}})"
 
-          kill "${SERVER_PID}" 2>/dev/null
+          # Drain, don't kill -- an abrupt SIGKILL/SIGTERM the instant curl
+          # returns can cut off Next's after() background work (route.ts's
+          # persist+send tail can legitimately still be running for the LAST
+          # subscriber processed). `wait` after TERM gives it a moment to
+          # finish; found live 2026-08-05 as part of the same-day resilience
+          # audit -- a subscriber whose delivered_at was just claimed but
+          # whose send hadn't been confirmed yet would otherwise read as
+          # delivered to every future check with no email ever having gone
+          # out, and nothing anywhere would notice.
+          kill -TERM "${SERVER_PID}" 2>/dev/null
+          ( sleep 10 && kill -KILL "${SERVER_PID}" 2>/dev/null ) &
+          KILLER_PID=$!
+          wait "${SERVER_PID}" 2>/dev/null
+          kill "${KILLER_PID}" 2>/dev/null
 
           if [ "${CURL_EXIT}" -ne 0 ]; then
             echo "::error::curl itself failed (exit ${CURL_EXIT}) -- see server.log below."
@@ -163,25 +214,52 @@ jobs:
             exit 1
           fi
 
-          # Fail the job (visible red X, GitHub's own failure notification)
-          # if the route reports anyone genuinely missed -- don't just log
-          # a summary nobody reads until a letter is noticed missing.
-          GENUINELY_MISSED=$(echo "${RESPONSE}" | node -e "
-            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-              try {
-                const s = JSON.parse(d);
-                const missed = (s.failed||0) - (s.backupSharedSent||0) - (s.backupFreshSent||0) - (s.backupStaleSent||0);
-                process.stdout.write(String(Math.max(missed, s.deferred ? s.deferred.length : 0)));
-              } catch (e) { process.stdout.write('-1'); }
-            });
-          ")
-
-          if [ "${GENUINELY_MISSED}" != "0" ]; then
-            echo "::error::${GENUINELY_MISSED} subscriber(s) genuinely missed this run (or the response couldn't be parsed -- see above)."
+          # HTTP status FIRST, independent of body shape. Found live
+          # 2026-08-05: a 401 (e.g. a drifted CRON_SECRET) returns valid JSON
+          # ({"error":"Unauthorized"}), which the old missed-count parser
+          # below scored as 0 missed -- a wrong secret produced a green job
+          # that delivered nothing to anyone.
+          if [ "${HTTP_STATUS}" -lt 200 ] || [ "${HTTP_STATUS}" -ge 300 ]; then
+            echo "::error::Route returned HTTP ${HTTP_STATUS}, not 2xx -- see the response body above. Nothing was necessarily delivered."
             exit 1
           fi
 
-          echo "OK: send completed with no genuinely-missed subscribers."
+          # Validate the response actually has the expected shape AND assert
+          # real coverage, not just "failed is small". A body that parses as
+          # JSON but isn't the real summary (an unexpected error shape, an
+          # empty object) used to read as "0 missed" by accident -- this now
+          # requires `subscribers` and `sent` to both be real numbers before
+          # trusting anything else in the payload, and separately asserts
+          # every non-skipped subscriber was actually covered by sent or one
+          # of the three backup tiers, not merely that `failed` looks small.
+          COVERAGE=$(echo "${RESPONSE}" | node -e "
+            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+              try {
+                const s = JSON.parse(d);
+                if (typeof s.subscribers !== 'number' || typeof s.sent !== 'number') {
+                  process.stdout.write('SHAPE_INVALID');
+                  return;
+                }
+                const covered = (s.sent||0) + (s.backupSharedSent||0) + (s.backupFreshSent||0) + (s.backupStaleSent||0);
+                const excused = (s.skippedBlankSubscribers ? s.skippedBlankSubscribers.length : 0) + (s.skippedAlreadyDelivered||0);
+                const uncovered = s.subscribers - excused - covered;
+                const deferredCount = s.deferred ? s.deferred.length : 0;
+                process.stdout.write(String(Math.max(uncovered, deferredCount, 0)));
+              } catch (e) { process.stdout.write('SHAPE_INVALID'); }
+            });
+          ")
+
+          if [ "${COVERAGE}" = "SHAPE_INVALID" ]; then
+            echo "::error::Response body was HTTP 2xx but not the expected send-summary JSON shape -- treating as a failure, not a silent pass."
+            exit 1
+          fi
+
+          if [ "${COVERAGE}" != "0" ]; then
+            echo "::error::${COVERAGE} subscriber(s) not accounted for by sent/backup/excused counts (or deferred for time) this run."
+            exit 1
+          fi
+
+          echo "OK: send completed, every active subscriber accounted for."
 
       - name: Upload server log on failure
         if: failure()
