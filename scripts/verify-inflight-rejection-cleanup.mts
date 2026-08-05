@@ -18,11 +18,8 @@
 // this into verify-inflight-dedup.mts (which makes real Anthropic calls in
 // its own earlier tests) silently defeated the "force it down" premise.
 // Run: npx tsx scripts/verify-inflight-rejection-cleanup.mts
-import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 // MUST happen before the first import that could construct the Anthropic
 // client — no generateIssue()/generateTopicBlurb() call has run yet in this
 // process, so this is the one guaranteed chance to force it down for real.

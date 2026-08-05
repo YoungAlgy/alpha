@@ -16,11 +16,8 @@
 // pattern the route now uses (not a mock), against a synthetic user_id/week_of
 // that can't collide with real data, and cleans up after itself.
 // Run: npx tsx scripts/verify-persist-claim-atomicity.mts
-import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;

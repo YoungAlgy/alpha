@@ -7,11 +7,8 @@
 //   3. excludeUrls actually excludes on a second call (the cross-send repeat
 //      guard must hold for this provider too).
 // Run: npx tsx scripts/verify-you-fallback.mts
-import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 
 let pass = 0,
   fail = 0;

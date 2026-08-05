@@ -7,11 +7,8 @@
 // regression, so this asserts >= 2 (the originally-valid topics always
 // present) and that any 3rd section, if present, came from the fallback tail.
 // Run: npx tsx scripts/verify-resilient-assemble.mts
-import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 const { generateIssue } = await import("../lib/engine/assemble.ts");
 const { GENERIC_FALLBACK_TOPICS } = await import("../lib/topics.ts");
 

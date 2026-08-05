@@ -2,6 +2,7 @@
 // a re-delivered / out-of-order event. The core invariant: an UPDATE to an
 // existing row must never carry topic_quota or cancelled_at.
 // Run: npx tsx scripts/verify-webhook-mutation.mts
+import { loadEnvLocal } from "./_load-env.mts";
 const { checkoutUserMutation, isFirstSubscription } = await import("../lib/webhook-user-mutation.ts");
 
 const idn = {
@@ -132,11 +133,7 @@ check("row already subscribed → NOT first (no resend)", isFirstSubscription({ 
 //     SELECT shape + branch hold against the actual schema. No writes.
 console.log("(5) live read-only tie-in (real subscribed user):");
 try {
-  const { readFileSync } = await import("node:fs");
-  for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-  }
+  loadEnvLocal();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {

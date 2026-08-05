@@ -6,11 +6,8 @@
 //
 // Run AFTER putting your sk_test_ key in .env.local:
 //   npx tsx scripts/verify-stripe-cancel-testmode.mts
-import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 
 const key = process.env.STRIPE_SECRET_KEY?.trim() || "";
 if (!key.startsWith("sk_test")) {

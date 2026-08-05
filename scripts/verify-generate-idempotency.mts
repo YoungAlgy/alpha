@@ -3,6 +3,7 @@
 // signup completing within ~a minute of a Sun/Tue/Thu tick targets the same
 // (user, week_of) row). Mirrors scripts/verify-webhook-mutation.mts.
 // Run: npx tsx scripts/verify-generate-idempotency.mts
+import { loadEnvLocal } from "./_load-env.mts";
 const { deliverLetterOnce } = await import("../lib/letter-delivery.ts");
 
 let pass = 0,
@@ -185,11 +186,7 @@ const WEEK = "2026-06-24";
 //     writes — purely a SELECT.
 console.log("(7) live read-only schema tie-in (issues.delivered_at):");
 try {
-  const { readFileSync } = await import("node:fs");
-  for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-  }
+  loadEnvLocal();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {

@@ -9,12 +9,9 @@
 //   3. Resend forced down AND no webhook configured → still resolves cleanly,
 //      never throws (the never-throws contract the whole alert path depends on).
 // Run: npx tsx scripts/verify-ops-alert-fallback.mts
-import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 
 let pass = 0,
   fail = 0;

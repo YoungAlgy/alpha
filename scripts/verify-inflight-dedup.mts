@@ -16,11 +16,8 @@
 // "0 fetches" pass/fail). Cleans up its own rows afterward so the real
 // topic_blurbs table doesn't accumulate test clutter.
 // Run: npx tsx scripts/verify-inflight-dedup.mts
-import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 
 let pass = 0,
   fail = 0;

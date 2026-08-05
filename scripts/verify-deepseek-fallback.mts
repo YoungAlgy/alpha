@@ -12,11 +12,8 @@
 // caches its client at first construction, so forcing ANTHROPIC_API_KEY
 // invalid must happen before ANY real Anthropic call in this process. This
 // script forces it invalid from the very top for that reason.
-import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 process.env.ANTHROPIC_API_KEY = "sk-ant-invalid-key-to-force-401";
 
 let pass = 0,

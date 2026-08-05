@@ -1,9 +1,6 @@
 // Verify the editor note resists prompt injection via user profile fields.
-import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 const { generateEditorNote } = await import("../lib/engine/editor-note.ts");
 const blurbs = [
   { topicId: "ai-news", topicLabel: "AI", weekOf: "2026-05-31", intro: "Model releases and tools worth your time.", items: [] },

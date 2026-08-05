@@ -4,13 +4,10 @@
 // runs a negative test (an injected invented URL must be dropped).
 //
 // Run: npx tsx scripts/verify-url-guard.mts
-import { readFileSync } from "node:fs";
 
 // Load .env.local into process.env (standalone scripts don't get Next's env).
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 
 const { resolveTopicSignal } = await import("../lib/engine/source-resolver.ts");
 const { generateTopicBlurb } = await import("../lib/engine/topic-blurb.ts");

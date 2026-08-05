@@ -17,10 +17,8 @@
 // This script forces it invalid from the very top for that reason - there is
 // no test here that needs a REAL Anthropic call.
 import { readFileSync } from "node:fs";
-for (const line of readFileSync(".env.local", "utf8").split("\n")) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+import { loadEnvLocal } from "./_load-env.mts";
+loadEnvLocal();
 process.env.ANTHROPIC_API_KEY = "sk-ant-invalid-key-to-force-401";
 
 let pass = 0,
