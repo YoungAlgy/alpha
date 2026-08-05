@@ -1,0 +1,166 @@
+name: Daily letter send
+
+# The actual daily digest generation + delivery, moved OFF Cloudflare Workers
+# and onto GitHub Actions. Added 2026-08-05 after a real incident: this
+# account is on the Cloudflare Workers FREE plan, which enforces a small,
+# non-configurable CPU time limit -- Cloudflare's own deploy API rejects
+# `limits.cpu_ms` outright on this plan (only available on a paid Workers
+# plan, ~$5/mo). The daily send's per-subscriber generation loop (Claude/
+# Gemini/Groq/DeepSeek calls, Brave/You.com search, JSON parsing) blew that
+# limit on its very first real Cloudflare-hosted run: 0 errors in Cloudflare's
+# own metrics, 0 issues created for any of the 4 active subscribers -- a
+# CPU-time-exceeded kill is a silent hard isolate termination, invisible to
+# both the app's own error handling and Cloudflare's dashboard.
+#
+# Algy's call: fix this WITHOUT paying for a Workers plan upgrade. This is
+# that fix. GitHub Actions runners have no CPU-time throttling anywhere close
+# to that tight (generous minutes on the free tier, already used here for the
+# watchdog), so the batch job moves here entirely. The WEBSITE stays on
+# Cloudflare -- individual page/API requests are lightweight and have been
+# working fine there all along; only the heavy daily generation job needed
+# to move.
+#
+# How it works: builds and starts a REAL, complete Next.js production server
+# (`next build && next start`) using the exact same, already-reviewed
+# app/api/cron/weekly-send/route.ts, then calls that route over HTTP exactly
+# the way Cloudflare's scheduled() handler used to. Zero logic duplication --
+# this is the identical code path, just executed somewhere with room to
+# actually run it.
+#
+# Deliberately NOT disabling wrangler.jsonc's Cloudflare Cron Trigger. The
+# route's own delivered_at compare-and-swap makes a duplicate/overlapping
+# invocation safe by design (exactly one caller ever wins the claim for a
+# given subscriber+day) -- so leaving Cloudflare's cron armed costs nothing
+# and is free, harmless redundancy: if it ever DOES succeed (e.g. the
+# subscriber list changes in a way that fits under the Free plan's limit),
+# that's a bonus, not a conflict.
+
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      weekOf:
+        description: 'Optional YYYY-MM-DD override (admin backfill/testing only -- leave blank for the normal daily run)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify build-time env vars before spending time on a build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+        run: node scripts/verify-build-env.mjs
+
+      - name: Build (plain Next.js -- NOT the Cloudflare/OpenNext bundle, just a runnable server)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
+        run: npm run build
+
+      - name: Start the server and run the real daily send
+        env:
+          CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.SEND_BRAVE_SEARCH_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.SEND_GROQ_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.SEND_DEEPSEEK_API_KEY }}
+          YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
+          NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
+          WEEK_OF_INPUT: ${{ inputs.weekOf }}
+        run: |
+          set -uo pipefail
+          set +e
+
+          npm run start -- -p 3100 > server.log 2>&1 &
+          SERVER_PID=$!
+
+          echo "Waiting for the server to come up..."
+          READY=0
+          for i in $(seq 1 30); do
+            if curl -sS --max-time 3 "http://localhost:3100/api/health" >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "${READY}" -ne 1 ]; then
+            echo "::error::Server never became healthy. Last 100 lines of server.log:"
+            tail -n 100 server.log
+            kill "${SERVER_PID}" 2>/dev/null
+            exit 1
+          fi
+          echo "Server is up."
+
+          URL="http://localhost:3100/api/cron/weekly-send"
+          if [ -n "${WEEK_OF_INPUT}" ]; then
+            URL="${URL}?weekOf=${WEEK_OF_INPUT}"
+            echo "Manual weekOf override: ${WEEK_OF_INPUT}"
+          fi
+
+          echo "Calling ${URL} ..."
+          RESPONSE=$(curl -sS --max-time 1500 -H "Authorization: Bearer ${CRON_SECRET}" "${URL}")
+          CURL_EXIT=$?
+          echo "Response (curl exit ${CURL_EXIT}):"
+          echo "${RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log(d)}})"
+
+          kill "${SERVER_PID}" 2>/dev/null
+
+          if [ "${CURL_EXIT}" -ne 0 ]; then
+            echo "::error::curl itself failed (exit ${CURL_EXIT}) -- see server.log below."
+            tail -n 200 server.log
+            exit 1
+          fi
+
+          # Fail the job (visible red X, GitHub's own failure notification)
+          # if the route reports anyone genuinely missed -- don't just log
+          # a summary nobody reads until a letter is noticed missing.
+          GENUINELY_MISSED=$(echo "${RESPONSE}" | node -e "
+            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+              try {
+                const s = JSON.parse(d);
+                const missed = (s.failed||0) - (s.backupSharedSent||0) - (s.backupFreshSent||0) - (s.backupStaleSent||0);
+                process.stdout.write(String(Math.max(missed, s.deferred ? s.deferred.length : 0)));
+              } catch (e) { process.stdout.write('-1'); }
+            });
+          ")
+
+          if [ "${GENUINELY_MISSED}" != "0" ]; then
+            echo "::error::${GENUINELY_MISSED} subscriber(s) genuinely missed this run (or the response couldn't be parsed -- see above)."
+            exit 1
+          fi
+
+          echo "OK: send completed with no genuinely-missed subscribers."
+
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-log
+          path: server.log
+          retention-days: 7
