@@ -324,13 +324,21 @@ export async function GET(req: Request) {
 
   // Prefetch this week's delivered stamps in ONE query (was a per-subscriber
   // lookup — N+1 that adds a round trip per user as the list grows).
+  // Scoped with .in("user_id", ...) to exactly this run's active subscriber
+  // list -- besides narrowing the scan, this also bounds the row count to
+  // rows.length instead of "however many subscribers got a letter today
+  // across the whole table", so PostgREST's silent 1,000-row select cap
+  // can't bite even once active-subscriber count is large (a much higher,
+  // less urgent bar than priorIssueCount's LIFETIME-count problem below,
+  // but free to close outright here rather than just deferring it).
   const alreadyDelivered = new Set<string>();
-  if (!force) {
+  if (!force && rows.length > 0) {
     const { data: stamps } = await sb
       .from("issues")
       .select("user_id")
       .eq("week_of", weekOf)
-      .not("delivered_at", "is", null);
+      .not("delivered_at", "is", null)
+      .in("user_id", rows.map((r) => r.id));
     for (const s of (stamps ?? []) as Array<{ user_id: string }>) {
       alreadyDelivered.add(s.user_id);
     }
@@ -342,24 +350,36 @@ export async function GET(req: Request) {
   // re-runs too. Filters delivered_at NOT NULL so a generated-but-never-sent
   // row doesn't inflate the number.
   //
-  // COUNT queries, not row-fetch-and-tally: PostgREST silently caps a select
-  // at 1,000 rows, and at daily cadence the subscriber base crosses 1,000
-  // lifetime delivered rows within months — the old row-fetch would silently
-  // undercount and every "Issue N" would go wrong with no error. One head
-  // count per subscriber; N = this send's recipients, small. Revisit with a
-  // grouped aggregate RPC if the list grows past ~100.
+  // ONE grouped-aggregate RPC call, not N per-subscriber COUNT queries (was
+  // Promise.all(rows.map(...)) -- parallel, not sequential, but still N
+  // round trips). This value is a per-subscriber LIFETIME count, which grows
+  // unbounded with time (unlike alreadyDelivered above, which is bounded by
+  // today's active-subscriber count) -- still deliberately a COUNT
+  // aggregate, not a row-fetch-and-tally, since PostgREST's silent 1,000-row
+  // select cap would otherwise start silently undercounting "Issue N" within
+  // a few years at daily cadence. See the prior_issue_counts() migration
+  // (2026-08-05) for the SQL; this was the "revisit with a grouped aggregate
+  // RPC" the old comment here already flagged as the eventual fix.
   const priorIssueCount = new Map<string, number>();
-  await Promise.all(
-    rows.map(async (r) => {
-      const { count } = await sb
-        .from("issues")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", r.id)
-        .lt("week_of", weekOf)
-        .not("delivered_at", "is", null);
-      priorIssueCount.set(r.id, count ?? 0);
-    })
-  );
+  if (rows.length > 0) {
+    const { data: counts, error: countsErr } = await sb.rpc("prior_issue_counts", {
+      week_of_cutoff: weekOf,
+      target_user_ids: rows.map((r) => r.id),
+    });
+    if (countsErr) {
+      // Fail soft, not hard: a missing/wrong "Issue N" is a cosmetic subject-
+      // line problem, never a reason to block the actual send. Every
+      // subscriber just falls back to priorCount=0 (issueNumber=1) for this
+      // run only -- annoying if it happens, but self-corrects the next time
+      // this query succeeds since it's recomputed fresh every run, not
+      // persisted state that could get stuck wrong.
+      console.warn(`[cron/weekly-send] prior_issue_counts RPC failed: ${countsErr.message} — "Issue N" will read 1 for everyone this run.`);
+    } else {
+      for (const c of (counts ?? []) as Array<{ user_id: string; prior_count: number }>) {
+        priorIssueCount.set(c.user_id, c.prior_count);
+      }
+    }
+  }
 
   // Prefetch each subscriber's persisted-but-undelivered issue (retry-safety
   // reuse below, near runPersistAndSend) in ONE query — was a per-subscriber
