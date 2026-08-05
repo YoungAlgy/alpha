@@ -133,7 +133,14 @@ jobs:
 
           send_resend_alert() {
             local subject="$1" body="$2" payload resend_exit
-            payload=$(jq -n --arg from "alpha watchdog <alpha@avahealth.co>" --arg to "youngalgy@gmail.com" \
+            # everyday.report, NOT avahealth.co (fixed live 2026-08-05):
+            # the from-domain must be verified under the SAME Resend account
+            # as the API key or every send 403s with "domain is not
+            # verified" -- confirmed directly against Resend's API. This is
+            # the actual, currently-verified domain for this key; using an
+            # unrelated business's domain here was the root cause of every
+            # watchdog alert email silently failing.
+            payload=$(jq -n --arg from "alpha watchdog <alpha@everyday.report>" --arg to "youngalgy@gmail.com" \
               --arg subject "${subject}" --arg text "${body}" \
               '{from: $from, to: [$to], subject: $subject, text: $text}')
             curl -sS -f --max-time 15 --connect-timeout 5 -X POST 'https://api.resend.com/emails' \
@@ -321,7 +328,14 @@ jobs:
           # easy-to-miss inline block.
           send_resend_alert() {
             local subject="$1" body="$2" payload resend_exit
-            payload=$(jq -n --arg from "alpha watchdog <alpha@avahealth.co>" --arg to "youngalgy@gmail.com" \
+            # everyday.report, NOT avahealth.co (fixed live 2026-08-05):
+            # the from-domain must be verified under the SAME Resend account
+            # as the API key or every send 403s with "domain is not
+            # verified" -- confirmed directly against Resend's API. This is
+            # the actual, currently-verified domain for this key; using an
+            # unrelated business's domain here was the root cause of every
+            # watchdog alert email silently failing.
+            payload=$(jq -n --arg from "alpha watchdog <alpha@everyday.report>" --arg to "youngalgy@gmail.com" \
               --arg subject "${subject}" --arg text "${body}" \
               '{from: $from, to: [$to], subject: $subject, text: $text}')
             curl -sS -f --max-time 15 --connect-timeout 5 -X POST 'https://api.resend.com/emails' \
