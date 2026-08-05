@@ -3,6 +3,18 @@ import { NextResponse } from "next/server";
 // Lightweight uptime check. Returns 200 if the app is alive + key env vars
 // are configured. Doesn't reach external services (Supabase, Stripe, etc.)
 // to keep the check fast and avoid cascading failures from downstream blips.
+//
+// force-dynamic + no-store: discovered 2026-08-05 that this route could
+// serve a STALE cached response (checks.supabase showing false well after
+// the underlying env vars were confirmed working via live behavioral tests
+// on other routes) — this is a monitoring/health endpoint, and the second
+// letter-watchdog job reads checks.groq/deepseek/you/gemini/brave straight
+// from it, so a cached response here silently defeats that alerting. Force
+// a true per-request evaluation at every layer (Next's own route cache,
+// Cloudflare's edge) rather than relying on the absence of dynamic APIs to
+// keep this uncached by default.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const checks = {
     anthropic: !!process.env.ANTHROPIC_API_KEY,
@@ -34,10 +46,13 @@ export async function GET() {
     // fallback left besides the stale-resend backup layer.
     deepseek: !!process.env.DEEPSEEK_API_KEY,
   };
-  return NextResponse.json({
-    ok: true,
-    version: "alpha-v0.63",
-    timestamp: new Date().toISOString(),
-    checks,
-  });
+  return NextResponse.json(
+    {
+      ok: true,
+      version: "alpha-v0.63",
+      timestamp: new Date().toISOString(),
+      checks,
+    },
+    { headers: { "Cache-Control": "no-store, must-revalidate" } }
+  );
 }
