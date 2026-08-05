@@ -1,0 +1,81 @@
+name: Daily letter watchdog
+
+# Independent dead-man's-switch for the daily digest send. Added 2026-08-05
+# after a real 5-day outage: a Vercel->Cloudflare migration silently left
+# the Cron Trigger unwired, so the app itself stayed healthy (deployed,
+# reachable, /api/health green) while zero letters sent for 5 days with no
+# error anywhere -- nothing noticed until Algy did. See
+# alpha_cloudflare_cron_outage_2026-08-05 in Claude's memory for the full
+# incident.
+#
+# Deliberately NOT hosted on Cloudflare/Vercel: whatever platform runs
+# alpha's actual send, this runs somewhere else entirely, so a repeat of
+# THAT exact failure mode (a migration/config change silently disabling the
+# cron on the app's own host) can't also disable this. It reads Supabase
+# directly -- the one source of truth a broken host can't fake -- rather
+# than trusting the app's own /api/health, which only proves the app is
+# reachable and configured, not that today's send actually happened (it
+# stayed green the whole 5-day outage).
+#
+# Runs 2 hours after the app's own 14:00 UTC cron, giving it time to
+# actually finish sending to every subscriber before checking.
+
+on:
+  schedule:
+    - cron: '0 16 * * *'
+  workflow_dispatch: {} # manual run button in the Actions tab, for testing
+
+jobs:
+  check-delivery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Supabase for a real delivery in the last 20 hours
+        env:
+          SUPABASE_URL: ${{ secrets.WATCHDOG_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.WATCHDOG_SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # 20h, not 24h: the check runs ~2h after the expected 14:00 UTC
+          # send, so a genuinely missed day's send always falls outside this
+          # window by the time the NEXT day's check runs, while still
+          # comfortably covering a send that ran a bit late.
+          CUTOFF=$(date -u -d '20 hours ago' +%Y-%m-%dT%H:%M:%S)
+
+          RESPONSE=$(curl -sS \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            "${SUPABASE_URL}/rest/v1/issues?select=id,delivered_at&delivered_at=gte.${CUTOFF}&limit=1")
+
+          echo "Supabase response: ${RESPONSE}"
+
+          COUNT=$(echo "${RESPONSE}" | jq 'length')
+
+          if [ "${COUNT}" -gt 0 ]; then
+            echo "OK: at least one real delivery since ${CUTOFF}."
+            exit 0
+          fi
+
+          echo "ALERT: no delivered issues found since ${CUTOFF} -- the daily send may be broken."
+
+          # Best-effort direct email alert via Resend, independent of alpha's
+          # own sendOpsAlert (which lives inside the very app that might be
+          # the thing that's broken). Same destination as the app's existing
+          # ops-alert convention.
+          curl -sS -X POST 'https://api.resend.com/emails' \
+            -H "Authorization: Bearer ${RESEND_API_KEY}" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"from\": \"alpha watchdog <alpha@avahealth.co>\",
+              \"to\": [\"youngalgy@gmail.com\"],
+              \"subject\": \"[alpha] No letters delivered in the last 20 hours\",
+              \"text\": \"The daily digest watchdog found no issues.delivered_at since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: is the Cloudflare Cron Trigger still armed (wrangler.jsonc triggers.crons), are all required secrets still present on whatever host is live, and did the last deploy actually go out. GitHub Actions run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"
+            }"
+
+          # Fail the job too, so GitHub's own scheduled-workflow-failure
+          # email (sent to the repo owner automatically, zero setup) is a
+          # second, independent alert channel on top of the Resend email
+          # above -- if one delivery mechanism is having a bad day, the
+          # other might still get through.
+          exit 1
