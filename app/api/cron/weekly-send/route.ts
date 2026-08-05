@@ -276,6 +276,52 @@ export async function GET(req: Request) {
     `[cron/weekly-send] weekOf=${weekOf} subscribers=${rows.length} force=${force}`
   );
 
+  // RECLAIM stuck claims for this week_of before anything else runs. Closes
+  // the biggest remaining single point of failure the 2026-08-05 resilience
+  // audit found: runPersistAndSend stamps delivered_at as an atomic CLAIM
+  // BEFORE calling Resend (see its own comment). If the process dies in
+  // between -- a killed GitHub Actions runner, an OOM -- the row is left
+  // with delivered_at set and no email ever sent, and every other check in
+  // this file (alreadyDelivered below, the RETRY-SAFETY reuse block, the
+  // watchdog's own delivered_count) reads that as "done." A row matching
+  // delivered_at set + resend_message_id still null + past a safety margin
+  // comfortably longer than any legitimate in-flight send
+  // (PERSIST_AND_SEND_DEADLINE_MS is 45s, plus the drain-on-kill grace) is
+  // unambiguously stuck, not just slow -- nulling delivered_at puts that
+  // subscriber back in the normal undelivered pool for THIS run.
+  const RECLAIM_SAFETY_MARGIN_MS = 10 * 60 * 1000; // 10 minutes
+  if (!force) {
+    const reclaimCutoff = new Date(Date.now() - RECLAIM_SAFETY_MARGIN_MS).toISOString();
+    const { data: reclaimed, error: reclaimErr } = await sb
+      .from("issues")
+      .update({ delivered_at: null })
+      .eq("week_of", weekOf)
+      .is("resend_message_id", null)
+      .not("delivered_at", "is", null)
+      .lt("delivered_at", reclaimCutoff)
+      .select("user_id");
+    if (reclaimErr) {
+      // Safe to continue without reclaiming -- worst case, a stuck row
+      // just stays stuck one more run and gets caught next time.
+      console.warn(
+        `[cron/weekly-send] stuck-claim reclaim query failed: ${reclaimErr.message} — continuing without reclaiming.`
+      );
+    } else if ((reclaimed?.length ?? 0) > 0) {
+      const ids = reclaimed!.map((r) => r.user_id).join(", ");
+      console.warn(
+        `[cron/weekly-send] RECLAIMED ${reclaimed!.length} stuck claim(s) for weekOf=${weekOf} (delivered_at was set with no proof of send, older than ${RECLAIM_SAFETY_MARGIN_MS / 60000}min): ${ids}`
+      );
+      // Visible on purpose: a reclaim means a PRIOR run genuinely died
+      // mid-send. That's worth Algy knowing happened even though this run
+      // is about to self-heal it -- silently fixing it would just move the
+      // "nothing noticed" gap one step over. Best-effort, never blocks.
+      await sendOpsAlert(
+        `[alpha] Reclaimed ${reclaimed!.length} stuck claim(s)`,
+        `weekOf=${weekOf}: ${reclaimed!.length} subscriber(s) had delivered_at set with no proof of send (older than ${RECLAIM_SAFETY_MARGIN_MS / 60000} minutes) -- a prior run likely died between claiming and Resend confirming. Reclaimed and will be retried this run. user_id(s): ${ids}`
+      );
+    }
+  }
+
   // Prefetch this week's delivered stamps in ONE query (was a per-subscriber
   // lookup — N+1 that adds a round trip per user as the list grows).
   const alreadyDelivered = new Set<string>();
@@ -534,8 +580,9 @@ export async function GET(req: Request) {
 
       const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
       const inboxUrl = `${origin}/inbox`;
+      let resendMessageId: string | undefined;
       try {
-        await sendLetterNotification({
+        const sendResult = await sendLetterNotification({
           to: row.email,
           // profile.firstName, not row.first_name: the null-check guard
           // above narrows row.first_name in the outer loop body, but that
@@ -555,6 +602,7 @@ export async function GET(req: Request) {
           // passing it always keeps the two call sites obviously in sync.
           idempotencyKind: kind,
         });
+        resendMessageId = sendResult.id || undefined;
       } catch (sendErr) {
         if (!force && claimedAt) {
           // Release the claim so the next run retries this user cleanly.
@@ -574,6 +622,34 @@ export async function GET(req: Request) {
           }
         }
         throw sendErr;
+      }
+
+      // Proof of send -- the fix for the "stuck claim" gap flagged by the
+      // 2026-08-05 resilience audit as the biggest remaining single point of
+      // failure: delivered_at is stamped as a CLAIM before this point, so a
+      // process that dies between winning the claim and Resend confirming
+      // (a killed runner, an OOM) leaves a row that reads as "delivered" to
+      // every check in the system forever, with no email ever having gone
+      // out. Only ever set here, AFTER sendLetterNotification has already
+      // returned successfully -- this column existing (or not) on a
+      // delivered_at-set row is exactly what the reclaim step near the top
+      // of this handler uses to tell a genuine success from a stuck claim.
+      // Best-effort: the email already sent, so a failure to record this
+      // must never fail the request -- it only means this row looks like a
+      // stuck claim until the NEXT run's reclaim step, which is always safe
+      // (a spurious reclaim just costs one redundant Resend call, which
+      // Resend's own idempotency key collapses harmlessly).
+      if (resendMessageId) {
+        const { error: proofErr } = await sb
+          .from("issues")
+          .update({ resend_message_id: resendMessageId })
+          .eq("user_id", row.id)
+          .eq("week_of", weekOf);
+        if (proofErr) {
+          console.warn(
+            `[cron/weekly-send] sent OK but proof-of-send write failed for ${row.email}: ${proofErr.message} — row will look like a stuck claim until the next reclaim pass (harmless, Resend idempotency covers the redundant retry).`
+          );
+        }
       }
 
       if (force) {
