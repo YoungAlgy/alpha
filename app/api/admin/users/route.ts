@@ -4,6 +4,7 @@ import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/serv
 import { cancelStripeSubscriptionsBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 import { rateLimit } from "@/lib/rate-limit";
+import { isFreeGrantEligible } from "@/lib/admin-users-guards";
 
 export const runtime = "nodejs";
 
@@ -209,7 +210,7 @@ export async function POST(req: Request) {
       .select("stripe_customer_id")
       .eq("id", body.userId)
       .maybeSingle();
-    if (existing?.stripe_customer_id) {
+    if (!isFreeGrantEligible(existing?.stripe_customer_id)) {
       return NextResponse.json(
         { error: "User has a real Stripe subscription. Manage in Stripe, don't comp." },
         { status: 400 }
@@ -243,7 +244,7 @@ export async function POST(req: Request) {
       .select("stripe_customer_id")
       .eq("id", body.userId)
       .maybeSingle();
-    if (row?.stripe_customer_id) {
+    if (!isFreeGrantEligible(row?.stripe_customer_id)) {
       return NextResponse.json(
         { error: "User has a real Stripe subscription. Manage in Stripe." },
         { status: 400 }

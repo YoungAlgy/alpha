@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { isValidTopicId } from "@/lib/topics";
 import { clampQuota } from "@/lib/types";
 import { poolCap } from "@/lib/engine/select-sections";
 import { rateLimit } from "@/lib/rate-limit";
+import { validateTopicsSubmission } from "@/lib/account-topics-guards";
 
 export const runtime = "nodejs";
 
@@ -50,32 +50,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
   }
 
-  // Length-check BEFORE the type-scan below: the real per-user cap needs a DB
-  // read to compute (poolCap depends on this reader's topic_quota), but a
-  // generous absolute bound here rejects a garbage oversized array in O(1)
-  // instead of running a full .some() scan over it first. MAX_TOPIC_QUOTA is
-  // 25; poolCap adds a handful of backup slots on top, so 100 is well above
-  // any real cap while still being a real bound.
-  if (!Array.isArray(body.topics) || body.topics.length > 100) {
-    return NextResponse.json({ error: "Topics must be a list." }, { status: 400 });
-  }
-  // No floor here would let a signed-in editor save an EMPTY pool -- the two
-  // other write paths into this same column (isProfileComplete in
-  // lib/checkout-guards.ts, ProfileSchema in app/api/generate/route.ts) both
-  // require at least one topic; this route was the one gap. The DB's own
-  // users_topics_len_chk CHECK constraint doesn't catch it either --
-  // Postgres's array_length of an empty array is NULL, which satisfies that
-  // constraint's `topics is null or array_length(...) <= 25` OR. An empty
-  // pool silently drops the subscriber from every send
+  // The real per-user cap needs a DB read to compute (poolCap depends on
+  // this reader's topic_quota) -- see lib/account-topics-guards.ts for the
+  // full validation chain (empty-pool floor, dup check, isValidTopicId scan)
+  // and why the empty-pool floor in particular matters: the DB's own
+  // users_topics_len_chk CHECK constraint doesn't catch it (Postgres's
+  // array_length of an empty array is NULL, which satisfies that
+  // constraint's `topics is null or array_length(...) <= 25` OR), so an
+  // empty pool would otherwise silently drop the subscriber from every send
   // (weekly-send/route.ts's skippedEmptyPool path).
-  if (body.topics.length === 0) {
-    return NextResponse.json({ error: "Pick at least one topic." }, { status: 400 });
-  }
-  if (body.topics.some((t) => typeof t !== "string")) {
-    return NextResponse.json({ error: "Topics must be a list." }, { status: 400 });
-  }
-  const topics = body.topics as string[];
-
   const svc = await supabaseServiceClient();
   const { data: row, error: readErr } = await svc
     .from("users")
@@ -88,18 +71,11 @@ export async function POST(req: Request) {
   }
   const cap = poolCap(clampQuota(row?.topic_quota ?? 5));
 
-  if (topics.length > cap) {
-    return NextResponse.json(
-      { error: `You can pick up to ${cap} topics on your plan.` },
-      { status: 400 }
-    );
+  const result = validateTopicsSubmission(body.topics, cap);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  if (new Set(topics).size !== topics.length) {
-    return NextResponse.json({ error: "That list has a duplicate topic in it." }, { status: 400 });
-  }
-  if (topics.some((t) => !isValidTopicId(t))) {
-    return NextResponse.json({ error: "One of those topics isn't recognized." }, { status: 400 });
-  }
+  const { topics } = result;
 
   const { error } = await svc.from("users").update({ topics }).eq("id", user.id);
   if (error) {
