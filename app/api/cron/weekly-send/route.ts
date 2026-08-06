@@ -234,7 +234,7 @@ export async function GET(req: Request) {
 
     if (error) {
       console.error("[cron/weekly-send] subscriber fetch failed:", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Couldn't fetch subscribers. Try again." }, { status: 500 });
     }
     if (!page || page.length === 0) break;
     rows.push(...(page as SubscriberRow[]));

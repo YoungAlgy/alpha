@@ -60,7 +60,12 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ url: session.url });
   } catch (e) {
+    // Log the real Stripe error server-side only -- matches checkout/route.ts
+    // and update-quantity/route.ts's established pattern. This is reachable
+    // by any signed-in user just by triggering a Stripe error; the raw SDK
+    // message can leak price/product IDs or account config.
     const msg = e instanceof Error ? e.message : "Stripe error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("[stripe/portal] failed:", msg);
+    return NextResponse.json({ error: "Couldn't open billing portal. Try again in a moment." }, { status: 500 });
   }
 }

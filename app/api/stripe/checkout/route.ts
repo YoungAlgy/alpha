@@ -120,6 +120,22 @@ export async function POST(req: Request) {
   try {
     const stripe = getStripeClient();
 
+    // Idempotency key so two near-simultaneous requests for the same signup
+    // (a double-click that slips past the client's disabled-state guard, a
+    // second tab, a client-side retry) collapse to ONE Checkout Session
+    // instead of two. Without this, shouldBlockDoubleSubscription's own
+    // pre-check above is a real TOCTOU race: both requests read
+    // subscribed_at as still-null (it's only set later by the
+    // checkout.session.completed webhook) and both pass, producing two
+    // sessions whose webhooks both resolve to the same auth user and race to
+    // write stripe_customer_id -- the loser's subscription becomes invisible
+    // to the billing portal and to account/delete's cancellation lookup,
+    // both of which key off that same column. 30s bucket mirrors
+    // update-quantity/route.ts's identical pattern: scopes the dedup to
+    // rapid retries of the same submit, not a subscriber's genuine later
+    // resubscribe attempt.
+    const idemKey = body.email ? `alpha-checkout-${body.email}-${Math.floor(Date.now() / 30000)}` : undefined;
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
@@ -166,7 +182,7 @@ export async function POST(req: Request) {
       after_expiration: {
         recovery: { enabled: true, allow_promotion_codes: true },
       },
-    });
+    }, idemKey ? { idempotencyKey: idemKey } : undefined);
 
     return NextResponse.json({ url: session.url });
   } catch (e) {

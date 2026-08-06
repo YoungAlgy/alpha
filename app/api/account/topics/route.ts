@@ -59,6 +59,18 @@ export async function POST(req: Request) {
   if (!Array.isArray(body.topics) || body.topics.length > 100) {
     return NextResponse.json({ error: "Topics must be a list." }, { status: 400 });
   }
+  // No floor here would let a signed-in editor save an EMPTY pool -- the two
+  // other write paths into this same column (isProfileComplete in
+  // lib/checkout-guards.ts, ProfileSchema in app/api/generate/route.ts) both
+  // require at least one topic; this route was the one gap. The DB's own
+  // users_topics_len_chk CHECK constraint doesn't catch it either --
+  // Postgres's array_length of an empty array is NULL, which satisfies that
+  // constraint's `topics is null or array_length(...) <= 25` OR. An empty
+  // pool silently drops the subscriber from every send
+  // (weekly-send/route.ts's skippedEmptyPool path).
+  if (body.topics.length === 0) {
+    return NextResponse.json({ error: "Pick at least one topic." }, { status: 400 });
+  }
   if (body.topics.some((t) => typeof t !== "string")) {
     return NextResponse.json({ error: "Topics must be a list." }, { status: 400 });
   }

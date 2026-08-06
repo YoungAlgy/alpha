@@ -136,7 +136,8 @@ export async function GET(req: Request) {
   ]);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[admin/users] users query failed:", error.message);
+    return NextResponse.json({ error: "Couldn't load users. Try again." }, { status: 500 });
   }
   return NextResponse.json({ users, stats });
 }
@@ -191,7 +192,10 @@ export async function POST(req: Request) {
     await deleteSupportTicketsBeforeDelete(sb, body.userId, "[admin/delete]");
     // Delete the auth user — cascade removes their public.users + issues rows.
     const { error } = await sb.auth.admin.deleteUser(body.userId);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error("[admin/users] delete failed:", error.message);
+      return NextResponse.json({ error: "Couldn't delete user. Try again." }, { status: 500 });
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -224,7 +228,10 @@ export async function POST(req: Request) {
         unsubscribed_at: null,
       })
       .eq("id", body.userId);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error("[admin/users] grant_free failed:", error.message);
+      return NextResponse.json({ error: "Couldn't grant free access. Try again." }, { status: 500 });
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -246,7 +253,10 @@ export async function POST(req: Request) {
       .from("users")
       .update({ subscribed_at: null })
       .eq("id", body.userId);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error("[admin/users] revoke_free failed:", error.message);
+      return NextResponse.json({ error: "Couldn't revoke free access. Try again." }, { status: 500 });
+    }
     return NextResponse.json({ ok: true });
   }
 

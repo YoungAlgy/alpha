@@ -35,8 +35,7 @@ const nextConfig: NextConfig = {
     ];
   },
   // Baseline security headers on every response. Cheap defense-in-depth for a
-  // paid product handling auth sessions. (No CSP yet — Next's inline runtime
-  // scripts make a strict CSP fiddly; revisit if we add nonce support.)
+  // paid product handling auth sessions.
   async headers() {
     return [
       {
@@ -49,6 +48,44 @@ const nextConfig: NextConfig = {
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
+          },
+          {
+            // A real CSP was previously deferred entirely ("Next's inline
+            // runtime scripts make a strict CSP fiddly"). Investigated
+            // properly (2026-08-06): script-src/style-src genuinely can't be
+            // tightened past 'unsafe-inline' without forcing this app's 29
+            // statically-prerendered routes (/, /checkout, /settings, /writing,
+            // etc.) into per-request dynamic rendering just to get a fresh
+            // nonce on every load -- Next's own nonce mechanism only reads a
+            // nonce from the REQUEST headers at render time, which a
+            // statically-cached page never has. That's a real latency/cost
+            // regression on a Workers deployment already tight against
+            // free-tier limits, not worth it for this app's threat model.
+            // But most CSP directives don't touch that problem at all and
+            // cost nothing to ship: this locks down every OTHER real attack
+            // class (cross-origin form hijack, base-tag injection,
+            // clickjacking, object/embed injection, protocol downgrade)
+            // while leaving script-src/style-src open on purpose, not
+            // silently. connect-src covers Supabase (the only client-side
+            // fetch target, confirmed via repo-wide grep) and PostHog's
+            // default ingestion host (inert today -- NEXT_PUBLIC_POSTHOG_KEY
+            // is unset -- but the code path exists). img-src covers Google's
+            // favicon service (components/Digest.tsx's per-source favicons)
+            // alongside 'self' and data: (inline SVGs/placeholders).
+            //
+            // CAUGHT LIVE (2026-08-06): www.google.com/s2/favicons doesn't
+            // serve the icon itself -- it 301s to a sharded
+            // tN.gstatic.com/faviconV2 host (confirmed via curl -IL; shard
+            // number varies by request, seen t2 so far). CSP checks BOTH the
+            // original AND the final redirect-target origin against the
+            // source list, so without *.gstatic.com here every favicon in
+            // every letter would have silently 404'd under this policy --
+            // caught by actually loading a real <img> in a browser and
+            // watching for a securitypolicyviolation event, not just by
+            // reading Digest.tsx's fetch URL.
+            key: "Content-Security-Policy",
+            value:
+              "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' https://xpqxhdciaoicsnyyfshy.supabase.co https://us.i.posthog.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
           },
         ],
       },

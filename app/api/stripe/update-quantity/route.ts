@@ -82,7 +82,8 @@ export async function POST(req: Request) {
     .eq("id", user.id)
     .maybeSingle();
   if (rowErr) {
-    return NextResponse.json({ error: rowErr.message }, { status: 500 });
+    console.error("[update-quantity] user lookup failed:", rowErr.message);
+    return NextResponse.json({ error: "Couldn't load your subscription. Try again." }, { status: 500 });
   }
   if (!row?.stripe_customer_id) {
     return NextResponse.json(
