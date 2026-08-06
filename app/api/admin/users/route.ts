@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { cancelStripeSubscriptionsBeforeDelete } from "@/lib/stripe-cancel";
+import { cancelStripeSubscriptionsBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -37,6 +38,7 @@ async function gatherStats(): Promise<Stats> {
     const { data: page } = await sb
       .from("users")
       .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id")
+      .order("id")
       .range(from, from + PAGE_SIZE - 1);
     if (!page || page.length === 0) break;
     rows.push(...page);
@@ -139,10 +141,11 @@ export async function GET(req: Request) {
   return NextResponse.json({ users, stats });
 }
 
-interface ActionBody {
-  action: "delete" | "grant_free" | "revoke_free";
-  userId: string;
-}
+const ActionBodySchema = z.object({
+  action: z.enum(["delete", "grant_free", "revoke_free"]),
+  userId: z.string().uuid(),
+});
+type ActionBody = z.infer<typeof ActionBodySchema>;
 
 export async function POST(req: Request) {
   const gate = await requireAdmin();
@@ -163,13 +166,14 @@ export async function POST(req: Request) {
 
   let body: ActionBody;
   try {
-    body = (await req.json()) as ActionBody;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  if (!body.userId) {
-    return NextResponse.json({ error: "userId required" }, { status: 400 });
+    const raw = await req.json();
+    body = ActionBodySchema.parse(raw);
+  } catch (e) {
+    const message =
+      e instanceof z.ZodError
+        ? `Invalid input: ${e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`
+        : "Invalid JSON";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   const sb = await supabaseServiceClient();
@@ -180,6 +184,11 @@ export async function POST(req: Request) {
     // so a still-active sub would bill forever with no way to stop it. Best-effort
     // — a Stripe hiccup must never block the admin delete.
     await cancelStripeSubscriptionsBeforeDelete(sb, body.userId, "[admin/delete]");
+    // Same reasoning as self-serve account/delete: support_tickets.user_id is
+    // ON DELETE SET NULL, not CASCADE, so skipping this would leave an
+    // admin-initiated delete short of the "all associated data" promise on
+    // the privacy page while self-serve deletes correctly clear it.
+    await deleteSupportTicketsBeforeDelete(sb, body.userId, "[admin/delete]");
     // Delete the auth user — cascade removes their public.users + issues rows.
     const { error } = await sb.auth.admin.deleteUser(body.userId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

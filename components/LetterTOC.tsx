@@ -30,17 +30,21 @@ export function LetterTOC({ issue }: LetterTOCProps) {
     // getBoundingClientRect() per section, so run it at most once per animation
     // frame instead of on every event to avoid layout thrashing while scrolling.
     let ticking = false;
+    let rafId: number | undefined;
     function onScroll() {
       if (ticking) return;
       ticking = true;
-      requestAnimationFrame(() => {
+      rafId = requestAnimationFrame(() => {
         computeActive();
         ticking = false;
       });
     }
     computeActive();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+    };
   }, [issue]);
 
   function jump(topicId: string) {

@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { STRIPE_PRICE_ID, getStripeClient } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
-import type { TopicId } from "@/lib/types";
 import { isProfileComplete, shouldBlockDoubleSubscription } from "@/lib/checkout-guards";
 
 export const runtime = "nodejs";
 
-interface CheckoutPayload {
-  email?: string;
-  firstName?: string;
-  city?: string;
-  topics?: TopicId[];
-}
+// Same caps app/api/account/profile/route.ts's LIMITS already enforce for
+// firstName/city -- this route is the OTHER write path into the same
+// public.users columns (via Stripe metadata -> the webhook), and used to be
+// the one place that didn't bound them. .max(25) on topics matches
+// isProfileComplete's own bound one line below where it's enforced.
+const CheckoutPayloadSchema = z.object({
+  email: z.string().max(320).optional(),
+  firstName: z.string().max(60).optional(),
+  city: z.string().max(120).optional(),
+  topics: z.array(z.string()).max(25).optional(),
+});
+type CheckoutPayload = z.infer<typeof CheckoutPayloadSchema>;
 
 export async function POST(req: Request) {
   // Rate limit (same in-memory limiter the sibling generate/support routes use).
@@ -42,9 +48,16 @@ export async function POST(req: Request) {
 
   let body: CheckoutPayload = {};
   try {
-    body = await req.json();
-  } catch {
-    // Empty body is fine
+    const raw = await req.json();
+    body = CheckoutPayloadSchema.parse(raw);
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: `Invalid input: ${e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}` },
+        { status: 400 }
+      );
+    }
+    // Empty/malformed JSON body -- fine, treated as no profile data.
   }
   // Canonicalize the email to lowercase so the double-charge guard's lookup, the
   // Stripe customer_email, and the row the webhook later writes all key on one

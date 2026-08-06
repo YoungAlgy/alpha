@@ -27,10 +27,12 @@ export default function ThemePage() {
   // user going through onboarding) — they should return to /settings on submit.
   useEffect(() => {
     if (!supabaseConfigured()) return;
+    let cancelled = false;
     (async () => {
       try {
         const sb = supabaseClient();
         const { data: { session } } = await sb.auth.getSession();
+        if (cancelled) return;
         if (!session) return;
         setSignedIn(true);
         // Hydrate `picked` from the DB (the source of truth) for a signed-in
@@ -45,12 +47,16 @@ export default function ThemePage() {
           .select("theme")
           .eq("id", session.user.id)
           .maybeSingle();
+        if (cancelled) return;
         const dbTheme = row?.theme as ThemeId | null | undefined;
         if (dbTheme && dbTheme in SWATCHES) setPicked(dbTheme);
       } catch {
         // ignore — falls back to localStorage state / default
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function pickTheme(id: ThemeId) {

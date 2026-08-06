@@ -52,10 +52,12 @@ export function ProfileEditor() {
       setLoaded(true);
       return;
     }
+    let cancelled = false;
     (async () => {
       try {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
+        if (cancelled) return;
         if (!user) {
           setLoaded(true);
           return;
@@ -66,6 +68,7 @@ export function ProfileEditor() {
           .select("first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, topics")
           .eq("id", user.id)
           .maybeSingle();
+        if (cancelled) return;
         setHasZodiac(Array.isArray(row?.topics) && row.topics.includes("zodiac"));
         const next: Form = {
           firstName: row?.first_name ?? "",
@@ -81,9 +84,12 @@ export function ProfileEditor() {
       } catch {
         // ignore — the form stays empty and Save will surface a real error
       } finally {
-        setLoaded(true);
+        if (!cancelled) setLoaded(true);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function set<K extends keyof Form>(key: K, value: string) {

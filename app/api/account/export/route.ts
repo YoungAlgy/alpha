@@ -44,11 +44,16 @@ export async function GET() {
     return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
   }
 
+  // .limit() well above any realistic lifetime issue count (daily cadence,
+  // ~365/year) so PostgREST's silent 1,000-row select cap fails loudly via a
+  // future increase rather than silently truncating a long-tenured
+  // subscriber's data export.
   const { data: issues, error: issuesErr } = await svc
     .from("issues")
     .select("*")
     .eq("user_id", user.id)
-    .order("week_of", { ascending: true });
+    .order("week_of", { ascending: true })
+    .limit(5000);
   if (issuesErr) {
     console.error("[account/export] issues fetch failed:", issuesErr.message);
     return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });

@@ -1,15 +1,20 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
-interface SupportPayload {
-  name?: string;
-  email: string;
-  message: string;
-}
+// z.string() enforces the type, not just presence -- the old `!body?.email`
+// check let a truthy non-string through, and `.length` on a plain object is
+// undefined (not > 5000), so the size cap below it silently never fired.
+const SupportPayloadSchema = z.object({
+  name: z.string().max(120).optional(),
+  email: z.string().max(200),
+  message: z.string().max(5000),
+});
+type SupportPayload = z.infer<typeof SupportPayloadSchema>;
 
 // Writes the ticket to Supabase support_tickets table when configured,
 // otherwise falls back to server-console log. Also notifies youngalgy@gmail.com
@@ -29,18 +34,14 @@ export async function POST(req: Request) {
 
   let body: SupportPayload;
   try {
-    body = (await req.json()) as SupportPayload;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  if (!body?.email || !body?.message) {
-    return NextResponse.json({ error: "email and message required" }, { status: 400 });
-  }
-
-  // Bound payload sizes so a single ticket can't dump megabytes into the table.
-  if (body.email.length > 200 || body.message.length > 5000 || (body.name?.length ?? 0) > 120) {
-    return NextResponse.json({ error: "Input too long." }, { status: 400 });
+    const raw = await req.json();
+    body = SupportPayloadSchema.parse(raw);
+  } catch (e) {
+    const message =
+      e instanceof z.ZodError
+        ? `Invalid input: ${e.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`
+        : "Invalid JSON";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   const supabaseConfigured =

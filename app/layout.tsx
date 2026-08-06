@@ -96,6 +96,15 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
+  // iOS home-screen caption for the installed icon. Without this the caption
+  // falls back to the full page title ("alpha. your alpha"), which truncates
+  // on the home screen -- most pages that mount InstallPrompt are client
+  // components and can't export their own metadata to override it.
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "alpha.",
+  },
   openGraph: {
     title: "alpha. your alpha",
     description: SHARE_LEAD,

@@ -310,9 +310,13 @@ function weekLabel(weekOf: string): string {
 }
 
 // "Next one ships May 24" — the upcoming send (daily cadence: tomorrow).
+// Anchored to the real 14:00 UTC cron fire time, then rendered in the
+// reader's own local timezone (same convention as weekLabel above) — a
+// reader at UTC+10 or higher otherwise sees this read a full day earlier
+// than the day the letter actually lands on their local calendar.
 function nextSendLabel(): string {
-  const d = new Date(`${nextSendIso()}T12:00:00Z`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const d = new Date(`${nextSendIso()}T14:00:00Z`);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function computeWordCount(issue: Issue): number {

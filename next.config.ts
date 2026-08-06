@@ -52,6 +52,16 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // API routes can carry per-user PII (admin/users, account/export) or
+        // drive real state changes. Route Handler dynamic execution keeps
+        // them out of NEXT's own cache, but that says nothing about a
+        // browser, a corporate/ISP proxy, or a future Cloudflare cache rule
+        // storing a copy. /api/health sets its own explicit Cache-Control
+        // already -- this merges in harmlessly there.
+        source: "/api/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
+      },
     ];
   },
 };

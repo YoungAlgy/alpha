@@ -99,3 +99,24 @@ export async function cancelStripeSubscriptionsBeforeDelete(
     );
   }
 }
+
+// Shared entry point for both delete flows, same reasoning as
+// cancelStripeSubscriptionsBeforeDelete above: support_tickets.user_id is ON
+// DELETE SET NULL, not CASCADE, so deleting the auth user alone would just
+// null out user_id and leave the ticket's name/email/message text sitting in
+// the table with nothing tying it back to an account -- orphaned PII, not
+// removed data. The self-serve account/delete route had this fix; the admin
+// delete path (app/api/admin/users/route.ts) never did, leaving admin-
+// initiated deletes silently short of the "all associated data" promise on
+// the privacy page. Best-effort + swallows its own errors, same as the
+// Stripe step: a failure here must never block either delete flow.
+export async function deleteSupportTicketsBeforeDelete(
+  svc: SupabaseClient,
+  userId: string,
+  logPrefix: string
+): Promise<void> {
+  const { error } = await svc.from("support_tickets").delete().eq("user_id", userId);
+  if (error) {
+    console.error(`${logPrefix} failed to delete support_tickets:`, error.message);
+  }
+}

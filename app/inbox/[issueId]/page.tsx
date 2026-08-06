@@ -26,11 +26,19 @@ export default function IssuePage() {
   const [missing, setMissing] = useState(false);
 
   useEffect(() => {
+    // App Router doesn't remount this component when only issueId changes
+    // via client-side navigation (e.g. jumping between two archived issues
+    // from /archive), so without a cancellation guard an older fetch that
+    // resolves AFTER a newer one -- not guaranteed to resolve in request
+    // order -- can overwrite the screen with the wrong letter. Same pattern
+    // already used on the sibling /inbox page.
+    let cancelled = false;
     (async () => {
       if (supabaseConfigured()) {
         try {
           const sb = supabaseClient();
           const { data: { session } } = await sb.auth.getSession();
+          if (cancelled) return;
           if (session && issueId) {
             const { data, error } = await sb
               .from("issues")
@@ -38,12 +46,14 @@ export default function IssuePage() {
               .eq("id", issueId)
               .eq("user_id", session.user.id)
               .maybeSingle();
+            if (cancelled) return;
             if (!error && data) {
               const { data: userRow } = await sb
                 .from("users")
                 .select("first_name, city, theme")
                 .eq("id", session.user.id)
                 .maybeSingle();
+              if (cancelled) return;
               const themeId = coerceThemeId(userRow?.theme);
               if (themeId) {
                 document.documentElement.setAttribute("data-theme", themeId);
@@ -65,8 +75,11 @@ export default function IssuePage() {
           console.warn("[issue] fetch failed:", e);
         }
       }
-      setMissing(true);
+      if (!cancelled) setMissing(true);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [issueId]);
 
   if (missing) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { track } from "@/lib/analytics";
 
 // Turns a reader into a distributor. Uses the Web Share API (native share
@@ -28,6 +28,8 @@ export function ShareButton({
   style,
 }: ShareButtonProps) {
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   async function onShare() {
     track("share_clicked", { context });
@@ -46,7 +48,8 @@ export function ShareButton({
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2200);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 2200);
       track("shared", { context, method: "clipboard" });
     } catch {
       // last resort: open a mail/X intent? keep it simple — no-op

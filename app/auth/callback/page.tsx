@@ -59,6 +59,12 @@ function Inner() {
     const hasHashSession =
       typeof window !== "undefined" && window.location.hash.includes("access_token=");
 
+    // Guards every router/setState call below against firing after this
+    // effect's cleanup has run (a fast successive navigation off this page) —
+    // the error path's 1.5s setTimeout in particular was untracked.
+    let cancelled = false;
+    let redirectTimer: ReturnType<typeof setTimeout> | undefined;
+
     (async () => {
       try {
         const sb = supabaseClient();
@@ -66,6 +72,7 @@ function Inner() {
         if (code) {
           const { error } = await sb.auth.exchangeCodeForSession(code);
           if (error) throw error;
+          if (cancelled) return;
           router.replace(next as never);
           return;
         }
@@ -74,7 +81,9 @@ function Inner() {
           // Supabase client auto-detects hash tokens on init and persists the
           // session. Wait one tick for that to settle, then verify.
           await new Promise((r) => setTimeout(r, 50));
+          if (cancelled) return;
           const { data: { session } } = await sb.auth.getSession();
+          if (cancelled) return;
           if (session) {
             // Strip the hash so it doesn't linger in the URL bar
             if (typeof window !== "undefined") {
@@ -88,10 +97,18 @@ function Inner() {
         // Neither path produced a session
         router.replace("/signin?error=no_session" as never);
       } catch (e) {
+        if (cancelled) return;
         setErr(e instanceof Error ? e.message : "Sign-in failed");
-        setTimeout(() => router.replace("/signin" as never), 1500);
+        redirectTimer = setTimeout(() => {
+          if (!cancelled) router.replace("/signin" as never);
+        }, 1500);
       }
     })();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(redirectTimer);
+    };
   }, [router, params]);
 
   return <CallbackShell message={err || "Signing you in…"} />;

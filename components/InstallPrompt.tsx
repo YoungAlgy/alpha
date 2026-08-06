@@ -16,16 +16,35 @@ export function InstallPrompt() {
 
   useEffect(() => {
     if (localStorage.getItem(DISMISSED_KEY)) return;
+    // Already running as an installed app (launched from the home screen icon,
+    // not a browser tab) — no point offering to install again.
+    if (window.matchMedia?.("(display-mode: standalone)").matches) return;
+
+    let visibleTimer: ReturnType<typeof setTimeout> | undefined;
 
     function handler(e: Event) {
       e.preventDefault();
       setDeferred(e as BeforeInstallPromptEvent);
       // Wait a beat so it doesn't pop in instantly on arrival
-      setTimeout(() => setVisible(true), 2400);
+      visibleTimer = setTimeout(() => setVisible(true), 2400);
+    }
+
+    // Backstop for installing via the browser's own native UI (e.g. Chrome's
+    // address-bar install icon) instead of this banner's Add button — without
+    // this, DISMISSED_KEY never gets set and the banner can reappear for an
+    // already-installed reader on a later visit.
+    function onInstalled() {
+      localStorage.setItem(DISMISSED_KEY, "installed");
+      setVisible(false);
     }
 
     window.addEventListener("beforeinstallprompt", handler as EventListener);
-    return () => window.removeEventListener("beforeinstallprompt", handler as EventListener);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler as EventListener);
+      window.removeEventListener("appinstalled", onInstalled);
+      clearTimeout(visibleTimer);
+    };
   }, []);
 
   async function install() {

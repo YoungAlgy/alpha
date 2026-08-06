@@ -23,6 +23,8 @@ export default function SigninPage() {
   const [cooldown, setCooldown] = useState(0); // seconds until "Resend" re-enables
   const [resent, setResent] = useState(false); // transient "new code sent" confirmation
   const codeInputRef = useRef<HTMLInputElement>(null);
+  const stubTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(stubTimer.current), []);
 
   // Tick the resend cooldown down to zero.
   useEffect(() => {
@@ -95,7 +97,7 @@ export default function SigninPage() {
 
     if (!supabaseConfigured()) {
       // V0 stub path
-      setTimeout(() => {
+      stubTimer.current = setTimeout(() => {
         audioConfirm();
         setStep("code");
         setCooldown(RESEND_COOLDOWN_S);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { Wordmark } from "@/components/Wordmark";
@@ -20,9 +20,14 @@ type LoadState = "loading" | "error" | "ready";
 export default function ArchivePage() {
   const [items, setItems] = useState<ArchiveItem[]>([]);
   const [state, setState] = useState<LoadState>("loading");
+  // load() has two call sites (mount + the retry button below), so a mounted
+  // ref covering the component's whole lifetime guards both instead of a
+  // per-call cancellation flag.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const load = useCallback(async () => {
-    setState("loading");
+    if (mountedRef.current) setState("loading");
     // Signed-in users: the DB is the source of truth. A query error must NOT
     // be masked as "no letters" — that's alarming to a paying subscriber. Only
     // fall back to localStorage when NOT signed in (or Supabase unconfigured).
@@ -32,6 +37,7 @@ export default function ArchivePage() {
         const {
           data: { session },
         } = await sb.auth.getSession();
+        if (!mountedRef.current) return;
         if (session) {
           // RLS scopes issues to auth.uid() = user_id — no explicit filter needed.
           const { data, error } = await sb
@@ -39,6 +45,7 @@ export default function ArchivePage() {
             .select("id, week_of, editor_intro")
             .order("week_of", { ascending: false })
             .limit(100);
+          if (!mountedRef.current) return;
           if (error) {
             setState("error");
             return;
@@ -55,13 +62,14 @@ export default function ArchivePage() {
           return;
         }
       } catch {
-        setState("error");
+        if (mountedRef.current) setState("error");
         return;
       }
     }
     // Unauthenticated / unconfigured: best-effort localStorage of the first issue.
     try {
       const raw = localStorage.getItem(STORAGE_KEY_ISSUE);
+      if (!mountedRef.current) return;
       if (raw) {
         const issue = JSON.parse(raw) as Issue;
         setItems([{ id: "inbox", weekOf: issue.weekOf, firstLine: issue.editorIntro }]);
@@ -69,9 +77,9 @@ export default function ArchivePage() {
         setItems([]);
       }
     } catch {
-      setItems([]);
+      if (mountedRef.current) setItems([]);
     }
-    setState("ready");
+    if (mountedRef.current) setState("ready");
   }, []);
 
   useEffect(() => {

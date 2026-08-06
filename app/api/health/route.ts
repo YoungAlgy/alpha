@@ -30,8 +30,12 @@ export const dynamic = "force-dynamic";
 async function checkSupabase(): Promise<boolean> {
   try {
     const sb = await supabaseServiceClient();
+    // This only needs to prove Supabase is reachable and the key is valid --
+    // count: "exact" forces PostgREST to run a real SELECT count(*), an
+    // O(table size) scan for no benefit here. limit(1) with no count option
+    // is a cheap existence probe that proves the identical thing.
     const { error } = await withDeadline(
-      Promise.resolve(sb.from("users").select("id", { count: "exact", head: true })),
+      Promise.resolve(sb.from("users").select("id").limit(1)),
       3000,
       "health check supabase ping"
     );

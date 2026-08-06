@@ -89,8 +89,18 @@ export async function retryResendCall(
 // across every theme — never --accent, which each theme recolors).
 const BRAND_GOLD = "#C9A961";
 const WORDMARK_MASTHEAD = `<div style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span style="color:${BRAND_GOLD};">.</span></div>`;
+// CAN-SPAM (15 U.S.C. 7704, 16 CFR 316.4) requires a valid physical postal
+// address on every commercial email -- alpha is a paid recurring
+// subscription, not a purely transactional receipt.
+const MAILING_ADDRESS = "3608 S Belcher Dr, Tampa, FL 33629";
 const wordmarkFooter = (prefix = "") =>
-  `${prefix}alpha<span style="color:${BRAND_GOLD};">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}`;
+  `${prefix}alpha<span style="color:${BRAND_GOLD};">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}<br>${MAILING_ADDRESS}`;
+// replyTo for every subscriber-facing send -- everyday.report has no MX
+// record (verified live, 2026-08-06), so a reply straight to the From
+// address bounces. Both the letter and welcome email are first-person and
+// signed "Algy", actively inviting a reply. Same address already used as
+// this file's own ops-alert fallback below.
+const REPLY_TO_EMAIL = "youngalgy@gmail.com";
 
 export interface SendLetterParams {
   to: string;
@@ -206,6 +216,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
       {
         from: resendFrom,
         to: params.to,
+        replyTo: REPLY_TO_EMAIL,
         subject,
         html,
         text,
@@ -450,7 +461,8 @@ ${letterUrl || inboxUrl}
 
 (To change topics or read past letters, sign in at ${inboxUrl.replace("/inbox", "/signin")}. We'll email you a 6-digit code.)
 
-alpha.${unsubLine}`;
+alpha.
+${MAILING_ADDRESS}${unsubLine}`;
 }
 
 export function escapeHtml(s: string): string {
@@ -482,16 +494,21 @@ export interface SendWelcomeParams {
 
 export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id: string }> {
   if (!resendConfiguredInternal()) throw new Error("No email provider configured");
-  const html = renderWelcomeHTML(params);
-  const text = renderWelcomeText(params);
-  const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@everyday.report>";
   const headers: Record<string, string> = {};
+  let unsubUrl: string | null = null;
   if (params.userId) {
     const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
-    const unsubUrl = buildUnsubscribeUrl(params.userId, origin);
+    unsubUrl = buildUnsubscribeUrl(params.userId, origin);
     headers["List-Unsubscribe"] = `<${unsubUrl}>`;
     headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
+  // Same reasoning applied to renderHTML/renderText for the recurring
+  // letter: the invisible List-Unsubscribe header alone renders as an
+  // inbox-side button in Gmail/Apple Mail/Outlook but not in plain-text-only
+  // clients, some webmail, or a forwarded copy -- give the body a real link too.
+  const html = renderWelcomeHTML({ ...params, unsubscribeUrl: unsubUrl });
+  const text = renderWelcomeText({ ...params, unsubscribeUrl: unsubUrl });
+  const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@everyday.report>";
   // Stable per user, not per call -- this is a one-time email, so unlike
   // sendLetterNotification's per-(user, week_of, kind) key there's no second
   // dimension to it. Only set when userId is known, same as the
@@ -504,6 +521,7 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
       {
         from: resendFrom,
         to: params.to,
+        replyTo: REPLY_TO_EMAIL,
         subject: "Welcome to alpha. Your first letter is on its way",
         html,
         text,
@@ -520,8 +538,19 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
 
 // Exported (pure, no I/O) so the welcome email can be previewed/snapshot-tested
 // without a live send — same pattern as renderHTML.
-export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; inboxUrl: string }): string {
+export function renderWelcomeHTML({
+  firstName,
+  inboxUrl,
+  unsubscribeUrl,
+}: {
+  firstName: string;
+  inboxUrl: string;
+  unsubscribeUrl?: string | null;
+}): string {
   const signinUrl = inboxUrl.replace("/inbox", "/signin");
+  const unsubLine = unsubscribeUrl
+    ? `<a href="${escapeAttr(unsubscribeUrl)}" style="color:#6B7B70;">Unsubscribe</a> · `
+    : "";
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -569,14 +598,23 @@ export function renderWelcomeHTML({ firstName, inboxUrl }: { firstName: string; 
       </p>
       <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
       <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        ${wordmarkFooter()}
+        ${wordmarkFooter(unsubLine)}
       </p>
     </div>
   </body>
 </html>`;
 }
 
-function renderWelcomeText({ firstName, inboxUrl }: { firstName: string; inboxUrl: string }): string {
+function renderWelcomeText({
+  firstName,
+  inboxUrl,
+  unsubscribeUrl,
+}: {
+  firstName: string;
+  inboxUrl: string;
+  unsubscribeUrl?: string | null;
+}): string {
+  const unsubLine = unsubscribeUrl ? `\n\nUnsubscribe: ${unsubscribeUrl}` : "";
   return `Welcome to alpha.
 
 You're in, ${firstName}.
@@ -590,5 +628,8 @@ From here on, a new letter lands every day, in your inbox and on the web. No fee
 
 (Signed out when you click through? We'll email you a 6-digit code at ${inboxUrl.replace("/inbox", "/signin")}. No password to remember.)
 
-Algy`;
+Algy
+
+alpha.
+${MAILING_ADDRESS}${unsubLine}`;
 }

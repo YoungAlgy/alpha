@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { cancelStripeSubscriptionsBeforeDelete } from "@/lib/stripe-cancel";
+import { cancelStripeSubscriptionsBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
 
 export const runtime = "nodejs";
 
@@ -45,18 +45,10 @@ export async function POST() {
   await cancelStripeSubscriptionsBeforeDelete(svc, user.id, "[account/delete]");
 
   // Delete the user's support tickets outright rather than letting the FK
-  // cascade just null out user_id — SET NULL would leave their name, email,
-  // and message text sitting in the table with nothing tying it back to an
-  // account, which contradicts the "irreversible, all data gone" promise on
-  // the privacy and settings pages. Best-effort, like the Stripe step above:
-  // a failure here must not block the user's right to delete their account.
-  const { error: ticketsErr } = await svc
-    .from("support_tickets")
-    .delete()
-    .eq("user_id", user.id);
-  if (ticketsErr) {
-    console.error("[account/delete] failed to delete support_tickets:", ticketsErr.message);
-  }
+  // cascade just null out user_id — see deleteSupportTicketsBeforeDelete's
+  // own comment for why. Best-effort, like the Stripe step above: a failure
+  // here must not block the user's right to delete their account.
+  await deleteSupportTicketsBeforeDelete(svc, user.id, "[account/delete]");
 
   const { error } = await svc.auth.admin.deleteUser(user.id);
   if (error) {

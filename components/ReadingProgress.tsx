@@ -17,10 +17,11 @@ export function ReadingProgress() {
     // animation frame instead, the same throttle LetterTOC.tsx uses for its
     // own scroll listener.
     let ticking = false;
+    let rafId: number | undefined;
     function onScroll() {
       if (ticking) return;
       ticking = true;
-      requestAnimationFrame(() => {
+      rafId = requestAnimationFrame(() => {
         computeProgress();
         ticking = false;
       });
@@ -31,6 +32,7 @@ export function ReadingProgress() {
     return () => {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
     };
   }, []);
 

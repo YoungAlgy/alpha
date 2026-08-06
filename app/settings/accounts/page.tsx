@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Footer } from "@/components/Footer";
 import { Wordmark } from "@/components/Wordmark";
 import { topicLabel } from "@/lib/topics";
@@ -48,6 +48,12 @@ export default function AdminAccountsPage() {
   const [activeSearch, setActiveSearch] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  // load() is called from several places (mount, search, load-more, the
+  // delete/grant/revoke reload) — a per-call cancellation flag wouldn't cover
+  // all of them, so this stays true for the component's whole lifetime and
+  // guards every setState call below against firing post-unmount.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   async function load(opts?: { search?: string; before?: string; append?: boolean }) {
     try {
@@ -55,6 +61,7 @@ export default function AdminAccountsPage() {
       if (opts?.search) params.set("q", opts.search);
       else if (opts?.before) params.set("before", opts.before);
       const res = await fetch(`/api/admin/users${params.toString() ? `?${params}` : ""}`);
+      if (!mountedRef.current) return;
       if (res.status === 401) {
         setErr("Sign in first.");
         return;
@@ -64,6 +71,7 @@ export default function AdminAccountsPage() {
         return;
       }
       const data = await res.json();
+      if (!mountedRef.current) return;
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setUsers((prev) => (opts?.append && prev ? [...prev, ...data.users] : data.users));
       if (data.stats) setStats(data.stats);
@@ -71,7 +79,7 @@ export default function AdminAccountsPage() {
       // we've hit the end of the table (or, for a search, all the matches).
       setHasMore(data.users.length === 200);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't load users.");
+      if (mountedRef.current) setErr(e instanceof Error ? e.message : "Couldn't load users.");
     }
   }
 

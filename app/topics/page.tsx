@@ -44,16 +44,19 @@ export default function TopicsPage() {
   // Also fetch their topic_quota so the picker matches what they've paid for.
   useEffect(() => {
     if (!supabaseConfigured()) return;
+    let cancelled = false;
     (async () => {
       try {
         const sb = supabaseClient();
         const { data: { session } } = await sb.auth.getSession();
+        if (cancelled) return;
         if (!session) return;
         const { data: row } = await sb
           .from("users")
           .select("topic_quota, topics, birthday")
           .eq("id", session.user.id)
           .maybeSingle();
+        if (cancelled) return;
         // Flip signedIn in the same batch as the row's picked/target values below
         // (not right after getSession) so submit()'s signedIn check never sees a
         // render where signedIn is true but `picked` still holds stale
@@ -73,6 +76,9 @@ export default function TopicsPage() {
         // ignore — keep default target
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // The pool a reader may build. Signed-in users rank a deeper pool: the top

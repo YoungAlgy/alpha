@@ -50,7 +50,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
   }
 
-  if (!Array.isArray(body.topics) || body.topics.some((t) => typeof t !== "string")) {
+  // Length-check BEFORE the type-scan below: the real per-user cap needs a DB
+  // read to compute (poolCap depends on this reader's topic_quota), but a
+  // generous absolute bound here rejects a garbage oversized array in O(1)
+  // instead of running a full .some() scan over it first. MAX_TOPIC_QUOTA is
+  // 25; poolCap adds a handful of backup slots on top, so 100 is well above
+  // any real cap while still being a real bound.
+  if (!Array.isArray(body.topics) || body.topics.length > 100) {
+    return NextResponse.json({ error: "Topics must be a list." }, { status: 400 });
+  }
+  if (body.topics.some((t) => typeof t !== "string")) {
     return NextResponse.json({ error: "Topics must be a list." }, { status: 400 });
   }
   const topics = body.topics as string[];

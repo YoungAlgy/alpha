@@ -96,6 +96,15 @@ export default function WritingPage() {
         ? new URLSearchParams(window.location.search).get("session_id") || undefined
         : undefined;
 
+    // Guards every setState call below against firing after this effect's
+    // cleanup has run (back button, fast re-render) -- without it a slow/
+    // retried generate call whose response arrives post-unmount still writes
+    // state on a torn-down component and can duplicate a no-longer-needed
+    // request's side effects (the magic-link redirect in particular).
+    let cancelled = false;
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
     // Retry once with a backoff if the first attempt fails. The engine can
     // hiccup on Brave rate-limit / a flaky Claude call / cold Lambda starts;
     // these are usually transient. After two failures we surface the recovery
@@ -107,6 +116,7 @@ export default function WritingPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ profile, sessionId }),
         });
+        if (cancelled) return;
         if (r.status === 402) {
           // Payment gate — they reached /writing without a paid session.
           // Send them to checkout rather than the generic retry card.
@@ -116,6 +126,7 @@ export default function WritingPage() {
         }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = (await r.json()) as { issue: Issue; magicLink?: string | null };
+        if (cancelled) return;
         clearInterval(stepTimer);
         setCurrentStep(steps.length - 1);
         localStorage.setItem(STORAGE_KEY_ISSUE, JSON.stringify(data.issue));
@@ -129,7 +140,8 @@ export default function WritingPage() {
         // magic link tied to this email. Hitting it sets the Supabase session
         // cookie and bounces to /inbox via /auth/callback. Without this the
         // user lands on /inbox unauthenticated and gets sent back to /welcome.
-        setTimeout(() => {
+        finishTimer = setTimeout(() => {
+          if (cancelled) return;
           // Wipe onboarding answers (name, email, birthday, etc.) now that
           // the account exists and the letter is generated — this is a
           // shared/library-computer risk otherwise (next visitor's forms and
@@ -142,11 +154,12 @@ export default function WritingPage() {
           }
         }, 1200);
       } catch (e) {
+        if (cancelled) return;
         if (retriesLeft > 0) {
           console.warn(`[writing] generate failed, retrying once:`, e);
           // 4-second backoff before retry — long enough for transient cold
           // starts to recover.
-          setTimeout(() => attemptGenerate(retriesLeft - 1), 4000);
+          retryTimer = setTimeout(() => attemptGenerate(retriesLeft - 1), 4000);
           return;
         }
         clearInterval(stepTimer);
@@ -156,8 +169,11 @@ export default function WritingPage() {
     attemptGenerate(1);
 
     return () => {
+      cancelled = true;
       clearInterval(stepTimer);
       clearTimeout(escapeTimer);
+      clearTimeout(finishTimer);
+      clearTimeout(retryTimer);
     };
     // steps.length (read inside the interval closure) and reset (a stable
     // useCallback with [] deps) are deliberately left out: startedRef already

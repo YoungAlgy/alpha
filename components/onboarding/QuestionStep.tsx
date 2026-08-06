@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, useRef, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useOnboarding, nextStep, type OnboardingState } from "@/lib/onboarding-state";
 import { confirm as audioConfirm, tap } from "@/lib/audio";
@@ -94,11 +94,13 @@ export function QuestionStep({
   }
 
   const [skipping, setSkipping] = useState(false);
+  const skipTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(skipTimer.current), []);
 
   function skip() {
     tap();
     setSkipping(true);
-    setTimeout(() => {
+    skipTimer.current = setTimeout(() => {
       update({ [field]: undefined } as Partial<OnboardingState>);
       router.push(`/${nextStep(currentPath)}` as never);
     }, 280);

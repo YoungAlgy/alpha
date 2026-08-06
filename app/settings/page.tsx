@@ -76,10 +76,12 @@ export default function SettingsPage() {
       setQuotaLoaded(true);
       return;
     }
+    let cancelled = false;
     (async () => {
       try {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
+        if (cancelled) return;
         if (!user) return;
         setAuthEmail(user.email ?? null);
         if (user.email === ADMIN_EMAIL) setIsAdmin(true);
@@ -88,6 +90,7 @@ export default function SettingsPage() {
           .select("topic_quota, topics, subscribed_at, cancelled_at, stripe_customer_id, unsubscribed_at")
           .eq("id", user.id)
           .maybeSingle();
+        if (cancelled) return;
         if (row?.topic_quota && typeof row.topic_quota === "number") {
           setTopicQuota(clampQuota(row.topic_quota));
         }
@@ -109,9 +112,12 @@ export default function SettingsPage() {
       } catch {
         // ignore
       } finally {
-        setQuotaLoaded(true);
+        if (!cancelled) setQuotaLoaded(true);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function resumeLetters() {
