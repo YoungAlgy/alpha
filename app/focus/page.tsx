@@ -2,6 +2,7 @@
 
 import { StepShell } from "@/components/onboarding/StepShell";
 import { QuestionStep } from "@/components/onboarding/QuestionStep";
+import { BLURB_CAPS } from "@/lib/types";
 
 export default function FocusPage() {
   return (
@@ -14,6 +15,7 @@ export default function FocusPage() {
         placeholder="scaling our agency to 5 people this year"
         multiline
         optional
+        maxLength={BLURB_CAPS.projectBlurb}
       />
     </StepShell>
   );

@@ -25,9 +25,11 @@ type SupportPayload = z.infer<typeof SupportPayloadSchema>;
 // otherwise falls back to server-console log. Also notifies youngalgy@gmail.com
 // via Resend when configured (best-effort, doesn't block on email failure).
 export async function POST(req: Request) {
-  // Rate limit: 5 tickets per IP per hour. The table has an "anyone insert"
-  // RLS policy + this is an unauthenticated form, so without a cap it's a
-  // spam / inbox-flood vector. Resets per cold start (casual-abuse deterrent).
+  // Rate limit: 5 tickets per IP per hour. support_tickets has ZERO RLS
+  // policies (the "anyone insert" policy it started with was dropped in
+  // 20260805110000 -- writes only ever go through the service-role client)
+  // and this is an unauthenticated form, so this rate limit is the SOLE
+  // abuse control on this insert path. Resets per cold start (casual-abuse deterrent).
   const ip = clientKeyFromRequest(req);
   const limited = rateLimit(`support:${ip}`, { limit: 5, windowMs: 60 * 60 * 1000 });
   if (!limited.ok) {

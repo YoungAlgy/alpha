@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { coerceGender, demographicSummary } from "@/lib/demographics";
+import { BLURB_CAPS } from "@/lib/types";
 import type { Gender } from "@/lib/types";
 
 // The details onboarding collected. Editing them used to be impossible after
@@ -183,6 +184,7 @@ export function ProfileEditor() {
           onChange={(v) => set("firstName", v)}
           placeholder="you"
           disabled={!loaded || busy}
+          maxLength={60}
         />
         <Field
           label="City"
@@ -191,6 +193,7 @@ export function ProfileEditor() {
           placeholder="St. Petersburg, FL"
           hint="Lets the letter flag what's nearby. Never shared."
           disabled={!loaded || busy}
+          maxLength={120}
         />
         <label className="block">
           <span className="alpha-ui text-xs block mb-1" style={{ color: "var(--ink-soft)" }}>
@@ -262,6 +265,7 @@ export function ProfileEditor() {
           hint="Optional."
           multiline
           disabled={!loaded || busy}
+          maxLength={BLURB_CAPS.jobBlurb}
         />
         <Field
           label="What you're working on"
@@ -271,6 +275,7 @@ export function ProfileEditor() {
           hint="Optional."
           multiline
           disabled={!loaded || busy}
+          maxLength={BLURB_CAPS.projectBlurb}
         />
         <Field
           label="One fun thing"
@@ -280,6 +285,7 @@ export function ProfileEditor() {
           hint="Optional. We'll find one fun item for you most days."
           multiline
           disabled={!loaded || busy}
+          maxLength={BLURB_CAPS.funBlurb}
         />
       </div>
 
@@ -322,6 +328,7 @@ function Field({
   hint,
   multiline = false,
   disabled = false,
+  maxLength,
 }: {
   label: string;
   value: string;
@@ -330,11 +337,17 @@ function Field({
   hint?: string;
   multiline?: boolean;
   disabled?: boolean;
+  // Matches app/api/account/profile/route.ts's LIMITS for the same field --
+  // that route silently truncates an overage rather than rejecting it, so
+  // without this a reader could paste something over the cap and see
+  // "Saved" with no indication most of what they wrote was cut server-side.
+  maxLength?: number;
 }) {
   const shared = {
     value,
     placeholder,
     disabled,
+    maxLength,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(e.target.value),
     className:
       "w-full alpha-ui text-base bg-transparent border-b pt-2 pb-2 focus:outline-none focus:border-current placeholder:opacity-40",

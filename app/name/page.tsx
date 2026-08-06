@@ -11,6 +11,7 @@ export default function NamePage() {
         currentPath="name"
         question="What's your first name?"
         placeholder="you"
+        maxLength={60}
       />
     </StepShell>
   );

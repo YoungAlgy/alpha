@@ -115,9 +115,20 @@ export default function InboxPage() {
   // a signed-in (or stale-cookie) reader right back to this screen. Signing out
   // first drops the cookie so the destination actually renders; window.location
   // forces the middleware to re-evaluate with the cleared cookie.
+  //
+  // Skipped for "/signin" specifically: signOut() defaults to GLOBAL scope,
+  // which revokes whatever session is CURRENTLY in the shared cookie at call
+  // time -- not necessarily this tab's own stale view of it. Concrete race:
+  // this tab's signedIn=false is a mount-time snapshot; if the reader signs
+  // in fresh in another tab on the same browser and then clicks "Sign in" in
+  // THIS one, a pre-emptive signOut() here would revoke the OTHER tab's
+  // brand-new session seconds after it was created. Unneeded anyway --
+  // signInWithOtp()/verifyOtp() on the /signin page naturally supersede any
+  // existing session. Kept only for "/welcome" ("I'm new, start fresh"),
+  // the actual shared/library-computer scenario this function exists for.
   async function clearAndGo(path: string) {
     try {
-      if (supabaseConfigured()) await supabaseClient().auth.signOut();
+      if (path !== "/signin" && supabaseConfigured()) await supabaseClient().auth.signOut();
     } catch (e) {
       // Logged, not silent: this is the shared/library-computer sign-out
       // path (see the comment above) -- a swallowed failure here means the

@@ -2,6 +2,7 @@
 
 import { StepShell } from "@/components/onboarding/StepShell";
 import { QuestionStep } from "@/components/onboarding/QuestionStep";
+import { BLURB_CAPS } from "@/lib/types";
 
 export default function FunPage() {
   return (
@@ -14,6 +15,7 @@ export default function FunPage() {
         placeholder="Florida pollinator gardening"
         multiline
         optional
+        maxLength={BLURB_CAPS.funBlurb}
       />
     </StepShell>
   );

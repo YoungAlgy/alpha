@@ -19,6 +19,14 @@ interface QuestionStepProps {
    *  browser's native type="email" is too lax for the money path (it accepts
    *  "john@gmail"), so the email step passes a real validator here. */
   validate?: (value: string) => string | null;
+  /** Caps what the reader can even TYPE, matching the server-side bound the
+   *  same field is checked against downstream (BLURB_CAPS for the blurb
+   *  fields, or the firstName/city LIMITS account/profile/route.ts uses).
+   *  Without this, a reader could paste something over the server's limit
+   *  during onboarding, sail through Stripe checkout (which never sees these
+   *  fields), and then hit a permanent 400 at /api/generate on the exact
+   *  same payload post-charge, with no self-serve way to fix it. */
+  maxLength?: number;
 }
 
 export function QuestionStep({
@@ -30,6 +38,7 @@ export function QuestionStep({
   optional = false,
   currentPath,
   validate,
+  maxLength,
 }: QuestionStepProps) {
   const router = useRouter();
   const { state, update, loaded } = useOnboarding();
@@ -140,6 +149,7 @@ export function QuestionStep({
             if (error) setError(null);
           }}
           placeholder={placeholder}
+          maxLength={maxLength}
           rows={4}
           className="w-full alpha-display text-2xl md:text-3xl bg-transparent border-b pt-3 pb-5 focus:outline-none focus:border-current placeholder:opacity-40 resize-none"
           style={{
@@ -159,6 +169,7 @@ export function QuestionStep({
             if (error) setError(null);
           }}
           placeholder={placeholder}
+          maxLength={maxLength}
           className="w-full alpha-display text-3xl md:text-4xl bg-transparent border-b pt-3 pb-5 focus:outline-none focus:border-current placeholder:opacity-40"
           style={{
             color: "var(--ink)",

@@ -20,7 +20,12 @@ export function SupportForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, message }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        // Surface the route's actual message (e.g. a specific Zod validation
+        // error) instead of a generic "HTTP 400" a reader can't act on.
+        const data = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
       setStatus("sent");
       setName("");
       setEmail("");
@@ -58,6 +63,7 @@ export function SupportForm() {
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          maxLength={120}
           className="w-full alpha-ui text-base bg-transparent border-b py-2 focus:outline-none"
           style={{ borderColor: "var(--rule)", color: "var(--ink)" }}
         />
@@ -68,6 +74,7 @@ export function SupportForm() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          maxLength={200}
           className="w-full alpha-ui text-base bg-transparent border-b py-2 focus:outline-none"
           style={{ borderColor: "var(--rule)", color: "var(--ink)" }}
         />
@@ -76,6 +83,7 @@ export function SupportForm() {
         <textarea
           required
           rows={5}
+          maxLength={5000}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           className="w-full alpha-ui text-base bg-transparent border-b py-2 focus:outline-none resize-none"

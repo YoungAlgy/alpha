@@ -8,6 +8,16 @@ export function AudioToggle({ compact = false }: { compact?: boolean }) {
 
   useEffect(() => {
     setOn(isAudioEnabled());
+    // Cross-tab sync: without this, muting in Tab A leaves Tab B's toggle
+    // showing unmuted (and still playing UI chimes) until Tab B reloads.
+    // lib/audio.ts writes the "alpha-audio" key directly with no CustomEvent
+    // dispatch, so "storage" (which only fires in OTHER tabs, not the one
+    // that made the change) is the only signal available here.
+    function onStorage(e: StorageEvent) {
+      if (e.key === "alpha-audio") setOn(isAudioEnabled());
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   function toggle() {

@@ -31,8 +31,20 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
       const detail = (e as CustomEvent<{ theme?: ThemeId }>).detail;
       if (detail?.theme) setActive(detail.theme);
     }
+    // alpha-theme-change is same-tab only. Without a storage listener too, a
+    // theme picked in Tab A correctly repaints Tab B's whole page (Theme
+    // Applier already listens for storage), but Tab B's OWN switcher button
+    // keeps showing the stale label until reload -- mirrors ThemeApplier's
+    // own onStorage handler.
+    function onStorage() {
+      setActive(getCurrentTheme());
+    }
     window.addEventListener("alpha-theme-change", onChange);
-    return () => window.removeEventListener("alpha-theme-change", onChange);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("alpha-theme-change", onChange);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   function pick(id: ThemeId) {
