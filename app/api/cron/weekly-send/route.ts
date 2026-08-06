@@ -209,6 +209,36 @@ export async function GET(req: Request) {
   }
 
   const rows = (subscribers ?? []) as SubscriberRow[];
+
+  // Kick off the PRIOR DELIVERED issue count RPC right away, unawaited --
+  // it queries week_of < weekOf, a disjoint, strictly-earlier row set than
+  // every other query in this file (all scoped to week_of = weekOf), so it
+  // has no ordering dependency on the reclaim write or the two prefetches
+  // below and can run the whole time they do instead of adding a fifth,
+  // fully-serial round trip. Awaited further down where priorIssueCount is
+  // populated -- see that block's own comment for why this is a single
+  // grouped-aggregate RPC in the first place.
+  //
+  // The trailing .then((r) => r) is load-bearing, not decoration: supabase-js
+  // query builders (confirmed by reading node_modules/@supabase/postgrest-js)
+  // are LAZY thenables — the underlying fetch only fires the first time
+  // something calls .then()/await on the builder, not when the builder is
+  // constructed. Without this, holding the bare builder in a variable and
+  // awaiting it later doesn't kick anything off early at all — the request
+  // would only start at the same point the old fully-sequential code did,
+  // silently defeating this whole optimization while looking identical to a
+  // real fix. Calling .then() here converts it into an already-in-flight
+  // native Promise immediately; the later `await priorIssueCountsPromise`
+  // just awaits that Promise and never re-invokes the builder.
+  const priorIssueCountsPromise =
+    rows.length > 0
+      ? sb
+          .rpc("prior_issue_counts", {
+            week_of_cutoff: weekOf,
+            target_user_ids: rows.map((r) => r.id),
+          })
+          .then((r) => r)
+      : null;
   const startedAt = Date.now();
   // Snapshot the monotonic counter now; THIS run's 429 count is the delta at
   // the end minus this baseline. Diffing (not resetting) is what makes this
@@ -339,25 +369,60 @@ export async function GET(req: Request) {
     }
   }
 
-  // Prefetch this week's delivered stamps in ONE query (was a per-subscriber
-  // lookup — N+1 that adds a round trip per user as the list grows).
-  // Scoped with .in("user_id", ...) to exactly this run's active subscriber
-  // list -- besides narrowing the scan, this also bounds the row count to
-  // rows.length instead of "however many subscribers got a letter today
-  // across the whole table", so PostgREST's silent 1,000-row select cap
-  // can't bite even once active-subscriber count is large (a much higher,
-  // less urgent bar than priorIssueCount's LIFETIME-count problem below,
-  // but free to close outright here rather than just deferring it).
+  // Prefetch this week's delivered stamps and each subscriber's persisted-
+  // but-undelivered issue together via Promise.all -- neither query depends
+  // on the other's result (only on the reclaim write above, which both read
+  // after), so there's no reason to pay for them as two serial round trips.
+  // Each query keeps its own original guard/comment below.
   const alreadyDelivered = new Set<string>();
-  if (!force && rows.length > 0) {
-    const { data: stamps } = await sb
+  const pendingIssues = new Map<
+    string,
+    { volume: number; number: number; editor_intro: string; sections: Issue["sections"] }
+  >();
+  {
+    // Prefetch this week's delivered stamps in ONE query (was a per-subscriber
+    // lookup — N+1 that adds a round trip per user as the list grows).
+    // Scoped with .in("user_id", ...) to exactly this run's active subscriber
+    // list -- besides narrowing the scan, this also bounds the row count to
+    // rows.length instead of "however many subscribers got a letter today
+    // across the whole table", so PostgREST's silent 1,000-row select cap
+    // can't bite even once active-subscriber count is large (a much higher,
+    // less urgent bar than priorIssueCount's LIFETIME-count problem below,
+    // but free to close outright here rather than just deferring it).
+    const stampsPromise =
+      !force && rows.length > 0
+        ? sb
+            .from("issues")
+            .select("user_id")
+            .eq("week_of", weekOf)
+            .not("delivered_at", "is", null)
+            .in("user_id", rows.map((r) => r.id))
+        : null;
+    // Prefetch each subscriber's persisted-but-undelivered issue (retry-safety
+    // reuse below, near runPersistAndSend) in ONE query — was a per-subscriber
+    // lookup inside the loop, mirroring the alreadyDelivered fix above.
+    const pendingPromise = sb
       .from("issues")
-      .select("user_id")
+      .select("user_id, volume, number, editor_intro, sections")
       .eq("week_of", weekOf)
-      .not("delivered_at", "is", null)
+      .is("delivered_at", null)
       .in("user_id", rows.map((r) => r.id));
-    for (const s of (stamps ?? []) as Array<{ user_id: string }>) {
+
+    const [stampsResult, pendingResult] = await Promise.all([
+      stampsPromise ?? Promise.resolve(null),
+      pendingPromise,
+    ]);
+    for (const s of (stampsResult?.data ?? []) as Array<{ user_id: string }>) {
       alreadyDelivered.add(s.user_id);
+    }
+    for (const p of (pendingResult.data ?? []) as Array<{
+      user_id: string;
+      volume: number;
+      number: number;
+      editor_intro: string;
+      sections: Issue["sections"];
+    }>) {
+      pendingIssues.set(p.user_id, p);
     }
   }
 
@@ -376,13 +441,12 @@ export async function GET(req: Request) {
   // select cap would otherwise start silently undercounting "Issue N" within
   // a few years at daily cadence. See the prior_issue_counts() migration
   // (2026-08-05) for the SQL; this was the "revisit with a grouped aggregate
-  // RPC" the old comment here already flagged as the eventual fix.
+  // RPC" the old comment here already flagged as the eventual fix. Started
+  // above (priorIssueCountsPromise) so its round trip overlaps the reclaim
+  // and Promise.all prefetches instead of stacking after them; awaited here.
   const priorIssueCount = new Map<string, number>();
-  if (rows.length > 0) {
-    const { data: counts, error: countsErr } = await sb.rpc("prior_issue_counts", {
-      week_of_cutoff: weekOf,
-      target_user_ids: rows.map((r) => r.id),
-    });
+  if (priorIssueCountsPromise) {
+    const { data: counts, error: countsErr } = await priorIssueCountsPromise;
     if (countsErr) {
       // Fail soft, not hard: a missing/wrong "Issue N" is a cosmetic subject-
       // line problem, never a reason to block the actual send. Every
@@ -395,31 +459,6 @@ export async function GET(req: Request) {
       for (const c of (counts ?? []) as Array<{ user_id: string; prior_count: number }>) {
         priorIssueCount.set(c.user_id, c.prior_count);
       }
-    }
-  }
-
-  // Prefetch each subscriber's persisted-but-undelivered issue (retry-safety
-  // reuse below, near runPersistAndSend) in ONE query — was a per-subscriber
-  // lookup inside the loop, mirroring the alreadyDelivered fix above.
-  const pendingIssues = new Map<
-    string,
-    { volume: number; number: number; editor_intro: string; sections: Issue["sections"] }
-  >();
-  {
-    const { data: pending } = await sb
-      .from("issues")
-      .select("user_id, volume, number, editor_intro, sections")
-      .eq("week_of", weekOf)
-      .is("delivered_at", null)
-      .in("user_id", rows.map((r) => r.id));
-    for (const p of (pending ?? []) as Array<{
-      user_id: string;
-      volume: number;
-      number: number;
-      editor_intro: string;
-      sections: Issue["sections"];
-    }>) {
-      pendingIssues.set(p.user_id, p);
     }
   }
 
@@ -563,6 +602,19 @@ export async function GET(req: Request) {
       // send failure — trading the old "stamp-fail/crash -> DUPLICATE" for a
       // far rarer "hard crash between claim and send -> missed once". A missed
       // letter is less harmful than a duplicate. ?force=1 bypasses the claim.
+      //
+      // Not built on lib/letter-delivery.ts's shared DeliveryStore/
+      // deliverLetterOnce (used by /api/generate's onboarding first-letter
+      // path) — deliberately: that interface's claim() only takes
+      // (userId, weekOf, stamp), with no way to bundle arbitrary content
+      // fields into the same atomic write, which this UPDATE needs to do
+      // (see below). Both implementations still share the identical
+      // `.eq(user_id).eq(week_of).is("delivered_at", null)` compare-and-swap
+      // predicate — keep that predicate in sync if either changes. The
+      // reclaim step above isn't scoped to claims THIS file created: it
+      // queries by week_of alone, so a stuck claim left by /api/generate
+      // (e.g. a hard crash between its claim and release) gets swept up and
+      // retried here too, on this period's next cron tick.
       //
       // Content fields ride along in THIS same atomic UPDATE now (they used
       // to be written unconditionally above, before the claim existed at

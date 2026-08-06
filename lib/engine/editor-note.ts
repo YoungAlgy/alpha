@@ -71,7 +71,15 @@ function clamp(s: string | undefined, max: number): string | undefined {
 async function tryTextTier(label: string, configured: boolean, generate: () => Promise<string>): Promise<string | undefined> {
   if (!configured) return undefined;
   try {
-    return (await generate()).trim();
+    const text = (await generate()).trim();
+    // Empty text is not success — treat it the same as a thrown error so the
+    // caller's `note === undefined` cascade actually moves on to the next tier
+    // instead of shipping "" as if it were a real note.
+    if (!text) {
+      console.warn(`[editor-note] ${label} fallback returned empty content`);
+      return undefined;
+    }
+    return text;
   } catch (e) {
     console.warn(`[editor-note] ${label} fallback failed: ${e instanceof Error ? e.message : e}`);
     return undefined;
@@ -136,11 +144,19 @@ Write the editor's note for this reader's letter today.`;
     if (response.stop_reason === "max_tokens") {
       throw new Error("editor note hit max_tokens — refusing to ship a truncated note");
     }
-    return response.content
+    const text = response.content
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("\n")
       .trim();
+    // Same reasoning as the max_tokens guard above: a blank note is a broken
+    // note (e.g. stop_reason "refusal", or an end_turn reply with no text
+    // block). Throw so the fallback chain below gets a real shot instead of
+    // silently "succeeding" with "".
+    if (!text) {
+      throw new Error(`editor note: Claude returned empty content (stop_reason: ${response.stop_reason})`);
+    }
+    return text;
   }
 
   let note: string | undefined;

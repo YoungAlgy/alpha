@@ -78,7 +78,7 @@ export default function ThemePage() {
   const firstName = state.firstName || "friend";
 
   return (
-    <StepShell stepIndex={2} prevPath="welcome">
+    <StepShell stepIndex={2} prevPath={signedIn ? "settings" : "welcome"}>
       <div className="space-y-8">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">

@@ -21,6 +21,11 @@ export default function SettingsPage() {
   // priceCents = current monthly bill in cents. Both come from public.users
   // (mirror of Stripe subscription quantity × $5).
   const [topicQuota, setTopicQuota] = useState<number>(5);
+  // True once the Supabase fetch below has resolved (success, failure, or no
+  // user) at least once. Gates the Billing section so a reader on a non-5
+  // tier never sees the hardcoded default flash before their real quota/price
+  // is known.
+  const [quotaLoaded, setQuotaLoaded] = useState(false);
   // The reader's ranked topic POOL from the DB (source of truth). The top
   // `topicQuota` are favorites that fill the letter; the rest are free backups.
   // Falls back to onboarding localStorage when the DB row hasn't loaded.
@@ -60,7 +65,10 @@ export default function SettingsPage() {
   const [resumeErr, setResumeErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!supabaseConfigured()) return;
+    if (!supabaseConfigured()) {
+      setQuotaLoaded(true);
+      return;
+    }
     (async () => {
       try {
         const sb = supabaseClient();
@@ -93,6 +101,8 @@ export default function SettingsPage() {
         }
       } catch {
         // ignore
+      } finally {
+        setQuotaLoaded(true);
       }
     })();
   }, []);
@@ -296,12 +306,20 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Billing">
-          <p className="alpha-display text-base mb-1">
-            alpha. · ${monthlyDollars} / month
-          </p>
-          <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
-            {topicQuota} topics this cycle
-          </p>
+          {quotaLoaded ? (
+            <>
+              <p className="alpha-display text-base mb-1">
+                alpha. · ${monthlyDollars} / month
+              </p>
+              <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+                {topicQuota} topics this cycle
+              </p>
+            </>
+          ) : (
+            <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+              Loading your plan…
+            </p>
+          )}
           {!confirmingTier && (
             <div className="flex flex-wrap gap-4 mb-3">
               {canAdd && (

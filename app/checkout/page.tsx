@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
@@ -11,11 +11,21 @@ import type { ThemeId } from "@/lib/types";
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { state, update } = useOnboarding();
+  const { state, update, loaded } = useOnboarding();
 
   const [subscribing, setSubscribing] = useState(false);
   const [stripeErr, setStripeErr] = useState<string | null>(null);
   const [alreadySubscribed, setAlreadySubscribed] = useState(false);
+
+  // Same completeness gate app/writing/page.tsx enforces post-payment — checked
+  // here too so a direct link, cleared localStorage, or a back-button race
+  // never gets as far as a real Stripe charge for a profile with no name/topics.
+  useEffect(() => {
+    if (!loaded) return;
+    if (!state.firstName || !state.topics || state.topics.length === 0) {
+      router.push("/welcome" as never);
+    }
+  }, [loaded, state, router]);
 
   async function subscribe() {
     setSubscribing(true);
@@ -29,6 +39,7 @@ export default function CheckoutPage() {
           email: state.email,
           firstName: state.firstName,
           city: state.city,
+          topics: state.topics,
         }),
       });
       const data = await res.json();

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
+import { cancelStripeSubscriptionsBeforeDelete } from "@/lib/stripe-cancel";
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 
 export const runtime = "nodejs";
@@ -150,35 +149,7 @@ export async function POST(req: Request) {
     // deleting the auth user cascades public.users away incl. stripe_customer_id,
     // so a still-active sub would bill forever with no way to stop it. Best-effort
     // — a Stripe hiccup must never block the admin delete.
-    const stripeSecret = process.env.STRIPE_SECRET_KEY?.trim();
-    if (stripeSecret) {
-      try {
-        const { data: row } = await sb
-          .from("users")
-          .select("stripe_customer_id")
-          .eq("id", body.userId)
-          .maybeSingle();
-        const customerId = row?.stripe_customer_id;
-        if (customerId) {
-          const stripe = new Stripe(stripeSecret, {
-            apiVersion: "2026-04-22.dahlia",
-            httpClient: Stripe.createNodeHttpClient(),
-          });
-          const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(
-            stripe,
-            customerId
-          );
-          console.log(
-            `[admin/delete] stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
-          );
-        }
-      } catch (e) {
-        console.warn(
-          "[admin/delete] subscription cancel failed (proceeding with delete):",
-          e instanceof Error ? e.message : e
-        );
-      }
-    }
+    await cancelStripeSubscriptionsBeforeDelete(sb, body.userId, "[admin/delete]");
     // Delete the auth user — cascade removes their public.users + issues rows.
     const { error } = await sb.auth.admin.deleteUser(body.userId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

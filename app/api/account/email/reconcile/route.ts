@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
+import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { sendOpsAlert } from "@/lib/email";
 
@@ -71,10 +71,7 @@ export async function POST() {
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
   if (secret && row.stripe_customer_id) {
     try {
-      const stripe = new Stripe(secret, {
-        apiVersion: "2026-04-22.dahlia",
-        httpClient: Stripe.createNodeHttpClient(),
-      });
+      const stripe = getStripeClient();
       await stripe.customers.update(row.stripe_customer_id, { email: authEmail });
     } catch (e) {
       console.warn(

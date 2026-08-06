@@ -621,7 +621,17 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   if (finalized.items.length > 0 && finalized.tells.length > 0) {
     console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet draft slipped a banned word (${finalized.tells.join(", ")}), retrying once`);
     const retryParsed = await trySonnet();
-    finalized = finalizeBlurb(retryParsed);
+    const retryFinalized = finalizeBlurb(retryParsed);
+    // Only take the retry if it actually has something to ship — the retry's
+    // OWN draft can lose every item to url-guard/meta-leak (independent of
+    // the tells check that triggered this retry) and land at 0 items, which
+    // would silently throw away the original's perfectly usable content for
+    // nothing. A persisting tell is an accepted minor imperfection (see
+    // above); a dropped-to-zero draft is not an improvement, so keep the
+    // first draft in that case.
+    if (retryFinalized.items.length > 0) {
+      finalized = retryFinalized;
+    }
   }
   return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
 }

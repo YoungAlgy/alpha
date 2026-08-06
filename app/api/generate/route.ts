@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import Stripe from "stripe";
+import { getStripeClient } from "@/lib/stripe";
 import { generateIssue } from "@/lib/engine/assemble";
 import { persistIssueIfPossible } from "@/lib/engine/persist";
 import { isValidTopicId } from "@/lib/topics";
@@ -123,10 +124,7 @@ async function verifyPaid(
   }
 
   try {
-    const stripe = new Stripe(secret, {
-      apiVersion: "2026-04-22.dahlia",
-      httpClient: Stripe.createNodeHttpClient(),
-    });
+    const stripe = getStripeClient();
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     if (
       session.payment_status === "paid" ||
@@ -311,6 +309,19 @@ export async function POST(req: Request) {
 // result is disambiguated with a read — row present means already delivered, no
 // row means best-effort persist never wrote one. `release` is guarded on our
 // exact stamp so a rollback can't clear another invocation's claim.
+//
+// NOT shared with app/api/cron/weekly-send/route.ts's own inline claim —
+// that one deliberately isn't built on this same DeliveryStore, since it
+// bundles content (volume/number/editor_intro/sections) into the SAME atomic
+// UPDATE this interface has no way to express (see that file's "Content
+// fields ride along in THIS same atomic UPDATE now" comment). Both still
+// share the identical `.eq(user_id).eq(week_of).is("delivered_at", null)`
+// compare-and-swap predicate below — keep that predicate in sync if either
+// changes. The cron's stuck-claim reclaim step is NOT cron-specific despite
+// living in that file: it queries by week_of alone with no caller filter, so
+// a claim stuck here (a hard crash between claim and release) is swept up
+// and retried by the next cron tick for that same period, same as a cron-
+// created stuck claim would be.
 function deliveryStoreFor(
   sb: Awaited<ReturnType<typeof supabaseServiceClient>>
 ): DeliveryStore {

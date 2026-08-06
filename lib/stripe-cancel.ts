@@ -1,4 +1,6 @@
 import type Stripe from "stripe";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getStripeClient } from "./stripe";
 
 // Cancel every still-billable subscription for a Stripe customer. Used by the
 // account-deletion flow: when a user deletes their account we delete the auth
@@ -42,4 +44,37 @@ export async function cancelCustomerSubscriptions(
   }
 
   return { cancelled, skipped, errors };
+}
+
+// Shared entry point for both delete flows (self-serve account/delete and
+// admin/users delete): looks up the target user's stripe_customer_id, builds
+// a Stripe client, and cancels their subscriptions via the function above.
+// Best-effort + swallows its own errors — a Stripe hiccup must never block
+// either delete flow. logPrefix distinguishes the two call sites in logs
+// (e.g. "[account/delete]" vs "[admin/delete]").
+export async function cancelStripeSubscriptionsBeforeDelete(
+  svc: SupabaseClient,
+  userId: string,
+  logPrefix: string
+): Promise<void> {
+  const stripeSecret = process.env.STRIPE_SECRET_KEY?.trim();
+  if (!stripeSecret) return;
+  try {
+    const { data: row } = await svc
+      .from("users")
+      .select("stripe_customer_id")
+      .eq("id", userId)
+      .maybeSingle();
+    const customerId = row?.stripe_customer_id;
+    if (!customerId) return;
+    const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(getStripeClient(), customerId);
+    console.log(
+      `${logPrefix} stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
+    );
+  } catch (e) {
+    console.warn(
+      `${logPrefix} subscription cancel failed (proceeding with delete):`,
+      e instanceof Error ? e.message : e
+    );
+  }
 }

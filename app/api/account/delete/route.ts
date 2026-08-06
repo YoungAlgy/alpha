@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
+import { cancelStripeSubscriptionsBeforeDelete } from "@/lib/stripe-cancel";
 
 export const runtime = "nodejs";
 
@@ -36,35 +35,7 @@ export async function POST() {
   // the billing portal, so a still-active subscription would bill forever with
   // no way to stop it. Best-effort: a Stripe hiccup must never block the user's
   // right to delete their account.
-  const stripeSecret = process.env.STRIPE_SECRET_KEY?.trim();
-  if (stripeSecret) {
-    try {
-      const { data: row } = await svc
-        .from("users")
-        .select("stripe_customer_id")
-        .eq("id", user.id)
-        .maybeSingle();
-      const customerId = row?.stripe_customer_id;
-      if (customerId) {
-        const stripe = new Stripe(stripeSecret, {
-          apiVersion: "2026-04-22.dahlia",
-          httpClient: Stripe.createNodeHttpClient(),
-        });
-        const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(
-          stripe,
-          customerId
-        );
-        console.log(
-          `[account/delete] stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
-        );
-      }
-    } catch (e) {
-      console.warn(
-        "[account/delete] subscription cancel failed (proceeding with delete):",
-        e instanceof Error ? e.message : e
-      );
-    }
-  }
+  await cancelStripeSubscriptionsBeforeDelete(svc, user.id, "[account/delete]");
 
   const { error } = await svc.auth.admin.deleteUser(user.id);
   if (error) {

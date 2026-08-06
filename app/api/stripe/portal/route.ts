@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
+import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -35,10 +35,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const stripe = new Stripe(secret, {
-      apiVersion: "2026-04-22.dahlia",
-      httpClient: Stripe.createNodeHttpClient(),
-    });
+    const stripe = getStripeClient();
     // Prefer the public app URL — behind the youngalgy.com rewrite, req.url's
     // origin is the internal Vercel hostname, which would bounce the user to
     // the unrouted deployment after they finish in the Stripe portal. Same

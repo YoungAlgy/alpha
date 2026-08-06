@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
+import type Stripe from "stripe";
+import { getStripeClient } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { checkoutUserMutation, isFirstSubscription } from "@/lib/webhook-user-mutation";
 import { sendWelcomeEmail, resendConfigured, sendOpsAlert } from "@/lib/email";
@@ -25,10 +26,7 @@ export async function POST(req: Request) {
   }
 
   const rawBody = await req.text();
-  const stripe = new Stripe(secret, {
-    apiVersion: "2026-04-22.dahlia",
-    httpClient: Stripe.createNodeHttpClient(),
-  });
+  const stripe = getStripeClient();
 
   let event: Stripe.Event;
   try {

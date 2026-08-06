@@ -181,7 +181,6 @@ export default {
       await supabase.auth.getUser()
     }
 
-    // @ts-expect-error - OpenNext's generated worker.js has no type declarations
     const response: Response = await openNextWorker.fetch(request, env, ctx)
 
     if (setCookieHeaders.length === 0) return response

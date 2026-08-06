@@ -49,12 +49,17 @@ export default function TopicsPage() {
         const sb = supabaseClient();
         const { data: { session } } = await sb.auth.getSession();
         if (!session) return;
-        setSignedIn(true);
         const { data: row } = await sb
           .from("users")
           .select("topic_quota, topics, birthday")
           .eq("id", session.user.id)
           .maybeSingle();
+        // Flip signedIn in the same batch as the row's picked/target values below
+        // (not right after getSession) so submit()'s signedIn check never sees a
+        // render where signedIn is true but `picked` still holds stale
+        // localStorage topics -- that window let a stale POST clobber a newer
+        // save from another device.
+        setSignedIn(true);
         setUserBirthday(row?.birthday ?? null);
         if (row?.topic_quota && typeof row.topic_quota === "number") {
           setTarget(clampQuota(row.topic_quota));
@@ -186,7 +191,7 @@ export default function TopicsPage() {
   const ready = signedIn ? picked.length >= quota : picked.length === quota;
 
   return (
-    <StepShell stepIndex={7} prevPath="focus">
+    <StepShell stepIndex={7} prevPath={signedIn ? "settings" : "focus"}>
       <div className="space-y-8">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">

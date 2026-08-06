@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
-import { STRIPE_PRICE_ID } from "@/lib/stripe";
+import { STRIPE_PRICE_ID, getStripeClient } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
+import { isValidTopicId } from "@/lib/topics";
+import type { TopicId } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,7 @@ interface CheckoutPayload {
   email?: string;
   firstName?: string;
   city?: string;
+  topics?: TopicId[];
 }
 
 export async function POST(req: Request) {
@@ -49,6 +51,26 @@ export async function POST(req: Request) {
   // Stripe customer_email, and the row the webhook later writes all key on one
   // form (emails are case-insensitive in practice; Supabase auth lowercases too).
   if (body.email) body.email = body.email.toLowerCase().trim();
+
+  // Profile-completeness gate. The client already redirects an incomplete
+  // profile back to /welcome before this endpoint is ever hit, but that's UI
+  // only — a direct POST would otherwise sail straight through to a real
+  // Stripe session with no name and no topics. /api/generate requires the
+  // exact same two fields (via ProfileSchema) before it will write a letter,
+  // so an unblocked empty checkout here would produce a paying subscriber who
+  // can never actually generate one. Enforce the same bar before the charge
+  // instead of after.
+  if (
+    !body.firstName?.trim() ||
+    !Array.isArray(body.topics) ||
+    body.topics.length === 0 ||
+    !body.topics.every((t) => typeof t === "string" && isValidTopicId(t))
+  ) {
+    return NextResponse.json(
+      { error: "Please finish setting up your profile before subscribing." },
+      { status: 400 }
+    );
+  }
 
   // Double-subscription guard. Checkout creates a NEW Stripe subscription on
   // every call, so an already-active subscriber who lands back on /checkout (a
@@ -102,10 +124,7 @@ export async function POST(req: Request) {
   const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || new URL(req.url).origin;
 
   try {
-    const stripe = new Stripe(secret, {
-      apiVersion: "2026-04-22.dahlia",
-      httpClient: Stripe.createNodeHttpClient(),
-    });
+    const stripe = getStripeClient();
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",

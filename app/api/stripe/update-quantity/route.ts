@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
+import type Stripe from "stripe";
+import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
 import { clampQuota, TOPICS_PER_BUNDLE, MAX_TOPIC_QUOTA, MIN_TOPIC_QUOTA } from "@/lib/types";
@@ -79,10 +80,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const stripe = new Stripe(secret, {
-    apiVersion: "2026-04-22.dahlia",
-    httpClient: Stripe.createNodeHttpClient(),
-  });
+  const stripe = getStripeClient();
 
   // Find this customer's live subscription. status:"active" ONLY missed two
   // real, reachable states: a 100%-off comp/trial checkout (checkout/route.ts

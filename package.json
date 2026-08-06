@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "cf:build": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build",
+    "cf:build": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && npm run typecheck:worker",
     "cf:preview": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "cf:deploy": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && opennextjs-cloudflare deploy && node scripts/smoke-test-deploy.mjs",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf:deploy": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && npm run typecheck:worker && opennextjs-cloudflare deploy && node scripts/smoke-test-deploy.mjs",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
