@@ -37,6 +37,18 @@ const nextConfig: NextConfig = {
   // Baseline security headers on every response. Cheap defense-in-depth for a
   // paid product handling auth sessions.
   async headers() {
+    // Every OTHER Supabase call site in the app (lib/supabase/client.ts,
+    // lib/supabase/server.ts, components/ThemeApplier.tsx, lib/engine/
+    // persist.ts, lib/engine/blurb-cache.ts) reads this from env -- the CSP
+    // below used to hardcode the literal hostname instead. A future project-
+    // ref rotation would update every env-driven call site correctly while
+    // this one kept pointing at the dead old host, silently breaking every
+    // client-side Supabase call (auth, theme sync, session refresh) as a
+    // connect-src violation with no server-side error -- the same failure
+    // class this file's own gstatic.com comment above already describes
+    // being bitten by once. Fallback is today's known-good value, not a
+    // functional change for the common case where the env var IS set.
+    const supabaseOrigin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://xpqxhdciaoicsnyyfshy.supabase.co";
     return [
       {
         source: "/:path*",
@@ -85,7 +97,7 @@ const nextConfig: NextConfig = {
             // reading Digest.tsx's fetch URL.
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' https://xpqxhdciaoicsnyyfshy.supabase.co https://us.i.posthog.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
+              `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' ${supabaseOrigin} https://us.i.posthog.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`,
           },
         ],
       },

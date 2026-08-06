@@ -114,7 +114,13 @@ export async function POST(req: Request) {
   try {
     const body = await req.text();
     const params = new URLSearchParams(body);
-    bodyToken = params.get("token") || params.get("List-Unsubscribe") || "";
+    // NOT a real RFC 8058 fallback: a one-click POST body is the literal
+    // string "List-Unsubscribe=One-Click" per spec, so this key would only
+    // ever resolve to "One-Click" -- never a real token. token (the URL
+    // query param, checked below) always wins for legitimate traffic; this
+    // read is vestigial, kept only to be explicit that it's not doing what
+    // it looks like it does.
+    bodyToken = params.get("token") || "";
     fromConfirmPage = params.get("source") === "confirm-page";
   } catch {
     // ignore

@@ -22,6 +22,17 @@ export const CSRF_GUARDED_SUFFIXES = [
   '/api/admin/users',
   '/api/stripe/portal',
   '/api/stripe/update-quantity',
+  // /api/generate's primary use (onboarding, gated by a Stripe checkout
+  // session id) needs no cookie and was never CSRF-relevant on its own. But
+  // verifyPaid() (app/api/generate/route.ts) also has a live authenticated
+  // branch -- an already-subscribed reader's ambient session cookie alone
+  // grants access, no session id required -- fitting this guard's own
+  // criteria exactly. Found in review 2026-08-06: a forged cross-site POST
+  // riding that cookie could trigger a real generation (AI spend, an extra
+  // email) on a signed-in subscriber's behalf. Safe to add: the real caller
+  // (app/writing/page.tsx) is a same-origin relative fetch, which blocksCsrf
+  // never blocks.
+  '/api/generate',
 ]
 
 export function isCsrfGuarded(pathname: string): boolean {

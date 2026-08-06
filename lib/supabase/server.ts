@@ -20,6 +20,12 @@ export async function supabaseServerClient() {
       fetch: (input, init) =>
         fetch(input, { ...init, signal: AbortSignal.timeout(10_000) }),
     },
+    // @supabase/ssr's own DEFAULT_COOKIE_OPTIONS has no `secure` key at all
+    // (verified against its source) — this is the session cookie for a paid
+    // product, so an explicit true is worth stating outright rather than
+    // relying on the default. Modern browsers treat http://localhost as a
+    // secure context, so this doesn't break local dev.
+    cookieOptions: { secure: true },
     cookies: {
       getAll() {
         return cookieStore.getAll();

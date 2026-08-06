@@ -156,6 +156,13 @@ export default {
     if (!isStaticAsset && supabaseUrl && supabaseKey) {
       const incomingCookies = parseCookieHeader(request.headers.get('cookie'))
       const supabase = createServerClient(supabaseUrl, supabaseKey, {
+        // @supabase/ssr's own default cookie options carry no `secure` key —
+        // matching lib/supabase/server.ts and lib/supabase/client.ts's own
+        // explicit override for this app's session cookie. serializeCookie
+        // above only appends `Secure` when options.secure is truthy, so
+        // without this every Set-Cookie this Worker layer issues silently
+        // omits it.
+        cookieOptions: { secure: true },
         cookies: {
           getAll: () => incomingCookies,
           setAll: (cookiesToSet) => {

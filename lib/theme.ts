@@ -69,10 +69,14 @@ export function setTheme(id: ThemeId): void {
  *  reading that attribute is the most accurate "what theme am I on right now". */
 export function getCurrentTheme(): ThemeId {
   if (typeof window !== "undefined") {
-    const applied = document.documentElement.getAttribute("data-theme") as ThemeId | null;
+    // coerceThemeId, not a raw cast: the DOM attribute and localStorage are
+    // both untrusted sources by this file's own standard (see setTheme's
+    // identical guard above) — a removed/renamed theme id left over from a
+    // stale localStorage write shouldn't flow through as if it were valid.
+    const applied = coerceThemeId(document.documentElement.getAttribute("data-theme"));
     if (applied) return applied;
     try {
-      const saved = localStorage.getItem(THEME_KEY) as ThemeId | null;
+      const saved = coerceThemeId(localStorage.getItem(THEME_KEY));
       if (saved) return saved;
     } catch {
       // ignore

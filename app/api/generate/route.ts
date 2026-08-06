@@ -12,6 +12,7 @@ import { hasActiveAccess } from "@/lib/access";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { withDeadline } from "@/lib/with-deadline";
 import { parseBirthday } from "@/lib/demographics";
+import { coerceThemeId } from "@/lib/themes";
 import { BLURB_CAPS } from "@/lib/types";
 import { deliverLetterOnce, type DeliveryStore } from "@/lib/letter-delivery";
 
@@ -196,6 +197,13 @@ export async function POST(req: Request) {
     // real catalog id, "zodiac", or well-formed custom:<text> -- so this
     // narrowing to TopicId is backed by real validation, not just the shape.
     const profile = body.profile as Parameters<typeof generateIssue>[0];
+    // ProfileSchema only bounds theme's length, not its catalog membership --
+    // unlike topics (isValidTopicId, above) and gender (coerceGender, in
+    // persist.ts), theme reached the DB unchecked. coerceThemeId is "the
+    // single allow-list check for a theme value coming from an untrusted
+    // source" per its own comment, tied to a real past incident (a removed
+    // theme id shipping wrong on the emailed letter view).
+    profile.theme = coerceThemeId(profile.theme) ?? "forest";
     // Never trust the caller-supplied profile.email for identity. Overwrite it
     // with the email verifyPaid() actually confirmed this request as (the
     // signed-in user's own email, or the email Stripe collected at checkout).

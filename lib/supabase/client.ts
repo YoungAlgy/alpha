@@ -25,6 +25,9 @@ export function supabaseClient() {
       fetch: (input, init) =>
         fetch(input, { ...init, signal: AbortSignal.timeout(10_000) }),
     },
+    // See the matching comment in lib/supabase/server.ts — @supabase/ssr's
+    // own default has no `secure` key at all for this app's session cookie.
+    cookieOptions: { secure: true },
   });
   return _client;
 }

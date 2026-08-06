@@ -15,6 +15,14 @@ function resendConfiguredInternal(): boolean {
 let _resend: Resend | null = null;
 function resendClient(): Resend {
   if (_resend) return _resend;
+  // Every current caller checks resendConfigured() first and bails before
+  // reaching this line -- that's an unenforced convention, not something
+  // this function itself guaranteed. A future caller that skips the
+  // external guard used to get a raw, confusing TypeError from the `!`
+  // assertion; this throws the same clean error resendConfigured() implies.
+  if (!resendConfiguredInternal()) {
+    throw new Error("Resend is not configured (RESEND_API_KEY missing).");
+  }
   _resend = new Resend(process.env.RESEND_API_KEY!.trim());
   return _resend;
 }

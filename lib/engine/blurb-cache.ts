@@ -47,12 +47,22 @@ export async function getCachedBlurbs(
       return result;
     }
     for (const row of (data ?? []) as DbBlurb[]) {
+      // items is JSONB with no runtime shape guarantee — every WRITE path
+      // (setCachedBlurb) only ever stores a real array, so this is corruption
+      // detection (a manual edit, a future schema/write-path change), not a
+      // case that's ever hit today. Array.isArray, not just a cast: a
+      // null/malformed items here would otherwise throw inside genLive's
+      // `cached.items.length` (assemble.ts) with no logging anywhere in that
+      // chain (select-sections.ts's per-topic catch swallows it silently).
+      if (!Array.isArray(row.items)) {
+        console.warn(`[blurb-cache] malformed items for ${row.topic_id} ${row.week_of} — treating as empty`);
+      }
       result.set(row.topic_id, {
         topicId: row.topic_id,
         topicLabel: "", // filled by caller from TOPIC_BY_ID
         weekOf: row.week_of,
         intro: row.intro,
-        items: row.items,
+        items: Array.isArray(row.items) ? row.items : [],
       });
     }
     return result;

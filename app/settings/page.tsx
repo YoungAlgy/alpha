@@ -83,6 +83,12 @@ export default function SettingsPage() {
   const [resumed, setResumed] = useState(false);
   const [resumeBusy, setResumeBusy] = useState(false);
   const [resumeErr, setResumeErr] = useState<string | null>(null);
+  // Same re-entrancy latch as confirmInFlight above and ProfileEditor's
+  // saveInFlight -- resumeBusy is React state, so a sub-16ms double-click
+  // can invoke resumeLetters twice before the state flush disables the
+  // button. This action shared the exact same shape (async POST, busy-state-
+  // gated button) as those two but was missing the guard.
+  const resumeInFlight = useRef(false);
 
   useEffect(() => {
     if (!supabaseConfigured()) {
@@ -134,6 +140,8 @@ export default function SettingsPage() {
   }, []);
 
   async function resumeLetters() {
+    if (resumeInFlight.current) return;
+    resumeInFlight.current = true;
     setResumeBusy(true);
     setResumeErr(null);
     try {
@@ -149,6 +157,7 @@ export default function SettingsPage() {
       setResumeErr(e instanceof Error ? e.message : "Couldn't resume. Try again.");
     } finally {
       setResumeBusy(false);
+      resumeInFlight.current = false;
     }
   }
 

@@ -745,6 +745,32 @@ export async function GET(req: Request) {
       // get wrong.
       let claimedAt: string | null = null;
       if (!force) {
+        // Re-check unsubscribed_at RIGHT before the claim (alpha-spend-cap-
+        // adjacent finding, round 12, 2026-08-06): `rows` is a snapshot taken
+        // once at the top of the run (`.is("unsubscribed_at", null)`), but a
+        // run can span the loop's full sequential duration — a subscriber
+        // who unsubscribes after being snapshotted but before their own turn
+        // would otherwise still get sent that day's letter (including a
+        // resend of a PRIOR letter, if a backup layer below ends up covering
+        // them), minutes after explicitly opting out. Can't fold this into
+        // the atomic claim UPDATE below -- unsubscribed_at lives on `users`,
+        // that UPDATE targets `issues`, and PostgREST doesn't support a
+        // cross-table filter on an UPDATE. One extra read narrows the race
+        // window from "the whole run" to "one Supabase round trip" instead.
+        const { data: freshUser, error: freshUserErr } = await sb
+          .from("users")
+          .select("unsubscribed_at")
+          .eq("id", row.id)
+          .maybeSingle();
+        if (freshUserErr) {
+          // Fail open, same reasoning as every other best-effort guard in
+          // this file: a lookup hiccup must never block a legitimate send.
+          console.warn(`[cron/weekly-send] unsubscribed_at re-check failed → ${row.id}: ${freshUserErr.message}`);
+        } else if (freshUser?.unsubscribed_at) {
+          console.log(`[cron/weekly-send] skipped (unsubscribed mid-run) → ${row.id}`);
+          return;
+        }
+
         claimedAt = new Date().toISOString();
         const { data: claimRows, error: claimErr } = await sb
           .from("issues")
