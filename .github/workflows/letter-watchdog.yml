@@ -466,6 +466,11 @@ jobs:
     needs: [check-delivery, check-resilience-secrets]
     if: always()
     runs-on: ubuntu-latest
+    # This job only does an outbound curl to a healthchecks.io ping URL --
+    # it never touches the GitHub API. The workflow-level `issues: write`
+    # above exists for check-delivery/check-resilience-secrets' `gh issue`
+    # calls; this job doesn't need it, so zero it out rather than inherit it.
+    permissions: {}
     steps:
       - name: Ping healthchecks.io to confirm this workflow actually ran
         # Optional -- inert until Algy signs up for a free healthchecks.io

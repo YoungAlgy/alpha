@@ -16,7 +16,7 @@ import type { TopicSignal } from "./types";
 // the reader or asserted as "current" in the prompt text itself.
 const WEEK_OF = "2026-05-17";
 
-export const MOCK_SIGNALS: TopicSignal[] = [
+const MOCK_SIGNALS: TopicSignal[] = [
   {
     topicId: "healthcare-recruiting",
     weekOf: WEEK_OF,

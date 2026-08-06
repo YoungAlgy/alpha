@@ -3,15 +3,20 @@ import { z } from "zod";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
+import { isValidEmail } from "@/lib/validate-email";
 
 export const runtime = "nodejs";
 
 // z.string() enforces the type, not just presence -- the old `!body?.email`
 // check let a truthy non-string through, and `.length` on a plain object is
 // undefined (not > 5000), so the size cap below it silently never fired.
+// isValidEmail (same check checkout/onboarding use) closes a gap this schema
+// otherwise had on its own: without it, an empty or malformed email passed
+// straight through, got saved, and emailed to the owner as the reply-to
+// address with no way to ever respond to the submitter.
 const SupportPayloadSchema = z.object({
   name: z.string().max(120).optional(),
-  email: z.string().max(200),
+  email: z.string().min(1).max(200).refine(isValidEmail, "Not a valid email address"),
   message: z.string().max(5000),
 });
 type SupportPayload = z.infer<typeof SupportPayloadSchema>;
@@ -92,7 +97,13 @@ export async function POST(req: Request) {
       // persisted to Supabase above, so nothing is lost -- only the owner
       // notification silently stops arriving with no warning anywhere.
       if (result.error) {
-        console.warn("[support] owner notify failed (Resend returned an error, not a throw):", result.error);
+        // Log only message/name, not the whole error object -- Resend's
+        // documented shape is {message, name} today, but a future/different
+        // error type (e.g. a payload-validation error) could echo request
+        // fields like `to` or the subject (which embeds body.name/body.email
+        // above) back into it, and that would flow straight into the log
+        // with no code change here to notice.
+        console.warn("[support] owner notify failed (Resend returned an error, not a throw):", result.error.name, result.error.message);
       }
     } catch (e) {
       console.warn("[support] owner notify failed:", e);

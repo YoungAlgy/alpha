@@ -286,7 +286,7 @@ export async function POST(req: Request) {
       emailSent = result.sent;
       if (!result.sent && result.reason === "already-delivered") {
         console.log(
-          `[generate] skipped letter email for ${toEmail}, already delivered for ${weekOf}`
+          `[generate] skipped letter email for user ${persistence?.userId}, already delivered for ${weekOf}`
         );
       }
     }

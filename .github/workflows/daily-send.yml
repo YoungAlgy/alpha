@@ -184,7 +184,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: steps.precheck.outputs.skip != 'true'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.precheck.outputs.skip != 'true'
         with:
           node-version: '22'
@@ -227,7 +227,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
         run: node scripts/verify-build-env.mjs
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: steps.precheck.outputs.skip != 'true'
         with:
           path: .next/cache
@@ -375,9 +375,45 @@ jobs:
 
           echo "OK: send completed, every active subscriber accounted for."
 
+      - name: Redact secrets from server.log before it can be uploaded
+        if: failure()
+        env:
+          CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.SEND_BRAVE_SEARCH_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.SEND_GROQ_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.SEND_DEEPSEEK_API_KEY }}
+          YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
+          UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
+          OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_OPS_ALERT_WEBHOOK_URL }}
+        run: |
+          set -uo pipefail
+          # GitHub Actions auto-masks a secret's exact value in LOG OUTPUT
+          # (the tail commands above already benefit from that), but that
+          # masking explicitly does NOT apply to uploaded artifacts -- the
+          # next step below uploads server.log as a raw file. The server
+          # runs with every SEND_* secret in its env; if any dependency or
+          # error handler in the app ever prints process.env or a config
+          # object, it lands in this file unredacted. Scrub every known
+          # secret value out of the file in place before it can be uploaded.
+          if [ ! -f server.log ]; then
+            echo "No server.log to redact."
+            exit 0
+          fi
+          for val in "${CRON_SECRET}" "${ANTHROPIC_API_KEY}" "${BRAVE_SEARCH_API_KEY}" "${GEMINI_API_KEY}" "${GROQ_API_KEY}" "${DEEPSEEK_API_KEY}" "${YOU_API_KEY}" "${SUPABASE_SECRET_KEY}" "${RESEND_API_KEY}" "${UNSUBSCRIBE_SECRET}" "${OPS_ALERT_WEBHOOK_URL}"; do
+            if [ -n "${val}" ]; then
+              esc=$(printf '%s' "${val}" | sed -e 's/[\/&]/\\&/g')
+              sed -i "s/${esc}/[REDACTED]/g" server.log
+            fi
+          done
+          echo "server.log redacted."
+
       - name: Upload server log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: server-log
           path: server.log

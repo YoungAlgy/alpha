@@ -6,7 +6,7 @@ import { poolCap } from "@/lib/engine/select-sections";
 import { getCachedBlurbs } from "@/lib/engine/blurb-cache";
 import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
-import { currentPeriodIso, sinceLastSendWindow } from "@/lib/cadence";
+import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
 import { braveRateLimitedCount } from "@/lib/brave";
 import { youRateLimitedCount } from "@/lib/you-search";
 import { groqRateLimitedCount } from "@/lib/engine/groq-client";
@@ -180,6 +180,17 @@ export async function GET(req: Request) {
     weekOfOverride && /^\d{4}-\d{2}-\d{2}$/.test(weekOfOverride)
       ? weekOfOverride
       : currentPeriodIso();
+  // Cadence gate. CADENCE_UTC_DAYS is every day today, so this is currently a
+  // no-op -- but nothing else in this route or the GitHub Actions schedule
+  // that drives it (daily-send.yml fires every calendar day, no day-of-week
+  // restriction) enforces cadence at all. Without this check, narrowing
+  // CADENCE_UTC_DAYS in the future would silently do nothing: the cron would
+  // keep firing and this route would keep sending every subscriber a letter
+  // every day regardless. An explicit ?weekOf= override always bypasses this
+  // (a backfill/admin call must still work on an off-cadence historical date).
+  if (!weekOfOverride && !isSendDay(weekOf)) {
+    return NextResponse.json({ skipped: "not a scheduled cadence day", weekOf });
+  }
   // Search window for this send: everything new since the previous send, which
   // at daily cadence is always exactly 1 day back. A topic with nothing new in
   // that window reads as empty and gets backfilled.
@@ -550,7 +561,7 @@ export async function GET(req: Request) {
       else skippedEmptyPool++;
       skippedBlankSubscribers.push(row.email);
       console.warn(
-        `[cron/weekly-send] SKIPPED PAID SUBSCRIBER (got nothing) → ${row.email} ` +
+        `[cron/weekly-send] SKIPPED PAID SUBSCRIBER (got nothing) → ${row.id} ` +
           `first_name=${row.first_name ? "ok" : "MISSING"} pool=${effectivePool.length}`
       );
       continue;
@@ -562,7 +573,7 @@ export async function GET(req: Request) {
     // ?weekOf= backfill, etc.). Override with ?force=1.
     if (!force && alreadyDelivered.has(row.id)) {
       skippedAlreadyDelivered++;
-      console.log(`[cron/weekly-send] skipped (already delivered this period) → ${row.email}`);
+      console.log(`[cron/weekly-send] skipped (already delivered this period) → ${row.id}`);
       continue;
     }
 
@@ -573,7 +584,7 @@ export async function GET(req: Request) {
     // deferred.
     if (Date.now() - startedAt > CRON_TIME_BUDGET_MS) {
       deferred.push(row.email);
-      console.warn(`[cron/weekly-send] DEFERRED (time budget exhausted) → ${row.email}`);
+      console.warn(`[cron/weekly-send] DEFERRED (time budget exhausted) → ${row.id}`);
       continue;
     }
 
@@ -703,7 +714,7 @@ export async function GET(req: Request) {
         }
         if ((claimRows?.length ?? 0) === 0) {
           skippedAlreadyDelivered++;
-          console.log(`[cron/weekly-send] skipped (claimed by a concurrent run) → ${row.email}`);
+          console.log(`[cron/weekly-send] skipped (claimed by a concurrent run) → ${row.id}`);
           return;
         }
       } else {
@@ -764,7 +775,7 @@ export async function GET(req: Request) {
             .eq("delivered_at", claimedAt);
           if (rollbackErr) {
             console.warn(
-              `[cron/weekly-send] send failed AND claim rollback failed for ${row.email}: ${rollbackErr.message} — may be skipped (missed) next run.`
+              `[cron/weekly-send] send failed AND claim rollback failed for ${row.id}: ${rollbackErr.message} — may be skipped (missed) next run.`
             );
           }
         }
@@ -794,7 +805,7 @@ export async function GET(req: Request) {
           .eq("week_of", weekOf);
         if (proofErr) {
           console.warn(
-            `[cron/weekly-send] sent OK but proof-of-send write failed for ${row.email}: ${proofErr.message} — row will look like a stuck claim until the next reclaim pass (harmless, Resend idempotency covers the redundant retry).`
+            `[cron/weekly-send] sent OK but proof-of-send write failed for ${row.id}: ${proofErr.message} — row will look like a stuck claim until the next reclaim pass (harmless, Resend idempotency covers the redundant retry).`
           );
         }
       }
@@ -810,7 +821,7 @@ export async function GET(req: Request) {
           .eq("week_of", weekOf);
         if (stampErr) {
           console.warn(
-            `[cron/weekly-send] force resend sent but delivered_at stamp failed for ${row.email}: ${stampErr.message}`
+            `[cron/weekly-send] force resend sent but delivered_at stamp failed for ${row.id}: ${stampErr.message}`
           );
         }
       }
@@ -822,18 +833,18 @@ export async function GET(req: Request) {
       if (kind === "backup-shared") {
         backupSharedSent++;
         backupSharedSentEmails.push(row.email);
-        console.log(`[cron/weekly-send] sent BACKUP-SHARED (borrowed from today's cache) → ${row.email} (${labels})`);
+        console.log(`[cron/weekly-send] sent BACKUP-SHARED (borrowed from today's cache) → ${row.id} (${labels})`);
       } else if (kind === "backup-fresh") {
         backupFreshSent++;
         backupFreshSentEmails.push(row.email);
-        console.log(`[cron/weekly-send] sent BACKUP-FRESH (small fast retry) → ${row.email} (${labels})`);
+        console.log(`[cron/weekly-send] sent BACKUP-FRESH (small fast retry) → ${row.id} (${labels})`);
       } else if (kind === "backup-stale") {
         backupStaleSent++;
         backupStaleSentEmails.push(row.email);
-        console.log(`[cron/weekly-send] sent BACKUP-STALE (resend of a prior letter) → ${row.email} (${labels})`);
+        console.log(`[cron/weekly-send] sent BACKUP-STALE (resend of a prior letter) → ${row.id} (${labels})`);
       } else {
         sent++;
-        console.log(`[cron/weekly-send] sent → ${row.email} (${labels})`);
+        console.log(`[cron/weekly-send] sent → ${row.id} (${labels})`);
       }
     }
 
@@ -870,10 +881,10 @@ export async function GET(req: Request) {
           : await withDeadline(
               generateIssue(profile, weekOf, letterSize, freshness, dryCache, inFlight),
               PER_USER_DEADLINE_MS,
-              `generateIssue(${row.email})`
+              `generateIssue(${row.id})`
             );
       if (reusableSections && reusableSections.length > 0) {
-        console.log(`[cron/weekly-send] reusing already-generated issue (retry, zero new AI cost) → ${row.email}`);
+        console.log(`[cron/weekly-send] reusing already-generated issue (retry, zero new AI cost) → ${row.id}`);
       }
 
       // Registered with Next's after() UNCONDITIONALLY (not just on timeout)
@@ -893,12 +904,12 @@ export async function GET(req: Request) {
       // inaccuracy in one day's summary, not a duplicate or a silent miss.
       const persistAndSend = runPersistAndSend(issue, "live");
       after(persistAndSend.catch(() => undefined));
-      await withDeadline(persistAndSend, PERSIST_AND_SEND_DEADLINE_MS, `persist+send(${row.email})`);
+      await withDeadline(persistAndSend, PERSIST_AND_SEND_DEADLINE_MS, `persist+send(${row.id})`);
     } catch (e) {
       failed++;
       const msg = e instanceof Error ? e.message : "unknown";
       failures.push({ email: row.email, error: msg });
-      console.error(`[cron/weekly-send] FAILED → ${row.email}: ${msg}`);
+      console.error(`[cron/weekly-send] FAILED → ${row.id}: ${msg}`);
 
       // Three-layer backup (incident 2026-07-29 — see memory). A stale
       // resend ALONE isn't good enough: if the underlying problem persists
@@ -963,11 +974,11 @@ export async function GET(req: Request) {
             }))
           );
           backupKind = "backup-shared";
-          console.warn(`[cron/weekly-send] cache-borrow succeeded → ${row.email} (${chosen.length} shared topics)`);
+          console.warn(`[cron/weekly-send] cache-borrow succeeded → ${row.id} (${chosen.length} shared topics)`);
         }
       } catch (cacheErr) {
         console.warn(
-          `[cron/weekly-send] cache-borrow check failed → ${row.email}: ${cacheErr instanceof Error ? cacheErr.message : cacheErr}`
+          `[cron/weekly-send] cache-borrow check failed → ${row.id}: ${cacheErr instanceof Error ? cacheErr.message : cacheErr}`
         );
       }
 
@@ -984,14 +995,14 @@ export async function GET(req: Request) {
             backupIssue = await withDeadline(
               generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache, inFlight),
               FAST_FALLBACK_DEADLINE_MS,
-              `fast-fallback(${row.email})`
+              `fast-fallback(${row.id})`
             );
             backupKind = "backup-fresh";
-            console.warn(`[cron/weekly-send] fast fallback succeeded → ${row.email} (${smallPool.length} topics)`);
+            console.warn(`[cron/weekly-send] fast fallback succeeded → ${row.id} (${smallPool.length} topics)`);
           }
         } catch (fastErr) {
           console.warn(
-            `[cron/weekly-send] fast fallback ALSO failed → ${row.email}: ${fastErr instanceof Error ? fastErr.message : fastErr}`
+            `[cron/weekly-send] fast fallback ALSO failed → ${row.id}: ${fastErr instanceof Error ? fastErr.message : fastErr}`
           );
         }
       }
@@ -1023,7 +1034,7 @@ export async function GET(req: Request) {
           }
         } catch (lookupErr) {
           console.error(
-            `[cron/weekly-send] backup lookup failed → ${row.email}: ${lookupErr instanceof Error ? lookupErr.message : lookupErr}`
+            `[cron/weekly-send] backup lookup failed → ${row.id}: ${lookupErr instanceof Error ? lookupErr.message : lookupErr}`
           );
         }
       }
@@ -1032,10 +1043,10 @@ export async function GET(req: Request) {
         try {
           const backupSend = runPersistAndSend(backupIssue, backupKind);
           after(backupSend.catch(() => undefined));
-          await withDeadline(backupSend, PERSIST_AND_SEND_DEADLINE_MS, `backup-send(${row.email})`);
+          await withDeadline(backupSend, PERSIST_AND_SEND_DEADLINE_MS, `backup-send(${row.id})`);
         } catch (backupErr) {
           console.error(
-            `[cron/weekly-send] backup send failed → ${row.email}: ${backupErr instanceof Error ? backupErr.message : backupErr}`
+            `[cron/weekly-send] backup send failed → ${row.id}: ${backupErr instanceof Error ? backupErr.message : backupErr}`
           );
         }
       }
@@ -1070,7 +1081,20 @@ export async function GET(req: Request) {
     elapsedMs,
     failures: failures.slice(0, 25),
   };
-  console.log("[cron/weekly-send] summary:", JSON.stringify(summary));
+  // Log a redacted copy -- `summary` itself (with real emails) stays intact
+  // below for the CRON_SECRET-gated JSON response and the ops-alert email,
+  // both more access-controlled surfaces than the Cloudflare Worker log
+  // stream. A bad run (many skips/failures/deferrals) would otherwise put a
+  // large slice of the subscriber list's raw emails into one log line.
+  console.log("[cron/weekly-send] summary:", JSON.stringify({
+    ...summary,
+    backupSharedSentEmails: backupSharedSentEmails.length,
+    backupFreshSentEmails: backupFreshSentEmails.length,
+    backupStaleSentEmails: backupStaleSentEmails.length,
+    skippedBlankSubscribers: skippedBlankSubscribers.length,
+    deferred: deferred.length,
+    failures: failures.length,
+  }));
 
   // A paid subscriber getting nothing, a hard send failure, Brave quota
   // exhaustion (letters silently degrade to stale filler — a subscriber

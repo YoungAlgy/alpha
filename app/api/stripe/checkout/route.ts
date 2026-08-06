@@ -13,7 +13,14 @@ export const runtime = "nodejs";
 // the one place that didn't bound them. .max(25) on topics matches
 // isProfileComplete's own bound one line below where it's enforced.
 const CheckoutPayloadSchema = z.object({
-  email: z.string().max(320).optional(),
+  // 254, not 320 -- lib/validate-email.ts documents and enforces the real
+  // RFC 5321 total-length bound (320 is the common local-part(64)+domain(255)
+  // misconception). isProfileComplete() below already calls isValidEmail(),
+  // which rejects anything over 254 -- a 255-320 char input used to pass
+  // this schema cleanly and then fail there with a generic "finish your
+  // profile" 400 instead of a specific length error, since the two caps
+  // disagreed with each other one file apart.
+  email: z.string().max(254).optional(),
   firstName: z.string().max(60).optional(),
   city: z.string().max(120).optional(),
   topics: z.array(z.string()).max(25).optional(),
