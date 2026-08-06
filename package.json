@@ -11,7 +11,8 @@
     "cf:preview": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf:deploy": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && npm run typecheck:worker && opennextjs-cloudflare deploy && node scripts/smoke-test-deploy.mjs",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
-    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json"
+    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
@@ -34,6 +35,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "patch-package": "^8.0.1",
     "sharp": "^0.35.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.8",

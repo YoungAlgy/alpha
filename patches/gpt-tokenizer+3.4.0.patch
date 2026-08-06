@@ -1,0 +1,14 @@
+diff --git a/node_modules/gpt-tokenizer/package.json b/node_modules/gpt-tokenizer/package.json
+index 26acdff..a6182cf 100644
+--- a/node_modules/gpt-tokenizer/package.json
++++ b/node_modules/gpt-tokenizer/package.json
+@@ -53,7 +53,8 @@
+       "require": "./cjs/*.js"
+     },
+     "./esm/*": {
+-      "import": "./esm/*.js"
++      "import": "./esm/*.js",
++      "require": "./esm/*.js"
+     },
+     "./data/*": {
+       "import": "./data/*",
