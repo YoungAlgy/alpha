@@ -167,12 +167,23 @@ jobs:
           # Real counts, not a limit=1 existence check -- a limit=1 check
           # can't tell "everyone got their letter" from "one subscriber got
           # a letter and the run died 30 seconds later." Both counts come
-          # from ONE call to watchdog_delivery_check() (see the 2026-08-05
-          # migration) instead of two raw table queries -- that RPC is
-          # security definer and returns only these two integers, callable
-          # with the anon key, so this never touches raw rows/PII and never
-          # needs the full-privilege secret key the first version of this
-          # workflow used.
+          # from ONE call to watchdog_delivery_check() instead of two raw
+          # table queries -- that RPC is security definer and returns only
+          # these two integers, callable with the anon key, so this never
+          # touches raw rows/PII and never needs the full-privilege secret
+          # key the first version of this workflow used.
+          #
+          # 2026-08-05: the RPC itself was rewritten from an aggregate
+          # delivered_count to a genuine per-subscriber uncovered_count (see
+          # migration 20260805150000) -- a raw row count could stay
+          # unchanged while a SPECIFIC active subscriber quietly had no
+          # letter (e.g. someone unsubscribes the same window someone else
+          # signs up), which is exactly the blind spot a delivery watchdog
+          # exists to catch. COVERED_COUNT below is derived as
+          # ACTIVE_COUNT - UNCOVERED_COUNT and substitutes everywhere this
+          # script previously used DELIVERED_COUNT -- same three alert
+          # tiers, same thresholds, just fed a number that can't be fooled
+          # by unrelated churn netting to zero.
           RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
@@ -191,29 +202,40 @@ jobs:
           # all fall through to -1 for both counts, which routes to the
           # alert path below, not a silent pass.
           if [ "${CURL_EXIT}" -ne 0 ]; then
-            DELIVERED_COUNT=-1
+            UNCOVERED_COUNT=-1
             ACTIVE_COUNT=-1
           else
             COUNTS=$(RESPONSE="${RESPONSE}" node -e "
               const raw = process.env.RESPONSE || '';
-              let delivered = -1, active = -1;
+              let uncovered = -1, active = -1;
               try {
                 const data = JSON.parse(raw);
                 if (Array.isArray(data) && data.length === 1 &&
-                    typeof data[0].delivered_count === 'number' &&
+                    typeof data[0].uncovered_count === 'number' &&
                     typeof data[0].active_subscriber_count === 'number') {
-                  delivered = data[0].delivered_count;
+                  uncovered = data[0].uncovered_count;
                   active = data[0].active_subscriber_count;
                 }
               } catch (e) {}
-              process.stdout.write(delivered + ' ' + active);
+              process.stdout.write(uncovered + ' ' + active);
             ")
-            DELIVERED_COUNT=$(echo "${COUNTS}" | cut -d' ' -f1)
+            UNCOVERED_COUNT=$(echo "${COUNTS}" | cut -d' ' -f1)
             ACTIVE_COUNT=$(echo "${COUNTS}" | cut -d' ' -f2)
-            [ -n "${DELIVERED_COUNT}" ] || DELIVERED_COUNT=-1
+            [ -n "${UNCOVERED_COUNT}" ] || UNCOVERED_COUNT=-1
             [ -n "${ACTIVE_COUNT}" ] || ACTIVE_COUNT=-1
           fi
-          echo "Active subscriber count: ${ACTIVE_COUNT}"
+          echo "Active subscriber count: ${ACTIVE_COUNT}, uncovered: ${UNCOVERED_COUNT}"
+
+          # DELIVERED_COUNT's replacement: a clean per-subscriber-coverage
+          # count instead of a raw row count, bounded to [0, ACTIVE_COUNT]
+          # by construction. Preserves the -1 "couldn't verify" sentinel
+          # whenever either input is unverifiable, so the tiers below still
+          # can't mistake "unknown" for "zero delivered."
+          if [ "${UNCOVERED_COUNT}" -lt 0 ] || [ "${ACTIVE_COUNT}" -lt 0 ]; then
+            DELIVERED_COUNT=-1
+          else
+            DELIVERED_COUNT=$(( ACTIVE_COUNT - UNCOVERED_COUNT ))
+          fi
 
           SEARCH_PHRASE="Daily letter send may be broken"
           ISSUE_TITLE="🚨 ${SEARCH_PHRASE}"

@@ -22,6 +22,7 @@
 // pre-fix deliveries all match the "stuck" pattern on the column alone).
 // Run: npx tsx scripts/verify-stuck-claim-reclaim.mts
 import { loadEnvLocal } from "./_load-env.mts";
+import { RECLAIM_GRANDFATHER_CUTOFF } from "../lib/delivery-proof.ts";
 loadEnvLocal();
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -42,7 +43,6 @@ const check = (label: string, cond: boolean) => {
 };
 
 const RECLAIM_SAFETY_MARGIN_MS = 10 * 60 * 1000;
-const RECLAIM_GRANDFATHER_CUTOFF = "2026-08-05T19:10:00Z";
 // Five synthetic far-future week_of values, one per case, so they can never
 // collide with each other or a real send date.
 const weekOfStuck = "2099-02-01";

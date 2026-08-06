@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServiceClient } from "@/lib/supabase/server";
-import { sendLetterNotification, resendConfigured } from "@/lib/email";
+import { resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";

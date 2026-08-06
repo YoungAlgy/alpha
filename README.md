@@ -10,12 +10,12 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 |---|---|
 | Framework | Next.js 16 (App Router, Turbopack) |
 | Styling | Tailwind CSS 4 + CSS custom properties (10 themes) |
-| Hosting | Vercel (project `alpha`) |
+| Hosting | Cloudflare Workers (via OpenNext) for the website; the daily send itself runs on GitHub Actions (see Deployment below) |
 | DB / Auth | Supabase (project `xpqxhdciaoicsnyyfshy` in the "Algy" org) |
 | AI | Claude Sonnet 5 (topic blurbs) + Claude Opus 4.8 (editor's note) via `@anthropic-ai/sdk` |
 | Web search | Brave Search API ($5/mo free credit covers V0) |
 | Payments | Stripe — dedicated Alpha account (`acct_1TWfDlAhrDpDN9sH`), not shared with Ava |
-| Email | Resend — letters from `"alpha." <alpha@everyday.report>`, sign-in (Supabase SMTP) from `noreply@everyday.report`. Domain verified via Vercel DNS. Old sender was alpha@youngalgy.com (that domain now removed from Resend — free plan holds 1 domain). |
+| Email | Resend — letters from `"alpha." <alpha@everyday.report>`, sign-in (Supabase SMTP) from `noreply@everyday.report`. Domain verified via Cloudflare DNS. Old sender was alpha@youngalgy.com (that domain now removed from Resend — free plan holds 1 domain). |
 
 ## Architecture highlights
 
@@ -27,6 +27,12 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 - **RLS-by-default** — every PII table (`users`, `issues`, `support_tickets`) has policies scoped to `auth.uid()`. Service role bypasses RLS for server-side operations (webhook upsert, generate persistence, admin endpoint).
 - **Admin Accounts panel** at `/settings/accounts` — gated to `youngalgy@gmail.com` via server-side session check. List, grant free subscription, revoke free, delete. Real Stripe customers protected from accidental revoke.
 - **In-app changelog** at `/settings/changelog` — hand-curated entries in `app/settings/changelog/page.tsx`. Server-rendered, `noindex` meta, private behind `/settings` (already in `robots.ts` disallow).
+- **Delivery reliability** (all added 2026-08-05, after moving the daily send off Cloudflare) —
+  - **Stuck-claim reclaim** — `runPersistAndSend` stamps `delivered_at` as an atomic claim *before* calling Resend; if the process dies in between (a killed runner, an OOM), the row is left claimed with no email ever sent. The cron's GET handler reclaims any row matching "claimed, no proof of send, older than a 10-minute safety margin" back into the undelivered pool at the top of every run.
+  - **`resend_message_id` proof-of-send** — only ever set after a *confirmed* successful Resend call, so `delivered_at` alone can no longer be read as "done" anywhere in the system (the reclaim step above, `watchdog_delivery_check()`, and the retry pre-check all require it).
+  - **`watchdog_delivery_check()` per-subscriber coverage** — a security-definer RPC, callable with the anon key, that both `letter-watchdog.yml`'s alert check and `daily-send.yml`'s retry pre-check call. Returns `uncovered_count`: the number of currently active subscribers with no proven-delivered issue since a cutoff — a genuine per-subscriber existence check, not an aggregate-count comparison (which can coincidentally net out even when one specific subscriber has nothing, e.g. an unsubscribe and a signup in the same window).
+  - **`prior_issue_counts()`** — one grouped RPC for every subscriber's lifetime "Issue N" count, replacing N per-subscriber count queries.
+  - **Resend retry-with-backoff** (`retryResendCall` in `lib/email.ts`) — up to 3 attempts with backoff on transient errors (`rate_limit_exceeded`, `internal_server_error`, `application_error`, `concurrent_idempotent_requests`); permanent errors (bad API key, invalid recipient, quota exceeded) fail fast with no retry.
 
 ## Directory layout
 
@@ -107,6 +113,8 @@ UNSUBSCRIBE_SECRET=            # HMAC secret for unsubscribe + letter-view token
 CRON_SECRET=                   # bearer for /api/cron/weekly-send (GitHub Actions sends it)
 SUPPORT_FORWARD_EMAIL=         # where /api/support notifications go (optional)
 NEXT_PUBLIC_POSTHOG_KEY=       # analytics (optional — inert if unset)
+OPS_ALERT_EMAIL=               # internal ops-alert recipient (optional, defaults to youngalgy@gmail.com)
+OPS_ALERT_WEBHOOK_URL=         # Discord/Slack webhook fallback when Resend itself is broken (optional)
 ```
 
 `GET /api/health` returns which services are configured + active email provider.

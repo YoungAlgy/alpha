@@ -475,15 +475,25 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
     headers["List-Unsubscribe"] = `<${unsubUrl}>`;
     headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
+  // Stable per user, not per call -- this is a one-time email, so unlike
+  // sendLetterNotification's per-(user, week_of, kind) key there's no second
+  // dimension to it. Only set when userId is known, same as the
+  // List-Unsubscribe headers above; without it retryResendCall's
+  // network-throw retry (the request reached Resend but the response never
+  // came back) could otherwise send this twice.
+  const idempotencyKey = params.userId ? `alpha-welcome-${params.userId}` : undefined;
   const result = await retryResendCall(() =>
-    resendClient().emails.send({
-      from: resendFrom,
-      to: params.to,
-      subject: "Welcome to alpha. Your first letter is on its way",
-      html,
-      text,
-      headers,
-    })
+    resendClient().emails.send(
+      {
+        from: resendFrom,
+        to: params.to,
+        subject: "Welcome to alpha. Your first letter is on its way",
+        html,
+        text,
+        headers,
+      },
+      idempotencyKey ? { idempotencyKey } : undefined
+    )
   );
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);

@@ -92,6 +92,7 @@ console.log("(5) non-retryable error (monthly_quota_exceeded) -- fails immediate
     return errResponse("monthly_quota_exceeded");
   });
   check("(5) called exactly once", calls === 1);
+  check("(5) returns the error response", result.error?.name === "monthly_quota_exceeded");
 }
 
 // --- 6) A THROW (network failure, not a Resend error response) is also

@@ -18,6 +18,7 @@ import type { TopicBlurb } from "@/lib/engine/types";
 import { clampQuota } from "@/lib/types";
 import { coerceGender } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
+import { RECLAIM_GRANDFATHER_CUTOFF } from "@/lib/delivery-proof";
 
 export const runtime = "nodejs";
 // This value no longer means what its name implies. It WAS a Vercel Pro
@@ -97,9 +98,11 @@ const FAST_FALLBACK_TOPIC_COUNT = 3;
 // timeout fires — a slow-but-eventually-successful send still lands and its
 // delivered_at claim stays correctly set, so this can't cause a duplicate
 // email on the next run's retry. Generous relative to normal latency (a
-// couple of Supabase round trips + one Resend call), tight relative to
-// CRON_SAFETY_MARGIN_MS below (110s generation + 45s here = 155s max real
-// per-subscriber time, under the 170s reserved).
+// couple of Supabase round trips +, since retryResendCall's 2026-08-05
+// backoff-retry addition, up to 3 Resend attempts with ~2.4s of backoff
+// delay between them on transient errors — still comfortably inside this
+// budget), tight relative to CRON_SAFETY_MARGIN_MS below (110s generation +
+// 45s here = 155s max real per-subscriber time, under the 170s reserved).
 const PERSIST_AND_SEND_DEADLINE_MS = 45_000;
 
 // Time-budget safety valve. The loop below is sequential (topic-blurb caching
@@ -290,20 +293,19 @@ export async function GET(req: Request) {
   // unambiguously stuck, not just slow -- nulling delivered_at puts that
   // subscriber back in the normal undelivered pool for THIS run.
   const RECLAIM_SAFETY_MARGIN_MS = 10 * 60 * 1000; // 10 minutes
-  // Grandfather cutoff, same value and same reasoning as
-  // watchdog_delivery_check()'s 2026-08-05 migration: resend_message_id was
-  // added to the schema AFTER today's real 14:00 UTC send already ran on
-  // the old code, so every one of today's genuine deliveries has
-  // delivered_at set and resend_message_id null -- not because they're
-  // stuck, but because the column didn't exist yet. Without this,
-  // re-processing weekOf=2026-08-05 for any reason (a manual admin re-run,
-  // a ?weekOf= backfill) would "reclaim" real, already-delivered letters
-  // and reprocess them. Harmless to send (Resend's idempotency key +
-  // RETRY-SAFETY content reuse dedupe it), but it's still wrong to treat a
-  // real success as broken, and it would fire a false "reclaimed a stuck
-  // claim" ops alert. Irrelevant for every future day's send -- only
-  // matters for reprocessing this exact date.
-  const RECLAIM_GRANDFATHER_CUTOFF = "2026-08-05T19:10:00Z";
+  // Grandfather cutoff (imported, see lib/delivery-proof.ts), same value and
+  // same reasoning as watchdog_delivery_check()'s 2026-08-05 migration:
+  // resend_message_id was added to the schema AFTER that day's real 14:00
+  // UTC send already ran on the old code, so every one of that day's
+  // genuine deliveries has delivered_at set and resend_message_id null --
+  // not because they're stuck, but because the column didn't exist yet.
+  // Without this, re-processing weekOf=2026-08-05 for any reason (a manual
+  // admin re-run, a ?weekOf= backfill) would "reclaim" real,
+  // already-delivered letters and reprocess them. Harmless to send (Resend's
+  // idempotency key + RETRY-SAFETY content reuse dedupe it), but it's still
+  // wrong to treat a real success as broken, and it would fire a false
+  // "reclaimed a stuck claim" ops alert. Irrelevant for every future day's
+  // send -- only matters for reprocessing this exact date.
   if (!force) {
     const reclaimCutoff = new Date(Date.now() - RECLAIM_SAFETY_MARGIN_MS).toISOString();
     const { data: reclaimed, error: reclaimErr } = await sb
