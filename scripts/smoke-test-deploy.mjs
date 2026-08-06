@@ -102,6 +102,21 @@ const CHECKS = [
       };
     },
   },
+  {
+    name: "Resend webhook is configured (missing svix headers should 400, not 503/500)",
+    hard: true,
+    run: async () => {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/webhooks/resend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      return {
+        ok: res.status === 400,
+        detail: `status ${res.status} (expected 400 "Missing svix headers" -- a 503 here means RESEND_WEBHOOK_SECRET isn't set, a 500 means the route itself is broken)`,
+      };
+    },
+  },
 ];
 
 let hardFailures = 0;

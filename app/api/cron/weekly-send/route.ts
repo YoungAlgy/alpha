@@ -191,6 +191,7 @@ interface SubscriberRow {
 // Behavior:
 //   1. Find all users where subscribed_at IS NOT NULL AND access is still live
 //      (cancelled_at IS NULL or still in the future) AND unsubscribed_at IS NULL
+//      AND bounced_at IS NULL AND complained_at IS NULL
 //   2. For each, generate this send's Issue via the same engine /api/generate
 //      uses (Brave + Claude + per-topic cache), persist via upsert on (user_id,
 //      week_of), and send the letter email via Resend. The `week_of` column now
@@ -275,6 +276,13 @@ export async function GET(req: Request) {
       .not("subscribed_at", "is", null)
       .or(`cancelled_at.is.null,cancelled_at.gt.${nowIso}`)
       .is("unsubscribed_at", null)
+      // alpha-deliverability-01: a hard bounce or spam complaint (Resend
+      // webhook, app/api/webhooks/resend/route.ts) means this address is
+      // either dead or doesn't want mail -- sending anyway keeps hammering
+      // an address that will bounce again, dragging down everyday.report's
+      // sender reputation for every other subscriber too.
+      .is("bounced_at", null)
+      .is("complained_at", null)
       .order("id")
       .range(from, from + SUBSCRIBER_PAGE_SIZE - 1);
 

@@ -102,6 +102,9 @@ Required for full functionality (see `.env.local`):
 ANTHROPIC_API_KEY=             # Claude
 RESEND_API_KEY=                # Email (sole provider)
 RESEND_FROM="alpha." <alpha@everyday.report>  # optional -- every send site already defaults to this exact value if unset
+RESEND_WEBHOOK_SECRET=         # whsec_... for app/api/webhooks/resend (bounce/complaint suppression). If unset,
+                                # that route hard-503s -- bounces/complaints silently stop being suppressed, not a
+                                # payment-bypass risk but a slow sender-reputation one.
 STRIPE_SECRET_KEY=             # Stripe (Alpha account). NOTE: not hard-required everywhere -- if unset,
                                 # /api/generate treats the request as a paid dev/Stripe-less stub flow (bypasses
                                 # payment verification entirely) and /api/account/email/reconcile silently skips
