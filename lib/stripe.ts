@@ -28,9 +28,21 @@ export function getStripeClient(): Stripe {
   // generate/route.ts's verifyPaid() calls checkout.sessions.retrieve()
   // BEFORE its own 105s withDeadline even starts — an unbounded Stripe leg
   // could alone burn most of the route's 120s maxDuration.
+  //
+  // createFetchHttpClient(), NOT createNodeHttpClient(): this app runs on
+  // Cloudflare Workers (workerd), which only supports outbound networking
+  // via the Fetch API -- there are no raw TCP sockets for Node's http/https
+  // modules to open, even under OpenNext's Node-compat layer. Found live in
+  // production (2026-08-06): createNodeHttpClient() made every
+  // checkout.sessions.create() call hang until the 20s timeout, retry once,
+  // hang again, and fail -- checkout was completely broken for real
+  // subscribers. Reproduced by comparing a local Node call (succeeds in
+  // ~700ms) against the identical call through the deployed Worker (hangs
+  // ~15-30s then fails) with the exact same verified-good API key --
+  // confirmed the failure was httpClient-specific, not a bad key.
   _stripe = new Stripe(secret, {
     apiVersion: "2026-04-22.dahlia",
-    httpClient: Stripe.createNodeHttpClient(),
+    httpClient: Stripe.createFetchHttpClient(),
     timeout: 20_000,
     maxNetworkRetries: 1,
   });
