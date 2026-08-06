@@ -119,7 +119,7 @@ export default function ArchivePage() {
         )}
 
         {state === "error" && (
-          <div className="space-y-4">
+          <div role="status" aria-live="polite" className="space-y-4">
             <p className="alpha-display text-lg" style={{ color: "var(--ink)" }}>
               Couldn&apos;t load your letters.
             </p>

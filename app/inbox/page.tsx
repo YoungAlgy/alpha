@@ -118,8 +118,13 @@ export default function InboxPage() {
   async function clearAndGo(path: string) {
     try {
       if (supabaseConfigured()) await supabaseClient().auth.signOut();
-    } catch {
-      // ignore — navigate anyway
+    } catch (e) {
+      // Logged, not silent: this is the shared/library-computer sign-out
+      // path (see the comment above) -- a swallowed failure here means the
+      // session cookie is never cleared, so the next person on this device
+      // could see the previous reader's letter, with nothing in the logs
+      // to ever surface that it happened.
+      console.warn("[inbox] signOut failed before navigate:", e instanceof Error ? e.message : e);
     }
     // Wipe onboarding answers (name, email, birthday, etc.) so the next
     // person on this device — shared/library/kiosk computer — doesn't get

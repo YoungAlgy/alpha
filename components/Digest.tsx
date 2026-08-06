@@ -158,6 +158,8 @@ function Item({ item }: { item: DigestItem }) {
               src={faviconUrl(item.primaryRef.url)!}
               alt=""
               loading="lazy"
+              width={14}
+              height={14}
               className="alpha-src-favicon"
             />
           )}
@@ -189,6 +191,8 @@ function Item({ item }: { item: DigestItem }) {
                       src={faviconUrl(ref.url)!}
                       alt=""
                       loading="lazy"
+                      width={14}
+                      height={14}
                       className="alpha-src-favicon"
                     />
                   )}

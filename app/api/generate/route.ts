@@ -269,7 +269,7 @@ export async function POST(req: Request) {
         weekOf,
         stamp: new Date().toISOString(),
         send: async () => {
-          await sendLetterNotification({
+          return sendLetterNotification({
             to: toEmail,
             firstName: profile.firstName,
             issue,
@@ -288,6 +288,26 @@ export async function POST(req: Request) {
         console.log(
           `[generate] skipped letter email for user ${persistence?.userId}, already delivered for ${weekOf}`
         );
+      }
+      // Proof of send -- same pattern as the cron (weekly-send/route.ts).
+      // Without this column, watchdog_delivery_check() can't tell a genuine
+      // success from a stuck claim and, past its grandfather cutoff, would
+      // eventually null this row's delivered_at back out and put it back in
+      // the send queue even though the email already went out. Best-effort:
+      // the email already sent, so a failure to record this must never fail
+      // the request.
+      if (result.sent && result.messageId && persistence?.userId) {
+        const sb = await supabaseServiceClient();
+        const { error: proofErr } = await sb
+          .from("issues")
+          .update({ resend_message_id: result.messageId })
+          .eq("user_id", persistence.userId)
+          .eq("week_of", weekOf);
+        if (proofErr) {
+          console.warn(
+            `[generate] sent OK but proof-of-send write failed for user ${persistence.userId}: ${proofErr.message}`
+          );
+        }
       }
     }
 

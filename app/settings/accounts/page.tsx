@@ -247,7 +247,7 @@ export default function AdminAccountsPage() {
         )}
 
         {err && (
-          <p className="alpha-ui text-sm mb-6" style={{ color: "var(--accent-ink)" }}>
+          <p role="alert" className="alpha-ui text-sm mb-6" style={{ color: "var(--accent-ink)" }}>
             {err}
           </p>
         )}

@@ -77,7 +77,14 @@ export default async function LetterPage({
         sections: row.sections,
       };
     }
-  } catch {
+  } catch (e) {
+    // Logged, not silent: this is the actual link paying subscribers click
+    // from their weekly email. Without a log line, a real systemic failure
+    // (schema drift, an RLS regression, a transient DB outage) is
+    // indistinguishable from the benign "this token's issue genuinely
+    // doesn't exist" case -- every clicking reader would just silently see
+    // the generic no-letter fallback with no operational signal anything's wrong.
+    console.error("[letter] issue lookup failed:", e instanceof Error ? e.message : e);
     issue = null;
   }
 

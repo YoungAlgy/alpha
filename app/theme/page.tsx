@@ -53,8 +53,12 @@ export default function ThemePage() {
         if (cancelled) return;
         const dbTheme = row?.theme as ThemeId | null | undefined;
         if (dbTheme && dbTheme in SWATCHES) setPicked(dbTheme);
-      } catch {
-        // ignore — falls back to localStorage state / default
+      } catch (e) {
+        // Logged, not silent: this hydrate exists specifically to stop a
+        // returning subscriber's real saved theme from getting clobbered
+        // back to "forest" (see the comment above) -- a swallowed failure
+        // here lets that exact regression resurface with no trace.
+        console.warn("[theme] signed-in hydrate failed:", e instanceof Error ? e.message : e);
       }
     })();
     return () => {

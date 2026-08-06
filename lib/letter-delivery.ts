@@ -31,7 +31,11 @@ export interface DeliverLetterOnceOpts {
   userId: string | null; // null when there is no persisted user row
   weekOf: string;
   stamp: string; // the claim timestamp (caller supplies)
-  send: () => Promise<void>; // performs the actual email send
+  // Performs the actual email send. May return the provider's message id
+  // (e.g. Resend's) so the caller can write a proof-of-send column — see
+  // the cron's identical resend_message_id pattern in weekly-send/route.ts.
+  // Returning void/undefined is fine; the id is opportunistic, not required.
+  send: () => Promise<{ id?: string } | void>;
   onError?: (e: unknown) => void; // observability hook for the caller's logger
 }
 
@@ -49,29 +53,30 @@ export type DeliverReason =
 // failed send it releases the claim so a retry or the cron can deliver later.
 export async function deliverLetterOnce(
   opts: DeliverLetterOnceOpts
-): Promise<{ sent: boolean; reason: DeliverReason }> {
+): Promise<{ sent: boolean; reason: DeliverReason; messageId?: string }> {
   const { store, userId, weekOf, stamp, send, onError } = opts;
 
   // Best-effort send: an email failure must NEVER throw (the letter still
   // renders on /inbox), matching the original route's swallow-and-warn. The
   // route runs this inside a try whose catch returns a 500, so a naked throw
-  // here would turn a generated-letter 200 into an error screen. Returns whether
-  // the email actually went out.
-  const trySend = async (): Promise<boolean> => {
+  // here would turn a generated-letter 200 into an error screen. Returns
+  // whether the email actually went out, plus the provider's message id when
+  // `send` returned one.
+  const trySend = async (): Promise<{ ok: boolean; messageId?: string }> => {
     try {
-      await send();
-      return true;
+      const result = await send();
+      return { ok: true, messageId: result?.id };
     } catch (e) {
       onError?.(e);
-      return false;
+      return { ok: false };
     }
   };
 
   // No way to dedup (persist returned nothing) → best-effort single send, the
   // same behavior as before the atomic claim existed.
   if (!store || !userId) {
-    const ok = await trySend();
-    return { sent: ok, reason: ok ? "no-persistence" : "send-failed" };
+    const { ok, messageId } = await trySend();
+    return { sent: ok, reason: ok ? "no-persistence" : "send-failed", messageId };
   }
 
   let claim: { won: boolean; exists: boolean };
@@ -82,8 +87,8 @@ export async function deliverLetterOnce(
     // first letter and the route's rule is to never block it on an infra hiccup.
     // The only dup risk is a same-instant cron tick, which is vanishingly rare.
     onError?.(e);
-    const ok = await trySend();
-    return { sent: ok, reason: ok ? "claim-error" : "send-failed" };
+    const { ok, messageId } = await trySend();
+    return { sent: ok, reason: ok ? "claim-error" : "send-failed", messageId };
   }
 
   if (!claim.won) {
@@ -94,14 +99,15 @@ export async function deliverLetterOnce(
     }
     // No issue row to claim (best-effort persist left none) → best-effort send,
     // same as the no-persistence path. There is nothing to roll back.
-    const ok = await trySend();
-    return { sent: ok, reason: ok ? "no-row" : "send-failed" };
+    const { ok, messageId } = await trySend();
+    return { sent: ok, reason: ok ? "no-row" : "send-failed", messageId };
   }
 
   // We hold the claim: delivered_at is ours. Send, and release on failure so a
   // retry or the cron can re-claim and deliver this period cleanly.
-  if (await trySend()) {
-    return { sent: true, reason: "claimed" };
+  const { ok, messageId } = await trySend();
+  if (ok) {
+    return { sent: true, reason: "claimed", messageId };
   }
   try {
     await store.release(userId, weekOf, stamp);

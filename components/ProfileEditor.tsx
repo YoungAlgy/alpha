@@ -222,10 +222,10 @@ export function ProfileEditor() {
           </span>
         </label>
         <div>
-          <span className="alpha-ui text-xs block mb-2" style={{ color: "var(--ink-soft)" }}>
+          <span id="profile-gender-label" className="alpha-ui text-xs block mb-2" style={{ color: "var(--ink-soft)" }}>
             Gender
           </span>
-          <div className="flex flex-wrap gap-2">
+          <div role="group" aria-labelledby="profile-gender-label" className="flex flex-wrap gap-2">
             {(["male", "female"] as const).map((g) => {
               const active = form.gender === g;
               return (

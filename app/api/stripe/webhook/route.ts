@@ -30,6 +30,11 @@ export async function POST(req: Request) {
 
   let event: Stripe.Event;
   try {
+    // Timestamp-tolerance (replay window) is intentionally left at the
+    // Stripe SDK's default (300s, Stripe's own recommendation) rather than
+    // passed explicitly here -- reinforced by the stripe_webhook_events
+    // dedup table below, which structurally prevents a within-window replay
+    // from double-processing regardless of the exact tolerance value.
     event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Invalid signature";
@@ -60,6 +65,12 @@ export async function POST(req: Request) {
     console.warn(`[stripe-webhook] duplicate delivery of event ${event.id} (${event.type}) -- skipping`);
     return NextResponse.json({ received: true });
   }
+  // Only THIS request freshly inserted the row (dedupRows.length > 0) is a
+  // durable "done" marker worth keeping if the handler below throws -- see
+  // the catch block's cleanup. If dedupErr was set there's nothing to clean
+  // up (the insert never happened); if a duplicate was detected we already
+  // returned above and never reach the catch at all.
+  const insertedDedupRow = !dedupErr && (dedupRows?.length ?? 0) > 0;
 
   try {
     switch (event.type) {
@@ -335,6 +346,21 @@ export async function POST(req: Request) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[stripe-webhook] handler error:", msg);
+    // The dedup row above was inserted BEFORE the switch ran, marking this
+    // event "seen" regardless of whether the handler actually succeeded. If
+    // we don't undo that here, the retry Stripe is about to send (via the
+    // 5xx below) hits the dedup guard's short-circuit on arrival and never
+    // re-enters the switch at all -- silently swallowing every future retry
+    // of an event whose handler never actually completed. Best-effort: a
+    // failed delete here must not change the response Stripe sees (a real
+    // dup-processing risk on a THIS-specific transient failure is far
+    // cheaper than a permanently stranded paying customer).
+    if (insertedDedupRow) {
+      const { error: cleanupErr } = await sb.from("stripe_webhook_events").delete().eq("id", event.id);
+      if (cleanupErr) {
+        console.warn(`[stripe-webhook] failed to clear dedup row for ${event.id} after handler error -- retries of this event will be silently skipped:`, cleanupErr.message);
+      }
+    }
     // Return 5xx so Stripe RETRIES (webhooks are at-least-once). The handlers are
     // idempotent — checkoutUserMutation does a non-clobbering update on an existing
     // row, the welcome email is gated on isFirstSubscription (reads the pre-write

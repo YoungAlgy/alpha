@@ -1,12 +1,27 @@
 "use client";
 
 import { useEffect } from "react";
-import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { coerceThemeId } from "@/lib/themes";
 import type { ThemeId } from "@/lib/types";
 
 const ONBOARDING_KEY = "alpha-onboarding";
 const FALLBACK_KEY = "alpha-theme";
+
+// Inlined instead of importing supabaseConfigured from lib/supabase/client.ts:
+// that module's top-level `import { createBrowserClient } from "@supabase/ssr"`
+// pulls the ENTIRE @supabase/supabase-js surface (GoTrueClient, RealtimeClient,
+// ~240KB) into whatever imports ANY export from it, even a 3-line env-var
+// check. ThemeApplier is the one component mounted unconditionally on every
+// route including static marketing/legal pages, so it was the single largest
+// JS chunk in the whole build. supabaseClient() itself is still dynamically
+// imported below, only when this check passes.
+function isSupabaseConfigured(): boolean {
+  return (
+    !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    (!!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  );
+}
 
 // Applies the active theme to <html data-theme="..."> on every page so the
 // entire app — not just the rendered letter — reflects the user's pick.
@@ -50,8 +65,9 @@ export function ThemeApplier() {
 
     // Then check Supabase — overrides local if the server has a different theme.
     (async () => {
-      if (!supabaseConfigured()) return;
+      if (!isSupabaseConfigured()) return;
       try {
+        const { supabaseClient } = await import("@/lib/supabase/client");
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
         if (!user) return;

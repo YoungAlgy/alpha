@@ -80,7 +80,13 @@ export async function POST(req: Request) {
   if (resendConfigured()) {
     try {
       const ownerEmail = process.env.SUPPORT_FORWARD_EMAIL || "youngalgy@gmail.com";
-      const from = process.env.RESEND_FROM || '"alpha." <onboarding@resend.dev>';
+      // Same default every other send site in lib/email.ts uses -- this one
+      // used to fall back to a Resend sandbox address (onboarding@resend.dev,
+      // which can only deliver to the account owner's own verified email and
+      // reads as broken/unprofessional even then) instead of the real
+      // verified domain, so the app's own default wasn't even consistent
+      // with itself if RESEND_FROM were ever unset.
+      const from = process.env.RESEND_FROM || '"alpha." <alpha@everyday.report>';
       const { Resend } = await import("resend");
       const resend = new Resend(process.env.RESEND_API_KEY!);
       const result = await resend.emails.send({

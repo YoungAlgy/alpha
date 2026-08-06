@@ -34,6 +34,8 @@ export function SupportForm() {
   if (status === "sent") {
     return (
       <div
+        role="status"
+        aria-live="polite"
         className="p-6 rounded-lg space-y-2 text-center"
         style={{
           background: "var(--callout-bg)",
@@ -91,7 +93,7 @@ export function SupportForm() {
         {status === "sending" ? "Sending…" : "Send →"}
       </button>
       {error && (
-        <p className="alpha-ui text-sm" style={{ color: "var(--accent-ink)" }}>
+        <p role="alert" className="alpha-ui text-sm" style={{ color: "var(--accent-ink)" }}>
           {error} Try emailing us directly.
         </p>
       )}

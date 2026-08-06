@@ -52,8 +52,13 @@ export function setTheme(id: ThemeId): void {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
         if (user) await sb.from("users").update({ theme: id }).eq("id", user.id);
-      } catch {
-        // ignore — local copy already saved
+      } catch (e) {
+        // Logged, not silent: the DB row is the highest-authority source of
+        // truth for a signed-in user (see the comment above) -- a
+        // recurring, unlogged write failure here would look like theme
+        // changes "work" every session but silently fail to survive a
+        // reload or a different device, with nothing pointing at why.
+        console.warn("[setTheme] DB persist failed:", e instanceof Error ? e.message : e);
       }
     })();
   }

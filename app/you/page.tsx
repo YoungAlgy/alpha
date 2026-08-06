@@ -96,10 +96,10 @@ export default function YouPage() {
         </div>
 
         <div>
-          <span className="alpha-ui text-sm block mb-2" style={{ color: "var(--ink-soft)" }}>
+          <span id="you-gender-label" className="alpha-ui text-sm block mb-2" style={{ color: "var(--ink-soft)" }}>
             Gender
           </span>
-          <div className="flex flex-wrap gap-2">
+          <div role="group" aria-labelledby="you-gender-label" className="flex flex-wrap gap-2">
             {GENDERS.map((g) => {
               const active = gender === g.value;
               return (

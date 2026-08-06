@@ -101,8 +101,13 @@ Required for full functionality (see `.env.local`):
 ```
 ANTHROPIC_API_KEY=             # Claude
 RESEND_API_KEY=                # Email (sole provider)
-RESEND_FROM="alpha." <alpha@everyday.report>
-STRIPE_SECRET_KEY=             # Stripe (Alpha account)
+RESEND_FROM="alpha." <alpha@everyday.report>  # optional -- every send site already defaults to this exact value if unset
+STRIPE_SECRET_KEY=             # Stripe (Alpha account). NOTE: not hard-required everywhere -- if unset,
+                                # /api/generate treats the request as a paid dev/Stripe-less stub flow (bypasses
+                                # payment verification entirely) and /api/account/email/reconcile silently skips
+                                # its Stripe customer-email sync. Every other Stripe route (checkout/portal/
+                                # update-quantity/webhook) does hard-503 without it. Leaving it unset in a real
+                                # deployment is a payment-bypass risk, not just a missing-feature.
 STRIPE_WEBHOOK_SECRET=         # whsec_... for the webhook endpoint
 BRAVE_SEARCH_API_KEY=          # Brave Search
 GEMINI_API_KEY=                # search + generation fallback tier (Brave rate-limited, or Claude down)
@@ -112,15 +117,25 @@ YOU_API_KEY=                   # search fallback tier 3 (Brave -> Gemini grounde
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=  # old name NEXT_PUBLIC_SUPABASE_ANON_KEY still accepted as a fallback
 SUPABASE_SECRET_KEY=            # old name SUPABASE_SERVICE_ROLE_KEY still accepted as a fallback
-NEXT_PUBLIC_APP_URL=https://alpha.everyday.report  # canonical origin for Stripe URLs + ALL email links
+NEXT_PUBLIC_APP_URL=https://alpha.everyday.report  # optional -- canonical origin for Stripe URLs + ALL email
+                                # links; every call site already falls back to this exact value (or the
+                                # request's own origin, on the Stripe routes) if unset
 UNSUBSCRIBE_SECRET=            # HMAC secret for unsubscribe + letter-view tokens
 CRON_SECRET=                   # bearer for /api/cron/weekly-send (GitHub Actions sends it)
 SUPPORT_FORWARD_EMAIL=         # where /api/support notifications go (optional)
 NEXT_PUBLIC_POSTHOG_KEY=       # analytics (optional — inert if unset)
+NEXT_PUBLIC_POSTHOG_HOST=      # optional, defaults to PostHog US cloud -- for a self-hosted PostHog instance
 OPS_ALERT_EMAIL=               # internal ops-alert recipient (optional, defaults to youngalgy@gmail.com)
 OPS_ALERT_WEBHOOK_URL=         # Discord/Slack webhook fallback when Resend itself is broken (optional)
 JINA_API_KEY=                  # Jina Reader auth for deep-read article fetch (optional — Jina Reader works keyless, this just raises its rate limit)
 ALPHA_DISABLE_DEEPREAD=        # set to "1" to kill deep-read and fall back to snippet-only signal (optional)
+
+# Optional per-tier model overrides (A/B a model without a deploy; each has a hardcoded default):
+ALPHA_BLURB_MODEL=             # default claude-sonnet-5
+ALPHA_BLURB_CHEAP_MODEL=       # default claude-haiku-4-5
+ALPHA_EDITOR_MODEL=            # default claude-opus-4-8
+ALPHA_GEMINI_TEXT_MODEL=       # default gemini-2.5-flash
+ALPHA_GEMINI_SEARCH_MODEL=     # default gemini-2.5-flash
 ```
 
 `GET /api/health` returns which services are configured + active email provider.

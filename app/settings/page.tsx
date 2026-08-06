@@ -46,6 +46,19 @@ export default function SettingsPage() {
   // a sub-16ms double-click can invoke confirmTier twice before the state flush
   // disables/unmounts the button — a ref flips synchronously and blocks the second.
   const confirmInFlight = useRef(false);
+  // Focus management for the confirm panel: the trigger button is removed
+  // from the DOM the same render the panel appears (and vice versa on
+  // cancel/confirm), so the browser drops focus to <body> with no signal to
+  // a keyboard/screen-reader user that a billing confirmation appeared.
+  const confirmHeadingRef = useRef<HTMLParagraphElement>(null);
+  const tierReturnFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (confirmingTier) {
+      confirmHeadingRef.current?.focus();
+    } else if (tierReturnFocusRef.current?.isConnected) {
+      tierReturnFocusRef.current.focus();
+    }
+  }, [confirmingTier]);
   // After a successful add, surface a "pick your new topics" CTA so the flow
   // finishes where the reader actually uses the topics they just bought.
   const [justAdded, setJustAdded] = useState(false);
@@ -374,7 +387,10 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   disabled={busyTier !== null}
-                  onClick={() => requestTier("up")}
+                  onClick={(e) => {
+                    tierReturnFocusRef.current = e.currentTarget;
+                    requestTier("up");
+                  }}
                   className="alpha-ui text-sm underline underline-offset-4"
                   style={{
                     color: "var(--accent-ink)",
@@ -388,7 +404,10 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   disabled={busyTier !== null}
-                  onClick={() => requestTier("down")}
+                  onClick={(e) => {
+                    tierReturnFocusRef.current = e.currentTarget;
+                    requestTier("down");
+                  }}
                   className="alpha-ui text-sm underline underline-offset-4"
                   style={{
                     color: "var(--ink-soft)",
@@ -406,7 +425,12 @@ export default function SettingsPage() {
               className="mb-4 p-4 rounded-lg"
               style={{ background: "var(--callout-bg)", border: "1.5px solid var(--accent)" }}
             >
-              <p className="alpha-display text-base font-semibold mb-1">
+              <p
+                ref={confirmHeadingRef}
+                tabIndex={-1}
+                className="alpha-display text-base font-semibold mb-1"
+                style={{ outline: "none" }}
+              >
                 {confirmingTier === "up" ? "Add 5 topics?" : "Drop 5 topics?"}
               </p>
               <p className="alpha-ui text-sm mb-4" style={{ color: "var(--ink-soft)" }}>

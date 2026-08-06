@@ -72,8 +72,14 @@ export default function TopicsPage() {
         if (Array.isArray(row?.topics) && row.topics.length > 0) {
           setPicked(row.topics as TopicId[]);
         }
-      } catch {
-        // ignore — keep default target
+      } catch (e) {
+        // Logged, not silent: if this throws, signedIn never flips true, so
+        // submit() below takes the UNSIGNED branch on a signed-in user's
+        // Continue click -- it skips the POST to /api/account/topics
+        // entirely and just updates local onboarding state instead. A
+        // recurring failure here would otherwise look like a successful
+        // save to the reader while silently writing nothing to the DB.
+        console.warn("[topics] signed-in hydrate failed:", e instanceof Error ? e.message : e);
       }
     })();
     return () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { THEMES } from "@/lib/themes";
 import { chime, tap } from "@/lib/audio";
 import { setTheme, getCurrentTheme } from "@/lib/theme";
@@ -9,6 +9,16 @@ import type { ThemeId } from "@/lib/types";
 export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
   const [active, setActive] = useState<ThemeId>("forest");
   const [open, setOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const activeOptionRef = useRef<HTMLButtonElement>(null);
+
+  // Focus choreography for the dropdown: move focus into the listbox (onto
+  // the active option) when it opens, since neither toggleOpen nor pick()
+  // moved focus anywhere before this -- a keyboard user had to tab forward
+  // from the toggle with no way to jump straight into the option list.
+  useEffect(() => {
+    if (open) activeOptionRef.current?.focus();
+  }, [open]);
 
   useEffect(() => {
     // Read the theme actually applied to the page (ThemeApplier has already
@@ -29,6 +39,7 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
     setActive(id);
     setTheme(id); // applies + persists everywhere (localStorage + account) + broadcasts
     setOpen(false);
+    toggleRef.current?.focus();
     chime();
   }
 
@@ -37,9 +48,15 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
     tap();
   }
 
+  function close() {
+    setOpen(false);
+    toggleRef.current?.focus();
+  }
+
   return (
     <div className="relative">
       <button
+        ref={toggleRef}
         type="button"
         onClick={toggleOpen}
         className="alpha-ui text-sm font-medium px-3 py-1.5 rounded-full border"
@@ -53,6 +70,12 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
         <div
           className="absolute right-0 mt-2 w-64 z-50 alpha-card overflow-hidden"
           style={{ background: "var(--paper)" }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              close();
+            }
+          }}
         >
           <div className="alpha-mono px-4 py-3 border-b" style={{ borderColor: "var(--rule)" }}>
             CHOOSE A THEME
@@ -61,6 +84,7 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
             {THEMES.map((t) => (
               <li key={t.id}>
                 <button
+                  ref={active === t.id ? activeOptionRef : undefined}
                   type="button"
                   role="option"
                   aria-selected={active === t.id}
