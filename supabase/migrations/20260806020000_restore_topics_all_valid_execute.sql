@@ -1,0 +1,38 @@
+-- 2026-08-06 — HOTFIX: restore EXECUTE on topics_all_valid(text[]) for
+-- anon/authenticated. Reverts the revoke in
+-- 20260806010000_drop_unused_rls_write_read_policies.sql.
+--
+-- That migration's own comment claimed "A CHECK constraint runs under the
+-- constraint owner's privileges regardless of the calling role's own
+-- grants, so revoking this has no functional impact on the constraint
+-- itself." That claim is WRONG for this function: topics_all_valid has no
+-- `security definer` clause (verified by reading its own CREATE FUNCTION
+-- statement), so it's SECURITY INVOKER (the default) and genuinely runs
+-- under the CALLING role's privileges. Postgres re-validates every CHECK
+-- constraint on a row for ANY UPDATE, regardless of which specific columns
+-- changed -- so revoking EXECUTE didn't just block direct RPC calls to this
+-- function (the stated goal), it broke EVERY client-side (non-service-role)
+-- UPDATE to public.users, including ones that never touch the topics
+-- column at all.
+--
+-- Caught live 2026-08-06 by scripts/verify-rls-privileged-columns.mts
+-- (written the same day for an unrelated finding -- testing the privileged-
+-- column trigger under a genuine authenticated session happened to exercise
+-- this too): a real authenticated-session UPDATE of just the `theme` column
+-- failed with "permission denied for function topics_all_valid". The one
+-- live-affected write path is lib/theme.ts's setTheme() -- the theme
+-- picker's cross-device DB sync (the app's other self-serve writes,
+-- account/topics and account/profile, both already go through the service
+-- role and were unaffected). Impact was silent: setTheme's own try/catch
+-- swallows the error into a console.warn, and the theme still applies
+-- instantly via localStorage, so this read as "it works" in casual use --
+-- only cross-device theme sync was actually broken.
+--
+-- The original revoke's stated concern (an anon/authenticated caller
+-- invoking this directly via POST /rest/v1/rpc/topics_all_valid) isn't a
+-- real vulnerability on reflection: it's a pure, immutable, stateless
+-- predicate over the public topic catalog -- calling it directly reveals
+-- nothing sensitive, unlike watchdog_delivery_check/prior_issue_counts
+-- (real operational data), which correctly keep their own revokes.
+grant execute on function public.topics_all_valid(text[]) to authenticated;
+grant execute on function public.topics_all_valid(text[]) to anon;
