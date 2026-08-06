@@ -143,6 +143,30 @@ const CRON_TIME_BUDGET_MS = maxDuration * 1000 - CRON_SAFETY_MARGIN_MS;
 // below logs them every run specifically so this can be tuned later).
 const PAID_CALL_CEILING = 400;
 
+// Shape guard for a persisted `issues.sections` row before the RETRY-SAFETY
+// path (below) trusts it enough to skip generateIssue() entirely and email
+// it as-is. That path exists specifically to reuse content a PRIOR call
+// already wrote (see its own comment on the Resend idempotency-key mismatch
+// this avoids), so in the common case the row is well-formed. But JSONB
+// carries no runtime shape guarantee -- a partial write from a killed
+// process, a future upsert-shape change, or a manual Supabase edit would
+// otherwise flow straight into a real subscriber's email unvalidated. Mirrors
+// topic-blurb.ts's extractJson's own shape check on model output, just
+// applied to DB-read content instead.
+function isValidPersistedSections(sections: unknown): sections is Issue["sections"] {
+  return (
+    Array.isArray(sections) &&
+    sections.every(
+      (s) =>
+        s &&
+        typeof s === "object" &&
+        typeof (s as { topicLabel?: unknown }).topicLabel === "string" &&
+        typeof (s as { intro?: unknown }).intro === "string" &&
+        Array.isArray((s as { items?: unknown }).items)
+    )
+  );
+}
+
 interface SubscriberRow {
   id: string;
   email: string;
@@ -939,7 +963,12 @@ export async function GET(req: Request) {
     // idempotency key works as designed and the retry costs zero new AI
     // calls on top of being correct.
     const persistedRetry = pendingIssues.get(row.id);
-    const reusableSections = persistedRetry?.sections as Issue["sections"] | undefined;
+    let reusableSections: Issue["sections"] | undefined;
+    if (persistedRetry && isValidPersistedSections(persistedRetry.sections)) {
+      reusableSections = persistedRetry.sections;
+    } else if (persistedRetry) {
+      console.warn(`[cron/weekly-send] persisted retry content failed shape validation, regenerating → ${row.id}`);
+    }
 
     try {
       const issue: Issue =
