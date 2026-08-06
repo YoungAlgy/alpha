@@ -271,7 +271,7 @@ export default function InboxPage() {
             <button
               type="button"
               onClick={() => router.push("/settings" as never)}
-              className="alpha-ui text-sm rounded-full p-2 border"
+              className="alpha-ui text-sm rounded-full p-3 border"
               style={{ borderColor: "var(--rule)", color: "var(--ink-soft)" }}
               aria-label="Settings"
             >

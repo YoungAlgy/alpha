@@ -371,6 +371,14 @@ export async function GET(req: Request) {
   // Set once PAID_CALL_CEILING trips, so the ops alert below can name the
   // real cause instead of lumping a cost-brake defer in with a scale one.
   let paidCallCeilingHit = false;
+  // Three counters for today's (2026-08-06) new code, added in review the
+  // same day per the "if this breaks, would anyone notice" pass -- each of
+  // these paths already fails safe/self-heals on its own, but previously had
+  // NO run-level signal, only scattered per-subscriber console.warn lines
+  // easy to miss in the Cloudflare log stream.
+  let unsubscribedMidRunSkips = 0;
+  let unsubscribedRecheckFailures = 0;
+  let persistedRetryShapeMismatches = 0;
 
   // ONE dry-topic cache shared across every subscriber in THIS run — passed
   // into each generateIssue call so a topic with no fresh news spends its
@@ -789,8 +797,10 @@ export async function GET(req: Request) {
         if (freshUserErr) {
           // Fail open, same reasoning as every other best-effort guard in
           // this file: a lookup hiccup must never block a legitimate send.
+          unsubscribedRecheckFailures++;
           console.warn(`[cron/weekly-send] unsubscribed_at re-check failed → ${row.id}: ${freshUserErr.message}`);
         } else if (freshUser?.unsubscribed_at) {
+          unsubscribedMidRunSkips++;
           console.log(`[cron/weekly-send] skipped (unsubscribed mid-run) → ${row.id}`);
           return;
         }
@@ -967,6 +977,7 @@ export async function GET(req: Request) {
     if (persistedRetry && isValidPersistedSections(persistedRetry.sections)) {
       reusableSections = persistedRetry.sections;
     } else if (persistedRetry) {
+      persistedRetryShapeMismatches++;
       console.warn(`[cron/weekly-send] persisted retry content failed shape validation, regenerating → ${row.id}`);
     }
 
@@ -1189,6 +1200,15 @@ export async function GET(req: Request) {
     deepseekRateLimited,
     paidCallsThisRun,
     paidCallCeilingHit,
+    // hardFailedTopics: distinct topics that exhausted every generation tier
+    // this run (failedCache, alpha-spend-cap-02) — a systemic provider
+    // outage failing topics before paidCallCount climbs enough to trip
+    // PAID_CALL_CEILING would otherwise look identical to an ordinary slow-
+    // news day in this summary. Found in review 2026-08-06.
+    hardFailedTopics: failedCache.size,
+    unsubscribedMidRunSkips,
+    unsubscribedRecheckFailures,
+    persistedRetryShapeMismatches,
     elapsedMs,
     failures: failures.slice(0, 25),
   };
@@ -1220,7 +1240,8 @@ export async function GET(req: Request) {
     groqRateLimited > 0 ||
     deepseekRateLimited > 0 ||
     deferred.length > 0 ||
-    paidCallCeilingHit
+    paidCallCeilingHit ||
+    unsubscribedRecheckFailures > 0
   ) {
     // A "failed" subscriber isn't necessarily one who got nothing anymore —
     // some were caught by a backup layer. genuinelyMissed is the real
@@ -1285,9 +1306,15 @@ export async function GET(req: Request) {
       paidCallCeilingHit
         ? `COST BRAKE TRIPPED: paid-tier calls (Haiku+Sonnet+DeepSeek) hit ${paidCallsThisRun} this run, over the ${PAID_CALL_CEILING} ceiling — stopped starting new subscribers early. Check for a systemic generation failure (every topic escalating through the full waterfall) rather than assuming this is just a busy day.`
         : "",
+      // A persistent failure here means the round-12 mid-run-unsubscribe
+      // guard has gone inert (fails open by design) -- worth a loud signal
+      // even though no subscriber is actually harmed by a single blip.
+      unsubscribedRecheckFailures > 0
+        ? `The mid-run unsubscribe re-check failed ${unsubscribedRecheckFailures} time(s) this run (fails open, so those sends still went out normally) — if this keeps happening, the guard added 2026-08-06 against mailing someone right after they unsubscribe is silently not working. Check Supabase connectivity/permissions.`
+        : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}${unsubscribedRecheckFailures > 0 ? `, unsub-recheck failed x${unsubscribedRecheckFailures}` : ""}`,
       lines.join("\n")
     );
   }

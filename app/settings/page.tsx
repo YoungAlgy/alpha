@@ -89,6 +89,12 @@ export default function SettingsPage() {
   // button. This action shared the exact same shape (async POST, busy-state-
   // gated button) as those two but was missing the guard.
   const resumeInFlight = useRef(false);
+  // Delete had NO busy state at all (not even React state), so confirm()
+  // blocking re-clicks during the dialog was the only guard -- once the user
+  // clicks OK, the button stays fully clickable for the entire multi-step
+  // await (Stripe cancel, support-ticket delete, then admin.deleteUser) with
+  // zero loading feedback. Found in review 2026-08-06.
+  const deleteInFlight = useRef(false);
 
   useEffect(() => {
     if (!supabaseConfigured()) {
@@ -254,7 +260,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/inbox"
-          className="alpha-ui text-sm py-2 -my-2"
+          className="alpha-ui text-sm py-3 -my-3"
           style={{ color: "var(--ink-soft)" }}
         >
           ← Back to inbox
@@ -400,7 +406,7 @@ export default function SettingsPage() {
                     tierReturnFocusRef.current = e.currentTarget;
                     requestTier("up");
                   }}
-                  className="alpha-ui text-sm underline underline-offset-4"
+                  className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{
                     color: "var(--accent-ink)",
                     opacity: busyTier ? 0.4 : 1,
@@ -417,7 +423,7 @@ export default function SettingsPage() {
                     tierReturnFocusRef.current = e.currentTarget;
                     requestTier("down");
                   }}
-                  className="alpha-ui text-sm underline underline-offset-4"
+                  className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{
                     color: "var(--ink-soft)",
                     opacity: busyTier ? 0.4 : 1,
@@ -510,7 +516,7 @@ export default function SettingsPage() {
                 setBillingMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't open billing." });
               }
             }}
-            className="alpha-ui text-sm underline underline-offset-4"
+            className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--accent-ink)" }}
           >
             Manage subscription →
@@ -603,6 +609,8 @@ export default function SettingsPage() {
                   ? `Delete your alpha. account?\n\nThis removes your letters and profile and can't be undone. We cancel your $${monthlyDollars}/mo subscription as part of this. To be safe you can confirm it's gone in "Manage subscription" above first.\n\nDelete anyway?`
                   : "Delete your alpha. account? This removes your saved letters and profile. Can't be undone.";
                 if (!confirm(confirmMsg)) return;
+                if (deleteInFlight.current) return;
+                deleteInFlight.current = true;
                 const result = await deleteUserAccount();
                 if (!result.ok) {
                   alert(`Couldn't delete: ${result.error}\nLocal data will still clear.`);

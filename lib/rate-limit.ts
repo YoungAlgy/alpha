@@ -44,6 +44,28 @@ export function rateLimit(
   return { ok: true, remaining: limit - b.count, retryAfterSec: 0 };
 }
 
+// Separate from rateLimit() above on purpose: that counts VOLUME (how many
+// requests in a window), this catches IDENTICAL requests (the same payload
+// twice) -- a rapid double-click or a double-submit before a render commits
+// disables the button, which volume-only rate limiting doesn't defend
+// against at all (both requests are well under any reasonable per-hour cap).
+// Same Map-based, per-instance, resets-on-cold-start tradeoffs as buckets
+// above -- fine for a casual-double-click deterrent, not a durable guarantee.
+const recentSubmissions = new Map<string, number>();
+
+/** True (and records the key) if this exact key was already seen within
+ *  windowMs. Callers should treat a true result as "already handled" and
+ *  skip the real side effect (DB write, outbound email) rather than erroring. */
+export function isDuplicateSubmission(key: string, windowMs: number): boolean {
+  const now = Date.now();
+  const seenAt = recentSubmissions.get(key);
+  if (seenAt !== undefined && now - seenAt < windowMs) {
+    return true;
+  }
+  recentSubmissions.set(key, now);
+  return false;
+}
+
 export function clientKeyFromRequest(req: Request): string {
   // cf-connecting-ip is set by Cloudflare's edge itself (the app runs as a
   // Cloudflare Worker) and can't be spoofed by the caller. x-forwarded-for is

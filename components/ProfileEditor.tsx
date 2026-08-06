@@ -240,7 +240,7 @@ export function ProfileEditor() {
                     setForm((f) => ({ ...f, gender: f.gender === g ? "" : g }));
                     if (msg) setMsg(null);
                   }}
-                  className="alpha-ui text-sm px-4 py-1.5 rounded-full border transition"
+                  className="alpha-ui text-sm px-4 py-2.5 rounded-full border transition"
                   style={{
                     borderColor: active ? "var(--accent)" : "var(--rule)",
                     background: active ? "var(--callout-bg)" : "transparent",

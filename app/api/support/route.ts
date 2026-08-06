@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { supabaseServiceClient } from "@/lib/supabase/server";
+import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { resendConfigured } from "@/lib/email";
-import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
+import { rateLimit, clientKeyFromRequest, isDuplicateSubmission } from "@/lib/rate-limit";
 import { isValidEmail } from "@/lib/validate-email";
 
 export const runtime = "nodejs";
@@ -51,6 +51,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  // Dedup, not just rate-limit: a rapid double-click or a double-submit
+  // before React's disabled-state render commits sails straight through the
+  // 5/hour volume cap above (both requests are well under it) and used to
+  // insert two identical tickets + send two identical owner-notify emails
+  // for what the user experienced as one submission. ip+email+message is a
+  // reasonable identity for "the same submission" without needing a
+  // client-generated idempotency key.
+  if (isDuplicateSubmission(`support:${ip}:${body.email}:${body.message}`, 60_000)) {
+    return NextResponse.json({ ok: true });
+  }
+
+  // Soft/optional identity: doesn't require sign-in (this form is reachable
+  // signed-out), but a signed-in submitter's ticket should carry their real
+  // user_id -- otherwise deleteSupportTicketsBeforeDelete (lib/stripe-cancel.ts)
+  // can never find their rows when they later delete their account, silently
+  // orphaning support-ticket PII despite the privacy page's "delete your
+  // account and all associated data" promise (found in review 2026-08-06).
+  let userId: string | null = null;
+  try {
+    const sb = await supabaseServerClient();
+    const {
+      data: { user },
+    } = await sb.auth.getUser();
+    userId = user?.id ?? null;
+  } catch {
+    // Not signed in / Supabase unreachable -- fine, ticket still saves as
+    // anonymous (userId stays null), matching today's behavior.
+  }
+
   const supabaseConfigured =
     !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
     (!!process.env.SUPABASE_SECRET_KEY || !!process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -59,6 +88,7 @@ export async function POST(req: Request) {
     try {
       const sb = await supabaseServiceClient();
       const { error } = await sb.from("support_tickets").insert({
+        user_id: userId,
         name: body.name || null,
         email: body.email,
         message: body.message,

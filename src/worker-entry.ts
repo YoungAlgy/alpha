@@ -125,6 +125,16 @@ export default {
     const url = new URL(request.url)
 
     if (blocksCsrf(request.method, request.headers.get('sec-fetch-site'), url.pathname)) {
+      // A blocked request never reaches the route it targeted, so that
+      // route's own logging never runs -- without this, a false-positive
+      // block (a future frontend regression away from a same-origin fetch, a
+      // proxy/CDN header quirk) would silently 403 real requests with zero
+      // signal anywhere; the first sign would be a customer complaint. Found
+      // in review 2026-08-06, right after /api/generate was added to the
+      // guarded list.
+      console.warn(
+        `[csrf-guard] blocked ${request.method} ${url.pathname} (sec-fetch-site=${request.headers.get('sec-fetch-site')})`,
+      )
       return new Response(JSON.stringify({ error: 'Cross-site request blocked.' }), {
         status: 403,
         headers: { 'Content-Type': 'application/json' },

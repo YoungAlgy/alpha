@@ -59,9 +59,27 @@ export async function GET() {
     return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
   }
 
+  // The delete path (lib/stripe-cancel.ts's deleteSupportTicketsBeforeDelete)
+  // treats a subscriber's support tickets as their data to remove -- this
+  // export must agree on what "the user's data" means, matching the same
+  // privacy-page promise. Note: only tickets submitted while signed in ever
+  // carry a real user_id (app/api/support/route.ts, fixed 2026-08-06) --
+  // anonymous submissions and anything filed before that fix won't appear
+  // here even though they exist in the table.
+  const { data: supportTickets, error: supportErr } = await svc
+    .from("support_tickets")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: true });
+  if (supportErr) {
+    console.error("[account/export] support_tickets fetch failed:", supportErr.message);
+    return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
+  }
+
   return NextResponse.json({
     exported_at: new Date().toISOString(),
     profile,
     issues,
+    support_tickets: supportTickets,
   });
 }

@@ -32,7 +32,7 @@ export function AudioToggle({ compact = false }: { compact?: boolean }) {
       type="button"
       onClick={toggle}
       aria-label={on ? "Mute audio" : "Unmute audio"}
-      className="alpha-ui text-sm font-medium rounded-full border p-2"
+      className="alpha-ui text-sm font-medium rounded-full border p-3"
       style={{
         borderColor: "var(--rule)",
         color: "var(--ink-soft)",

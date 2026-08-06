@@ -98,7 +98,7 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
               setEditing(true);
               setErr(null);
             }}
-            className="alpha-ui text-sm underline underline-offset-4"
+            className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--accent-ink)" }}
           >
             Change email →

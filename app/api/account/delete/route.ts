@@ -1,6 +1,19 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { cancelStripeSubscriptionsBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
+import { rateLimit } from "@/lib/rate-limit";
+
+// A GoTrue admin "user not found" error, in whatever shape the SDK happens to
+// surface it (status 404, or a code/message naming the condition) -- checked
+// defensively rather than pinned to one exact shape since this isn't
+// documented as a stable contract. Used below to treat "already gone" as
+// success, not failure.
+function isUserNotFoundError(e: { status?: unknown; code?: unknown; message?: unknown }): boolean {
+  if (e.status === 404) return true;
+  const code = typeof e.code === "string" ? e.code.toLowerCase() : "";
+  const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
+  return code.includes("not_found") || message.includes("not found") || message.includes("not_found");
+}
 
 export const runtime = "nodejs";
 
@@ -35,6 +48,20 @@ export async function POST() {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
+  // Every sibling account/* route (profile, topics, export, email/reconcile)
+  // rate-limits per user id; this route was the one gap (found in review
+  // 2026-08-06). Delete has no per-second-click cost the way generation does,
+  // but the goal here is the same as everywhere else it's applied: a speed
+  // bump against a scripted/hijacked-session caller hammering the route, not
+  // a normal-usage constraint (an account only gets deleted once).
+  const limited = rateLimit(`account-delete:${user.id}`, { limit: 10, windowMs: 60 * 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many requests. Try again in ${Math.ceil(limited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+
   const svc = await supabaseServiceClient();
 
   // Cancel any Stripe subscription FIRST — deleting the auth user cascades away
@@ -52,11 +79,22 @@ export async function POST() {
 
   const { error } = await svc.auth.admin.deleteUser(user.id);
   if (error) {
-    console.error("[account/delete] failed:", error.message);
-    return NextResponse.json(
-      { error: "Couldn't delete your account. Try again or contact support." },
-      { status: 500 },
-    );
+    // A concurrent second click/tab racing this same delete: whichever
+    // request completes second hits an auth.users row the first one already
+    // removed. The END STATE both requests wanted (no auth user) is already
+    // true, so this isn't really a failure -- treating it as one showed a
+    // real signed-in user a scary "couldn't delete" alert on an account that
+    // was, in fact, already gone (found in review 2026-08-06; no client-side
+    // guard existed to prevent the double-click that triggers this).
+    if (isUserNotFoundError(error)) {
+      console.warn(`[account/delete] deleteUser reported not-found for ${user.id} — already deleted, treating as success`);
+    } else {
+      console.error("[account/delete] failed:", error.message);
+      return NextResponse.json(
+        { error: "Couldn't delete your account. Try again or contact support." },
+        { status: 500 },
+      );
+    }
   }
 
   // Best-effort sign-out so the now-orphaned session cookie is cleared.
