@@ -5,7 +5,7 @@ import { getStripeClient } from "@/lib/stripe";
 import { generateIssue } from "@/lib/engine/assemble";
 import { persistIssueIfPossible } from "@/lib/engine/persist";
 import { isValidTopicId, MAX_CUSTOM_TOPIC_LEN, CUSTOM_PREFIX } from "@/lib/topics";
-import { sendLetterNotification, resendConfigured } from "@/lib/email";
+import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
@@ -274,7 +274,27 @@ export async function POST(req: Request) {
     const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
     const inboxUrl = `${origin}/inbox`;
     let emailSent = false;
-    if (profile.email && resendConfigured()) {
+    // alpha-deliverability-03: sendLetterNotification's List-Unsubscribe
+    // header + in-body unsubscribe link both require a real userId (the
+    // unsubscribe token is HMAC(userId) -- see lib/unsubscribe.ts). Without
+    // persistence.userId (a rare generateLink/Supabase hiccup on this exact
+    // signup, per persist.ts's own try/catch), sending anyway would ship a
+    // commercial email with NO unsubscribe mechanism at all -- a CAN-SPAM
+    // violation and a spam-filter risk that outlives this one reader. Skip
+    // the send instead: they already saw their letter rendered live on this
+    // page regardless, and the alert below makes the gap visible rather
+    // than a silent, permanent loss of their first email.
+    if (profile.email && resendConfigured() && !persistence?.userId) {
+      console.warn(
+        `[generate] skipping onboarding email for ${profile.email} -- no persisted userId, would ship with no unsubscribe mechanism`
+      );
+      await sendOpsAlert(
+        "alpha. onboarding email skipped (no unsubscribe mechanism)",
+        `${profile.email} generated a first letter but persistIssueIfPossible didn't return a userId, so the onboarding email was skipped rather than sent without List-Unsubscribe. They still saw the letter live on /writing. Check Supabase Auth admin API health.`,
+        `alpha-onboarding-email-skipped-${profile.email}-${weekOf}`
+      );
+    }
+    if (profile.email && resendConfigured() && persistence?.userId) {
       const toEmail = profile.email;
       let issueNumber = 1; // this reader's Nth letter (drives "Issue N" subject)
       let store: DeliveryStore | null = null;
