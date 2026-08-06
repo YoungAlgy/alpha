@@ -43,7 +43,19 @@ export function parseCookieHeader(header: string | null): { name: string; value:
       const idx = pair.indexOf('=')
       const name = idx === -1 ? pair : pair.slice(0, idx)
       const value = idx === -1 ? '' : pair.slice(idx + 1)
-      return { name, value: decodeURIComponent(value) }
+      // decodeURIComponent throws on malformed percent-encoding (e.g. a bare
+      // '%'), and this runs on every cookie in the header for every
+      // non-static request — an unrelated bad cookie (analytics, stale from
+      // a prior app version, or a crafted probe) must not 500 the whole
+      // Worker. Fall back to the raw value, matching the 'cookie' npm
+      // package's parse() behavior.
+      let decoded = value
+      try {
+        decoded = decodeURIComponent(value)
+      } catch {
+        // keep raw value
+      }
+      return { name, value: decoded }
     })
 }
 

@@ -57,6 +57,21 @@ export function QuestionStep({
     if (loaded) setValue((state[field] as string) || "");
   }, [loaded, field, state]);
 
+  // Every QuestionStep past /name (city, role, focus, fun, email) is a direct
+  // URL a browser will happily load with empty or partial localStorage — none
+  // of that comes for free, the router doesn't know a prior step was skipped.
+  // firstName is the earliest field this funnel collects, so its absence here
+  // means the visitor never went through /name at all: bounce to /welcome
+  // rather than let them fill in a downstream field on top of nothing. Mirrors
+  // the completeness gate app/checkout and app/writing already enforce for
+  // firstName/topics before the charge.
+  useEffect(() => {
+    if (!loaded) return;
+    if (currentPath !== "name" && !state.firstName) {
+      router.replace("/welcome" as never);
+    }
+  }, [loaded, state.firstName, currentPath, router]);
+
   const trimmed = value.trim();
   const canContinue = optional || trimmed.length > 0;
 

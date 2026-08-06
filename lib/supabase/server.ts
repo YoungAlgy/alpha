@@ -11,6 +11,15 @@ export async function supabaseServerClient() {
   }
   const cookieStore = await cookies();
   return createServerClient(url, key, {
+    // Bound every request this client makes (no override = an unbounded
+    // fetch — e.g. a merely-slow, not-erroring auth call — could stall a
+    // route handler indefinitely with nothing to catch it). Matches the
+    // AbortSignal.timeout pattern used by every other fetch-based client in
+    // the app (lib/email.ts, lib/engine/*-client.ts, lib/brave.ts, lib/you-search.ts).
+    global: {
+      fetch: (input, init) =>
+        fetch(input, { ...init, signal: AbortSignal.timeout(10_000) }),
+    },
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -42,5 +51,11 @@ export async function supabaseServiceClient() {
   const { createClient } = await import("@supabase/supabase-js");
   return createClient(url, serviceKey, {
     auth: { persistSession: false },
+    // Bound every request this client makes — see the matching comment in
+    // supabaseServerClient() above for why.
+    global: {
+      fetch: (input, init) =>
+        fetch(input, { ...init, signal: AbortSignal.timeout(10_000) }),
+    },
   });
 }

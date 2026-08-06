@@ -149,9 +149,22 @@ export const BLURB_CAPS = { jobBlurb: 500, projectBlurb: 600, funBlurb: 500 } as
 export const TOPICS_PER_BUNDLE = 5;
 export const MIN_TOPIC_QUOTA = 5;
 export const MAX_TOPIC_QUOTA = 25;
-/** Clamp a topic quota to the allowed [5, 25] range. */
-export const clampQuota = (n: number): number =>
-  Math.max(MIN_TOPIC_QUOTA, Math.min(MAX_TOPIC_QUOTA, n));
+// Stripe price per bundle, in cents. Single-sourced so the update-quantity
+// route's unit_amount fallback and the settings page's pre-confirm price
+// estimates (shown before Stripe has actually been called) can't drift
+// apart on what a bundle costs. The route's `monthlyCents` response is still
+// the authoritative number once it's available — this constant only backs
+// the estimates shown before/without a live Stripe read.
+export const PRICE_PER_BUNDLE_CENTS = 500;
+// Clamp a topic quota to the allowed [5, 25] range AND snap it onto the
+// 5-per-bundle grid. Every current write path already passes a multiple of
+// TOPICS_PER_BUNDLE, but nothing upstream (app code or the DB column) rejects
+// an off-grid value, so this is the one place that must not assume its input
+// is well-formed.
+export const clampQuota = (n: number): number => {
+  const onGrid = Math.round(n / TOPICS_PER_BUNDLE) * TOPICS_PER_BUNDLE;
+  return Math.max(MIN_TOPIC_QUOTA, Math.min(MAX_TOPIC_QUOTA, onGrid));
+};
 
 export interface Theme {
   id: ThemeId;

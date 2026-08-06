@@ -194,21 +194,41 @@ export async function GET(req: Request) {
   // null)` cut these paying customers off weeks early. Mirrors
   // lib/access.hasActiveAccess().
   const nowIso = new Date().toISOString();
-  const { data: subscribers, error } = await sb
-    .from("users")
-    .select(
-      "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, theme, topics, topic_quota"
-    )
-    .not("subscribed_at", "is", null)
-    .or(`cancelled_at.is.null,cancelled_at.gt.${nowIso}`)
-    .is("unsubscribed_at", null);
+  // Paginated fetch -- an unbounded .select() here silently truncates at
+  // PostgREST's default db.max_rows (1,000), and does so with error === null,
+  // so nothing downstream would ever see a failure. Every guard built on top
+  // of `rows` further down (alreadyDelivered's and pendingIssues' own
+  // .in("user_id", rows.map(...)) prefetches below, priorIssueCountsPromise's
+  // RPC, the send loop itself) is correctly bounded RELATIVE TO rows -- but
+  // all of that is moot if `rows` was already missing subscribers before any
+  // of them ran. Past ~1,000 active subscribers, and with no .order() an
+  // unbounded select's row order isn't even guaranteed stable run to run, so
+  // the dropped slice isn't reliably "the newest 1,000" -- it's arbitrary,
+  // and those subscribers get zero letter, zero `deferred` entry, and zero
+  // ops alert. Same fix, same reasoning as gatherStats() in
+  // app/api/admin/users/route.ts.
+  const SUBSCRIBER_PAGE_SIZE = 1000;
+  const rows: SubscriberRow[] = [];
+  for (let from = 0; ; from += SUBSCRIBER_PAGE_SIZE) {
+    const { data: page, error } = await sb
+      .from("users")
+      .select(
+        "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, theme, topics, topic_quota"
+      )
+      .not("subscribed_at", "is", null)
+      .or(`cancelled_at.is.null,cancelled_at.gt.${nowIso}`)
+      .is("unsubscribed_at", null)
+      .order("id")
+      .range(from, from + SUBSCRIBER_PAGE_SIZE - 1);
 
-  if (error) {
-    console.error("[cron/weekly-send] subscriber fetch failed:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error("[cron/weekly-send] subscriber fetch failed:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!page || page.length === 0) break;
+    rows.push(...(page as SubscriberRow[]));
+    if (page.length < SUBSCRIBER_PAGE_SIZE) break;
   }
-
-  const rows = (subscribers ?? []) as SubscriberRow[];
 
   // Kick off the PRIOR DELIVERED issue count RPC right away, unawaited --
   // it queries week_of < weekOf, a disjoint, strictly-earlier row set than
@@ -380,42 +400,70 @@ export async function GET(req: Request) {
     { volume: number; number: number; editor_intro: string; sections: Issue["sections"] }
   >();
   {
-    // Prefetch this week's delivered stamps in ONE query (was a per-subscriber
-    // lookup — N+1 that adds a round trip per user as the list grows).
-    // Scoped with .in("user_id", ...) to exactly this run's active subscriber
-    // list -- besides narrowing the scan, this also bounds the row count to
-    // rows.length instead of "however many subscribers got a letter today
-    // across the whole table", so PostgREST's silent 1,000-row select cap
-    // can't bite even once active-subscriber count is large (a much higher,
-    // less urgent bar than priorIssueCount's LIFETIME-count problem below,
-    // but free to close outright here rather than just deferring it).
+    // Both queries below filter with .in("user_id", ...) rather than a
+    // .rpc() (contrast priorIssueCountsPromise above), so supabase-js sends
+    // them as a GET with the id list serialized into the URL's query string
+    // (confirmed by reading node_modules/@supabase/postgrest-js) -- roughly
+    // 37 chars per UUID. Unchunked, that scales the URL directly with
+    // rows.length: ~18.5KB at 500 subscribers, ~37KB at 1,000, well past
+    // Cloudflare Workers' documented 16KB fetch() URL limit and Supabase's
+    // own gateway cap. Left unchunked, the 1,000-row select-cap problem this
+    // block was written to close (see below) would just be traded for a
+    // 400/414 -- or a silent proxy-level truncation -- at a similar or lower
+    // subscriber count. Chunking the id list keeps every request's filter
+    // comfortably under those limits no matter how large rows.length grows.
+    const PREFETCH_ID_CHUNK_SIZE = 200;
+    const idChunks: string[][] = [];
+    for (let i = 0; i < rows.length; i += PREFETCH_ID_CHUNK_SIZE) {
+      idChunks.push(rows.slice(i, i + PREFETCH_ID_CHUNK_SIZE).map((r) => r.id));
+    }
+
+    // Prefetch this week's delivered stamps in one query PER CHUNK (was a
+    // per-subscriber lookup — N+1 that adds a round trip per user as the
+    // list grows). Scoped with .in("user_id", ...) to exactly this run's
+    // active subscriber list -- besides narrowing the scan, this also
+    // bounds the row count to rows.length instead of "however many
+    // subscribers got a letter today across the whole table", so
+    // PostgREST's silent 1,000-row select cap can't bite even once
+    // active-subscriber count is large (a much higher, less urgent bar than
+    // priorIssueCount's LIFETIME-count problem below, but free to close
+    // outright here rather than just deferring it).
     const stampsPromise =
       !force && rows.length > 0
-        ? sb
-            .from("issues")
-            .select("user_id")
-            .eq("week_of", weekOf)
-            .not("delivered_at", "is", null)
-            .in("user_id", rows.map((r) => r.id))
+        ? Promise.all(
+            idChunks.map((ids) =>
+              sb
+                .from("issues")
+                .select("user_id")
+                .eq("week_of", weekOf)
+                .not("delivered_at", "is", null)
+                .in("user_id", ids)
+            )
+          ).then((results) => results.flatMap((r) => r.data ?? []))
         : null;
     // Prefetch each subscriber's persisted-but-undelivered issue (retry-safety
-    // reuse below, near runPersistAndSend) in ONE query — was a per-subscriber
-    // lookup inside the loop, mirroring the alreadyDelivered fix above.
-    const pendingPromise = sb
-      .from("issues")
-      .select("user_id, volume, number, editor_intro, sections")
-      .eq("week_of", weekOf)
-      .is("delivered_at", null)
-      .in("user_id", rows.map((r) => r.id));
+    // reuse below, near runPersistAndSend) in one query PER CHUNK — was a
+    // per-subscriber lookup inside the loop, mirroring the alreadyDelivered
+    // fix above.
+    const pendingPromise = Promise.all(
+      idChunks.map((ids) =>
+        sb
+          .from("issues")
+          .select("user_id, volume, number, editor_intro, sections")
+          .eq("week_of", weekOf)
+          .is("delivered_at", null)
+          .in("user_id", ids)
+      )
+    ).then((results) => results.flatMap((r) => r.data ?? []));
 
     const [stampsResult, pendingResult] = await Promise.all([
       stampsPromise ?? Promise.resolve(null),
       pendingPromise,
     ]);
-    for (const s of (stampsResult?.data ?? []) as Array<{ user_id: string }>) {
+    for (const s of (stampsResult ?? []) as Array<{ user_id: string }>) {
       alreadyDelivered.add(s.user_id);
     }
-    for (const p of (pendingResult.data ?? []) as Array<{
+    for (const p of (pendingResult ?? []) as Array<{
       user_id: string;
       volume: number;
       number: number;
@@ -464,12 +512,22 @@ export async function GET(req: Request) {
 
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
   // total Claude time is bounded by topics-this-week, not users × topics.
-  // NOTE for scale: at ~100+ subscribers the per-user generation time will
-  // press against maxDuration. CRON_TIME_BUDGET_MS (below) is the interim
-  // safety net — it stops starting new subscribers before that becomes a
-  // silent Vercel kill, deferring the rest loudly instead. The real fix at
-  // that scale is still chunked sends (cursor param + multiple cron slots),
-  // not parallelism (Claude rate limits bind first) — not built yet.
+  // NOTE for scale: "~100+ subscribers" undersells where the real ceiling
+  // is. Even with every topic cached (zero generation cost), each
+  // subscriber still pays runPersistAndSend's ~3-4 sequential network round
+  // trips (issue upsert, delivered_at claim, Resend call, proof-of-send
+  // write) — at a conservative ~400-600ms combined, that alone is a fixed
+  // floor of roughly 2,200-3,300 subscribers before CRON_TIME_BUDGET_MS
+  // (below) is exhausted by overhead, independent of and well before any
+  // generation cost becomes the bottleneck. CRON_TIME_BUDGET_MS is the
+  // interim safety net — it stops starting new subscribers before that
+  // becomes a silent Vercel kill, deferring the rest loudly instead (though
+  // a deferred subscriber is effectively skipped, not delayed: tomorrow's
+  // cron computes a new weekOf and never revisits today's unprocessed
+  // tail). The real fix at that scale is still chunked sends (cursor param
+  // + multiple cron slots) — not parallelizing generation (Claude rate
+  // limits bind first there), though batching the persist+send tail alone
+  // would push the overhead floor above out further — not built yet.
   for (const row of rows) {
     // letterSize = sections they pay for. The topics array is their ranked
     // POOL — clamp it to poolCap (letterSize + backups, ≤25) so generation

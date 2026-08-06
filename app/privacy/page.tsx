@@ -31,8 +31,10 @@ export default function PrivacyPage() {
           to your account so you can re-read past issues.
         </li>
         <li>
-          <strong>Usage signals:</strong> when you open the app, which letters you
-          read, and basic device info. Used only to improve the product, never sold.
+          <strong>Usage signals:</strong> basic product analytics (like page
+          views), only if we&apos;ve turned it on for the app. Off by default.
+          Used only to improve the product, never sold. We don&apos;t track
+          which individual letters you read or collect device fingerprinting.
         </li>
       </ul>
 

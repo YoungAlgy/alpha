@@ -281,7 +281,7 @@ export default function TopicsPage() {
                             onClick={() => toggle(id as TopicId)}
                             disabled={chipAtLimit}
                             aria-pressed={chipPicked}
-                            className="alpha-ui text-sm px-3 py-1.5 rounded-full inline-flex items-center gap-1.5"
+                            className="alpha-ui text-sm px-3 py-2 rounded-full inline-flex items-center gap-1.5"
                             style={{
                               background: chipPicked ? "var(--callout-bg)" : "transparent",
                               border: `1.5px solid ${chipPicked ? "var(--accent)" : "var(--rule)"}`,
@@ -326,7 +326,7 @@ export default function TopicsPage() {
                     type="button"
                     onClick={() => removeAt(id)}
                     aria-label={`Remove ${topicLabel(id)}`}
-                    className="alpha-mono leading-none"
+                    className="alpha-mono leading-none p-2 -m-2"
                     style={{ color: "var(--accent-ink)" }}
                   >
                     ✕
@@ -454,13 +454,17 @@ export default function TopicsPage() {
                       <span className="alpha-display text-sm font-semibold flex-1 min-w-0 truncate">
                         {topicEmoji(id)} {topicLabel(id)}
                       </span>
+                      {/* Reorder pair and remove are separated (ml-2 gap) and each button
+                          gets a min-w/min-h-[40px] hit area so a mistap can't remove a
+                          paid pick while trying to reorder it -- the glyph stays small,
+                          only the tappable box grows. */}
                       <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={() => move(i, -1)}
                           disabled={i === 0}
                           aria-label={`Move ${topicLabel(id)} up`}
-                          className="alpha-mono text-sm px-1.5 leading-none"
+                          className="alpha-mono text-sm leading-none min-w-[40px] min-h-[40px] flex items-center justify-center"
                           style={{ color: "var(--ink-soft)", opacity: i === 0 ? 0.25 : 1, cursor: i === 0 ? "default" : "pointer" }}
                         >
                           ▲
@@ -470,7 +474,7 @@ export default function TopicsPage() {
                           onClick={() => move(i, 1)}
                           disabled={i === picked.length - 1}
                           aria-label={`Move ${topicLabel(id)} down`}
-                          className="alpha-mono text-sm px-1.5 leading-none"
+                          className="alpha-mono text-sm leading-none min-w-[40px] min-h-[40px] flex items-center justify-center"
                           style={{ color: "var(--ink-soft)", opacity: i === picked.length - 1 ? 0.25 : 1, cursor: i === picked.length - 1 ? "default" : "pointer" }}
                         >
                           ▼
@@ -479,7 +483,7 @@ export default function TopicsPage() {
                           type="button"
                           onClick={() => removeAt(id)}
                           aria-label={`Remove ${topicLabel(id)}`}
-                          className="alpha-mono text-sm px-1.5 leading-none"
+                          className="alpha-mono text-sm leading-none min-w-[40px] min-h-[40px] flex items-center justify-center ml-2"
                           style={{ color: "var(--accent-ink)" }}
                         >
                           ✕

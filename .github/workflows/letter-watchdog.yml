@@ -439,3 +439,46 @@ jobs:
           send_resend_alert "[alpha] Resilience-tier send secret(s) missing: ${SOFT_MISSING}" "${ALERT_BODY}"
           open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
           exit 1
+
+  heartbeat:
+    # Free third-party dead-man's-switch (healthchecks.io free tier) -- closes
+    # the meta-gap found in a 2026-08-05 adversarial review: nothing before
+    # this confirmed letter-watchdog.yml ITSELF still runs. repo-keepalive.yml
+    # only stops GitHub's 60-day-inactivity auto-disable of scheduled
+    # workflows; it does nothing for someone manually clicking "Disable
+    # workflow" in the Actions tab, a GitHub Actions platform outage pausing
+    # scheduled runs across the board, or this YAML itself becoming invalid
+    # after a bad merge/copy-paste. All three are invisible from inside
+    # GitHub Actions -- the same way the original 5-day cron outage was
+    # invisible, just one level up the stack, with nothing meta-watching the
+    # watchdog.
+    #
+    # `needs:` still orders this job after both checks (so it reports on a
+    # COMPLETE run, not one still in flight), but `if: always()` is load-
+    # bearing: GitHub Actions' default `needs` behavior SKIPS a dependent job
+    # when a dependency fails, and check-delivery legitimately exits 1 on a
+    # genuine delivery problem (see its own `exit 1` after alerting, above).
+    # Without always(), the heartbeat would silently stop pinging on exactly
+    # the days there's a REAL problem to report -- the dead-man's-switch
+    # exists to confirm the SCRIPT RAN, not that it found nothing wrong, and
+    # a missing ping on a bad day would read as "the watchdog itself is
+    # broken" on top of the real, already-alerted problem.
+    needs: [check-delivery, check-resilience-secrets]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping healthchecks.io to confirm this workflow actually ran
+        # Optional -- inert until Algy signs up for a free healthchecks.io
+        # account and adds WATCHDOG_HEARTBEAT_PING_URL as a repo secret (same
+        # "unset = skip cleanly, never fail the run" convention as
+        # OPS_ALERT_WEBHOOK_URL elsewhere in this repo). Without this guard,
+        # curl with an empty URL argument fails immediately, and every single
+        # daily run would show a red X until that setup step happens.
+        env:
+          PING_URL: ${{ secrets.WATCHDOG_HEARTBEAT_PING_URL }}
+        run: |
+          if [ -z "${PING_URL}" ]; then
+            echo "WATCHDOG_HEARTBEAT_PING_URL not set -- skipping heartbeat ping (see this step's comment to enable)."
+            exit 0
+          fi
+          curl -fsS --max-time 10 --retry 3 "${PING_URL}"

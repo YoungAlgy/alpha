@@ -190,7 +190,29 @@ export async function POST(req: Request) {
         // item assumed (one Alpha price). Defaults to 1 → quota 5 if for
         // any reason the items list is empty. Cap at 25 (5 add-ons max).
         const firstItem = sub.items?.data?.[0];
-        const quantity = firstItem?.quantity ?? 1;
+        const snapshotQuantity = firstItem?.quantity ?? 1;
+        // Stripe delivers webhooks at-least-once and NOT in order. Rapidly
+        // clicking "add topic bundle" fires back-to-back subscription.updated
+        // events (update-quantity/route.ts's own write-through already set
+        // topic_quota from the LATEST click); if an earlier event's delivery
+        // is delayed/retried and lands after a later one, trusting ITS
+        // embedded snapshot would overwrite topic_quota back down to a stale
+        // quantity forever (nothing else self-heals it). Re-reading the LIVE
+        // subscription at handler time means every delivery, in whatever
+        // order it lands, converges on Stripe's actual current quantity
+        // instead of freezing whichever snapshot happened to arrive last.
+        // Best-effort: on a retrieve failure, fall back to this event's own
+        // snapshot rather than dropping the mirror entirely.
+        let quantity = snapshotQuantity;
+        try {
+          const liveSub = await stripe.subscriptions.retrieve(sub.id);
+          quantity = liveSub.items?.data?.[0]?.quantity ?? snapshotQuantity;
+        } catch (e) {
+          console.warn(
+            "[stripe-webhook] live subscription retrieve failed; using event snapshot:",
+            e instanceof Error ? e.message : e
+          );
+        }
         const topicQuota = clampQuota(quantity * TOPICS_PER_BUNDLE);
         // Throw on failure -> 5xx -> Stripe retries (#35). Set-to-current, so
         // a retry is idempotent. Silently losing this write desyncs paid quota
@@ -311,7 +333,8 @@ export async function POST(req: Request) {
         break;
     }
   } catch (e) {
-    console.error("[stripe-webhook] handler error:", e instanceof Error ? e.message : e);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[stripe-webhook] handler error:", msg);
     // Return 5xx so Stripe RETRIES (webhooks are at-least-once). The handlers are
     // idempotent — checkoutUserMutation does a non-clobbering update on an existing
     // row, the welcome email is gated on isFirstSubscription (reads the pre-write
@@ -320,6 +343,18 @@ export async function POST(req: Request) {
     // losing the user-row state-write (which would strand a paid user with no
     // access). A genuinely-unprocessable event just retries ~3d then Stripe stops
     // (log noise, no harm). (#35 — audit S27)
+    //
+    // But "retries ~3d then stops" is also the failure mode: if it keeps failing
+    // past the retry window (schema drift, an RLS change, a real bug), Stripe's
+    // dashboard shows it, but nothing here is watching that dashboard, so a paying
+    // customer is left with no users row / no quota / no welcome email and no one
+    // finds out. event.id keys the alert so Stripe's own retries of the same event
+    // don't re-page repeatedly. Best-effort: sendOpsAlert never throws.
+    await sendOpsAlert(
+      "alpha. webhook processing failed",
+      `event ${event.id} (${event.type}): ${msg}`,
+      `alpha-webhook-fail-${event.id}`
+    );
     return NextResponse.json({ received: false, error: "handler error" }, { status: 500 });
   }
 

@@ -12,8 +12,13 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
   if (!supabaseConfigured()) return;
   try {
     const sb = supabaseClient();
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) return; // unauth = no sync, localStorage is the source of truth
+    // getUser() (not getSession()): this write goes straight to Postgres
+    // via RLS, so the local-only cached session isn't enough. getUser()
+    // round-trips to GoTrue and rejects a revoked session, the same
+    // signOut()-then-still-usable-token gap every server route already
+    // closes by calling getUser() instead of trusting a cached session.
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return; // unauth = no sync, localStorage is the source of truth
     // NOTE: theme is deliberately NOT synced here. It's owned by setTheme()
     // (live changes write the DB directly) and by persist() at checkout. If we
     // wrote it from this in-memory state too, a later update() (e.g. saving
@@ -59,7 +64,7 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
     const { error } = await sb
       .from("users")
       .update(updates)
-      .eq("id", session.user.id);
+      .eq("id", user.id);
     if (error) {
       console.warn("[user-sync] update failed:", error.message);
     }

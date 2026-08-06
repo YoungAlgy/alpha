@@ -31,19 +31,14 @@ export default function SigninPage() {
     return () => clearTimeout(t);
   }, [cooldown]);
 
-  // Pre-fill remembered email + onboarding email
+  // Pre-fill remembered email. We deliberately do NOT also fall back to the
+  // `alpha-onboarding` key here — that key can be old and belong to a
+  // previous person on a shared/public computer, and silently dropping
+  // their email into this box risks a login code going to the wrong inbox.
   useEffect(() => {
     try {
       const remembered = localStorage.getItem(REMEMBERED_EMAIL_KEY);
-      if (remembered) {
-        setEmail(remembered);
-        return;
-      }
-      const onboarding = localStorage.getItem("alpha-onboarding");
-      if (onboarding) {
-        const parsed = JSON.parse(onboarding) as { email?: string };
-        if (parsed.email) setEmail(parsed.email);
-      }
+      if (remembered) setEmail(remembered);
     } catch {
       // ignore
     }

@@ -40,7 +40,7 @@ const STORAGE_KEY_ISSUE = "alpha-first-issue";
 
 export default function WritingPage() {
   const router = useRouter();
-  const { state, loaded } = useOnboarding();
+  const { state, loaded, reset } = useOnboarding();
   const [currentStep, setCurrentStep] = useState(0);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +130,11 @@ export default function WritingPage() {
         // cookie and bounces to /inbox via /auth/callback. Without this the
         // user lands on /inbox unauthenticated and gets sent back to /welcome.
         setTimeout(() => {
+          // Wipe onboarding answers (name, email, birthday, etc.) now that
+          // the account exists and the letter is generated — this is a
+          // shared/library-computer risk otherwise (next visitor's forms and
+          // even /signin's email field would silently prefill from it).
+          reset();
           if (data.magicLink) {
             window.location.href = data.magicLink;
           } else {
@@ -154,6 +159,10 @@ export default function WritingPage() {
       clearInterval(stepTimer);
       clearTimeout(escapeTimer);
     };
+    // steps.length (read inside the interval closure) and reset (a stable
+    // useCallback with [] deps) are deliberately left out: startedRef already
+    // gates this effect to run its logic once, so neither belongs in the trigger list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, state, router]);
 
   const pct = Math.min(100, Math.round(((currentStep + (done ? 1 : 0)) / steps.length) * 100));

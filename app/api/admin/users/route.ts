@@ -105,17 +105,31 @@ async function requireAdmin(): Promise<
   return { ok: true, userId: user.id };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate.res;
 
+  // Without q/before, the row list is capped at the newest 200 signups with no
+  // way to reach anyone older — gatherStats() below still counts the whole
+  // table correctly, but the actionable list would silently hide everyone else.
+  // `q` searches every user by email regardless of the cap; `before` (a
+  // created_at cursor) pages backwards through the same newest-first order so
+  // the rest of the table stays reachable without one.
+  const { searchParams } = new URL(req.url);
+  const q = searchParams.get("q")?.trim();
+  const before = searchParams.get("before");
+
   const sb = await supabaseServiceClient();
+  let usersQuery = sb
+    .from("users")
+    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, created_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (q) usersQuery = usersQuery.ilike("email", `%${q}%`);
+  else if (before) usersQuery = usersQuery.lt("created_at", before);
+
   const [{ data: users, error }, stats] = await Promise.all([
-    sb
-      .from("users")
-      .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, created_at")
-      .order("created_at", { ascending: false })
-      .limit(200),
+    usersQuery,
     gatherStats(),
   ]);
 

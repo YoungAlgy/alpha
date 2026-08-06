@@ -34,7 +34,7 @@ export function StepShell({
           <button
             type="button"
             onClick={() => router.push(`/${prevPath}` as never)}
-            className="alpha-ui text-sm"
+            className="alpha-ui text-sm py-2 -my-2"
             style={{ color: "var(--ink-soft)" }}
           >
             ← Back

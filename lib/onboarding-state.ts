@@ -35,7 +35,13 @@ function read(): OnboardingState {
 
 function write(s: OnboardingState) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch {
+    // Storage blocked/full (Safari private mode, locked-down browser, etc).
+    // Fail soft and keep going in-memory for this session rather than
+    // throwing inside the setState updater and tripping the error boundary.
+  }
 }
 
 export function useOnboarding() {
@@ -48,14 +54,16 @@ export function useOnboarding() {
   }, []);
 
   const update = useCallback((patch: Partial<OnboardingState>) => {
-    setState((prev) => {
-      const next = { ...prev, ...patch };
-      write(next);
-      // Fire-and-forget Supabase sync if user is authed. Errors are swallowed
-      // inside syncUserProfile — never blocks the UI.
-      syncUserProfile(next);
-      return next;
-    });
+    // Merge onto the freshest localStorage contents, not the in-memory
+    // `state` -- another tab may have written since this tab last hydrated,
+    // and a merge onto stale in-memory state would silently overwrite
+    // whatever that other tab just saved.
+    const next = { ...read(), ...patch };
+    write(next);
+    // Fire-and-forget Supabase sync if user is authed. Errors are swallowed
+    // inside syncUserProfile — never blocks the UI.
+    syncUserProfile(next);
+    setState(next);
   }, []);
 
   const reset = useCallback(() => {

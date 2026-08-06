@@ -12,7 +12,7 @@ import { EmailChanger } from "@/components/EmailChanger";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
-import { clampQuota } from "@/lib/types";
+import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS } from "@/lib/types";
 
 export default function SettingsPage() {
   const { state, reset } = useOnboarding();
@@ -21,6 +21,13 @@ export default function SettingsPage() {
   // priceCents = current monthly bill in cents. Both come from public.users
   // (mirror of Stripe subscription quantity × $5).
   const [topicQuota, setTopicQuota] = useState<number>(5);
+  // The authoritative monthly price in cents, straight from Stripe via
+  // update-quantity's `monthlyCents` response — not re-derived client-side.
+  // null until the reader's first add/drop this session; until then the
+  // Billing section estimates from topicQuota using the same
+  // PRICE_PER_BUNDLE_CENTS/TOPICS_PER_BUNDLE rate the server falls back to,
+  // so there's one number that can drift instead of three copies of it.
+  const [monthlyCents, setMonthlyCents] = useState<number | null>(null);
   // True once the Supabase fetch below has resolved (success, failure, or no
   // user) at least once. Gates the Billing section so a reader on a non-5
   // tier never sees the hardcoded default flash before their real quota/price
@@ -126,10 +133,36 @@ export default function SettingsPage() {
     }
   }
 
-  // Open the in-app confirm panel for an add/drop. No network call yet.
-  function requestTier(direction: "up" | "down") {
+  // Open the in-app confirm panel for an add/drop. Re-reads topic_quota from
+  // the DB first: the cached topicQuota state can be stale (loaded once on
+  // mount, or last written by a previous confirmTier() call) while another
+  // tab/device or the webhook has since moved the real subscription. The
+  // panel's promised price/quota is derived from topicQuota (see
+  // pendingQuota below), so refreshing it here is what keeps that promise
+  // matched to what update-quantity/route.ts will actually act on. Best
+  // effort — if the read fails, fall back to whatever's already in state
+  // rather than blocking the reader from starting a plan change.
+  async function requestTier(direction: "up" | "down") {
     setBillingMsg(null);
     setJustAdded(false);
+    if (supabaseConfigured()) {
+      try {
+        const sb = supabaseClient();
+        const { data: { user } } = await sb.auth.getUser();
+        if (user) {
+          const { data: row } = await sb
+            .from("users")
+            .select("topic_quota")
+            .eq("id", user.id)
+            .maybeSingle();
+          if (row?.topic_quota && typeof row.topic_quota === "number") {
+            setTopicQuota(clampQuota(row.topic_quota));
+          }
+        }
+      } catch {
+        // ignore — panel still opens with the last-known quota
+      }
+    }
     setConfirmingTier(direction);
   }
 
@@ -150,7 +183,10 @@ export default function SettingsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setTopicQuota(data.topicQuota);
-      const dollars = (data.topicQuota / 5) * 5;
+      // Trust the server's real Stripe-derived monthlyCents rather than
+      // re-deriving dollars from topicQuota — see monthlyCents state comment.
+      setMonthlyCents(data.monthlyCents);
+      const dollars = (data.monthlyCents / 100).toFixed(2);
       if (direction === "up") {
         setJustAdded(true);
         setBillingMsg({ kind: "ok", text: `Added. You're on ${data.topicQuota} topics, $${dollars}/mo.` });
@@ -165,12 +201,18 @@ export default function SettingsPage() {
     }
   }
 
-  const monthlyDollars = (topicQuota / 5) * 5;
+  // monthlyCents (Stripe-authoritative, set post-confirm) wins when present;
+  // otherwise estimate off topicQuota with the shared per-bundle rate.
+  const monthlyDollars = (
+    (monthlyCents ?? (topicQuota / TOPICS_PER_BUNDLE) * PRICE_PER_BUNDLE_CENTS) / 100
+  ).toFixed(2);
   const canAdd = topicQuota < 25;
   const canRemove = topicQuota > 5;
-  // The quota + price the open confirm panel would move the reader to.
+  // The quota + price the open confirm panel would move the reader to. This
+  // is always an estimate — the panel is shown before update-quantity has
+  // been called, so there's no live Stripe read yet to base it on.
   const pendingQuota = confirmingTier === "up" ? topicQuota + 5 : topicQuota - 5;
-  const pendingDollars = (pendingQuota / 5) * 5;
+  const pendingDollars = ((pendingQuota / TOPICS_PER_BUNDLE) * PRICE_PER_BUNDLE_CENTS / 100).toFixed(2);
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -184,7 +226,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/inbox"
-          className="alpha-ui text-sm"
+          className="alpha-ui text-sm py-2 -my-2"
           style={{ color: "var(--ink-soft)" }}
         >
           ← Back to inbox
@@ -363,7 +405,7 @@ export default function SettingsPage() {
               </p>
               <p className="alpha-ui text-sm mb-4" style={{ color: "var(--ink-soft)" }}>
                 {confirmingTier === "up"
-                  ? `You'll move to ${pendingQuota} topics at $${pendingDollars}/mo. The extra is prorated for the rest of this cycle and charged to your card on file. Then you'll pick the new ones.`
+                  ? `You'll move to ${pendingQuota} topics at $${pendingDollars}/mo. The prorated extra for the rest of this cycle is added to your next invoice along with the new rate, nothing is charged today. Then you'll pick the new ones.`
                   : `You'll move to ${pendingQuota} topics at $${pendingDollars}/mo, $5 less. Your letter covers 5 fewer, and any extra picks become free backups.`}
               </p>
               <div className="flex items-center gap-4">
@@ -471,8 +513,32 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <button
               type="button"
-              onClick={() => {
-                const blob = new Blob([JSON.stringify(state, null, 2)], {
+              onClick={async () => {
+                // Pull the real server-side record (profile + saved letters)
+                // when we can reach it — privacy/page.tsx promises "everything
+                // we have about you," and this device's localStorage is only
+                // ever a subset (no letters, no usage history) and can be
+                // empty or stale on its own. Fall back to the local onboarding
+                // state for the no-session/no-Supabase case, where there is no
+                // server record to fetch.
+                let exportData: unknown = state;
+                if (supabaseConfigured()) {
+                  try {
+                    const sb = supabaseClient();
+                    const { data: { session } } = await sb.auth.getSession();
+                    if (session) {
+                      const res = await fetch("/api/account/export");
+                      if (res.ok) {
+                        exportData = await res.json();
+                      } else {
+                        alert("Couldn't reach the server for your full data — downloading what's saved on this device instead.");
+                      }
+                    }
+                  } catch {
+                    alert("Couldn't reach the server for your full data — downloading what's saved on this device instead.");
+                  }
+                }
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], {
                   type: "application/json",
                 });
                 const url = URL.createObjectURL(blob);

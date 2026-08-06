@@ -16,16 +16,18 @@ const check = (label: string, cond: boolean) => {
 };
 
 console.log("(1) isProfileComplete");
-check("(1a) complete profile passes", isProfileComplete({ firstName: "Algy", topics: ["ai-news"] }));
-check("(1b) missing firstName fails", !isProfileComplete({ topics: ["ai-news"] }));
-check("(1c) blank/whitespace firstName fails", !isProfileComplete({ firstName: "   ", topics: ["ai-news"] }));
-check("(1d) missing topics fails", !isProfileComplete({ firstName: "Algy" }));
-check("(1e) empty topics array fails", !isProfileComplete({ firstName: "Algy", topics: [] }));
-check("(1f) topics not an array fails", !isProfileComplete({ firstName: "Algy", topics: "ai-news" as never }));
+const EMAIL = "algy@example.com";
+check("(1a) complete profile passes", isProfileComplete({ firstName: "Algy", topics: ["ai-news"], email: EMAIL }));
+check("(1b) missing firstName fails", !isProfileComplete({ topics: ["ai-news"], email: EMAIL }));
+check("(1c) blank/whitespace firstName fails", !isProfileComplete({ firstName: "   ", topics: ["ai-news"], email: EMAIL }));
+check("(1d) missing topics fails", !isProfileComplete({ firstName: "Algy", email: EMAIL }));
+check("(1e) empty topics array fails", !isProfileComplete({ firstName: "Algy", topics: [], email: EMAIL }));
+check("(1f) topics not an array fails", !isProfileComplete({ firstName: "Algy", topics: "ai-news" as never, email: EMAIL }));
 check(
   "(1g) exactly 25 valid topics passes (the real MAX_TOPIC_QUOTA boundary)",
   isProfileComplete({
     firstName: "Algy",
+    email: EMAIL,
     topics: [
       "healthcare-recruiting", "sales-persuasion", "founder-operator", "marketing-growth",
       "personal-finance", "real-estate", "macro-markets", "longevity-wellness",
@@ -40,6 +42,7 @@ check(
   "(1h) 26 topics fails -- the exact bug this finding caught (checkout used to have no upper bound)",
   !isProfileComplete({
     firstName: "Algy",
+    email: EMAIL,
     topics: [
       "healthcare-recruiting", "sales-persuasion", "founder-operator", "marketing-growth",
       "personal-finance", "real-estate", "macro-markets", "longevity-wellness",
@@ -50,9 +53,17 @@ check(
     ] as never,
   })
 );
-check("(1i) a garbage/invalid topic id fails", !isProfileComplete({ firstName: "Algy", topics: ["not-a-real-topic"] as never }));
-check("(1j) a well-formed custom: topic passes", isProfileComplete({ firstName: "Algy", topics: ["custom:vintage synths"] as never }));
-check("(1k) zodiac passes (a real, always-valid topic id)", isProfileComplete({ firstName: "Algy", topics: ["zodiac"] as never }));
+check("(1i) a garbage/invalid topic id fails", !isProfileComplete({ firstName: "Algy", topics: ["not-a-real-topic"] as never, email: EMAIL }));
+check("(1j) a well-formed custom: topic passes", isProfileComplete({ firstName: "Algy", topics: ["custom:vintage synths"] as never, email: EMAIL }));
+check("(1k) zodiac passes (a real, always-valid topic id)", isProfileComplete({ firstName: "Algy", topics: ["zodiac"] as never, email: EMAIL }));
+check(
+  "(1l) missing email fails -- the bug this finding caught (checkout used to require no email at all)",
+  !isProfileComplete({ firstName: "Algy", topics: ["ai-news"] })
+);
+check(
+  "(1m) malformed email fails (same bar /email step itself enforces)",
+  !isProfileComplete({ firstName: "Algy", topics: ["ai-news"], email: "not-an-email" })
+);
 
 console.log("\n(2) shouldBlockDoubleSubscription");
 check("(2a) no existing row -> never block (brand-new email)", !shouldBlockDoubleSubscription(null));

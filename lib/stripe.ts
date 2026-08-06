@@ -23,9 +23,16 @@ export function getStripeClient(): Stripe {
   if (!secret) {
     throw new Error("STRIPE_SECRET_KEY is not set");
   }
+  // Bound each ATTEMPT at 20s (vs the SDK's 80s default) with one retry,
+  // mirroring anthropicClient()'s { timeout, maxRetries }. Without this,
+  // generate/route.ts's verifyPaid() calls checkout.sessions.retrieve()
+  // BEFORE its own 105s withDeadline even starts — an unbounded Stripe leg
+  // could alone burn most of the route's 120s maxDuration.
   _stripe = new Stripe(secret, {
     apiVersion: "2026-04-22.dahlia",
     httpClient: Stripe.createNodeHttpClient(),
+    timeout: 20_000,
+    maxNetworkRetries: 1,
   });
   return _stripe;
 }

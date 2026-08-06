@@ -3,7 +3,13 @@ import type Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
-import { clampQuota, TOPICS_PER_BUNDLE, MAX_TOPIC_QUOTA, MIN_TOPIC_QUOTA } from "@/lib/types";
+import {
+  clampQuota,
+  TOPICS_PER_BUNDLE,
+  MAX_TOPIC_QUOTA,
+  MIN_TOPIC_QUOTA,
+  PRICE_PER_BUNDLE_CENTS,
+} from "@/lib/types";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -112,12 +118,33 @@ export async function POST(req: Request) {
     "trialing",
     "past_due",
   ]);
-  const subs = await stripe.subscriptions.list({
-    customer: row.stripe_customer_id,
-    status: "all",
-    limit: 10,
-  });
-  const sub = subs.data.find((s) => LIVE_FOR_MANAGEMENT.has(s.status));
+  // Both Stripe calls below (list, then update) are wrapped so a Stripe-side
+  // slowdown or hiccup surfaces as a clean 500 instead of an unhandled 80s+
+  // SDK timeout or an uncaught TypeError — matches checkout/route.ts and
+  // portal/route.ts, which both guard their Stripe calls the same way.
+  let sub: Stripe.Subscription | undefined;
+  try {
+    const subs = await stripe.subscriptions.list({
+      customer: row.stripe_customer_id,
+      status: "all",
+      limit: 10,
+    });
+    // Array.isArray guard: a malformed 200 (missing/non-array `data`) must
+    // fail into the clean "no subscription" branch below, not throw
+    // .find-of-undefined out of the route.
+    sub = Array.isArray(subs.data)
+      ? subs.data.find((s) => LIVE_FOR_MANAGEMENT.has(s.status))
+      : undefined;
+  } catch (e) {
+    console.error(
+      "[update-quantity] subscriptions.list failed:",
+      e instanceof Error ? e.message : e
+    );
+    return NextResponse.json(
+      { error: "Couldn't reach Stripe. Try again in a moment." },
+      { status: 500 }
+    );
+  }
   if (!sub) {
     return NextResponse.json(
       { error: "No active subscription on file." },
@@ -159,11 +186,22 @@ export async function POST(req: Request) {
   // same-transition change later (e.g. up then down then up) lands in a new
   // bucket and still applies, rather than being deduped against Stripe's 24h key cache.
   const idemKey = `alpha-qty-${sub.id}-${currentQty}-${nextQty}-${Math.floor(Date.now() / 30000)}`;
-  await stripe.subscriptions.update(
-    sub.id,
-    { items: [{ id: item.id, quantity: nextQty }] },
-    { idempotencyKey: idemKey }
-  );
+  try {
+    await stripe.subscriptions.update(
+      sub.id,
+      { items: [{ id: item.id, quantity: nextQty }] },
+      { idempotencyKey: idemKey }
+    );
+  } catch (e) {
+    console.error(
+      "[update-quantity] subscriptions.update failed:",
+      e instanceof Error ? e.message : e
+    );
+    return NextResponse.json(
+      { error: "Couldn't reach Stripe. Try again in a moment." },
+      { status: 500 }
+    );
+  }
 
   // Write through to public.users immediately so the UI reflects without
   // waiting on the webhook round-trip. Surface a failed write instead of
@@ -186,9 +224,11 @@ export async function POST(req: Request) {
     );
   }
 
-  // unit_amount * quantity = total monthly cents (price has unit_amount 500)
+  // unit_amount * quantity = total monthly cents. Falls back to the shared
+  // PRICE_PER_BUNDLE_CENTS constant (not a re-typed literal) only if Stripe's
+  // price object is ever missing unit_amount.
   const unitAmount =
-    typeof item.price?.unit_amount === "number" ? item.price.unit_amount : 500;
+    typeof item.price?.unit_amount === "number" ? item.price.unit_amount : PRICE_PER_BUNDLE_CENTS;
   const monthlyCents = unitAmount * nextQty;
 
   return NextResponse.json({

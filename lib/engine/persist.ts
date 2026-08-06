@@ -1,5 +1,6 @@
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { coerceGender } from "@/lib/demographics";
+import { sendOpsAlert } from "@/lib/email";
 import type { Issue, UserProfile } from "@/lib/types";
 
 interface PersistResult {
@@ -133,6 +134,11 @@ export async function persistIssueIfPossible(
               insErr.message,
               raceErr.message
             );
+            await sendOpsAlert(
+              "alpha profile sync failed",
+              `users profile insert raced AND update fallback failed for user ${userId} (${email}): insert=${insErr.message}; update=${raceErr.message}`,
+              `alpha-persist-insert-race-${userId}`
+            );
           }
         }
       }
@@ -145,6 +151,11 @@ export async function persistIssueIfPossible(
           .eq("id", userId);
         if (updErr) {
           console.error("[persist] users profile update failed:", updErr.message);
+          await sendOpsAlert(
+            "alpha profile sync failed",
+            `users profile update failed for existing user ${userId} (${email}): ${updErr.message}`,
+            `alpha-persist-update-${userId}`
+          );
         }
       }
     }

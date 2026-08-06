@@ -216,7 +216,7 @@ function Item({ item }: { item: DigestItem }) {
                 href={safeUrl(item.sourceUrl)!}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="hover:underline"
+                className="underline"
                 style={{ color: "var(--accent-ink)" }}
               >
                 {item.source}

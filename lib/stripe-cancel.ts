@@ -30,18 +30,27 @@ export async function cancelCustomerSubscriptions(
     limit: 100,
   });
 
-  for (const sub of subs.data) {
+  // Fire all cancels in parallel rather than one-at-a-time -- serially
+  // awaiting each call means N subscriptions can inherit N x the SDK's
+  // worst-case latency, blocking the account-deletion flow that awaits us.
+  const toCancel = subs.data.filter((sub) => {
     if (TERMINAL.has(sub.status)) {
       skipped++;
-      continue;
+      return false;
     }
-    try {
-      await stripe.subscriptions.cancel(sub.id);
-      cancelled.push(sub.id);
-    } catch {
+    return true;
+  });
+
+  const results = await Promise.allSettled(
+    toCancel.map((sub) => stripe.subscriptions.cancel(sub.id))
+  );
+  results.forEach((result, i) => {
+    if (result.status === "fulfilled") {
+      cancelled.push(toCancel[i].id);
+    } else {
       errors++;
     }
-  }
+  });
 
   return { cancelled, skipped, errors };
 }

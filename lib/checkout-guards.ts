@@ -1,5 +1,6 @@
 import { isValidTopicId } from "@/lib/topics";
 import { hasActiveAccess } from "@/lib/access";
+import { isValidEmail } from "@/lib/validate-email";
 import type { TopicId } from "@/lib/types";
 
 // Pulled out of app/api/stripe/checkout/route.ts as pure functions so a
@@ -13,6 +14,7 @@ import type { TopicId } from "@/lib/types";
 export interface CheckoutProfileInput {
   firstName?: string;
   topics?: unknown;
+  email?: string;
 }
 
 // Profile-completeness gate. The client already redirects an incomplete
@@ -23,13 +25,24 @@ export interface CheckoutProfileInput {
 // before it will write a letter, so an unblocked checkout here would
 // produce a paying subscriber who can never actually generate one. Enforce
 // the same bar before the charge instead of after.
+//
+// email is checked here too -- firstName+topics alone let a visitor who
+// skipped straight from /topics to /checkout (direct URL, or resuming a
+// days-old partial session) reach a real Stripe session with no address on
+// file. Stripe's hosted checkout page happens to force an email today, but
+// that's an implicit backstop this app doesn't control, not a substitute
+// for the gate actually enforcing its own name. isValidEmail is the same
+// check the /email step itself uses, so this can't reject an address the
+// funnel already accepted.
 export function isProfileComplete(body: CheckoutProfileInput): boolean {
   return (
     !!body.firstName?.trim() &&
     Array.isArray(body.topics) &&
     body.topics.length > 0 &&
     body.topics.length <= 25 &&
-    body.topics.every((t) => typeof t === "string" && isValidTopicId(t as TopicId))
+    body.topics.every((t) => typeof t === "string" && isValidTopicId(t as TopicId)) &&
+    !!body.email &&
+    isValidEmail(body.email)
   );
 }
 

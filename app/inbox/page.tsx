@@ -24,7 +24,7 @@ const STORAGE_KEY_ISSUE = "alpha-first-issue";
 
 export default function InboxPage() {
   const router = useRouter();
-  const { state, loaded } = useOnboarding();
+  const { state, loaded, reset } = useOnboarding();
   const [issue, setIssue] = useState<Issue | null>(null);
   const [missing, setMissing] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -121,6 +121,10 @@ export default function InboxPage() {
     } catch {
       // ignore — navigate anyway
     }
+    // Wipe onboarding answers (name, email, birthday, etc.) so the next
+    // person on this device — shared/library/kiosk computer — doesn't get
+    // them pre-filled or see this reader's email dropped into /signin.
+    reset();
     window.location.assign(path);
   }
 

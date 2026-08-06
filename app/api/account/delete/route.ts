@@ -9,7 +9,14 @@ export const runtime = "nodejs";
 // is no DELETE policy on public.users, so RLS silently matched zero rows and
 // the data persisted while the UI claimed success. This endpoint deletes the
 // auth.users row with the service role, which cascades to public.users and
-// public.issues (FK on delete cascade) and sets support_tickets.user_id null.
+// public.issues (FK on delete cascade).
+//
+// support_tickets.user_id is ON DELETE SET NULL, not CASCADE — deleting the
+// auth user alone would just orphan the ticket row while its name/email/
+// message text lives on forever. The privacy page and delete-confirmation
+// copy both promise "all associated data" is gone, so we delete those rows
+// ourselves, by user_id, before the auth user goes away and takes that FK
+// link with it.
 //
 // Before deleting, it cancels the user's Stripe subscription(s) — otherwise a
 // paying user would keep being billed after their account (and portal access)
@@ -36,6 +43,20 @@ export async function POST() {
   // no way to stop it. Best-effort: a Stripe hiccup must never block the user's
   // right to delete their account.
   await cancelStripeSubscriptionsBeforeDelete(svc, user.id, "[account/delete]");
+
+  // Delete the user's support tickets outright rather than letting the FK
+  // cascade just null out user_id — SET NULL would leave their name, email,
+  // and message text sitting in the table with nothing tying it back to an
+  // account, which contradicts the "irreversible, all data gone" promise on
+  // the privacy and settings pages. Best-effort, like the Stripe step above:
+  // a failure here must not block the user's right to delete their account.
+  const { error: ticketsErr } = await svc
+    .from("support_tickets")
+    .delete()
+    .eq("user_id", user.id);
+  if (ticketsErr) {
+    console.error("[account/delete] failed to delete support_tickets:", ticketsErr.message);
+  }
 
   const { error } = await svc.auth.admin.deleteUser(user.id);
   if (error) {

@@ -41,10 +41,20 @@ export default function AdminAccountsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  // Search runs against the whole table, so it always comes back as one full
+  // (non-appendable) page — "Load more" only makes sense on the unfiltered,
+  // newest-first list, so we track it separately from the search box's value.
+  const [activeSearch, setActiveSearch] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
 
-  async function load() {
+  async function load(opts?: { search?: string; before?: string; append?: boolean }) {
     try {
-      const res = await fetch("/api/admin/users");
+      const params = new URLSearchParams();
+      if (opts?.search) params.set("q", opts.search);
+      else if (opts?.before) params.set("before", opts.before);
+      const res = await fetch(`/api/admin/users${params.toString() ? `?${params}` : ""}`);
       if (res.status === 401) {
         setErr("Sign in first.");
         return;
@@ -55,8 +65,11 @@ export default function AdminAccountsPage() {
       }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setUsers(data.users);
+      setUsers((prev) => (opts?.append && prev ? [...prev, ...data.users] : data.users));
       if (data.stats) setStats(data.stats);
+      // The API caps every response at 200 rows — fewer than that back means
+      // we've hit the end of the table (or, for a search, all the matches).
+      setHasMore(data.users.length === 200);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn't load users.");
     }
@@ -65,6 +78,28 @@ export default function AdminAccountsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  function runSearch(e: React.FormEvent) {
+    e.preventDefault();
+    setActiveSearch(q);
+    load({ search: q });
+  }
+
+  function clearSearch() {
+    setQ("");
+    setActiveSearch("");
+    load();
+  }
+
+  async function loadMore() {
+    if (!users || users.length === 0) return;
+    setLoadingMore(true);
+    try {
+      await load({ before: users[users.length - 1].created_at, append: true });
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   async function act(userId: string, action: "delete" | "grant_free" | "revoke_free", confirmMsg?: string) {
     if (confirmMsg && !confirm(confirmMsg)) return;
@@ -77,7 +112,9 @@ export default function AdminAccountsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      await load();
+      // Reload through whatever search was active, so acting on a result found
+      // past the newest-200 window doesn't bounce the admin back to page one.
+      await load(activeSearch ? { search: activeSearch } : undefined);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Action failed.");
     } finally {
@@ -124,13 +161,41 @@ export default function AdminAccountsPage() {
           </h1>
           {users && (
             <span className="alpha-mono" style={{ color: "var(--ink-soft)" }}>
-              {users.length} TOTAL
+              {users.length} SHOWN{stats ? ` OF ${stats.totalUsers}` : ""}
             </span>
           )}
         </div>
-        <p className="alpha-ui text-sm mb-10" style={{ color: "var(--ink-soft)" }}>
+        <p className="alpha-ui text-sm mb-6" style={{ color: "var(--ink-soft)" }}>
           Admin-only. Everyone who has signed up for alpha. Grant free, delete, or just look.
         </p>
+
+        <form onSubmit={runSearch} className="flex gap-3 mb-10">
+          <input
+            type="email"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by email…"
+            className="alpha-ui text-sm flex-1 px-3 py-2 border"
+            style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)", background: "var(--paper)" }}
+          />
+          <button
+            type="submit"
+            className="alpha-ui text-sm px-4 py-2 underline underline-offset-4"
+            style={{ color: "var(--accent-ink)" }}
+          >
+            Search
+          </button>
+          {activeSearch && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="alpha-ui text-sm px-4 py-2 underline underline-offset-4"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              Clear
+            </button>
+          )}
+        </form>
 
         {stats && (
           <div
@@ -304,6 +369,20 @@ export default function AdminAccountsPage() {
               );
             })}
           </ul>
+        )}
+
+        {/* Search results come back as one full page already — "Load more" only
+            applies to the unfiltered, newest-first list. */}
+        {users && users.length > 0 && !activeSearch && hasMore && (
+          <button
+            type="button"
+            disabled={loadingMore}
+            onClick={loadMore}
+            className="alpha-ui text-sm mt-6 underline underline-offset-4"
+            style={{ color: "var(--accent-ink)", opacity: loadingMore ? 0.4 : 1 }}
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
         )}
       </section>
       <Footer />
