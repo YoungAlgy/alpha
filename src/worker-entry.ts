@@ -163,8 +163,9 @@ export default {
     const supabaseKey = e?.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || e?.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
     let setCookieHeaders: string[] = []
+    let refreshedCookies: { name: string; value: string }[] = []
+    const incomingCookies = parseCookieHeader(request.headers.get('cookie'))
     if (!isStaticAsset && supabaseUrl && supabaseKey) {
-      const incomingCookies = parseCookieHeader(request.headers.get('cookie'))
       const supabase = createServerClient(supabaseUrl, supabaseKey, {
         // @supabase/ssr's own default cookie options carry no `secure` key —
         // matching lib/supabase/server.ts and lib/supabase/client.ts's own
@@ -179,6 +180,7 @@ export default {
             setCookieHeaders = cookiesToSet.map(({ name, value, options }) =>
               serializeCookie(name, value, options),
             )
+            refreshedCookies = cookiesToSet.map(({ name, value }) => ({ name, value }))
           },
         },
       })
@@ -187,7 +189,33 @@ export default {
       await supabase.auth.getUser()
     }
 
-    const response: Response = await openNextWorker.fetch(request, env, ctx)
+    // Merge any just-refreshed cookie(s) into the REQUEST before it reaches
+    // Next -- every app/api/* route instantiates its OWN Supabase client via
+    // lib/supabase/server.ts, reading cookies from this same request object.
+    // Without this, that layer's client reads the ORIGINAL, now-stale
+    // cookie (this Worker layer's client already consumed/rotated the
+    // refresh token by this point), racing to refresh it AGAIN independently
+    // -- Supabase's own maintainers call this out by name ("random logouts,
+    // early session termination or increased token refresh requests," the
+    // exact warning @supabase/ssr logs when setAll is missing/misused).
+    // Supabase's official Next.js middleware reference does the equivalent
+    // (`request.cookies.set(...)`) for this exact reason. Found in review
+    // 2026-08-06; deliberately not touched in the same round that already
+    // modified this file's cookie handling (the secure:true fix above) --
+    // done as its own separately-tested change.
+    let downstreamRequest = request
+    if (refreshedCookies.length > 0) {
+      const merged = new Map(incomingCookies.map((c) => [c.name, c.value]))
+      for (const { name, value } of refreshedCookies) merged.set(name, value)
+      const cookieHeader = Array.from(merged.entries())
+        .map(([name, value]) => `${name}=${encodeURIComponent(value)}`)
+        .join('; ')
+      const headers = new Headers(request.headers)
+      headers.set('cookie', cookieHeader)
+      downstreamRequest = new Request(request, { headers })
+    }
+
+    const response: Response = await openNextWorker.fetch(downstreamRequest, env, ctx)
 
     if (setCookieHeaders.length === 0) return response
 
