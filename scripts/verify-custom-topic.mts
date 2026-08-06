@@ -45,9 +45,10 @@ check("topicEmoji custom = sparkle", topicEmoji("custom:anything") === "✨");
 check("topicEmoji catalog resolves registry", topicEmoji("trading-cards") === "🃏");
 
 // anchor (valid HTML id, consistent for section + TOC jump)
-check("topicAnchor catalog unchanged", topicAnchor("ai-news") === "s-ai-news");
-check("topicAnchor custom is slugified (no spaces/colons)", topicAnchor("custom:crypto trends in Asia") === "s-custom-crypto-trends-in-asia");
-check("topicAnchor produces a valid id (no whitespace)", !/\s/.test(topicAnchor("custom:a b c")));
+check("topicAnchor catalog unchanged", topicAnchor("ai-news", 0) === "s-0-ai-news");
+check("topicAnchor custom is slugified (no spaces/colons)", topicAnchor("custom:crypto trends in Asia", 0) === "s-0-custom-crypto-trends-in-asia");
+check("topicAnchor produces a valid id (no whitespace)", !/\s/.test(topicAnchor("custom:a b c", 0)));
+check("topicAnchor keys on index so identical slugs from different positions don't collide", topicAnchor("custom:a/b", 0) !== topicAnchor("custom:a-b", 1));
 
 // zodiac (parent picker id vs per-sign derived id)
 console.log("(6) zodiac topic");
@@ -56,7 +57,7 @@ check("isZodiacTopicId: a normal id is false", !isZodiacTopicId("music") && !isZ
 check("parent label = catalog label", topicLabel("zodiac") === "Zodiac & astrology");
 check("per-sign label = the sign", topicLabel("zodiac-leo") === "Leo" && topicLabel("zodiac-scorpio") === "Scorpio");
 check("per-sign emoji = crystal ball", topicEmoji("zodiac-leo") === "🔮");
-check("per-sign anchor is a valid slug", topicAnchor("zodiac-leo") === "s-zodiac-leo");
+check("per-sign anchor is a valid slug", topicAnchor("zodiac-leo", 0) === "s-0-zodiac-leo");
 check("zodiacQueries builds sign-specific search", zodiacQueries("zodiac-leo").every((q: string) => q.includes("Leo")) && zodiacQueries("zodiac-leo").length === 3);
 check("zodiacQueries empty for a non-zodiac id", zodiacQueries("music").length === 0);
 // mapTopicsForUser: the cron + generator share this so a zodiac-only/no-birthday

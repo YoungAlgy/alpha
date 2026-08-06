@@ -6,11 +6,23 @@ import { escapeHtml } from "@/lib/email";
 export const runtime = "nodejs";
 
 // One-click unsubscribe endpoint. Handles both:
-//   - GET ?token=...  — user clicked the link in their email. Sets
-//     unsubscribed_at, renders a small confirmation HTML page.
-//   - POST ?token=... — inbox-provider auto-unsubscribe (Gmail, Apple Mail)
-//     following the List-Unsubscribe-Post header per RFC 8058. Sets
-//     unsubscribed_at, returns 200 with no body.
+//   - GET ?token=...  — user clicked the link in their email. Does NOT mutate
+//     state (see 2026-08-06 fix below) — renders a confirmation page with a
+//     real POST form.
+//   - POST ?token=... — either the confirmation page's own form submit, OR
+//     an inbox-provider auto-unsubscribe (Gmail, Apple Mail) following the
+//     List-Unsubscribe-Post header per RFC 8058. Both set unsubscribed_at;
+//     response format branches on which one it was (see below).
+//
+// FAIL-SAFE (2026-08-06): GET used to mutate state directly on request. Email
+// security gateways and link-prescanners (Defender for Office 365 Safe Links,
+// Proofpoint, Mimecast, etc.) routinely auto-fetch every URL in an inbound
+// email's body to scan for malicious destinations, independent of whether the
+// recipient ever opens or clicks anything -- which silently unsubscribed
+// paying readers who never asked to stop. RFC 8058 added the separate POST
+// one-click mechanism specifically because GET is unsafe for this; this route
+// now only mutates on POST (either a human's confirmation click or a mail
+// provider's own RFC-8058 POST), never on a bare GET.
 //
 // Turning letters back on is self-serve: the reader signs in and hits "Resume
 // my letters" in /settings (POST /api/resume clears unsubscribed_at for their
@@ -54,23 +66,29 @@ function appOrigin(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
 }
 
+// GET never mutates state (see FAIL-SAFE note above) — it only validates the
+// token and renders a confirmation page with a real <form method="POST">.
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const token = url.searchParams.get("token") || "";
-  const result = await performUnsubscribe(token);
+  const userId = verifyUnsubscribeToken(token);
 
-  if (!result.ok) {
-    return new NextResponse(htmlPage("Couldn't unsubscribe", result.error), {
-      status: result.status,
+  if (!userId) {
+    return new NextResponse(htmlPage("Couldn't unsubscribe", "<p>Invalid or expired link.</p>"), {
+      status: 400,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
 
-  const settingsUrl = escapeHtml(`${appOrigin()}/settings`);
+  const actionUrl = escapeHtml(`${appOrigin()}/api/unsubscribe?token=${encodeURIComponent(token)}`);
   return new NextResponse(
     htmlPage(
-      "You're unsubscribed.",
-      `We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="${settingsUrl}">settings</a> if you also want to stop paying. Changed your mind? Sign in and hit <a href="${settingsUrl}">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20alpha.%20letters">youngalgy@gmail.com</a>.`
+      "Unsubscribe from alpha. letters?",
+      `<p>Confirm below and we'll stop sending letters to this address. Your Stripe subscription is separate and unaffected — manage or cancel billing separately from settings if you also want to stop paying.</p>
+      <form method="POST" action="${actionUrl}" style="margin: 24px 0 0;">
+        <input type="hidden" name="source" value="confirm-page">
+        <button type="submit" style="font: inherit; font-size: 16px; font-weight: 700; background: #1F3D2E; color: #F4EFE0; border: none; border-radius: 8px; padding: 12px 28px; cursor: pointer;">Yes, stop my letters</button>
+      </form>`
     ),
     {
       status: 200,
@@ -79,21 +97,51 @@ export async function GET(req: Request) {
   );
 }
 
-// RFC 8058 one-click: inbox providers POST to the URL in List-Unsubscribe-Post
-// when the user hits the inbox-provider's unsubscribe button. No HTML response.
+// POST has two distinct callers with two distinct response contracts:
+//   - The confirmation page's own form (carries source=confirm-page in the
+//     body) — a real browser navigation from a human's click, expects the
+//     same styled HTML page GET used to return.
+//   - RFC 8058 one-click (inbox providers POST to List-Unsubscribe-Post with
+//     no `source` field) — machine-to-machine, expects a bare JSON 200.
+// Don't use User-Agent/Accept sniffing to tell them apart — gateways and mail
+// clients vary those unpredictably. `source` is a field only our own form
+// emits, so it's a signal we fully control.
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const token = url.searchParams.get("token") || "";
-  // Some providers send the token in the body instead of the query. Try both.
   let bodyToken = "";
+  let fromConfirmPage = false;
   try {
     const body = await req.text();
     const params = new URLSearchParams(body);
     bodyToken = params.get("token") || params.get("List-Unsubscribe") || "";
+    fromConfirmPage = params.get("source") === "confirm-page";
   } catch {
     // ignore
   }
   const result = await performUnsubscribe(token || bodyToken);
+
+  if (fromConfirmPage) {
+    if (!result.ok) {
+      return new NextResponse(htmlPage("Couldn't unsubscribe", `<p>${result.error}</p>`), {
+        status: result.status,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+    const settingsUrl = escapeHtml(`${appOrigin()}/settings`);
+    return new NextResponse(
+      htmlPage(
+        "You're unsubscribed.",
+        `<p>We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="${settingsUrl}">settings</a> if you also want to stop paying. Changed your mind? Sign in and hit <a href="${settingsUrl}">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20alpha.%20letters">youngalgy@gmail.com</a>.</p>`
+      ),
+      {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      }
+    );
+  }
+
+  // RFC 8058 one-click path: no HTML, just a status a mail provider can check.
   return NextResponse.json(
     { ok: result.ok, ...(result.ok ? {} : { error: result.error }) },
     { status: result.ok ? 200 : result.status }
@@ -154,7 +202,7 @@ function htmlPage(title: string, bodyHtml: string): string {
   <div class="card">
     <p class="mark">α<span class="brand-gold">.</span></p>
     <h1>${escapeHtml(title)}</h1>
-    <p>${bodyHtml}</p>
+    ${bodyHtml}
     <p><a href="${escapeHtml(`${appOrigin()}/welcome`)}">Back to alpha<span class="brand-gold">.</span></a></p>
   </div>
 </body>

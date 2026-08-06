@@ -474,10 +474,16 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     // text. Only the curated mock path (no attacker-controlled text) falls
     // back to scanning. See lib/engine/url-guard.ts.
     const allowed = signal.citableUrls ?? extractSignalUrls(signal.context);
-    const { items, dropped } = enforceSignalUrls(mapped, allowed);
-    if (dropped > 0) {
+    const { items, dropped, droppedForMissingLabel } = enforceSignalUrls(mapped, allowed);
+    if (droppedForMissingLabel > 0) {
       console.warn(
-        `[url-guard] ${topicId} ${weekOf}: dropped ${dropped} URL(s) not present in signal (model hallucination blocked)`
+        `[url-guard] ${topicId} ${weekOf}: dropped ${droppedForMissingLabel} ref(s) with a missing/blank label`
+      );
+    }
+    const droppedForBadUrl = dropped - droppedForMissingLabel;
+    if (droppedForBadUrl > 0) {
+      console.warn(
+        `[url-guard] ${topicId} ${weekOf}: dropped ${droppedForBadUrl} URL(s) not present in signal (model hallucination blocked)`
       );
     }
 

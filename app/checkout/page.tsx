@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { topicLabel, topicEmoji } from "@/lib/topics";
-import { THEMES, SWATCHES } from "@/lib/themes";
+import { THEMES, SWATCHES, coerceThemeId } from "@/lib/themes";
 import { track } from "@/lib/analytics";
 import type { ThemeId } from "@/lib/types";
 
@@ -68,7 +68,7 @@ export default function CheckoutPage() {
   }
 
   const firstName = state.firstName || "you";
-  const themeId = (state.theme || "forest") as ThemeId;
+  const themeId = coerceThemeId(state.theme) ?? "forest";
   const themeLabel = THEMES.find((t) => t.id === themeId)?.label || "Forest";
   const sw = SWATCHES[themeId];
 

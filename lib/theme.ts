@@ -1,6 +1,7 @@
 "use client";
 
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { coerceThemeId } from "@/lib/themes";
 import type { ThemeId } from "@/lib/types";
 
 // The single canonical way to change the theme. Before this existed the theme
@@ -18,6 +19,12 @@ const THEME_KEY = "alpha-theme";
 
 export function setTheme(id: ThemeId): void {
   if (typeof window === "undefined") return;
+  const safe = coerceThemeId(id);
+  if (!safe) {
+    console.error("[setTheme] invalid theme id, ignoring:", id);
+    return;
+  }
+  id = safe;
 
   // 1. Instant repaint of the current page.
   document.documentElement.setAttribute("data-theme", id);

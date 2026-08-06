@@ -92,25 +92,48 @@ export interface GuardableItem {
   [k: string]: unknown;
 }
 
-// Strip any ref whose URL isn't in the signal. Mutates a shallow copy; returns
-// the cleaned items plus a count of how many URLs were dropped (for logging /
-// monitoring the model's hallucination rate). The item itself is kept even if
-// its primary link is dropped — the educational body still has value and the
-// renderer handles link-less items; we only ever remove the unverifiable link.
+// A ref is only useful if it has a real label to show as the clickable text —
+// a signal-verified URL with a blank/missing label would still ship as a
+// visibly broken link (nothing for the reader to click). Whitespace-only
+// counts as missing; non-string (including null/omitted) is guarded via
+// typeof before calling .trim() so it can never throw.
+function hasLabel(r: GuardableRef | undefined): r is GuardableRef {
+  return !!r && typeof r.label === "string" && r.label.trim().length > 0;
+}
+
+// Strip any ref whose URL isn't in the signal, OR whose label is missing/
+// blank. Mutates a shallow copy; returns the cleaned items plus a count of
+// how many refs were dropped in total (for logging / monitoring the model's
+// hallucination rate) and, separately, how many of those were dropped for a
+// missing label specifically — kept apart so callers don't misattribute a
+// label-drop to the "model hallucination blocked" URL-provenance log. The
+// item itself is kept even if its primary link is dropped — the educational
+// body still has value and the renderer handles link-less items; we only ever
+// remove the unusable ref.
 export function enforceSignalUrls<T extends GuardableItem>(
   items: T[],
   allowed: Set<string>
-): { items: T[]; dropped: number } {
+): { items: T[]; dropped: number; droppedForMissingLabel: number } {
   let dropped = 0;
+  let droppedForMissingLabel = 0;
   const cleaned = items.map((it) => {
     let primaryRef = it.primaryRef;
-    if (primaryRef && !isAllowedUrl(primaryRef.url, allowed)) {
+    if (primaryRef && !hasLabel(primaryRef)) {
+      dropped++;
+      droppedForMissingLabel++;
+      primaryRef = undefined;
+    } else if (primaryRef && !isAllowedUrl(primaryRef.url, allowed)) {
       dropped++;
       primaryRef = undefined;
     }
     let supplementaryRefs = it.supplementaryRefs;
     if (Array.isArray(supplementaryRefs)) {
       const kept = supplementaryRefs.filter((r) => {
+        if (!hasLabel(r)) {
+          dropped++;
+          droppedForMissingLabel++;
+          return false;
+        }
         const ok = isAllowedUrl(r.url, allowed);
         if (!ok) dropped++;
         return ok;
@@ -119,5 +142,5 @@ export function enforceSignalUrls<T extends GuardableItem>(
     }
     return { ...it, primaryRef, supplementaryRefs };
   });
-  return { items: cleaned, dropped };
+  return { items: cleaned, dropped, droppedForMissingLabel };
 }

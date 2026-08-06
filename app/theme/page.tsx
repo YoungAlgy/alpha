@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { THEMES, SWATCHES } from "@/lib/themes";
+import { THEMES, SWATCHES, coerceThemeId } from "@/lib/themes";
 import { chime, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { setTheme } from "@/lib/theme";
@@ -20,7 +20,10 @@ export default function ThemePage() {
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    if (loaded && state.theme) setPicked(state.theme);
+    if (loaded && state.theme) {
+      const safe = coerceThemeId(state.theme);
+      if (safe) setPicked(safe);
+    }
   }, [loaded, state.theme]);
 
   // Detect whether this is a signed-in user editing their theme (vs a new

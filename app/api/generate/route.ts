@@ -4,7 +4,7 @@ import Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
 import { generateIssue } from "@/lib/engine/assemble";
 import { persistIssueIfPossible } from "@/lib/engine/persist";
-import { isValidTopicId } from "@/lib/topics";
+import { isValidTopicId, MAX_CUSTOM_TOPIC_LEN, CUSTOM_PREFIX } from "@/lib/topics";
 import { sendLetterNotification, resendConfigured } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
@@ -40,7 +40,7 @@ const ProfileSchema = z.object({
   // self-serve /api/account/topics route locks down against smuggled/garbage
   // ids (including Object.prototype names like "constructor" that a plain `in`
   // lookup would wrongly accept) -- this onboarding path needs the same gate.
-  topics: z.array(z.string().min(1).max(60)).min(1).max(25).refine(
+  topics: z.array(z.string().min(1).max(MAX_CUSTOM_TOPIC_LEN + CUSTOM_PREFIX.length)).min(1).max(25).refine(
     (arr) => arr.every(isValidTopicId),
     "unrecognized topic"
   ),

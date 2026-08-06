@@ -77,11 +77,11 @@ export function Digest({ issue }: DigestProps) {
         {issue.editorIntro}
       </p>
 
-      {issue.sections.map((section) => {
+      {issue.sections.map((section, i) => {
         const emoji = topicEmoji(section.topicId);
         return (
         <ScrollFadeIn key={section.topicId} className="mb-16">
-        <section id={topicAnchor(section.topicId)}>
+        <section id={topicAnchor(section.topicId, i)}>
           <div
             className="border-t mb-10"
             style={{ borderColor: "var(--rule)" }}

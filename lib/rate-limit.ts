@@ -24,6 +24,9 @@ export function rateLimit(
   key: string,
   { limit, windowMs }: RateLimitOptions
 ): RateLimitResult {
+  if (limit <= 0) {
+    return { ok: false, remaining: 0, retryAfterSec: Math.ceil(windowMs / 1000) };
+  }
   const now = Date.now();
   const b = buckets.get(key);
   if (!b || b.resetAt < now) {

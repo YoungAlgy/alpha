@@ -38,10 +38,14 @@ export function verifyUnsubscribeToken(token: string): string | null {
   if (lastDot < 1) return null;
   const userId = token.slice(0, lastDot);
   const sig = token.slice(lastDot + 1);
-  const expected = hmacFor(userId);
-  if (sig.length !== expected.length) return null;
-  // constant-time compare to avoid timing attacks
+  // Whole verification in one try/catch -- including hmacFor's secret() read --
+  // so a missing/corrupt UNSUBSCRIBE_SECRET fails closed to "invalid token"
+  // instead of throwing up through the route handler as an uncaught 500,
+  // mirroring letter-token.ts's verifyLetterToken.
   try {
+    const expected = hmacFor(userId);
+    if (sig.length !== expected.length) return null;
+    // constant-time compare to avoid timing attacks
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   } catch {
     return null;

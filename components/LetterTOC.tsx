@@ -16,14 +16,14 @@ export function LetterTOC({ issue }: LetterTOCProps) {
   useEffect(() => {
     function computeActive() {
       let pick: string | null = null;
-      for (const s of issue.sections) {
-        const el = document.getElementById(topicAnchor(s.topicId));
-        if (!el) continue;
+      issue.sections.forEach((s, i) => {
+        const el = document.getElementById(topicAnchor(s.topicId, i));
+        if (!el) return;
         const r = el.getBoundingClientRect();
         if (r.top < window.innerHeight * 0.35) {
           pick = s.topicId;
         }
-      }
+      });
       setActive(pick);
     }
     // Native scroll events can fire many times per frame; the loop above does a
@@ -47,8 +47,8 @@ export function LetterTOC({ issue }: LetterTOCProps) {
     };
   }, [issue]);
 
-  function jump(topicId: string) {
-    const el = document.getElementById(topicAnchor(topicId));
+  function jump(topicId: string, index: number) {
+    const el = document.getElementById(topicAnchor(topicId, index));
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -62,14 +62,14 @@ export function LetterTOC({ issue }: LetterTOCProps) {
         SECTIONS
       </div>
       <ul className="space-y-2">
-        {issue.sections.map((s) => {
+        {issue.sections.map((s, i) => {
           const emoji = topicEmoji(s.topicId);
           const isActive = active === s.topicId;
           return (
             <li key={s.topicId}>
               <button
                 type="button"
-                onClick={() => jump(s.topicId)}
+                onClick={() => jump(s.topicId, i)}
                 className="alpha-ui text-left flex items-center gap-2 text-sm hover:opacity-70"
                 style={{
                   color: isActive ? "var(--ink)" : "var(--ink-soft)",
