@@ -3,14 +3,9 @@ import type Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
-import {
-  clampQuota,
-  TOPICS_PER_BUNDLE,
-  MAX_TOPIC_QUOTA,
-  MIN_TOPIC_QUOTA,
-  PRICE_PER_BUNDLE_CENTS,
-} from "@/lib/types";
+import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS } from "@/lib/types";
 import { rateLimit } from "@/lib/rate-limit";
+import { nextQuantity, isLiveForManagement } from "@/lib/update-quantity-guards";
 
 export const runtime = "nodejs";
 
@@ -31,9 +26,6 @@ export const runtime = "nodejs";
 interface Body {
   direction?: "up" | "down";
 }
-
-const MAX_QTY = MAX_TOPIC_QUOTA / TOPICS_PER_BUNDLE; // 5 bundles = 25 topics
-const MIN_QTY = MIN_TOPIC_QUOTA / TOPICS_PER_BUNDLE; // 1 bundle = 5 topics
 
 export async function POST(req: Request) {
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
@@ -104,21 +96,11 @@ export async function POST(req: Request) {
 
   const stripe = getStripeClient();
 
-  // Find this customer's live subscription. status:"active" ONLY missed two
-  // real, reachable states: a 100%-off comp/trial checkout (checkout/route.ts
-  // supports this via payment_method_collection:"if_required") sits in
-  // "trialing", and a subscriber whose card just started failing sits in
-  // "past_due" for Stripe's multi-week Smart Retry window during which the
-  // webhook's invoice.payment_failed handler deliberately keeps their access
-  // live (see that handler's own comment) — both are real, hasActiveAccess()
-  // -passing users who'd otherwise hit a false "no subscription" error just
-  // for trying to change their tier. Matches lib/stripe-cancel.ts's own
-  // status:"all" + explicit-status-set pattern rather than a single string.
-  const LIVE_FOR_MANAGEMENT: ReadonlySet<Stripe.Subscription.Status> = new Set([
-    "active",
-    "trialing",
-    "past_due",
-  ]);
+  // Find this customer's live subscription. See lib/update-quantity-guards.ts's
+  // isLiveForManagement for why status:"active" alone isn't enough (trialing
+  // comp checkouts, past_due Smart Retry window) and why this matches
+  // lib/stripe-cancel.ts's own status:"all" + explicit-status-set pattern.
+  //
   // Both Stripe calls below (list, then update) are wrapped so a Stripe-side
   // slowdown or hiccup surfaces as a clean 500 instead of an unhandled 80s+
   // SDK timeout or an uncaught TypeError — matches checkout/route.ts and
@@ -134,7 +116,7 @@ export async function POST(req: Request) {
     // fail into the clean "no subscription" branch below, not throw
     // .find-of-undefined out of the route.
     sub = Array.isArray(subs.data)
-      ? subs.data.find((s) => LIVE_FOR_MANAGEMENT.has(s.status))
+      ? subs.data.find((s) => isLiveForManagement(s.status))
       : undefined;
   } catch (e) {
     console.error(
@@ -162,10 +144,7 @@ export async function POST(req: Request) {
   }
 
   const currentQty = item.quantity ?? 1;
-  const nextQty =
-    body.direction === "up"
-      ? Math.min(MAX_QTY, currentQty + 1)
-      : Math.max(MIN_QTY, currentQty - 1);
+  const nextQty = nextQuantity(body.direction, currentQty);
 
   if (nextQty === currentQty) {
     return NextResponse.json(
