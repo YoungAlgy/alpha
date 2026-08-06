@@ -34,6 +34,17 @@ export function deepseekRateLimitedCount(): number {
   return rateLimitedCount;
 }
 
+// Every REAL call, regardless of outcome — unlike rateLimitedCount above,
+// this is the actual spend signal: DeepSeek has no free-tier wall (see this
+// file's own header comment), so a 429 here would be surprising, not the
+// normal stopping mechanism the other counters exist to surface. Mirrors
+// topic-blurb.ts's topicBlurbPaidCallCount for the same alpha-spend-cap-01
+// reasoning (alpha_full_app_review_2026-08-05.md).
+let callCount = 0;
+export function deepseekCallCount(): number {
+  return callCount;
+}
+
 export class DeepSeekTruncatedError extends Error {}
 
 function failDeepSeek(res: Response): Promise<never> {
@@ -56,6 +67,7 @@ export async function deepseekGenerateText(
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) throw new Error("DEEPSEEK_API_KEY missing from environment");
 
+  callCount += 1;
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },

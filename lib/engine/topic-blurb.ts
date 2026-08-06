@@ -13,6 +13,21 @@ function narrowKind(k: string | undefined): BlurbItemKind {
   return VALID_KINDS.includes(k as BlurbItemKind) ? (k as BlurbItemKind) : "note";
 }
 
+// Mirrors groqRateLimitedCount/deepseekRateLimitedCount's monotonic-counter
+// reasoning (never reset per-invocation, survives overlapping cron runs on a
+// warm lambda) — see lib/brave.ts's comment for the full rationale. Unlike
+// those, this counts every REAL call regardless of outcome: Haiku/Sonnet are
+// two of the three tiers with no free-tier wall to organically stop a
+// runaway (see alpha-spend-cap-01 in alpha_full_app_review_2026-08-05.md —
+// the cron loop has no cost-aware brake, only a wall-clock one). One
+// increment per anthropicClient().messages.create() call below covers both
+// tiers (shared by callClaudeAndParse) AND their own internal retry-once —
+// a retry is a second real billed call, not a free redo.
+let paidCallCount = 0;
+export function topicBlurbPaidCallCount(): number {
+  return paidCallCount;
+}
+
 // Narrow "is this specifically a 429" check, shared by every one of the five
 // generation tiers' retry-skip below (Haiku/Sonnet via the Anthropic SDK,
 // Gemini/Groq/DeepSeek via their own thin clients) — deliberately NOT
@@ -338,6 +353,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   // Claude, parameterized by model — shared by both the Haiku (cheap) and
   // Sonnet (last-resort) tiers below, same call shape either way.
   async function callClaudeAndParse(model: string): Promise<ParsedBlurb> {
+    paidCallCount += 1;
     const response = await anthropicClient().messages.create({
       model,
       max_tokens: 4000,

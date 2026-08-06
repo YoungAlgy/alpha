@@ -89,6 +89,24 @@ export async function generateIssue(
   // its own independent attempt instead of inheriting one bad draw for the
   // rest of the run.
   inFlight: Map<string, Promise<TopicBlurb | null>> = new Map(),
+  // Topics that HARD-FAILED (exhausted every generation tier, or the search
+  // itself threw) this run, keyed the SAME as dryCache. CALLER-OWNED, same
+  // sharing model — the cron passes ONE Set to every generateIssue call in
+  // its loop (alpha-spend-cap-02, found in review 2026-08-06 — see
+  // alpha_full_app_review_2026-08-05.md). Deliberately SEPARATE from
+  // dryCache rather than folded into it: dryCache means "genuinely no fresh
+  // news," failedCache means "the pipeline itself broke" — conflating them
+  // would make a provider outage silently read as a quiet news day in logs.
+  // Without this, a topic that fails all five tiers for one subscriber gets
+  // retried from scratch — full waterfall, every paid tier included — by
+  // that same subscriber's Pass-2 filler attempt, the cron's own Layer-1
+  // fast-fallback retry, AND every later subscriber who shares that topic,
+  // inverting the cost-sharing property the whole cache system exists for
+  // during exactly the highest-cost failure mode (a systemic outage or
+  // truncation bug). Scoped to this run only (same lifetime as dryCache/
+  // inFlight, freshly created per cron invocation) so a real transient blip
+  // isn't blacklisted into tomorrow's run.
+  failedCache: Set<string> = new Set<string>(),
 ): Promise<Issue> {
   // Map the pickable "zodiac" topic to the reader's per-sign id, dropping it when
   // there's no birthday (see mapTopicsForUser). If the WHOLE pool maps to empty
@@ -153,6 +171,7 @@ export async function generateIssue(
     if (cached && cached.items.length > 0) return { ...cached, topicLabel: topicLabel(id) };
     const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
     if (dryCache.has(dryKey)) return null; // searched dry earlier this batch — no re-search
+    if (failedCache.has(dryKey)) return null; // hard-failed earlier this batch — no re-pay
 
     // Reuse an already-running search+generate for this exact key instead of
     // starting a duplicate one (see inFlight's own comment on generateIssue's
@@ -241,6 +260,13 @@ export async function generateIssue(
           }
         },
         () => {
+          // A genuine hard failure (resolveTopicSignal threw, or
+          // generateTopicBlurb exhausted every tier — see failedCache's own
+          // comment on generateIssue's signature). Recorded BEFORE the
+          // inFlight eviction below so a caller already waiting on this same
+          // promise, or one that arrives between these two lines, can't slip
+          // through and start its own duplicate full-waterfall retry.
+          failedCache.add(dryKey);
           if (inFlight.get(dryKey) === raw) inFlight.delete(dryKey);
         }
       );
@@ -264,6 +290,18 @@ export async function generateIssue(
     // No cache read: genFiller only runs when genLive already returned null (no
     // live blurb cached this period), so a lookup here always misses. Mock
     // blurbs are deliberately never cached (see the note above), so generate it.
+    //
+    // EXCEPT failedCache: genFiller runs IMMEDIATELY after genLive returns
+    // null for this exact topic — if that null was a genuine hard failure
+    // (every generation tier exhausted, not just "no live signal"), the
+    // underlying problem is almost always provider-level (an outage, a rate
+    // limit, a systemic bug), not content-level — retrying the identical
+    // generateTopicBlurb chain with mock signal instead of live signal is
+    // very unlikely to succeed and pays the full waterfall again for nothing
+    // (alpha-spend-cap-02 — this was one of the three named repeat-payers in
+    // the original finding, see generateIssue's failedCache comment).
+    const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
+    if (failedCache.has(dryKey)) return null;
     const signal = resolveMockSignal(id, weekOf);
     if (!signal) return null;
     const blurb = await withDeadline(

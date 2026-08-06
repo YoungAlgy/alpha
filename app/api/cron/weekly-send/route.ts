@@ -10,7 +10,8 @@ import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence"
 import { braveRateLimitedCount } from "@/lib/brave";
 import { youRateLimitedCount } from "@/lib/you-search";
 import { groqRateLimitedCount } from "@/lib/engine/groq-client";
-import { deepseekRateLimitedCount } from "@/lib/engine/deepseek-client";
+import { deepseekRateLimitedCount, deepseekCallCount } from "@/lib/engine/deepseek-client";
+import { topicBlurbPaidCallCount } from "@/lib/engine/topic-blurb";
 import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId, Issue } from "@/lib/types";
@@ -120,6 +121,27 @@ const PERSIST_AND_SEND_DEADLINE_MS = 45_000;
 // revisit if the list grows enough to actually hit it in practice.
 const CRON_SAFETY_MARGIN_MS = PER_USER_DEADLINE_MS + 60_000;
 const CRON_TIME_BUDGET_MS = maxDuration * 1000 - CRON_SAFETY_MARGIN_MS;
+
+// Cost-aware brake, alongside the wall-clock one above (alpha-spend-cap-01,
+// found in review 2026-08-06 — see alpha_full_app_review_2026-08-05.md).
+// Gemini/Groq/Brave/You.com all have a real free-tier wall that organically
+// stops a runaway (they just start 429ing); DeepSeek/Haiku/Sonnet don't — a
+// real funded balance with no automatic backstop (see deepseek-client.ts's
+// own header comment). This bounds the genuinely uncapped-cost tiers
+// specifically: topicBlurbPaidCallCount() (Haiku+Sonnet, incremented once
+// per real anthropicClient().messages.create() call, retries included) plus
+// deepseekCallCount(). A normal run's topic-blurb cache means most days stay
+// a small fraction of this (only DISTINCT topics across the whole
+// subscriber list ever reach a paid tier, and most drafts succeed at the
+// free Gemini/Groq tiers first) — this is a circuit breaker for the
+// described failure mode (a bug or provider incident forcing every topic
+// through the full waterfall), not a model of normal usage. FIRST-PASS
+// ESTIMATE, not measured against real production totals (no live spend
+// telemetry to calibrate against yet) — generous enough not to false-trip a
+// busy day, tight enough to stop real bleeding well before it becomes a
+// large bill. Revisit once a real run's totals are observed (the summary
+// below logs them every run specifically so this can be tuned later).
+const PAID_CALL_CEILING = 400;
 
 interface SubscriberRow {
   id: string;
@@ -286,6 +308,10 @@ export async function GET(req: Request) {
   const youBaseline = youRateLimitedCount();
   const groqBaseline = groqRateLimitedCount();
   const deepseekBaseline = deepseekRateLimitedCount();
+  // Baselined the same way as the four rate-limit counters above, but this
+  // pair feeds an actual mid-loop brake (PAID_CALL_CEILING below), not just
+  // the post-run summary — see that constant's comment for why.
+  const paidCallBaseline = topicBlurbPaidCallCount() + deepseekCallCount();
   let sent = 0;
   // Live generation failed/timed out but a backup layer covered it (see the
   // catch block below) — counted separately from `sent`/`failed` so the
@@ -314,7 +340,13 @@ export async function GET(req: Request) {
   // Subscribers who WOULD have gotten a real send but the time budget ran out
   // first (see CRON_TIME_BUDGET_MS) — surfaced the same way, so a run that
   // starts approaching the cap is loud instead of a silent Vercel kill.
+  // Also holds anyone deferred by PAID_CALL_CEILING (paidCallCeilingHit
+  // below distinguishes which one, for the ops alert) — same recovery path
+  // either way (?weekOf= backfill), so one shared list is enough.
   const deferred: string[] = [];
+  // Set once PAID_CALL_CEILING trips, so the ops alert below can name the
+  // real cause instead of lumping a cost-brake defer in with a scale one.
+  let paidCallCeilingHit = false;
 
   // ONE dry-topic cache shared across every subscriber in THIS run — passed
   // into each generateIssue call so a topic with no fresh news spends its
@@ -330,6 +362,13 @@ export async function GET(req: Request) {
   // identical search+generation a second time on the exact rate-limited
   // accounts the fallback exists to relieve.
   const inFlight = new Map<string, Promise<TopicBlurb | null>>();
+  // ONE hard-failure cache shared across every subscriber in THIS run, same
+  // sharing model as dryCache/inFlight above — see generateIssue's own
+  // comment on the failedCache param (alpha-spend-cap-02). Stops a topic
+  // that exhausted every generation tier for one subscriber from paying the
+  // full waterfall again for the filler pass, the fast-fallback layer below,
+  // or any later subscriber sharing that topic this run.
+  const failedCache = new Set<string>();
 
   // Allow ?force=1 to override the delivered_at idempotency gate (only the
   // admin will ever hit this with the CRON_SECRET in hand; useful for explicit
@@ -585,6 +624,17 @@ export async function GET(req: Request) {
     if (Date.now() - startedAt > CRON_TIME_BUDGET_MS) {
       deferred.push(row.email);
       console.warn(`[cron/weekly-send] DEFERRED (time budget exhausted) → ${row.id}`);
+      continue;
+    }
+
+    // Cost budget: same defer-not-crash treatment as the time budget above,
+    // but for real spend instead of wall-clock (see PAID_CALL_CEILING).
+    // Checked every iteration (cheap — two counter reads) so a mid-run spike
+    // stops the bleeding immediately rather than waiting for the next batch.
+    if (topicBlurbPaidCallCount() + deepseekCallCount() - paidCallBaseline > PAID_CALL_CEILING) {
+      paidCallCeilingHit = true;
+      deferred.push(row.email);
+      console.warn(`[cron/weekly-send] DEFERRED (paid-call ceiling exhausted) → ${row.id}`);
       continue;
     }
 
@@ -879,7 +929,7 @@ export async function GET(req: Request) {
               sections: reusableSections,
             }
           : await withDeadline(
-              generateIssue(profile, weekOf, letterSize, freshness, dryCache, inFlight),
+              generateIssue(profile, weekOf, letterSize, freshness, dryCache, inFlight, failedCache),
               PER_USER_DEADLINE_MS,
               `generateIssue(${row.id})`
             );
@@ -993,7 +1043,7 @@ export async function GET(req: Request) {
           const smallPool = pool.slice(0, FAST_FALLBACK_TOPIC_COUNT);
           if (smallPool.length > 0) {
             backupIssue = await withDeadline(
-              generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache, inFlight),
+              generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache, inFlight, failedCache),
               FAST_FALLBACK_DEADLINE_MS,
               `fast-fallback(${row.id})`
             );
@@ -1058,6 +1108,10 @@ export async function GET(req: Request) {
   const youRateLimited = youRateLimitedCount() - youBaseline;
   const groqRateLimited = groqRateLimitedCount() - groqBaseline;
   const deepseekRateLimited = deepseekRateLimitedCount() - deepseekBaseline;
+  // Logged every run (not just when the ceiling trips) specifically so a
+  // real day's totals can calibrate PAID_CALL_CEILING's first-pass estimate
+  // — see that constant's comment.
+  const paidCallsThisRun = topicBlurbPaidCallCount() + deepseekCallCount() - paidCallBaseline;
   const summary = {
     weekOf,
     subscribers: rows.length,
@@ -1078,6 +1132,8 @@ export async function GET(req: Request) {
     youRateLimited,
     groqRateLimited,
     deepseekRateLimited,
+    paidCallsThisRun,
+    paidCallCeilingHit,
     elapsedMs,
     failures: failures.slice(0, 25),
   };
@@ -1108,7 +1164,8 @@ export async function GET(req: Request) {
     braveRateLimited > 0 ||
     groqRateLimited > 0 ||
     deepseekRateLimited > 0 ||
-    deferred.length > 0
+    deferred.length > 0 ||
+    paidCallCeilingHit
   ) {
     // A "failed" subscriber isn't necessarily one who got nothing anymore —
     // some were caught by a backup layer. genuinelyMissed is the real
@@ -1161,11 +1218,21 @@ export async function GET(req: Request) {
         ? `DeepSeek (the uncapped backstop tier) returned 429 on ${deepseekRateLimited} calls this run — that shouldn't normally happen on a funded account. Worth checking the DeepSeek dashboard for balance/concurrency issues.`
         : "",
       deferred.length
-        ? `Time budget exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${deferred.join(", ")}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically). This is a scale signal — the subscriber list is big enough that the daily run is pressing against Vercel's time cap.`
+        ? `${paidCallCeilingHit ? "Time budget and/or the paid-call cost ceiling" : "Time budget"} exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${deferred.join(", ")}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically).${paidCallCeilingHit ? "" : " This is a scale signal — the subscriber list is big enough that the daily run is pressing against Vercel's time cap."}`
+        : "",
+      // PAID_CALL_CEILING tripped — a materially different signal than a
+      // scale-driven time-budget defer above: this means Haiku+Sonnet+
+      // DeepSeek combined made more real, billed calls than a normal day's
+      // topic-cache-sharing should ever produce, which is exactly the
+      // "systemic failure forcing every topic through the full waterfall"
+      // scenario alpha-spend-cap-01 exists to catch. Worth checking
+      // Anthropic/DeepSeek dashboards for actual spend, not just quota.
+      paidCallCeilingHit
+        ? `COST BRAKE TRIPPED: paid-tier calls (Haiku+Sonnet+DeepSeek) hit ${paidCallsThisRun} this run, over the ${PAID_CALL_CEILING} ceiling — stopped starting new subscribers early. Check for a systemic generation failure (every topic escalating through the full waterfall) rather than assuming this is just a busy day.`
         : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred (time budget)` : ""}`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}`,
       lines.join("\n")
     );
   }
