@@ -227,6 +227,38 @@ export async function POST(req: Request) {
     // Best-effort persistence (doesn't block on failure)
     const persistence = await persistIssueIfPossible(profile, issue, weekOf);
 
+    // Establish the session server-side instead of shipping a bearer link to
+    // the client (found in review 2026-08-06 -- see persist.ts's hashedToken
+    // comment for the full exposure this closes). verifyOtp runs on the
+    // SAME @supabase/ssr server client verifyPaid() above already used,
+    // which writes the resulting Set-Cookie straight onto this route's own
+    // response via lib/supabase/server.ts's cookies().set() wiring -- no
+    // token ever needs to leave the server. Best-effort: a verification
+    // hiccup must never fail the request, the reader still gets their
+    // letter and can sign in normally (the auth user + magic-link-eligible
+    // account both still exist either way).
+    let signedIn = false;
+    if (persistence?.hashedToken) {
+      try {
+        const sb = await supabaseServerClient();
+        const { error: verifyErr } = await sb.auth.verifyOtp({
+          token_hash: persistence.hashedToken,
+          // NOT always "magiclink" -- see persist.ts's verificationType
+          // comment. A brand-new reader's token is actually type "signup"
+          // (generateLink implicitly creates the user); only a RETURNING
+          // reader gets a true "magiclink" token back.
+          type: persistence.verificationType,
+        });
+        if (verifyErr) {
+          console.warn("[generate] verifyOtp failed:", verifyErr.message);
+        } else {
+          signedIn = true;
+        }
+      } catch (e) {
+        console.warn("[generate] verifyOtp threw:", e instanceof Error ? e.message : e);
+      }
+    }
+
     // Best-effort email send (doesn't block on failure either — letter still
     // renders on /inbox even if email delivery hiccups)
     //
@@ -322,7 +354,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       issue,
       userId: persistence?.userId ?? null,
-      magicLink: persistence?.magicLink ?? null,
+      signedIn,
       emailSent,
     });
   } catch (err) {

@@ -125,7 +125,7 @@ export default function WritingPage() {
           return;
         }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const data = (await r.json()) as { issue: Issue; magicLink?: string | null };
+        const data = (await r.json()) as { issue: Issue; signedIn?: boolean };
         if (cancelled) return;
         clearInterval(stepTimer);
         setCurrentStep(steps.length - 1);
@@ -136,10 +136,17 @@ export default function WritingPage() {
         // Funnel terminal event — the moment a paid subscriber's first letter
         // lands. The conversion the whole funnel exists to produce.
         track("letter_generated");
-        // Auto sign-in after checkout: the generate API returned a single-use
-        // magic link tied to this email. Hitting it sets the Supabase session
-        // cookie and bounces to /inbox via /auth/callback. Without this the
-        // user lands on /inbox unauthenticated and gets sent back to /welcome.
+        // Auto sign-in after checkout: /api/generate already verified the
+        // sign-in token server-side and set the Supabase session cookie
+        // directly on that response (found in review 2026-08-06 -- the old
+        // version shipped the raw token in this JSON body and navigated the
+        // browser to it, a live, fully-authenticating bearer credential
+        // sitting in a JS-readable fetch response). By the time this fetch()
+        // resolved, the cookie is already set -- no separate navigation
+        // through a token URL is needed, just go to /inbox. If verifyOtp
+        // failed server-side (data.signedIn false, rare), the reader still
+        // lands on /inbox same as always; they just aren't signed in yet and
+        // can use the normal sign-in flow.
         finishTimer = setTimeout(() => {
           if (cancelled) return;
           // Wipe onboarding answers (name, email, birthday, etc.) now that
@@ -147,11 +154,7 @@ export default function WritingPage() {
           // shared/library-computer risk otherwise (next visitor's forms and
           // even /signin's email field would silently prefill from it).
           reset();
-          if (data.magicLink) {
-            window.location.href = data.magicLink;
-          } else {
-            router.push("/inbox" as never);
-          }
+          router.push("/inbox" as never);
         }, 1200);
       } catch (e) {
         if (cancelled) return;

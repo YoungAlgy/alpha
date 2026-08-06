@@ -5,7 +5,20 @@ import type { Issue, UserProfile } from "@/lib/types";
 
 interface PersistResult {
   userId: string;
-  magicLink: string | null;
+  // The verifiable token from generateLink(), NOT the raw action_link URL --
+  // found in review 2026-08-06: returning the full link in the /api/generate
+  // JSON response body put a live, fully-authenticating bearer credential
+  // directly into a JS-readable fetch response (any extension with response-
+  // reading permissions, or a future XSS foothold, gets full account
+  // takeover of the reader who just paid -- a materially larger exposure
+  // than the email-delivery channel this replaced). The caller verifies this
+  // hash server-side instead (auth.verifyOtp) and never ships the raw token
+  // to the client at all.
+  hashedToken: string | null;
+  // The verification type to pass to auth.verifyOtp alongside hashedToken --
+  // see hashedToken's sibling comment on why this can't be hardcoded to
+  // "magiclink".
+  verificationType: string;
 }
 
 function supabaseConfigured(): boolean {
@@ -41,8 +54,9 @@ function nonEmptyProfileFields(profile: UserProfile): Record<string, string | st
  * (user_id, week_of) unique constraint — re-runs will upsert.
  *
  * Pattern: use service-role admin.generateLink to find-or-create the auth user
- * by email AND get a magic link in one round trip. The link can be emailed
- * later so the user can sign back in next time.
+ * by email AND get a verifiable token in one round trip. The caller verifies
+ * it server-side (auth.verifyOtp) to establish a real session via cookies --
+ * see hashedToken's own comment for why the raw link is never returned here.
  *
  * Returns null if Supabase isn't configured or no email is available — letter
  * still renders fine, just isn't archived.
@@ -81,7 +95,18 @@ export async function persistIssueIfPossible(
       return null;
     }
     const userId = linkData.user.id;
-    const magicLink = linkData.properties?.action_link ?? null;
+    const hashedToken = linkData.properties?.hashed_token ?? null;
+    // NOT always "magiclink", despite requesting type: "magiclink" above --
+    // verified live (2026-08-06): for an email with no EXISTING confirmed
+    // auth user, generateLink implicitly creates one via the signup path,
+    // and the token it returns must be verified as type "signup", not
+    // "magiclink" (verifyOtp rejects it with "Email link is invalid or has
+    // expired" otherwise -- caught by an end-to-end browser test before
+    // shipping, not by reasoning about the SDK's types alone). Only a
+    // RETURNING reader (an existing confirmed user) actually gets a true
+    // "magiclink" token back. Read the real type Supabase assigned instead
+    // of assuming it matches the request.
+    const verificationType = linkData.properties?.verification_type ?? "magiclink";
 
     // Sync the profile fields onto public.users (service role bypasses RLS).
     // Surface failures: this row is what the weekly cron reads — a silently
@@ -194,7 +219,7 @@ export async function persistIssueIfPossible(
       console.warn("[persist] issue upsert failed:", issueErr.message);
     }
 
-    return { userId, magicLink };
+    return { userId, hashedToken, verificationType };
   } catch (e) {
     console.warn("[persist] exception:", e instanceof Error ? e.message : e);
     return null;
