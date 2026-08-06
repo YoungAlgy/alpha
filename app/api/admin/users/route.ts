@@ -20,13 +20,31 @@ interface Stats {
 async function gatherStats(): Promise<Stats> {
   const sb = await supabaseServiceClient();
 
-  // One query, in-memory aggregation — small population, fine for V1
-  const { data: rows } = await sb
-    .from("users")
-    .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id");
+  // Paginated fetch, in-memory aggregation — small population, fine for V1.
+  // Paginated (not a single unbounded select) because PostgREST silently
+  // caps an unbounded select at 1,000 rows, which would start silently
+  // undercounting every stat below once totalUsers passes that mark — same
+  // bug class already fixed for alreadyDelivered/priorIssueCount in the cron.
+  const PAGE_SIZE = 1000;
+  type StatsRow = {
+    subscribed_at: string | null;
+    cancelled_at: string | null;
+    unsubscribed_at: string | null;
+    stripe_customer_id: string | null;
+  };
+  const rows: StatsRow[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page } = await sb
+      .from("users")
+      .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id")
+      .range(from, from + PAGE_SIZE - 1);
+    if (!page || page.length === 0) break;
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
 
   const stats = {
-    totalUsers: rows?.length ?? 0,
+    totalUsers: rows.length,
     paying: 0,
     freeGranted: 0,
     cancelled: 0,
@@ -37,7 +55,7 @@ async function gatherStats(): Promise<Stats> {
   // version double-counted a user who was both unsubscribed and paying).
   // Priority mirrors what the owner cares about most: opted out > cancelled >
   // paying > free > never-subscribed.
-  for (const r of rows ?? []) {
+  for (const r of rows) {
     if (r.unsubscribed_at) stats.unsubscribed++;
     // "cancelled" = actually churned (cancel date in the PAST). A FUTURE
     // cancelled_at is cancel-at-period-end: still paying, still getting

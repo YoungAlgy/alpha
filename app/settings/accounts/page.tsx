@@ -7,6 +7,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { topicLabel } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { demographicSummary } from "@/lib/demographics";
+import { hasActiveAccess } from "@/lib/access";
 
 interface AdminUserRow {
   id: string;
@@ -86,7 +87,12 @@ export default function AdminAccountsPage() {
 
   function statusLabel(u: AdminUserRow): { label: string; color: string } {
     if (u.unsubscribed_at) return { label: "Unsubscribed", color: "var(--ink-soft)" };
-    if (u.cancelled_at) return { label: "Cancelled", color: "var(--ink-soft)" };
+    // "Cancelled" = actually churned (cancel date in the PAST). A FUTURE
+    // cancelled_at is cancel-at-period-end: still paying, still getting
+    // letters, so it falls through to the Paying row below — matches
+    // hasActiveAccess, the single source of truth the cron + access gates use
+    // (and the same rule gatherStats applies to the stat tile above).
+    if (u.cancelled_at && !hasActiveAccess(u.cancelled_at)) return { label: "Cancelled", color: "var(--ink-soft)" };
     if (u.subscribed_at && u.stripe_customer_id) return { label: "Paying", color: "var(--accent-ink)" };
     if (u.subscribed_at && !u.stripe_customer_id) return { label: "Free (granted)", color: "var(--accent-ink)" };
     return { label: "Not subscribed", color: "var(--ink-soft)" };

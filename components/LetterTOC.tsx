@@ -14,7 +14,7 @@ export function LetterTOC({ issue }: LetterTOCProps) {
   const [active, setActive] = useState<string | null>(null);
 
   useEffect(() => {
-    function onScroll() {
+    function computeActive() {
       let pick: string | null = null;
       for (const s of issue.sections) {
         const el = document.getElementById(topicAnchor(s.topicId));
@@ -26,7 +26,19 @@ export function LetterTOC({ issue }: LetterTOCProps) {
       }
       setActive(pick);
     }
-    onScroll();
+    // Native scroll events can fire many times per frame; the loop above does a
+    // getBoundingClientRect() per section, so run it at most once per animation
+    // frame instead of on every event to avoid layout thrashing while scrolling.
+    let ticking = false;
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        computeActive();
+        ticking = false;
+      });
+    }
+    computeActive();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [issue]);

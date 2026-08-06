@@ -64,7 +64,7 @@ export default function PrivacyPage() {
           <strong>Supabase</strong> stores your account and letter history securely.
         </li>
         <li>
-          <strong>Vercel</strong> hosts the web app.
+          <strong>Cloudflare</strong> hosts the web app.
         </li>
       </ul>
 
@@ -79,7 +79,9 @@ export default function PrivacyPage() {
       <H2>Cookies</H2>
       <p>
         We use only the cookies needed to keep you logged in and remember your
-        theme. No advertising cookies, no third-party tracking pixels.
+        theme. No advertising cookies. Source links in your letters show a small
+        site icon loaded from Google&apos;s public favicon service, which sees the
+        domain of the article but nothing else about you.
       </p>
 
       <H2>Children</H2>

@@ -59,7 +59,10 @@ export async function POST(req: Request) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unknown error";
       console.error("[support] Supabase insert failed:", msg);
-      return NextResponse.json({ error: msg }, { status: 500 });
+      // Don't return the raw Supabase error to an unauthenticated caller --
+      // it can leak schema/constraint/RLS details. Match the account/*
+      // routes' pattern: log the detail server-side, return a generic message.
+      return NextResponse.json({ error: "Couldn't save. Try again." }, { status: 500 });
     }
   } else {
     console.log(
