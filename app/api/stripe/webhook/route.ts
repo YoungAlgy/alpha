@@ -39,6 +39,28 @@ export async function POST(req: Request) {
 
   const sb = await supabaseServiceClient();
 
+  // Structural redelivery guard: Stripe delivers at-least-once, so any event
+  // can arrive twice. Record event.id before touching anything else -- if
+  // it's already here, this is a redelivery of an event we've already
+  // started (or finished) handling, so short-circuit with 200 rather than
+  // re-running a handler that might not tolerate a second run. Without this
+  // table, idempotency was emergent (every handler below happens to do a
+  // careful read-then-non-destructive-write), not structurally enforced --
+  // see the stripe_webhook_events migration. ignoreDuplicates makes this an
+  // INSERT ... ON CONFLICT DO NOTHING: 0 rows back means the id was already
+  // present. Best-effort: a genuine Supabase error here (table hiccup, not
+  // a real dup) shouldn't block processing, so fall through to the switch.
+  const { data: dedupRows, error: dedupErr } = await sb
+    .from("stripe_webhook_events")
+    .upsert({ id: event.id, type: event.type }, { onConflict: "id", ignoreDuplicates: true })
+    .select("id");
+  if (dedupErr) {
+    console.warn("[stripe-webhook] dedup insert failed, processing without guard:", dedupErr.message);
+  } else if ((dedupRows?.length ?? 0) === 0) {
+    console.warn(`[stripe-webhook] duplicate delivery of event ${event.id} (${event.type}) -- skipping`);
+    return NextResponse.json({ received: true });
+  }
+
   try {
     switch (event.type) {
       case "checkout.session.completed": {
@@ -279,7 +301,8 @@ export async function POST(req: Request) {
         // with no one noticing. Best-effort: sendOpsAlert never throws.
         await sendOpsAlert(
           "alpha. payment failed",
-          `Invoice ${inv.id} failed for customer ${inv.customer}. Stripe will retry automatically over the next couple weeks; check the customer in the Stripe dashboard if it keeps failing.`
+          `Invoice ${inv.id} failed for customer ${inv.customer}. Stripe will retry automatically over the next couple weeks; check the customer in the Stripe dashboard if it keeps failing.`,
+          `alpha-ops-alert-${inv.id}`
         );
         break;
       }

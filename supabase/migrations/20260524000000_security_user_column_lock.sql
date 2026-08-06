@@ -13,10 +13,19 @@
 --
 -- Fix: a BEFORE UPDATE trigger that, for any non-service_role caller, pins the
 -- billing + identity columns back to their OLD values. Profile fields
--- (first_name, city, theme, topics, *_blurb) remain freely user-editable, so
--- the onboarding sync, topic-picker, and theme-picker keep working. The
--- service_role (server-side secret key: webhook, update-quantity, generate,
--- cron) bypasses the lock and may write anything.
+-- (first_name, city, theme, topics, *_blurb, and later birthday + gender,
+-- added 20260805100000) remain freely user-editable, so the onboarding sync,
+-- topic-picker, and theme-picker keep working. The service_role (server-side
+-- secret key: webhook, update-quantity, generate, cron) bypasses the lock and
+-- may write anything.
+--
+-- NOTE for future columns: this list is the locked set, not an allowlist --
+-- any column not named in new.<col> := old.<col> below stays open to
+-- self-edit by default. When adding a new users column, decide explicitly
+-- whether it belongs here (billing/identity, like the ones already locked)
+-- or is meant to be user-editable (like the profile fields above), and say
+-- so in that migration's comment -- don't let it fall through unlocked by
+-- accident.
 --
 -- Verified post-apply via simulated authenticated vs service_role contexts:
 --   authenticated update of topic_quota/subscribed_at/stripe_customer_id → reverted

@@ -4,6 +4,7 @@ import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
 import { clampQuota, TOPICS_PER_BUNDLE, MAX_TOPIC_QUOTA, MIN_TOPIC_QUOTA } from "@/lib/types";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -39,6 +40,20 @@ export async function POST(req: Request) {
   const { data: { user }, error: authErr } = await sb.auth.getUser();
   if (authErr || !user) {
     return NextResponse.json({ error: "Sign in first" }, { status: 401 });
+  }
+
+  // Rate limit per user: each call is a real Stripe proration charge/credit,
+  // not just a dedupe-by-idempotency-key case — the idempotency key only
+  // collapses an exact repeat within the same 30s bucket, so a rapid
+  // up/down/up/down (a compromised session, a buggy client retry loop) would
+  // otherwise land as genuinely distinct billing mutations with nothing to
+  // stop it.
+  const limited = rateLimit(`qty:${user.id}`, { limit: 10, windowMs: 60 * 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many requests. Try again in ${Math.ceil(limited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
   }
 
   let body: Body = {};

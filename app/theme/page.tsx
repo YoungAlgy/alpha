@@ -100,6 +100,8 @@ export default function ThemePage() {
               <button
                 key={t.id}
                 type="button"
+                aria-pressed={isPicked}
+                aria-label={`${t.label} theme${isPicked ? ", selected" : ""}`}
                 onClick={() => pickTheme(t.id)}
                 onMouseEnter={() => isPicked || hoverTheme()}
                 className="text-left rounded-lg transition-all overflow-hidden theme-tile"
@@ -114,7 +116,12 @@ export default function ThemePage() {
                   transform: isPicked ? "translateY(-2px)" : undefined,
                 }}
               >
-                <div className="h-full p-3 flex flex-col">
+                {/* Purely decorative letter-preview mockup — the button's own
+                    aria-label above is the real accessible name, so this
+                    entire block (fake date/greeting/body copy/swatch dots)
+                    is hidden from screen readers instead of being read as a
+                    wall of text on every one of the ~9 theme options. */}
+                <div className="h-full p-3 flex flex-col" aria-hidden="true">
                   <div
                     className="text-[7px] tracking-[0.16em] mb-1.5"
                     style={{ color: sw.ink, opacity: 0.45 }}

@@ -105,9 +105,13 @@ RESEND_FROM="alpha." <alpha@everyday.report>
 STRIPE_SECRET_KEY=             # Stripe (Alpha account)
 STRIPE_WEBHOOK_SECRET=         # whsec_... for the webhook endpoint
 BRAVE_SEARCH_API_KEY=          # Brave Search
+GEMINI_API_KEY=                # search + generation fallback tier (Brave rate-limited, or Claude down)
+GROQ_API_KEY=                  # generation fallback tier 2 (Gemini -> Groq -> DeepSeek -> Haiku -> Sonnet)
+DEEPSEEK_API_KEY=              # generation fallback tier 3, the uncapped backstop behind Groq
+YOU_API_KEY=                   # search fallback tier 3 (Brave -> Gemini grounded search -> You.com)
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
-SUPABASE_SECRET_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=  # old name NEXT_PUBLIC_SUPABASE_ANON_KEY still accepted as a fallback
+SUPABASE_SECRET_KEY=            # old name SUPABASE_SERVICE_ROLE_KEY still accepted as a fallback
 NEXT_PUBLIC_APP_URL=https://alpha.everyday.report  # canonical origin for Stripe URLs + ALL email links
 UNSUBSCRIBE_SECRET=            # HMAC secret for unsubscribe + letter-view tokens
 CRON_SECRET=                   # bearer for /api/cron/weekly-send (GitHub Actions sends it)
@@ -115,6 +119,8 @@ SUPPORT_FORWARD_EMAIL=         # where /api/support notifications go (optional)
 NEXT_PUBLIC_POSTHOG_KEY=       # analytics (optional — inert if unset)
 OPS_ALERT_EMAIL=               # internal ops-alert recipient (optional, defaults to youngalgy@gmail.com)
 OPS_ALERT_WEBHOOK_URL=         # Discord/Slack webhook fallback when Resend itself is broken (optional)
+JINA_API_KEY=                  # Jina Reader auth for deep-read article fetch (optional — Jina Reader works keyless, this just raises its rate limit)
+ALPHA_DISABLE_DEEPREAD=        # set to "1" to kill deep-read and fall back to snippet-only signal (optional)
 ```
 
 `GET /api/health` returns which services are configured + active email provider.

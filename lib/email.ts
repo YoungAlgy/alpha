@@ -234,12 +234,26 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
 // failing together, with nothing left to notice either. OPS_ALERT_WEBHOOK_URL
 // is optional; leave it unset and this is identical to the old Resend-only
 // behavior.
-export async function sendOpsAlert(subject: string, body: string): Promise<void> {
-  const viaResend = await sendOpsAlertViaResend(subject, body);
+//
+// idempotencyKey is optional and caller-supplied (unlike sendLetterNotification,
+// there's no single natural key shared by every call site here) -- pass one
+// whenever the alert is tied to an event Stripe/etc. can redeliver, e.g.
+// `alpha-ops-alert-${invoiceId}` for invoice.payment_failed, so a genuine
+// redelivery collapses provider-side instead of paging Algy twice.
+export async function sendOpsAlert(
+  subject: string,
+  body: string,
+  idempotencyKey?: string
+): Promise<void> {
+  const viaResend = await sendOpsAlertViaResend(subject, body, idempotencyKey);
   if (!viaResend) await sendOpsAlertViaWebhook(subject, body);
 }
 
-async function sendOpsAlertViaResend(subject: string, body: string): Promise<boolean> {
+async function sendOpsAlertViaResend(
+  subject: string,
+  body: string,
+  idempotencyKey?: string
+): Promise<boolean> {
   try {
     if (!resendConfiguredInternal()) return false;
     const to = process.env.OPS_ALERT_EMAIL?.trim() || "youngalgy@gmail.com";
@@ -248,12 +262,15 @@ async function sendOpsAlertViaResend(subject: string, body: string): Promise<boo
     // etc.) — it does NOT throw, same as sendLetterNotification/sendWelcomeEmail
     // below. Missing this check was the actual bug the verify script caught:
     // an invalid key "succeeded" silently and the webhook fallback never fired.
-    const result = await resendClient().emails.send({
-      from: resendFrom,
-      to,
-      subject,
-      text: body,
-    });
+    const result = await resendClient().emails.send(
+      {
+        from: resendFrom,
+        to,
+        subject,
+        text: body,
+      },
+      idempotencyKey ? { idempotencyKey } : undefined
+    );
     if (result.error) {
       console.warn("[ops-alert] Resend failed:", result.error.message);
       return false;

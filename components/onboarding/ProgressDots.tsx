@@ -5,7 +5,14 @@ interface ProgressDotsProps {
 
 export function ProgressDots({ current, total }: ProgressDotsProps) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div
+      className="flex items-center gap-1.5"
+      role="progressbar"
+      aria-valuenow={current}
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-valuetext={`Step ${current} of ${total}`}
+    >
       {Array.from({ length: total }).map((_, i) => {
         const idx = i + 1;
         const filled = idx <= current;

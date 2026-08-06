@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient } from "@/lib/supabase/server";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -31,6 +32,18 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: "No Stripe customer on file. Subscribe first." },
       { status: 400 }
+    );
+  }
+
+  // Rate limit per authed user. Each call is a live Stripe API request with
+  // no functional benefit to repeating, so a scripted client could otherwise
+  // hammer stripe.billingPortal.sessions.create for free. 20/hr is well past
+  // any real user's need (they'd land on the portal and stay there).
+  const limited = rateLimit(`portal:${user.id}`, { limit: 20, windowMs: 60 * 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many requests. Try again in ${Math.ceil(limited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
     );
   }
 

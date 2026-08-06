@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { STRIPE_PRICE_ID, getStripeClient } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
-import { hasActiveAccess } from "@/lib/access";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
-import { isValidTopicId } from "@/lib/topics";
 import type { TopicId } from "@/lib/types";
+import { isProfileComplete, shouldBlockDoubleSubscription } from "@/lib/checkout-guards";
 
 export const runtime = "nodejs";
 
@@ -52,35 +51,20 @@ export async function POST(req: Request) {
   // form (emails are case-insensitive in practice; Supabase auth lowercases too).
   if (body.email) body.email = body.email.toLowerCase().trim();
 
-  // Profile-completeness gate. The client already redirects an incomplete
-  // profile back to /welcome before this endpoint is ever hit, but that's UI
-  // only — a direct POST would otherwise sail straight through to a real
-  // Stripe session with no name and no topics. /api/generate requires the
-  // exact same two fields (via ProfileSchema) before it will write a letter,
-  // so an unblocked empty checkout here would produce a paying subscriber who
-  // can never actually generate one. Enforce the same bar before the charge
-  // instead of after.
-  if (
-    !body.firstName?.trim() ||
-    !Array.isArray(body.topics) ||
-    body.topics.length === 0 ||
-    !body.topics.every((t) => typeof t === "string" && isValidTopicId(t))
-  ) {
+  // Profile-completeness gate — see lib/checkout-guards.ts's isProfileComplete
+  // for why this exists and what it checks.
+  if (!isProfileComplete(body)) {
     return NextResponse.json(
       { error: "Please finish setting up your profile before subscribing." },
       { status: 400 }
     );
   }
 
-  // Double-subscription guard. Checkout creates a NEW Stripe subscription on
-  // every call, so an already-active subscriber who lands back on /checkout (a
-  // shared link, the browser back button, a direct-checkout user bounced
-  // through onboarding, the /writing 402 redirect) and clicks Subscribe would
-  // be charged a SECOND $5/mo. Refuse when this email already has LIVE access.
-  // Fail OPEN on any lookup error (or no email) so a genuine new subscriber is
-  // never blocked from paying — a missed double-charge guard is recoverable, a
-  // blocked sale is lost revenue. A cancelled-and-ended subscriber (cancelled_at
-  // in the past) is NOT blocked, so they can resubscribe.
+  // Double-subscription guard — see lib/checkout-guards.ts's
+  // shouldBlockDoubleSubscription for the full decision. Fail OPEN on any
+  // lookup error (or no email) so a genuine new subscriber is never blocked
+  // from paying — a missed double-charge guard is recoverable, a blocked
+  // sale is lost revenue.
   if (body.email) {
     try {
       const sb = await supabaseServiceClient();
@@ -89,17 +73,7 @@ export async function POST(req: Request) {
         .select("subscribed_at, cancelled_at, stripe_customer_id")
         .eq("email", body.email)
         .maybeSingle();
-      // Block only a real PAYING subscriber (has a Stripe customer + live access)
-      // — that's the actual double-charge case. A COMP user (admin-granted, no
-      // stripe_customer_id) checking out is CONVERTING to paid, not double-paying,
-      // so let them through; the webhook just links their Stripe customer onto the
-      // existing row. (A comp converting shares the same brief pre-webhook window
-      // any brand-new signup has; the rate limit + disabled button cover it.)
-      if (
-        existing?.subscribed_at &&
-        existing.stripe_customer_id &&
-        hasActiveAccess(existing.cancelled_at)
-      ) {
+      if (shouldBlockDoubleSubscription(existing)) {
         return NextResponse.json(
           {
             error: "already_subscribed",
@@ -176,8 +150,14 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ url: session.url });
   } catch (e) {
+    // Log the real Stripe error server-side only. This endpoint has no auth
+    // (just a rate limit), so the raw SDK message must never reach the
+    // caller — it can leak price/product IDs or account config.
     const message = e instanceof Error ? e.message : "Stripe error";
     console.error("[stripe/checkout] failed:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Couldn't start checkout. Try again in a moment." },
+      { status: 500 }
+    );
   }
 }

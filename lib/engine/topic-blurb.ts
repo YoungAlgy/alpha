@@ -27,6 +27,20 @@ function isRateLimited(e: unknown): boolean {
   return typeof e === "object" && e !== null && "status" in e && (e as { status: unknown }).status === 429;
 }
 
+// Used by generateTopicBlurb's Sonnet-retry step below: only take the retry
+// if it actually has something to ship — the retry's OWN draft can lose every
+// item to url-guard/meta-leak (independent of the tells check that triggered
+// the retry) and land at 0 items, which would silently throw away the
+// original's perfectly usable content for nothing. A persisting tell is an
+// accepted minor imperfection; a dropped-to-zero draft is not an improvement,
+// so keep the original draft in that case. Pulled out as a standalone,
+// generic-typed function (rather than left inline) so a deterministic verify
+// script can call it directly with fake 0-item/N-item drafts, instead of
+// needing a live Sonnet retry to organically return 0 items to exercise it.
+export function keepRetryOrOriginal<T extends { items: unknown[] }>(original: T, retry: T): T {
+  return retry.items.length > 0 ? retry : original;
+}
+
 const SYSTEM_PROMPT = `You are the editor of Alpha, a personal letter that helps a curious, intelligent reader learn and stay sharp on the topics they care about.
 
 Write as a specific kind of editor: someone who reads a lot, has taste, and is not impressed by hype. You explain what is worth knowing and then trust the reader to do what they want with it. You never sell. You are never named and you never refer to yourself. You just write the section.
@@ -622,16 +636,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet draft slipped a banned word (${finalized.tells.join(", ")}), retrying once`);
     const retryParsed = await trySonnet();
     const retryFinalized = finalizeBlurb(retryParsed);
-    // Only take the retry if it actually has something to ship — the retry's
-    // OWN draft can lose every item to url-guard/meta-leak (independent of
-    // the tells check that triggered this retry) and land at 0 items, which
-    // would silently throw away the original's perfectly usable content for
-    // nothing. A persisting tell is an accepted minor imperfection (see
-    // above); a dropped-to-zero draft is not an improvement, so keep the
-    // first draft in that case.
-    if (retryFinalized.items.length > 0) {
-      finalized = retryFinalized;
-    }
+    finalized = keepRetryOrOriginal(finalized, retryFinalized);
   }
   return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
 }

@@ -22,6 +22,14 @@
 -- adjust -- verify with `select column_name, data_type from
 -- information_schema.columns where table_name = 'users'` before relying on it
 -- for a schema rebuild.
+--
+-- Privileged-column lock (20260524000000_security_user_column_lock.sql):
+-- birthday and gender are intentionally left OUT of
+-- protect_user_privileged_columns' locked list. Both are plain profile
+-- fields the signed-in user writes directly through their own RLS-scoped
+-- browser client (see lib/user-sync.ts), same as first_name/city/topics --
+-- not billing or identity data, so there's nothing here for that trigger
+-- to protect.
 
 alter table public.users
   add column if not exists birthday date;
@@ -36,5 +44,20 @@ begin
   ) then
     alter table public.users
       add constraint users_gender_check check (gender is null or gender in ('male', 'female'));
+  end if;
+end $$;
+
+-- Same bounds as lib/demographics.ts parseBirthday's "sane range" check
+-- (year 1900-2014) -- without this, a direct PostgREST call using the user's
+-- own session could still write an out-of-range birthday to their own row,
+-- since parseBirthday only guards the app's own read/write paths.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'users_birthday_check'
+  ) then
+    alter table public.users
+      add constraint users_birthday_check
+      check (birthday is null or birthday between date '1900-01-01' and date '2014-12-31');
   end if;
 end $$;

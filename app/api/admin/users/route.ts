@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { cancelStripeSubscriptionsBeforeDelete } from "@/lib/stripe-cancel";
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -90,7 +91,9 @@ async function gatherStats(): Promise<Stats> {
   };
 }
 
-async function requireAdmin(): Promise<{ ok: true } | { ok: false; res: NextResponse }> {
+async function requireAdmin(): Promise<
+  { ok: true; userId: string } | { ok: false; res: NextResponse }
+> {
   const sb = await supabaseServerClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) {
@@ -99,7 +102,7 @@ async function requireAdmin(): Promise<{ ok: true } | { ok: false; res: NextResp
   if (user.email !== ADMIN_EMAIL) {
     return { ok: false, res: NextResponse.json({ error: "Not authorized" }, { status: 403 }) };
   }
-  return { ok: true };
+  return { ok: true, userId: user.id };
 }
 
 export async function GET() {
@@ -130,6 +133,19 @@ interface ActionBody {
 export async function POST(req: Request) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate.res;
+
+  // Speed bump against bulk damage (mass delete/grant/revoke) from a
+  // compromised admin session — the account itself is trusted, but a
+  // hijacked session shouldn't be able to script through the whole table
+  // instantly. Keyed on the admin's user id, not IP, since ADMIN_EMAIL is a
+  // single fixed account.
+  const limited = rateLimit(`admin-users-action:${gate.userId}`, { limit: 30, windowMs: 60 * 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many admin actions. Try again in ${Math.ceil(limited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
 
   let body: ActionBody;
   try {

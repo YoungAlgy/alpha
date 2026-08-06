@@ -52,10 +52,22 @@ export async function cancelCustomerSubscriptions(
 // Best-effort + swallows its own errors — a Stripe hiccup must never block
 // either delete flow. logPrefix distinguishes the two call sites in logs
 // (e.g. "[account/delete]" vs "[admin/delete]").
+//
+// stripeClient is injectable (defaults to the real getStripeClient()
+// singleton, resolved lazily INSIDE the body below) purely so
+// scripts/verify-stripe-cancel-on-delete.mts can pass a stub — every real
+// caller (account/delete, admin/users) omits it and gets the real client
+// exactly as before. Deliberately NOT a `= getStripeClient()` default
+// parameter value: that form evaluates at call time, before the
+// stripeSecret early-return below ever runs and before this function's own
+// try/catch starts, so it would call (and let a throwing) getStripeClient()
+// escape uncaught in exactly the "Stripe not configured" case the early
+// return exists to short-circuit -- caught in review, not live.
 export async function cancelStripeSubscriptionsBeforeDelete(
   svc: SupabaseClient,
   userId: string,
-  logPrefix: string
+  logPrefix: string,
+  stripeClient?: Stripe
 ): Promise<void> {
   const stripeSecret = process.env.STRIPE_SECRET_KEY?.trim();
   if (!stripeSecret) return;
@@ -67,7 +79,7 @@ export async function cancelStripeSubscriptionsBeforeDelete(
       .maybeSingle();
     const customerId = row?.stripe_customer_id;
     if (!customerId) return;
-    const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(getStripeClient(), customerId);
+    const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(stripeClient ?? getStripeClient(), customerId);
     console.log(
       `${logPrefix} stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
     );

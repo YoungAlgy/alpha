@@ -298,8 +298,18 @@ export async function POST(req: Request) {
       emailSent,
     });
   } catch (err) {
+    // Log the real error server-side only. This endpoint is unauthenticated
+    // (rate limit + payment check are the only gates), and the try block
+    // above spans the Anthropic/Brave/Gemini/Groq/DeepSeek SDKs, Supabase,
+    // and Resend — any of those throwing must never put a raw internal
+    // message in front of an anonymous caller (same class of leak already
+    // fixed in app/api/support/route.ts).
     const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[generate] failed:", message);
+    return NextResponse.json(
+      { error: "Couldn't generate your letter. Try again in a moment." },
+      { status: 500 }
+    );
   }
 }
 

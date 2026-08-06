@@ -11,8 +11,9 @@ const DEFAULT_TIMEOUT_MS = 7000;
 const MAX_CHARS = 2400; // per source — keeps the combined signal token-bounded
 const MIN_USABLE_CHARS = 220; // below this, treat extraction as failed
 
-// Kill switch: flip ALPHA_DISABLE_DEEPREAD=1 in the Vercel env (no deploy) to
-// fall straight back to snippet-only signal if Jina ever degrades.
+// Kill switch: flip ALPHA_DISABLE_DEEPREAD=1 in the Cloudflare/GitHub Actions
+// env (no deploy) to fall straight back to snippet-only signal if Jina ever
+// degrades.
 export function deepReadEnabled(): boolean {
   return process.env.ALPHA_DISABLE_DEEPREAD !== "1";
 }

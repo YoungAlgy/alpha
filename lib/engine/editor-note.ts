@@ -60,6 +60,16 @@ function clamp(s: string | undefined, max: number): string | undefined {
   return t.length > max ? t.slice(0, max) : t;
 }
 
+// Distinct class for callClaude()'s two "the call succeeded but the content
+// is unusable" throws (max_tokens truncation, empty text) — mirrors
+// GeminiTruncatedError/GroqTruncatedError/DeepSeekTruncatedError's pattern of
+// a dedicated class per tier so the outer catch below can recognize these as
+// "fall through to Gemini/Groq/DeepSeek," the same as isAnthropicUnavailable,
+// instead of a plain Error (which isAnthropicUnavailable does not recognize,
+// so it fell through the `if (!isAnthropicUnavailable(e)) throw e` guard and
+// rethrew straight past the fallback cascade).
+class ClaudeContentUnusableError extends Error {}
+
 // Shared shape for the Gemini/Groq/DeepSeek fallback tiers below — unlike
 // topic-blurb.ts's tryGemini/tryGroq/tryDeepSeek/tryHaiku (which genuinely
 // differ per tier: truncation-class error types, retry-once-on-parse-failure,
@@ -68,7 +78,11 @@ function clamp(s: string | undefined, max: number): string | undefined {
 // attempt, trimmed, logged and swallowed on failure. Not configured is the
 // same as "skip this tier," mirroring the config-gated pattern already used
 // for Claude/Gemini/Groq/DeepSeek above and in topic-blurb.ts.
-async function tryTextTier(label: string, configured: boolean, generate: () => Promise<string>): Promise<string | undefined> {
+// Exported (not just used internally below) so a deterministic verify script
+// can call it directly with a fake `generate` and assert the empty-response
+// branch actually returns undefined, instead of relying on a live provider
+// organically returning empty text during a manual run.
+export async function tryTextTier(label: string, configured: boolean, generate: () => Promise<string>): Promise<string | undefined> {
   if (!configured) return undefined;
   try {
     const text = (await generate()).trim();
@@ -139,10 +153,11 @@ Write the editor's note for this reader's letter today.`;
     });
     // A truncated note is a broken note (mid-sentence cutoff shipped straight
     // into a subscriber's email, and nothing downstream would notice — the
-    // voice/meta guards pass on truncated text). Throw; the assembler's catch
-    // falls back to its clean derived intro.
+    // voice/meta guards pass on truncated text). Throw ClaudeContentUnusableError
+    // so the caller below routes to the Gemini/Groq/DeepSeek fallback tiers
+    // instead of shipping the assembler's generic derived intro.
     if (response.stop_reason === "max_tokens") {
-      throw new Error("editor note hit max_tokens — refusing to ship a truncated note");
+      throw new ClaudeContentUnusableError("editor note hit max_tokens — refusing to ship a truncated note");
     }
     const text = response.content
       .filter((b) => b.type === "text")
@@ -151,10 +166,10 @@ Write the editor's note for this reader's letter today.`;
       .trim();
     // Same reasoning as the max_tokens guard above: a blank note is a broken
     // note (e.g. stop_reason "refusal", or an end_turn reply with no text
-    // block). Throw so the fallback chain below gets a real shot instead of
-    // silently "succeeding" with "".
+    // block). Throw ClaudeContentUnusableError so the fallback chain below
+    // gets a real shot instead of silently "succeeding" with "".
     if (!text) {
-      throw new Error(`editor note: Claude returned empty content (stop_reason: ${response.stop_reason})`);
+      throw new ClaudeContentUnusableError(`editor note: Claude returned empty content (stop_reason: ${response.stop_reason})`);
     }
     return text;
   }
@@ -173,7 +188,11 @@ Write the editor's note for this reader's letter today.`;
     try {
       note = await callClaude();
     } catch (e) {
-      if (!isAnthropicUnavailable(e)) throw e; // a real bug in OUR payload, not an outage — surface it
+      // ClaudeContentUnusableError (empty text / max_tokens, thrown inside
+      // callClaude above) is just as fallback-eligible as an outage — the
+      // call succeeded but produced nothing shippable, so it must route to
+      // Gemini/Groq/DeepSeek the same way, not rethrow past them.
+      if (!isAnthropicUnavailable(e) && !(e instanceof ClaudeContentUnusableError)) throw e; // a real bug in OUR payload, not an outage — surface it
       anthropicErr = e;
       console.warn(`[editor-note] Anthropic unavailable (status ${(e as { status?: number }).status ?? "connection"}), falling back`);
     }

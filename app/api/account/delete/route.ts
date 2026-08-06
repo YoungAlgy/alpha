@@ -40,7 +40,10 @@ export async function POST() {
   const { error } = await svc.auth.admin.deleteUser(user.id);
   if (error) {
     console.error("[account/delete] failed:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Couldn't delete your account. Try again or contact support." },
+      { status: 500 },
+    );
   }
 
   // Best-effort sign-out so the now-orphaned session cookie is cleared.

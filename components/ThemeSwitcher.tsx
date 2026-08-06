@@ -62,6 +62,8 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
               <li key={t.id}>
                 <button
                   type="button"
+                  role="option"
+                  aria-selected={active === t.id}
                   onClick={() => pick(t.id)}
                   className="w-full text-left px-4 py-3 alpha-ui text-sm hover:opacity-80 transition"
                   style={{
@@ -69,7 +71,10 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
                     color: "var(--ink)",
                   }}
                 >
-                  <div className="font-semibold">{t.label}</div>
+                  <div className="font-semibold">
+                    {t.label}
+                    {active === t.id ? " ✓" : ""}
+                  </div>
                   <div className="text-xs" style={{ color: "var(--ink-soft)" }}>
                     {t.blurb}
                   </div>

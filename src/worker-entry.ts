@@ -26,35 +26,12 @@ import openNextWorker from '../.open-next/worker.js'
 
 export { DOQueueHandler, DOShardedTagCache, BucketCachePurge } from '../.open-next/worker.js'
 
-// CSRF defense for the state-changing, session-authed POST endpoints. A
-// forged browser request — a malicious page calling fetch() to one of these
-// on a logged-in reader's behalf, riding their cookie — carries Sec-Fetch-Site
-// of "cross-site" or "same-site"; both are rejected. Every legitimate in-app
-// call is same-ORIGIN (relative "/api/..." fetches), and server-to-server
-// callers (Stripe webhook, cron) send no Sec-Fetch-Site header at all and
-// aren't in this list anyway.
-const CSRF_GUARDED_SUFFIXES = [
-  '/api/resume',
-  '/api/account/delete',
-  '/api/account/profile',
-  '/api/account/email/reconcile',
-  '/api/account/topics',
-  '/api/admin/users',
-  '/api/stripe/portal',
-  '/api/stripe/update-quantity',
-]
-
-export function isCsrfGuarded(pathname: string): boolean {
-  return CSRF_GUARDED_SUFFIXES.some((s) => pathname.endsWith(s))
-}
-
-export function blocksCsrf(method: string, secFetchSite: string | null, pathname: string): boolean {
-  return (
-    method === 'POST' &&
-    (secFetchSite === 'cross-site' || secFetchSite === 'same-site') &&
-    isCsrfGuarded(pathname)
-  )
-}
+// CSRF defense on 8 state-changing endpoints — see lib/csrf-guard.ts for the
+// guard logic itself and why it lives there instead of here (short version:
+// testability — this file's own top-level import above pulls in the built
+// Workers bundle, which a plain node/tsx script can't load).
+export { isCsrfGuarded, blocksCsrf } from '../lib/csrf-guard'
+import { blocksCsrf } from '../lib/csrf-guard'
 
 export function parseCookieHeader(header: string | null): { name: string; value: string }[] {
   if (!header) return []

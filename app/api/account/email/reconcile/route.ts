@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { sendOpsAlert } from "@/lib/email";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,18 @@ export async function POST() {
   } = await sb.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  }
+
+  // Rate limit per user (not IP): this is a single-row Supabase write behind
+  // auth, so the abuse case is a scripted authenticated client hammering it,
+  // not an anonymous IP. 30/hr is well above the "fires once per /settings
+  // load" real usage described above.
+  const limited = rateLimit(`account-email-reconcile:${user.id}`, { limit: 30, windowMs: 60 * 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many requests. Try again in ${Math.ceil(limited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
   }
 
   const authEmail = user.email?.trim().toLowerCase();

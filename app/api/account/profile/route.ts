@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { parseBirthday, coerceGender } from "@/lib/demographics";
 import { BLURB_CAPS } from "@/lib/types";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -55,6 +56,17 @@ export async function POST(req: Request) {
   } = await sb.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  }
+
+  // Rate limit per user (not IP): this is a single-row Supabase write behind
+  // auth, so the abuse case is a scripted authenticated client hammering it,
+  // not an anonymous IP. 30/hr is well above any real settings-page usage.
+  const limited = rateLimit(`account-profile:${user.id}`, { limit: 30, windowMs: 60 * 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many requests. Try again in ${Math.ceil(limited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
   }
 
   let body: Record<string, unknown>;
