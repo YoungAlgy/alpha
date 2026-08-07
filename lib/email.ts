@@ -126,13 +126,25 @@ export async function retryResendCall(
 // BRAND_GOLD #C9A961 matches the web --brand-gold (globals.css :root, fixed
 // across every theme — never --accent, which each theme recolors).
 const BRAND_GOLD = "#C9A961";
-const WORDMARK_MASTHEAD = `<div style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span style="color:${BRAND_GOLD};">.</span></div>`;
+// alpha-drift-r15-12 (found+fixed 2026-08-06): round 14's Gmail dark-mode
+// fix added .alpha-ink/.alpha-gold classes + a @media(prefers-color-scheme:
+// dark) block that reasserts them with !important -- but only the elements
+// that carry one of those classes are reachable by it. Gmail's auto-invert
+// targets an element's OWN inline `style="color:..."`, regardless of what
+// class a PARENT has (confirmed by every other colored element in this file
+// already carrying its own class despite also nesting under <body
+// class="alpha-ink">, e.g. the mid-body signature wordmark at line ~535's
+// `class="alpha-gold"` span). These two were the only exceptions: the
+// wordmark shown at the very top of both emails and the one embedded in the
+// footer of both had bare inline styles with no class, so Gmail's dark mode
+// could still invert them even after the round-14 fix.
+const WORDMARK_MASTHEAD = `<div class="alpha-ink" style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span class="alpha-gold" style="color:${BRAND_GOLD};">.</span></div>`;
 // CAN-SPAM (15 U.S.C. 7704, 16 CFR 316.4) requires a valid physical postal
 // address on every commercial email -- alpha is a paid recurring
 // subscription, not a purely transactional receipt.
 const MAILING_ADDRESS = "3608 S Belcher Dr, Tampa, FL 33629";
 const wordmarkFooter = (prefix = "") =>
-  `${prefix}alpha<span style="color:${BRAND_GOLD};">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}<br>${MAILING_ADDRESS}`;
+  `${prefix}alpha<span class="alpha-gold" style="color:${BRAND_GOLD};">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}<br>${MAILING_ADDRESS}`;
 // replyTo for every subscriber-facing send -- everyday.report has no MX
 // record (verified live, 2026-08-06), so a reply straight to the From
 // address bounces. Both the letter and welcome email are first-person and

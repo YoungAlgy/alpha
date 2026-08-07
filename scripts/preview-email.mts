@@ -57,6 +57,14 @@ function runChecks(label: string, html: string): boolean {
     ["dark-mode media query present", html.includes("@media (prefers-color-scheme: dark)")],
     ["dark-mode block re-asserts the background with !important", /background:\s*#F4EFE0\s*!important/.test(html)],
     ["dark-mode class hooks are actually used on elements, not just declared", html.includes('class="alpha-ink') && html.includes('class="alpha-bg')],
+    // alpha-drift-r15-12: the masthead + footer wordmarks used bare inline
+    // styles with no class, so they weren't reachable by the dark-mode
+    // override block above even after it existed.
+    ["masthead wordmark div carries alpha-ink", /<div class="alpha-ink" style="[^"]*">alpha/.test(html)],
+    [
+      "every gold wordmark dot carries alpha-gold (masthead + footer, at least 2)",
+      (html.match(/<span class="alpha-gold" style="color:#C9A961;">\.<\/span>/g) || []).length >= 2,
+    ],
   ];
   // Only the letter template has a <pre> sectionList block -- the welcome
   // email doesn't render one at all, so this check doesn't apply there.
