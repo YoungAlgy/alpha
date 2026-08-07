@@ -335,7 +335,24 @@ jobs:
                 *_KEY|*_SECRET|*_TOKEN|*WEBHOOK_URL*)
                   val="${!name:-}"
                   if [ -n "${val}" ]; then
-                    esc=$(printf '%s' "${val}" | sed -e 's/[\/&]/\\&/g')
+                    # alpha-drift-r15-13 (found+fixed 2026-08-06): only
+                    # escaped / and & (the delimiter and sed's own
+                    # replacement-only special char), leaving sed BRE's real
+                    # pattern metacharacters -- . * ^ $ [ ] -- unescaped. A
+                    # secret ending in a literal $ silently failed to
+                    # redact at all (confirmed by reproducing it locally:
+                    # $ as the last char of the pattern is sed's end-of-
+                    # line anchor, so it never matched). [ and ] both need
+                    # escaping too, or a secret containing either breaks
+                    # the whole bracket-expression pattern. This class
+                    # covers every sed BRE metacharacter plus / and &; [
+                    # is placed last in the class specifically to avoid
+                    # sed parsing "[." right after the opening bracket as
+                    # a POSIX collating-symbol sequence (confirmed this
+                    # placement locally against 10 cases, including a
+                    # secret containing every one of these characters at
+                    # once).
+                    esc=$(printf '%s' "${val}" | sed -e 's/[].^$*\/&[]/\\&/g')
                     sed -i "s/${esc}/[REDACTED]/g" server.log
                   fi
                   ;;
