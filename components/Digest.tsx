@@ -1,7 +1,25 @@
 import type { Issue, DigestItem, ItemKind } from "@/lib/types";
 import { ScrollFadeIn } from "./ScrollFadeIn";
-import { topicEmoji, topicAnchor } from "@/lib/topics";
+import { topicEmoji, topicAnchor, TOPIC_BY_ID } from "@/lib/topics";
 import { Wordmark } from "./Wordmark";
+
+// alpha-drift-r14-12 (review 2026-08-06): the only disclaimer anywhere in
+// the app was generic legal boilerplate on /terms -- a subscriber reading
+// their actual letter never saw any caveat next to a specific financial or
+// health claim, even though the "calm friend" editorial voice states
+// things as flat, confident fact with no hedge by design (topic-blurb.ts's
+// SYSTEM_PROMPT). Short and understated on purpose, matching the app's own
+// plain, un-preachy voice -- not a wall of legal text, just enough to mark
+// the section as "this is information, not advice" where it actually
+// matters. Returns null for a custom: topic (no known catalog bucket) or
+// any bucket that isn't Money/Body -- most topics get nothing added.
+function sectionDisclaimer(topicId: string): string | null {
+  const meta = TOPIC_BY_ID[topicId as keyof typeof TOPIC_BY_ID];
+  if (!meta) return null;
+  if (meta.bucket === "Money") return "Not financial advice. Do your own research before acting on anything here.";
+  if (meta.bucket === "Body") return "Not medical advice. Talk to a doctor before acting on anything here.";
+  return null;
+}
 
 interface DigestProps {
   issue: Issue;
@@ -96,6 +114,7 @@ export function Digest({ issue, localTimezone = false }: DigestProps) {
 
       {issue.sections.map((section, i) => {
         const emoji = topicEmoji(section.topicId);
+        const disclaimer = sectionDisclaimer(section.topicId);
         return (
         <ScrollFadeIn key={section.topicId} className="mb-16">
         <section id={topicAnchor(section.topicId, i)}>
@@ -124,6 +143,11 @@ export function Digest({ issue, localTimezone = false }: DigestProps) {
               <Item key={itemIdx} item={item} />
             ))}
           </div>
+          {disclaimer && (
+            <p className="alpha-ui text-xs mt-8" style={{ color: "var(--ink-soft)", opacity: 0.75 }}>
+              {disclaimer}
+            </p>
+          )}
         </section>
         </ScrollFadeIn>
         );
