@@ -15,7 +15,7 @@ whatever they touch, because none of them can read another's secret store:
 - **Cloudflare Worker secrets** (`npx wrangler secret put NAME`, from
   `~/alpha` in WSL — the Windows wrangler install lacks OAuth scope) — what
   the live site at alpha.everyday.report actually reads at runtime.
-- **GitHub Actions secrets**, under two different prefixes because two
+- **GitHub Actions secrets**, under three different prefixes because three
   different workflows need different subsets:
   - `SEND_*` — `.github/workflows/daily-send.yml`. Builds and runs a real
     `next start` server on the runner itself (see the workflow's own header
@@ -27,6 +27,10 @@ whatever they touch, because none of them can read another's secret store:
     key — see that workflow's own comment on why) and a Resend key for its
     own alert emails. No AI/search keys at all; the watchdog never
     generates anything.
+  - `RECONCILE_*` — `.github/workflows/stripe-reconcile.yml`. Only what it
+    needs beyond the `SEND_*` Supabase/Resend secrets it reuses: a Stripe
+    secret key (the one credential no other GitHub workflow needed before
+    this one, since daily-send never touches Stripe).
 
 ## The table
 
@@ -41,7 +45,7 @@ whatever they touch, because none of them can read another's secret store:
 | Resend API key | `RESEND_API_KEY` | `RESEND_API_KEY` | `SEND_RESEND_API_KEY`, `WATCHDOG_RESEND_API_KEY` | No letters, no welcome emails, no watchdog alert emails send at all (4 copies — the easiest one to rotate incompletely) |
 | Resend "From" address | `RESEND_FROM` | `RESEND_FROM` | `SEND_RESEND_FROM` | Falls back to the hardcoded default in code (same value today) if unset — low risk, but keep in sync if the sending identity ever changes |
 | Resend webhook signing secret | *(not set — commented out, see its own comment)* | `RESEND_WEBHOOK_SECRET` | *(not needed — daily-send never receives Resend webhooks)* | `/api/webhooks/resend` 503s; bounce/complaint suppression silently stops (deliverability risk, not an outage) |
-| Stripe secret key | `STRIPE_SECRET_KEY` | `STRIPE_SECRET_KEY` | *(not needed — daily-send never touches Stripe)* | Every Stripe-touching route hard-503s (checkout/portal/update-quantity/webhook); `/api/generate` silently treats requests as a paid dev stub — see the README's own callout on this being a payment-bypass risk if ever unset in production |
+| Stripe secret key | `STRIPE_SECRET_KEY` | `STRIPE_SECRET_KEY` | `RECONCILE_STRIPE_SECRET_KEY` (daily-send doesn't need this one) | Every Stripe-touching route hard-503s (checkout/portal/update-quantity/webhook); `/api/generate` silently treats requests as a paid dev stub — see the README's own callout on this being a payment-bypass risk if ever unset in production. If only the GitHub copy is stale, `stripe-reconcile.yml` just fails to run (a read-only check), no production impact |
 | Stripe webhook signing secret | *(not set — commented out, see its own comment)* | `STRIPE_WEBHOOK_SECRET` | *(not needed)* | `/api/stripe/webhook` 503s; NO subscription/dispute/refund events get mirrored to `public.users` at all — silent billing/access drift, the most severe entry in this table if missed |
 | Supabase URL | `NEXT_PUBLIC_SUPABASE_URL` | `NEXT_PUBLIC_SUPABASE_URL` | `SEND_SUPABASE_URL`, `WATCHDOG_SUPABASE_URL` | Total outage (every DB-touching route) or the watchdog silently checking the wrong project |
 | Supabase publishable/anon key | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (old name `NEXT_PUBLIC_SUPABASE_ANON_KEY` still accepted) | same | `SEND_SUPABASE_PUBLISHABLE_KEY`, `WATCHDOG_SUPABASE_ANON_KEY` | Auth/session paths break, or the watchdog's own RLS-scoped delivery check fails closed (routes to its alert path, which is at least fail-safe, not fail-silent) |

@@ -1,0 +1,125 @@
+name: Stripe/Supabase reconciliation
+
+# alpha-drift-r14-10 (review 2026-08-06): nothing anywhere periodically
+# compared Stripe's live subscription state against public.users. The
+# webhook route's own comment already admits the gap in plain language:
+# "if it keeps failing past the retry window (schema drift, an RLS change,
+# a real bug), Stripe's dashboard shows it, but nothing here is watching
+# that dashboard." This session hit exactly that class of incident once
+# already the same day (round 10's topics_all_valid EXECUTE revoke silently
+# broke a write path for weeks before a brand-new test caught it) -- a
+# permanently-failed webhook (past Stripe's ~3-day retry window) would
+# desync billing state the same way, with nothing surfacing it.
+#
+# Weekly, not daily -- this class of drift only becomes PERMANENT after
+# Stripe's own retry window closes (~3 days), so daily checking would
+# mostly just be noise about transient, still-retrying deliveries. Runs
+# Monday 09:00 UTC, clear of db-backup.yml's 08:00 UTC slot.
+#
+# Two independent alert channels, matching letter-watchdog.yml's own
+# established philosophy: scripts/reconcile-stripe-vs-supabase.mts sends its
+# own Resend email via lib/email.ts's sendOpsAlert() best-effort, and this
+# workflow additionally opens/updates a GitHub Issue (the durable channel
+# that doesn't depend on Resend being up) -- reusing letter-watchdog.yml's
+# own open_or_update_issue/close_issue_if_open bash functions for
+# consistency rather than writing a third variant of the same logic.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1' # Monday 09:00 UTC
+  workflow_dispatch: {} # manual run button, for testing or right after a suspected webhook incident
+
+permissions:
+  contents: read
+  issues: write # for gh issue create/comment/close below
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run reconciliation
+        id: reconcile
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.RECONCILE_STRIPE_SECRET_KEY }}
+          SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          # sendOpsAlert (lib/email.ts) reads these exact names directly.
+          RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
+          OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_OPS_ALERT_WEBHOOK_URL }}
+        run: |
+          set +e
+          npx tsx scripts/reconcile-stripe-vs-supabase.mts | tee reconcile-output.json
+          echo "exit_code=${PIPESTATUS[0]}" >> "${GITHUB_OUTPUT}"
+
+      - name: Open or close a GitHub Issue based on the result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          set +e
+
+          SEARCH_PHRASE="Stripe/Supabase drift"
+
+          close_issue_if_open() {
+            local resolution_note="$1" open_issue
+            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${SEARCH_PHRASE}\" in:title" --state open --json number --jq '.[0].number // empty')
+            if [ -n "${open_issue}" ]; then
+              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${resolution_note}"
+              gh issue close "${open_issue}" --repo "${GITHUB_REPOSITORY}"
+            fi
+          }
+
+          open_or_update_issue() {
+            local issue_title="$1" body="$2" open_issue
+            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${SEARCH_PHRASE}\" in:title" --state open --json number --jq '.[0].number // empty')
+            if [ -n "${open_issue}" ]; then
+              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+            else
+              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${issue_title}" --body "${body}"
+            fi
+          }
+
+          EXIT_CODE="${{ steps.reconcile.outputs.exit_code }}"
+
+          if [ "${EXIT_CODE}" = "0" ]; then
+            close_issue_if_open "Resolved: reconciliation run on $(date -u +%Y-%m-%d) found zero drift. Closing automatically."
+            echo "No drift -- issue closed if one was open."
+            exit 0
+          fi
+
+          if [ "${EXIT_CODE}" = "" ]; then
+            open_or_update_issue \
+              "${SEARCH_PHRASE}: reconciliation script itself failed to run" \
+              "The reconciliation script did not complete (no exit code captured) -- check the workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            exit 1
+          fi
+
+          BODY=$(node -e "
+            try {
+              const raw = require('fs').readFileSync('reconcile-output.json', 'utf8');
+              const j = JSON.parse(raw);
+              console.log('Reconciliation run ' + j.checkedAt + ': ' + j.findingsCount + ' discrepanc' + (j.findingsCount === 1 ? 'y' : 'ies') + ' found.');
+              console.log('');
+              for (const f of j.findings) {
+                console.log('- [' + f.type + '] ' + f.detail + ' (stripe customer ' + f.stripeCustomerId + (f.userId ? ', user ' + f.userId : '') + ')');
+              }
+            } catch (e) {
+              console.log('Could not parse reconcile-output.json: ' + e.message);
+            }
+          ")
+          open_or_update_issue "${SEARCH_PHRASE} found" "${BODY}
+
+Full run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          exit 1
