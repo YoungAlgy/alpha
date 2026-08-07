@@ -103,3 +103,41 @@ export function isFirstSubscription(
 ): boolean {
   return !existing?.subscribed_at;
 }
+
+// What `cancelled_at` should be written as, from a customer.subscription.
+// created/updated event. Pulled out of app/api/stripe/webhook/route.ts as a
+// pure function (same reasoning as checkoutUserMutation above) so it can be
+// exercised with stubbed Stripe statuses/timestamps without a real webhook.
+//
+// alpha-drift-r15-02 (found+fixed 2026-08-06): the inline version this
+// replaced gated `cancel_at` behind `cancel_at_period_end` being true --
+// but Stripe exposes those as two INDEPENDENT fields. A subscription
+// scheduled to cancel on an arbitrary future date (the Dashboard's "cancel
+// on a specific date", or the API's `cancel_at` param used without
+// `cancel_at_period_end:true`) still gets a real `cancel_at`, just with
+// `cancel_at_period_end` left false — that combination silently fell
+// through to null (no scheduled cancellation recorded at all), so the app
+// kept generating and sending real paid-API-cost letters right up to the
+// real cancel_at moment with zero visibility anywhere. `cancel_at` alone is
+// the correct signal for "when does access end," regardless of which flow
+// set it.
+//
+// terminalStatus must win over everything else: a `subscription.deleted`
+// event correctly sets cancelled_at=now() when a sub ends, but Stripe
+// retries a failed `updated`/`created` delivery for ~3 days — if that retry
+// lands AFTER `deleted` already processed, a terminal sub's own cancel_at
+// may be unset, and an unguarded derivation would write cancelled_at=null,
+// silently resurrecting a churned subscriber's paid access indefinitely.
+export function deriveCancelledAt(
+  status: string,
+  cancelAtUnixSeconds: number | null | undefined,
+  nowIso: string = new Date().toISOString()
+): string | null {
+  const terminalStatus =
+    status === "canceled" || status === "incomplete_expired" || status === "unpaid";
+  if (terminalStatus) return nowIso;
+  if (typeof cancelAtUnixSeconds === "number" && cancelAtUnixSeconds > 0) {
+    return new Date(cancelAtUnixSeconds * 1000).toISOString();
+  }
+  return null;
+}

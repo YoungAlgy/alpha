@@ -3,7 +3,7 @@
 // existing row must never carry topic_quota or cancelled_at.
 // Run: npx tsx scripts/verify-webhook-mutation.mts
 import { loadEnvLocal } from "./_load-env.mts";
-const { checkoutUserMutation, isFirstSubscription } = await import("../lib/webhook-user-mutation.ts");
+const { checkoutUserMutation, isFirstSubscription, deriveCancelledAt } = await import("../lib/webhook-user-mutation.ts");
 
 const idn = {
   userId: "u-123",
@@ -163,6 +163,55 @@ try {
 } catch (e) {
   console.log(`  -- live tie-in skipped (${e instanceof Error ? e.message : e})`);
 }
+
+// (6) deriveCancelledAt — round 15 finding #2 (alpha-drift-r15-02): the
+//     bug this replaced gated cancel_at behind cancel_at_period_end being
+//     true, so a subscription scheduled to cancel on an ARBITRARY future
+//     date (cancel_at set, cancel_at_period_end false) silently resolved to
+//     null instead of the real end date.
+console.log("(6) deriveCancelledAt:");
+const NOW = "2026-06-02T12:00:00.000Z";
+check(
+  "active, no cancel_at → null (no scheduled cancellation)",
+  deriveCancelledAt("active", null, NOW) === null
+);
+check(
+  "active, cancel_at_period_end-style future cancel_at → that date",
+  deriveCancelledAt("active", 1798800000, NOW) === new Date(1798800000 * 1000).toISOString()
+);
+// The actual bug: cancel_at set WITHOUT cancel_at_period_end (Dashboard's
+// "cancel on a specific date", or the API's cancel_at param used alone) --
+// deriveCancelledAt takes only status + cancel_at now, so this is
+// structurally identical to the case above; the fix is that the caller no
+// longer has a cancel_at_period_end gate to accidentally apply.
+check(
+  "arbitrary scheduled cancel_at (not tied to period end) → that date, NOT null",
+  deriveCancelledAt("active", 1798800000, NOW) !== null
+);
+check(
+  "cancel_at = 0 (Stripe's unset sentinel) → null",
+  deriveCancelledAt("active", 0, NOW) === null
+);
+check(
+  "canceled status → now, even with no cancel_at",
+  deriveCancelledAt("canceled", null, NOW) === NOW
+);
+check(
+  "incomplete_expired status → now",
+  deriveCancelledAt("incomplete_expired", null, NOW) === NOW
+);
+check(
+  "unpaid status → now",
+  deriveCancelledAt("unpaid", null, NOW) === NOW
+);
+check(
+  "terminal status wins even if a stale future cancel_at is also present",
+  deriveCancelledAt("canceled", 9999999999, NOW) === NOW
+);
+check(
+  "trialing (non-terminal, non-cancelling) → null",
+  deriveCancelledAt("trialing", null, NOW) === null
+);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

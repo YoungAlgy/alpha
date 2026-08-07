@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
-import { checkoutUserMutation, isFirstSubscription } from "@/lib/webhook-user-mutation";
+import { checkoutUserMutation, isFirstSubscription, deriveCancelledAt } from "@/lib/webhook-user-mutation";
 import { sendWelcomeEmail, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { clampQuota, TOPICS_PER_BUNDLE } from "@/lib/types";
 import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
@@ -195,9 +195,6 @@ export async function POST(req: Request) {
         const sub = event.data.object as Stripe.Subscription;
         const customerId =
           typeof sub.customer === "string" ? sub.customer : sub.customer.id;
-        // If subscription is canceled-at-period-end, capture intent without
-        // hard-cancelling access (user keeps reading until period_end).
-        const cancellingAtPeriodEnd = sub.cancel_at_period_end;
         // Mirror subscription quantity → topic_quota. Single subscription
         // item assumed (one Alpha price). Defaults to 1 → quota 5 if for
         // any reason the items list is empty. Cap at 25 (5 add-ons max).
@@ -239,24 +236,34 @@ export async function POST(req: Request) {
         // write a real future end date; otherwise leave null (keep serving the
         // paid-up reader — subscription.deleted will set the real end later).
         //
+        // alpha-drift-r15-02 (found+fixed 2026-08-06): this used to also
+        // require `sub.cancel_at_period_end` before trusting `sub.cancel_at`.
+        // Stripe exposes those as two INDEPENDENT fields (confirmed via the
+        // API schema): cancel_at_period_end is true only for the common
+        // "cancel at the end of what I already paid for" case, but a
+        // subscription can also be scheduled to cancel on an arbitrary
+        // future date (e.g. the Dashboard's "cancel on a specific date"
+        // action, or the API's own `cancel_at` param used without
+        // `cancel_at_period_end:true`) -- Stripe still populates cancel_at
+        // in that case, just with cancel_at_period_end left false. Gating on
+        // the boolean meant that combination fell through to null: the app
+        // recorded NO scheduled cancellation at all, kept generating and
+        // sending real paid-API-cost letters right up to the real cancel_at
+        // moment, with zero visibility anywhere that a cancellation was
+        // already scheduled. cancel_at alone is the correct signal for
+        // "when does access end" regardless of which flow set it.
+        //
         // TERMINAL STATUS must never resolve to null. A `subscription.deleted`
         // event correctly sets cancelled_at=now() when the sub ends. But Stripe
         // retries a failed `updated`/`created` delivery for ~3 days -- if that
         // retry lands AFTER `deleted` has already processed, this snapshot's
-        // cancel_at_period_end is false (a terminal sub isn't "canceling at
-        // period end", it already ended), so the un-guarded derivation below
-        // would write cancelled_at=null and silently resurrect a churned
-        // subscriber's paid access indefinitely. Once a sub is in a terminal
-        // status, this handler must agree with subscription.deleted, not undo it.
-        const terminalStatus =
-          sub.status === "canceled" ||
-          sub.status === "incomplete_expired" ||
-          sub.status === "unpaid";
-        const cancelledAt = terminalStatus
-          ? new Date().toISOString()
-          : cancellingAtPeriodEnd && typeof sub.cancel_at === "number" && sub.cancel_at > 0
-            ? new Date(sub.cancel_at * 1000).toISOString()
-            : null;
+        // cancel_at may be unset (a terminal sub isn't "canceling", it already
+        // ended), so an un-guarded derivation would write cancelled_at=null and
+        // silently resurrect a churned subscriber's paid access indefinitely.
+        // Once a sub is in a terminal status, this handler must agree with
+        // subscription.deleted, not undo it. See deriveCancelledAt's own
+        // comment for the full reasoning (pulled out for testability).
+        const cancelledAt = deriveCancelledAt(sub.status, sub.cancel_at);
         const { data: subRows, error: subErr } = await sb
           .from("users")
           .update({
