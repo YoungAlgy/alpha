@@ -96,7 +96,10 @@ src/
 
 ## Environment
 
-Required for full functionality (see `.env.local`):
+Required for full functionality (see `.env.local`). Every one of these also
+lives in Cloudflare Worker secrets and (a subset of) GitHub Actions
+secrets — see [`docs/SECRETS.md`](docs/SECRETS.md) for the full inventory
+of where each one lives and how to rotate it.
 
 ```
 ANTHROPIC_API_KEY=             # Claude
