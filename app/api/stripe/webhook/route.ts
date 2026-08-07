@@ -5,6 +5,7 @@ import { supabaseServiceClient } from "@/lib/supabase/server";
 import { checkoutUserMutation, isFirstSubscription } from "@/lib/webhook-user-mutation";
 import { sendWelcomeEmail, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { clampQuota, TOPICS_PER_BUNDLE } from "@/lib/types";
+import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
 
 export const runtime = "nodejs";
 
@@ -336,6 +337,109 @@ export async function POST(req: Request) {
           "alpha. payment failed",
           `Invoice ${inv.id} failed for customer ${inv.customer}. Stripe will retry automatically over the next couple weeks; check the customer in the Stripe dashboard if it keeps failing.`,
           `alpha-ops-alert-${inv.id}`
+        );
+        break;
+      }
+      // alpha-drift-r14-01 (review 2026-08-06): before this, the switch had
+      // NO case for any dispute/refund/radar event -- they fell to default
+      // and were silently dropped. cancelled_at (the only column
+      // hasActiveAccess()/the cron's own filter checks) is written
+      // exclusively by checkout.session.completed and
+      // customer.subscription.updated/deleted, so a disputed charge never
+      // touched it: the subscriber kept passing hasActiveAccess() forever,
+      // and the daily cron kept generating (real paid Anthropic/Gemini/Groq/
+      // DeepSeek/Brave calls) and emailing them a letter indefinitely with
+      // zero revenue behind it -- the exact failure mode a webhook handler
+      // exists to prevent.
+      case "charge.dispute.created": {
+        const dispute = event.data.object as Stripe.Dispute;
+        const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id;
+        // Disputes don't carry a customer id directly -- retrieve the charge
+        // to get it. A retrieve failure here can't be fixed by Stripe
+        // retrying the SAME dispute event (the charge id itself isn't
+        // wrong), so this alerts and moves on rather than throwing --
+        // matches invoice.payment_failed's own no-throw judgment call just
+        // above.
+        let customerId: string | null = null;
+        try {
+          const charge = await stripe.charges.retrieve(chargeId);
+          customerId = typeof charge.customer === "string" ? charge.customer : charge.customer?.id ?? null;
+        } catch (e) {
+          console.error(
+            `[stripe-webhook] dispute ${dispute.id}: charge retrieve failed:`,
+            e instanceof Error ? e.message : e
+          );
+        }
+        if (!customerId) {
+          await sendOpsAlert(
+            "alpha. dispute opened -- couldn't identify the subscriber",
+            `Dispute ${dispute.id} on charge ${chargeId} (${dispute.reason}, $${(dispute.amount / 100).toFixed(2)}) but the charge lookup failed or had no customer attached. Access was NOT revoked -- check the Stripe dashboard directly.`,
+            `alpha-dispute-unresolved-${dispute.id}`
+          );
+          break;
+        }
+        // A dispute means the customer is already contesting the charge
+        // through their bank -- keep serving them (real per-day generation
+        // spend) while that's unresolved is money paid twice: once disputed
+        // away, once spent generating content nobody's paying for anymore.
+        // Cancel the underlying subscription too (best-effort, not the
+        // primary defense -- our own cancelled_at write below is what
+        // actually stops the cron, this just stops a FUTURE renewal charge
+        // on the same subscription). Idempotent on a Stripe-side retry:
+        // cancelCustomerSubscriptions skips already-terminal subs.
+        const cancelResult = await cancelCustomerSubscriptions(stripe, customerId).catch((e) => {
+          console.warn(
+            `[stripe-webhook] dispute ${dispute.id}: subscription cancel threw:`,
+            e instanceof Error ? e.message : e
+          );
+          return { cancelled: [] as string[], skipped: 0, errors: 1 };
+        });
+        const { error: disputeErr } = await sb
+          .from("users")
+          .update({ cancelled_at: new Date().toISOString() })
+          .eq("stripe_customer_id", customerId);
+        // Throw so Stripe retries (#35 pattern) -- a failed access-revoke
+        // here means real ongoing spend on a disputed subscriber, the exact
+        // outcome this handler exists to prevent.
+        if (disputeErr) throw new Error(`dispute access-revoke failed: ${disputeErr.message}`);
+        await sendOpsAlert(
+          "alpha. dispute opened -- access revoked",
+          `Dispute ${dispute.id} on charge ${chargeId} for customer ${customerId} (${dispute.reason}, $${(dispute.amount / 100).toFixed(2)}). Access revoked immediately. Subscription cancel: ${cancelResult.cancelled.length} cancelled, ${cancelResult.skipped} skipped, ${cancelResult.errors} errors. Review in the Stripe dashboard.`,
+          `alpha-dispute-${dispute.id}`
+        );
+        break;
+      }
+      case "charge.dispute.closed": {
+        // Visibility only -- deliberately does NOT auto-restore access on a
+        // won dispute. Whether a customer who already disputed once should
+        // keep reading is a judgment call for Algy (comp them via the admin
+        // panel, or let them re-subscribe), not something this handler
+        // should decide unattended.
+        const dispute = event.data.object as Stripe.Dispute;
+        await sendOpsAlert(
+          "alpha. dispute closed",
+          `Dispute ${dispute.id} closed with status "${dispute.status}". Access was revoked when it opened and is NOT automatically restored -- if this was won and the customer should keep reading, comp them via the admin panel or have them re-subscribe.`,
+          `alpha-dispute-closed-${dispute.id}`
+        );
+        break;
+      }
+      case "charge.refunded": {
+        // Visibility only, deliberately -- unlike a dispute, a refund alone
+        // is ambiguous: it could be Algy's own "we'll make it right"
+        // goodwill gesture (terms page's own promise) while deliberately
+        // KEEPING the subscriber, or it could be a real cancellation that
+        // should also end access. Auto-cancelling here would break the
+        // goodwill-refund case; auto-ignoring it would repeat
+        // alpha-drift-r14-01's own mistake for a different event. Alerting
+        // (mirrors invoice.payment_failed's own no-throw pattern) puts the
+        // decision where it belongs -- a human who knows which case this is.
+        const charge = event.data.object as Stripe.Charge;
+        const customerId = typeof charge.customer === "string" ? charge.customer : charge.customer?.id ?? null;
+        const full = charge.amount_refunded >= charge.amount;
+        await sendOpsAlert(
+          "alpha. charge refunded",
+          `Charge ${charge.id} refunded (${full ? "full" : "partial"}: $${(charge.amount_refunded / 100).toFixed(2)} of $${(charge.amount / 100).toFixed(2)})${customerId ? ` for customer ${customerId}` : ""}. Access was NOT automatically revoked -- a refund alone doesn't cancel the subscription. If this should also end their access, cancel their subscription in Stripe or via the admin panel.`,
+          `alpha-refund-${charge.id}`
         );
         break;
       }
