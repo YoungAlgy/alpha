@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { CreateEmailRequestOptions } from "resend";
 import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { resendConfigured } from "@/lib/email";
@@ -121,12 +122,27 @@ export async function POST(req: Request) {
       const from = process.env.RESEND_FROM || '"alpha." <alpha@everyday.report>';
       const { Resend } = await import("resend");
       const resend = new Resend(process.env.RESEND_API_KEY!);
-      const result = await resend.emails.send({
-        from,
-        to: ownerEmail,
-        subject: `[alpha. support] ${body.name || body.email}`,
-        text: `From: ${body.name ? `${body.name} <${body.email}>` : body.email}\n\n${body.message}`,
-      });
+      // alpha-drift-r15-06: this route builds its own Resend client rather
+      // than reusing lib/email.ts's, so it needs its own timeout too -- a
+      // hung request here would otherwise stall an anonymous support-form
+      // submission indefinitely even though the ticket is already durably
+      // saved to Supabase above. 15s matches every other Resend call site
+      // (lib/email.ts's RESEND_TIMEOUT_MS). `signal` is a real, working
+      // fetch option the Resend SDK forwards straight through to fetch()
+      // (confirmed against its own source, resendClient.post() spreads
+      // ...options into the fetch() call) but isn't declared on the SDK's
+      // own CreateEmailRequestOptions type -- the cast below is a type-only
+      // gap, not a runtime risk.
+      const sendOptions = { signal: AbortSignal.timeout(15_000) } as CreateEmailRequestOptions;
+      const result = await resend.emails.send(
+        {
+          from,
+          to: ownerEmail,
+          subject: `[alpha. support] ${body.name || body.email}`,
+          text: `From: ${body.name ? `${body.name} <${body.email}>` : body.email}\n\n${body.message}`,
+        },
+        sendOptions
+      );
       // The Resend SDK returns { data, error } on a send failure -- it does
       // NOT throw (same bug class already found+fixed in lib/email.ts's
       // sendOpsAlertViaResend during the 2026-08-05 resilience audit). This

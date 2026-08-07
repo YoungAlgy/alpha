@@ -56,6 +56,36 @@ const RETRYABLE_RESEND_ERRORS = new Set<string>([
 ]);
 const RESEND_RETRY_BACKOFF_MS = [500, 1500]; // 2 retries -> 3 attempts total
 
+// alpha-drift-r15-06 (found+fixed 2026-08-06): Resend was the ONE provider
+// integration in this codebase with no bounded timeout at any call site --
+// Anthropic (60s), Stripe (20s), Brave/You.com (5s), Jina (7s), Gemini/Groq/
+// DeepSeek (20s each), and even this same file's own ops-alert webhook
+// fallback (8s, below) all set one; a bare `new Resend(key)` + `fetch()`
+// with no `signal` does not (confirmed against the SDK's own source:
+// fetchRequest() only ever bounds the request if the caller supplies one).
+// A hung TCP/TLS handshake to api.resend.com would otherwise stall
+// retryResendCall's caller indefinitely -- the onboarding response
+// (app/api/generate/route.ts awaits sendLetterNotification with no deadline
+// of its own), the Stripe webhook's own ACK (awaits sendWelcomeEmail
+// synchronously), an anonymous support-form submission, and -- worst of
+// all -- sendOpsAlertViaResend itself, whose two-channel design exists
+// specifically so a downed Resend can't also take out the alert ABOUT it;
+// a hang rather than a fast error never gives the webhook fallback a
+// timely chance to run. 15s: generous for what should be a fast REST call
+// (not LLM inference), while still bounded well inside every outer route
+// deadline (GENERATE_DEADLINE_MS, PER_USER_DEADLINE_MS) even after
+// retryResendCall's own 2 retries.
+const RESEND_TIMEOUT_MS = 15_000;
+
+// Every emails.send() call site in this file goes through this so the
+// timeout can't be forgotten at a new call site the way it was here before.
+function resendSendOptions(idempotencyKey?: string): { signal: AbortSignal; idempotencyKey?: string } {
+  return {
+    signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+  };
+}
+
 // Takes the actual API call as an injected function (not payload/options
 // directly) so tests can exercise the real retry/backoff decision logic
 // against a fake that returns engineered responses, without needing the
@@ -241,7 +271,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
         text,
         headers: resendHeaders,
       },
-      idempotencyKey ? { idempotencyKey } : undefined
+      resendSendOptions(idempotencyKey)
     )
   );
   if (result.error) {
@@ -299,7 +329,7 @@ async function sendOpsAlertViaResend(
         subject,
         text: body,
       },
-      idempotencyKey ? { idempotencyKey } : undefined
+      resendSendOptions(idempotencyKey)
     );
     if (result.error) {
       console.warn("[ops-alert] Resend failed:", result.error.message);
@@ -600,7 +630,7 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
         text,
         headers,
       },
-      idempotencyKey ? { idempotencyKey } : undefined
+      resendSendOptions(idempotencyKey)
     )
   );
   if (result.error) {
