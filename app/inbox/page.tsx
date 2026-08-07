@@ -304,7 +304,7 @@ export default function InboxPage() {
         </div>
       </div>
       <LetterTOC issue={issue} />
-      <Digest issue={issue} />
+      <Digest issue={issue} localTimezone />
       <InstallPrompt />
       <FirstLetterCelebration active={celebrate} />
     </main>

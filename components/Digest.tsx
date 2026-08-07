@@ -5,6 +5,20 @@ import { Wordmark } from "./Wordmark";
 
 interface DigestProps {
   issue: Issue;
+  // Render the dateline in the READER's own browser timezone instead of a
+  // fixed UTC anchor -- alpha-drift-r14-05 (review 2026-08-06): without
+  // this, a subscriber roughly UTC+11 through UTC+14 (NZ, Fiji, Tonga) sees
+  // YESTERDAY's date on the dateline even once it's unambiguously today for
+  // them (they read the letter at ~8am local, but it landed at 14:00 UTC =
+  // 2-3am local the following calendar day). Only meaningful where Digest
+  // actually renders in the reader's own browser (the /inbox and
+  // /inbox/[id] pages, both client components) -- the /letter page renders
+  // server-side with no reliable reader-timezone signal at all, so it
+  // deliberately omits this and keeps the safe, deterministic UTC anchor
+  // (matches nextSendLabel()'s own already-established convention in
+  // app/inbox/page.tsx: parse the precise UTC instant, then format it in
+  // whichever timezone is actually meaningful for where this is rendered).
+  localTimezone?: boolean;
 }
 
 const KIND_LABEL: Record<ItemKind, string> = {
@@ -45,25 +59,28 @@ function safeUrl(url: string | undefined): string | null {
 // 30, 2026"); the tokenized /letter page passes the raw DB date ("2026-06-30")
 // — format that case too, so every view carries an unmistakable human date
 // (a subscriber couldn't tell her letters apart; the day must be loud).
-function formatDateline(weekOf: string): string {
+// Always parse as a precise UTC instant (noon UTC on weekOf, unambiguous);
+// only the FORMAT step's timezone varies by caller -- see DigestProps'
+// localTimezone comment for why.
+function formatDateline(weekOf: string, localTimezone: boolean): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(weekOf)) return weekOf; // already formatted
   return new Date(`${weekOf}T12:00:00Z`).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
-    timeZone: "UTC",
+    ...(localTimezone ? {} : { timeZone: "UTC" }),
   });
 }
 
-export function Digest({ issue }: DigestProps) {
+export function Digest({ issue, localTimezone = false }: DigestProps) {
   return (
     <article className="alpha-body max-w-2xl mx-auto px-6 py-20 md:py-28">
       <div
         className="alpha-mono mb-14 text-center"
         style={{ color: "var(--ink-soft)" }}
       >
-        {formatDateline(issue.weekOf)}
+        {formatDateline(issue.weekOf, localTimezone)}
       </div>
 
       <h1 className="alpha-display text-4xl md:text-5xl font-bold mb-6 tracking-tight">
@@ -120,7 +137,7 @@ export function Digest({ issue }: DigestProps) {
           className="alpha-display text-xl italic mb-1"
           style={{ color: "var(--ink-soft)" }}
         >
-          That's the drop. See you next time.
+          That&apos;s the drop. See you next time.
         </p>
         <p className="alpha-display text-xl font-semibold"><Wordmark /></p>
       </div>

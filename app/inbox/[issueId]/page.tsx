@@ -149,7 +149,7 @@ export default function IssuePage() {
         </div>
       </div>
       <LetterTOC issue={issue} />
-      <Digest issue={issue} />
+      <Digest issue={issue} localTimezone />
     </main>
   );
 }
