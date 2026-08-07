@@ -155,9 +155,20 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   // change, so "IN THIS ISSUE • Personal finance • Real estate ..." read the
   // same in every letter — a subscriber thought she was getting the same
   // letter repeatedly). The headline is what proves each day is new.
+  // Length-capped, mirroring teaser's own 320-char truncation above --
+  // alpha-drift-r14-06 (review 2026-08-06): the HTML template renders this
+  // whole list into a <pre> block (see renderHTML's own overflow-wrap
+  // comment for the CSS-side defense); an unusually long or few-whitespace
+  // headline (a long hyphen/em-dash-joined phrase, a URL-like string, CJK
+  // text) could otherwise overflow the card's fixed-width column on mobile
+  // with no CSS-only fallback fully bulletproof across every mail client.
+  // 100 chars is generous for a single headline (well over what any real
+  // catalog headline has run) while still bounding the worst case.
+  const MAX_HEADLINE_LEN = 100;
   const sectionList = params.issue.sections
     .map((s) => {
-      const lead = s.items?.[0]?.headline?.trim();
+      const rawLead = s.items?.[0]?.headline?.trim();
+      const lead = rawLead && rawLead.length > MAX_HEADLINE_LEN ? `${rawLead.slice(0, MAX_HEADLINE_LEN - 1).trim()}…` : rawLead;
       return lead ? `• ${s.topicLabel} — ${lead}` : `• ${s.topicLabel}`;
     })
     .join("\n");
@@ -390,7 +401,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
   const ctaUrl = letterUrl || inboxUrl;
   const signinUrl = inboxUrl.replace("/inbox", "/signin");
   const unsubLine = unsubscribeUrl
-    ? `<a href="${escapeAttr(unsubscribeUrl)}" style="color:#6B7B70;">Unsubscribe</a> · `
+    ? `<a href="${escapeAttr(unsubscribeUrl)}" class="alpha-ink-faint" style="color:#6B7B70;">Unsubscribe</a> · `
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -402,15 +413,45 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
     <title>Your newsletter</title>
+    <!--[if mso]>
+    <noscript>
+      <xml>
+        <o:OfficeDocumentSettings>
+          <o:PixelsPerInch>96</o:PixelsPerInch>
+        </o:OfficeDocumentSettings>
+      </xml>
+    </noscript>
+    <![endif]-->
     <style>
       /* Tighter gutters on phones (supported in Apple Mail, Gmail app, etc.;
          degrades gracefully where <style> is stripped). */
       @media only screen and (max-width:600px) {
-        .alpha-wrap { padding: 32px 20px !important; }
+        .alpha-wrap-td { padding: 32px 20px !important; }
+        .alpha-wrap-table { width: 100% !important; }
+      }
+      /* Gmail (web + app) is a documented holdout that ignores the
+         color-scheme meta tags above and applies its own auto-invert
+         heuristic regardless -- Apple Mail/new Outlook/Samsung Mail already
+         get the correct behavior from those meta tags alone. Re-asserting
+         the SAME light palette here, explicitly, under
+         prefers-color-scheme:dark is the standard technique to make
+         Gmail's dark-mode engine defer to author-declared CSS instead of
+         guessing (and mangling the palette in the process). !important is
+         required to win against Gmail's own injected override, not just
+         the inline styles below (which already match -- this isn't fixing
+         a normal CSS cascade conflict, it's fighting a client's own
+         dark-mode rewrite). */
+      @media (prefers-color-scheme: dark) {
+        body, .alpha-bg { background: #F4EFE0 !important; }
+        .alpha-ink { color: #1F3D2E !important; }
+        .alpha-ink-soft { color: #4A5F50 !important; }
+        .alpha-ink-faint { color: #6B7B70 !important; }
+        .alpha-gold { color: #C9A961 !important; }
+        .alpha-gold-link { color: #A88947 !important; }
       }
     </style>
   </head>
-  <body style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
+  <body class="alpha-bg alpha-ink" style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
     <!-- Preheader: the inbox preview text. Hidden in the body, but it's the
          first text mail clients pull for the snippet next to the subject. The
          trailing whitespace stops the client from spilling later body text
@@ -418,37 +459,61 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
     <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F4EFE0;opacity:0;">
       ${escapeHtml(preheader || "")}${"&nbsp;&zwnj;".repeat(60)}
     </div>
-    <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
-      ${WORDMARK_MASTHEAD}
-      <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
-        ${escapeHtml(weekOf.toUpperCase())}
-      </div>
-      <h1 style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;">
-        Hi ${escapeHtml(firstName)},
-      </h1>
-      <p style="font-size:18px;line-height:1.6;margin:0 0 32px;">
-        ${escapeHtml(teaser)}…
-      </p>
-      <p style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;margin:0 0 8px;">
-        IN THIS ISSUE
-      </p>
-      <pre style="font-family:Georgia,serif;font-size:16px;line-height:1.7;margin:0 0 36px;color:#1F3D2E;white-space:pre-wrap;">${escapeHtml(sectionList)}</pre>
-      <div style="margin:40px 0;">
-        <a href="${escapeAttr(ctaUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
-          Read the full letter &rarr;
-        </a>
-      </div>
-      <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
-        Want to change topics or read past letters? <a href="${escapeAttr(signinUrl)}" style="color:#A88947;">Sign in here</a>. We'll email you a 6-digit code.
-      </p>
-      <p style="font-size:14px;line-height:1.6;color:#4A5F50;margin:48px 0 0;">
-        alpha<span style="color:${BRAND_GOLD};">.</span>
-      </p>
-      <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
-      <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        ${wordmarkFooter(unsubLine)}
-      </p>
-    </div>
+    <!-- Table-based outer wrap, not a bare div: Outlook desktop (2016/2019/
+         365 "classic", which still renders via the Word HTML engine, not
+         WebView2) does not support max-width or margin:0 auto centering on
+         a div at all -- without a table with an explicit HTML width
+         attribute (which Outlook's Word engine DOES honor), the letter
+         stretched to the full reading-pane width there instead of staying
+         a centered 560px column. -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="alpha-bg" style="width:100%;background:#F4EFE0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" class="alpha-wrap-table" style="width:560px;max-width:560px;">
+            <tr>
+              <td class="alpha-wrap-td" style="padding:48px 32px;">
+                ${WORDMARK_MASTHEAD}
+                <div class="alpha-ink-soft" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
+                  ${escapeHtml(weekOf.toUpperCase())}
+                </div>
+                <h1 class="alpha-ink" style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;">
+                  Hi ${escapeHtml(firstName)},
+                </h1>
+                <p class="alpha-ink" style="font-size:18px;line-height:1.6;margin:0 0 32px;">
+                  ${escapeHtml(teaser)}…
+                </p>
+                <p class="alpha-ink-soft" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;margin:0 0 8px;">
+                  IN THIS ISSUE
+                </p>
+                <!-- overflow-wrap/word-break: defense in depth alongside the
+                     sender-side MAX_HEADLINE_LEN cap (sendLetterNotification)
+                     -- an unusually long or few-whitespace headline (a long
+                     hyphen/em-dash-joined phrase, a URL-like string, CJK
+                     text) could otherwise overflow this fixed-width column
+                     with plain pre-wrap alone, which only breaks at
+                     whitespace. -->
+                <pre class="alpha-ink" style="font-family:Georgia,serif;font-size:16px;line-height:1.7;margin:0 0 36px;color:#1F3D2E;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(sectionList)}</pre>
+                <div style="margin:40px 0;">
+                  <a href="${escapeAttr(ctaUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
+                    Read the full letter &rarr;
+                  </a>
+                </div>
+                <p class="alpha-ink-soft" style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
+                  Want to change topics or read past letters? <a href="${escapeAttr(signinUrl)}" class="alpha-gold-link" style="color:#A88947;">Sign in here</a>. We'll email you a 6-digit code.
+                </p>
+                <p class="alpha-ink-soft" style="font-size:14px;line-height:1.6;color:#4A5F50;margin:48px 0 0;">
+                  alpha<span class="alpha-gold" style="color:${BRAND_GOLD};">.</span>
+                </p>
+                <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
+                <p class="alpha-ink-faint" style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
+                  ${wordmarkFooter(unsubLine)}
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>`;
 }
@@ -557,8 +622,14 @@ export function renderWelcomeHTML({
 }): string {
   const signinUrl = inboxUrl.replace("/inbox", "/signin");
   const unsubLine = unsubscribeUrl
-    ? `<a href="${escapeAttr(unsubscribeUrl)}" style="color:#6B7B70;">Unsubscribe</a> · `
+    ? `<a href="${escapeAttr(unsubscribeUrl)}" class="alpha-ink-faint" style="color:#6B7B70;">Unsubscribe</a> · `
     : "";
+  // Same table-based layout + dark-mode re-assertion as renderHTML above --
+  // alpha-drift-r14-06 (review 2026-08-06): this was a straight sibling
+  // copy of that template's structure, so it had the identical Outlook/
+  // Gmail-dark-mode gaps. See renderHTML's own comments for why each piece
+  // exists; not re-explained here to avoid duplicated commentary drifting
+  // out of sync between the two.
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -567,48 +638,76 @@ export function renderWelcomeHTML({
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
     <title>Welcome to alpha.</title>
+    <!--[if mso]>
+    <noscript>
+      <xml>
+        <o:OfficeDocumentSettings>
+          <o:PixelsPerInch>96</o:PixelsPerInch>
+        </o:OfficeDocumentSettings>
+      </xml>
+    </noscript>
+    <![endif]-->
     <style>
       @media only screen and (max-width:600px) {
-        .alpha-wrap { padding: 32px 20px !important; }
+        .alpha-wrap-td { padding: 32px 20px !important; }
+        .alpha-wrap-table { width: 100% !important; }
+      }
+      @media (prefers-color-scheme: dark) {
+        body, .alpha-bg { background: #F4EFE0 !important; }
+        .alpha-ink { color: #1F3D2E !important; }
+        .alpha-ink-soft { color: #4A5F50 !important; }
+        .alpha-ink-faint { color: #6B7B70 !important; }
+        .alpha-gold { color: #C9A961 !important; }
+        .alpha-gold-link { color: #A88947 !important; }
       }
     </style>
   </head>
-  <body style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
-    <div class="alpha-wrap" style="max-width:560px;margin:0 auto;padding:48px 32px;">
-      ${WORDMARK_MASTHEAD}
-      <div style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
-        WELCOME
-      </div>
-      <h1 style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;">
-        You're in, ${escapeHtml(firstName)}.
-      </h1>
-      <p style="font-size:18px;line-height:1.6;margin:0 0 24px;">
-        Thanks for subscribing. Your first letter is being written for you right
-        now, built around the topics you picked. It takes about a minute.
-      </p>
-      <div style="margin:36px 0;">
-        <a href="${escapeAttr(inboxUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
-          Read your first letter &rarr;
-        </a>
-      </div>
-      <p style="font-size:16px;line-height:1.7;margin:0 0 12px;">
-        From here on, a new letter lands <strong>every day</strong>, in your
-        inbox and on the web. No feeds, no firehose. Just the things you care
-        about.
-      </p>
-      <p style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
-        Signed out when you click through? We'll email you a 6-digit code.
-        <a href="${escapeAttr(signinUrl)}" style="color:#A88947;">Sign in here</a>.
-        No password to remember.
-      </p>
-      <p style="font-size:14px;line-height:1.6;color:#4A5F50;margin:40px 0 0;">
-        Algy
-      </p>
-      <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
-      <p style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
-        ${wordmarkFooter(unsubLine)}
-      </p>
-    </div>
+  <body class="alpha-bg alpha-ink" style="margin:0;padding:0;background:#F4EFE0;font-family:Georgia,serif;color:#1F3D2E;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="alpha-bg" style="width:100%;background:#F4EFE0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" class="alpha-wrap-table" style="width:560px;max-width:560px;">
+            <tr>
+              <td class="alpha-wrap-td" style="padding:48px 32px;">
+                ${WORDMARK_MASTHEAD}
+                <div class="alpha-ink-soft" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
+                  WELCOME
+                </div>
+                <h1 class="alpha-ink" style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;">
+                  You're in, ${escapeHtml(firstName)}.
+                </h1>
+                <p class="alpha-ink" style="font-size:18px;line-height:1.6;margin:0 0 24px;">
+                  Thanks for subscribing. Your first letter is being written for you right
+                  now, built around the topics you picked. It takes about a minute.
+                </p>
+                <div style="margin:36px 0;">
+                  <a href="${escapeAttr(inboxUrl)}" style="display:inline-block;background:#1F3D2E;color:#F4EFE0;text-decoration:none;padding:14px 24px;border-radius:6px;font-family:Inter,Arial,sans-serif;font-weight:600;font-size:14px;">
+                    Read your first letter &rarr;
+                  </a>
+                </div>
+                <p class="alpha-ink" style="font-size:16px;line-height:1.7;margin:0 0 12px;">
+                  From here on, a new letter lands <strong>every day</strong>, in your
+                  inbox and on the web. No feeds, no firehose. Just the things you care
+                  about.
+                </p>
+                <p class="alpha-ink-soft" style="font-size:12px;line-height:1.5;color:#4A5F50;margin:24px 0 0;">
+                  Signed out when you click through? We'll email you a 6-digit code.
+                  <a href="${escapeAttr(signinUrl)}" class="alpha-gold-link" style="color:#A88947;">Sign in here</a>.
+                  No password to remember.
+                </p>
+                <p class="alpha-ink-soft" style="font-size:14px;line-height:1.6;color:#4A5F50;margin:40px 0 0;">
+                  Algy
+                </p>
+                <hr style="border:none;border-top:1px solid #C8D0BC;margin:32px 0 16px;">
+                <p class="alpha-ink-faint" style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:0.12em;color:#6B7B70;text-align:center;">
+                  ${wordmarkFooter(unsubLine)}
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>`;
 }
