@@ -306,6 +306,45 @@ jobs:
           set -uo pipefail
           set +e
 
+          # alpha-drift-r14-08 (review 2026-08-06): redaction used to live in
+          # a SEPARATE later step with its OWN independently-typed-out env:
+          # block listing every secret name a second time -- nothing enforced
+          # the two lists stayed in sync, so a secret added to THIS step's
+          # env: block above without also being added to that other list
+          # would ship unredacted into server.log the first time it surfaced
+          # in an unhandled exception or a verbose SDK error (a real risk
+          # this same file's own header comment already flagged elsewhere).
+          #
+          # Fixed by redacting HERE, via a trap that fires on every exit path
+          # this script has (success or any of its several `exit 1`s), using
+          # this step's OWN already-in-scope env vars -- there is now exactly
+          # ONE list of secret names (this step's env: block), not two. Name-
+          # pattern matched (compgen -v + a case match), not a hardcoded
+          # value list either: any FUTURE var ending in _KEY/_SECRET/_TOKEN or
+          # containing WEBHOOK_URL is covered automatically, with no second
+          # place to remember to update. Deliberately name-pattern-based
+          # rather than an allowlist of exact names -- a false positive
+          # (redacting something that wasn't actually sensitive, e.g. the
+          # public NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, which ends in _KEY)
+          # is harmless; a false negative (a real secret slipping through) is
+          # the actual risk this exists to close.
+          redact_secrets_from_log() {
+            [ -f server.log ] || return 0
+            for name in $(compgen -v); do
+              case "$name" in
+                *_KEY|*_SECRET|*_TOKEN|*WEBHOOK_URL*)
+                  val="${!name:-}"
+                  if [ -n "${val}" ]; then
+                    esc=$(printf '%s' "${val}" | sed -e 's/[\/&]/\\&/g')
+                    sed -i "s/${esc}/[REDACTED]/g" server.log
+                  fi
+                  ;;
+              esac
+            done
+            echo "server.log redacted."
+          }
+          trap redact_secrets_from_log EXIT
+
           npm run start -- -p 3100 > server.log 2>&1 &
           SERVER_PID=$!
 
@@ -410,42 +449,6 @@ jobs:
           fi
 
           echo "OK: send completed, every active subscriber accounted for."
-
-      - name: Redact secrets from server.log before it can be uploaded
-        if: failure()
-        env:
-          CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
-          ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
-          BRAVE_SEARCH_API_KEY: ${{ secrets.SEND_BRAVE_SEARCH_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.SEND_GROQ_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.SEND_DEEPSEEK_API_KEY }}
-          YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
-          RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
-          UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
-          OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_OPS_ALERT_WEBHOOK_URL }}
-        run: |
-          set -uo pipefail
-          # GitHub Actions auto-masks a secret's exact value in LOG OUTPUT
-          # (the tail commands above already benefit from that), but that
-          # masking explicitly does NOT apply to uploaded artifacts -- the
-          # next step below uploads server.log as a raw file. The server
-          # runs with every SEND_* secret in its env; if any dependency or
-          # error handler in the app ever prints process.env or a config
-          # object, it lands in this file unredacted. Scrub every known
-          # secret value out of the file in place before it can be uploaded.
-          if [ ! -f server.log ]; then
-            echo "No server.log to redact."
-            exit 0
-          fi
-          for val in "${CRON_SECRET}" "${ANTHROPIC_API_KEY}" "${BRAVE_SEARCH_API_KEY}" "${GEMINI_API_KEY}" "${GROQ_API_KEY}" "${DEEPSEEK_API_KEY}" "${YOU_API_KEY}" "${SUPABASE_SECRET_KEY}" "${RESEND_API_KEY}" "${UNSUBSCRIBE_SECRET}" "${OPS_ALERT_WEBHOOK_URL}"; do
-            if [ -n "${val}" ]; then
-              esc=$(printf '%s' "${val}" | sed -e 's/[\/&]/\\&/g')
-              sed -i "s/${esc}/[REDACTED]/g" server.log
-            fi
-          done
-          echo "server.log redacted."
 
       - name: Upload server log on failure
         if: failure()
