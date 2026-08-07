@@ -96,6 +96,18 @@ export async function POST(req: Request) {
     console.warn(`[resend-webhook] duplicate delivery of ${event.type} for email_id ${emailId} -- skipping`);
     return NextResponse.json({ received: true });
   }
+  // Only THIS request freshly inserted the row (dedupRows.length > 0) is a
+  // durable "done" marker worth keeping if the suppression write below
+  // fails -- same reasoning as the Stripe webhook's insertedDedupRow (see
+  // app/api/stripe/webhook/route.ts). Without this, a failed bounced_at/
+  // complained_at write still permanently marks (email_id, type) as
+  // "seen": Resend's own retry never fires (this route returns 200
+  // either way), and even a manual replay from the Resend dashboard hits
+  // the same dedup guard and is silently skipped forever -- the dead
+  // address keeps getting sent to indefinitely, the exact outcome this
+  // whole webhook exists to prevent (alpha-drift-r14-03, found in review
+  // 2026-08-06).
+  const insertedDedupRow = !dedupErr && (dedupRows?.length ?? 0) > 0;
 
   // Only a HARD (Permanent) bounce suppresses. Transient (mailbox full,
   // greylisting, a temporary receiving-server hiccup) and Undetermined are
@@ -124,6 +136,23 @@ export async function POST(req: Request) {
     .select("id");
   if (updateErr) {
     console.error(`[resend-webhook] ${column} write failed:`, updateErr.message);
+    // Clear the dedup row so a retry -- Resend's own, or a manual replay
+    // from its dashboard -- can actually reprocess this event instead of
+    // being silently swallowed by the guard forever. Best-effort: a failed
+    // delete here must not change the response Resend sees.
+    if (insertedDedupRow) {
+      const { error: cleanupErr } = await sb
+        .from("resend_webhook_events")
+        .delete()
+        .eq("email_id", emailId)
+        .eq("type", event.type);
+      if (cleanupErr) {
+        console.warn(
+          `[resend-webhook] failed to clear dedup row for ${emailId}/${event.type} after write failure -- retries/replays will be silently skipped:`,
+          cleanupErr.message
+        );
+      }
+    }
     // Best-effort ops alert, never blocks the response -- a failed
     // suppression write is a deliverability risk, not a paying-customer
     // outage, so this doesn't need Stripe's throw-and-retry treatment.
