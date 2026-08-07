@@ -119,7 +119,7 @@ jobs:
               console.log('Could not parse reconcile-output.json: ' + e.message);
             }
           ")
-          open_or_update_issue "${SEARCH_PHRASE} found" "${BODY}
-
-Full run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          FULL_BODY=$(printf '%s\n\nFull run: %s' "${BODY}" "${RUN_URL}")
+          open_or_update_issue "${SEARCH_PHRASE} found" "${FULL_BODY}"
           exit 1
