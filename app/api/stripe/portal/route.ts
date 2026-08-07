@@ -6,7 +6,29 @@ import { rateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 // Creates a Stripe Billing Portal session for the authed user. They can
-// update card, cancel, switch plans, see invoices — all hosted by Stripe.
+// update card, cancel, see invoices — all hosted by Stripe. Deliberately no
+// "switch plans" here: quantity changes go through the app's own guarded
+// /api/stripe/update-quantity flow (lib/update-quantity-guards.ts), not a
+// second, unclamped path via the portal's subscription_update feature.
+//
+// alpha-drift-r15-01 (found live, 2026-08-06 -- NOT YET FIXED, needs Algy):
+// this call requires the Stripe account to have a saved default Billing
+// Portal configuration, or it throws and every real call here 500s. Live-
+// checked via the Stripe API (GetBillingPortalConfigurations): this account
+// currently has ZERO configurations of any kind -- meaning the "Update
+// card, cancel, see invoices" button on /settings is dead for every real
+// subscriber right now. This is the ONLY self-serve cancel/card-update path
+// in the whole app; the only alternative today is the destructive
+// "delete my account" flow. Fix is a one-time Stripe Dashboard action, not
+// a code change: visit https://dashboard.stripe.com/settings/billing/portal
+// and save a configuration (enabling at least payment_method_update,
+// invoice_history, and customer cancellation -- leave subscription_update
+// OFF per the comment above). Deliberately not created via the Stripe API
+// from here: it's an account-wide setting real customers see immediately,
+// and the Stripe MCP tool available this session doesn't expose portal-
+// configuration writes at all (only GetBillingPortalConfigurations is
+// searchable) -- a signal this is meant to be a deliberate human action on
+// the dashboard, not something to script around.
 export async function POST(req: Request) {
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secret) {
