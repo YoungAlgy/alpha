@@ -394,11 +394,22 @@ export async function generateIssue(
 
 export function formatWeekOf(iso: string): string {
   // 2026-05-17 → "Sunday, May 17, 2026"
-  const d = new Date(iso + "T12:00:00");
+  // Explicit Z anchor + timeZone:'UTC' -- alpha-drift-r14-04 (review
+  // 2026-08-06): this was the one date helper in the codebase without a UTC
+  // anchor, unlike lib/cadence.ts's own helpers and this exact file's
+  // sibling shortWeek() in lib/email.ts. It only ever produced correct
+  // output because every runtime that calls generateIssue() (GitHub
+  // Actions' ubuntu-latest, Cloudflare Workers) happens to default to UTC --
+  // an unenforced assumption, not a guarantee. Without the anchor, a
+  // non-UTC TZ env (a CI image change, a misconfigured env var) would
+  // silently shift this by a day for any generation happening near local
+  // midnight in that runtime's timezone.
+  const d = new Date(`${iso}T12:00:00Z`);
   return d.toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: "UTC",
   });
 }
