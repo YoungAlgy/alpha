@@ -23,7 +23,7 @@ const ENTRIES: Entry[] = [
     date: "2026-07-03",
     title: "Your letter comes every day now",
     body:
-      "alpha. went daily. Same letter, same topics, fresh every morning instead of three times a week. Each day only covers what's new since yesterday, so there's no repeats and no filler. Same price.",
+      "alpha. went daily. Same letter, same topics, fresh every day instead of three times a week. Each day only covers what's new since yesterday, so there's no repeats and no filler. Same price.",
     tag: "new",
   },
   {
@@ -438,7 +438,7 @@ export default function ChangelogPage() {
           className="alpha-display text-lg leading-relaxed mb-12"
           style={{ color: "var(--ink-soft)" }}
         >
-          What's new, improved, and fixed in alpha.
+          What&apos;s new, improved, and fixed in alpha.
         </p>
 
         {Array.from(grouped.entries()).map(([month, entries]) => (
