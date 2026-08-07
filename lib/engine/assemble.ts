@@ -353,9 +353,25 @@ export async function generateIssue(
   // the search+blurb path; not rushing it in. Cost is bounded (one extra
   // Opus call, not a whole search+generation chain) and only recurs on an
   // actual timeout, not every send.
+  // alpha-drift-r15-07 (found+fixed 2026-08-06): this call ran the SAME
+  // Claude -> Gemini -> Groq -> DeepSeek escalation shape as topic-blurb.ts,
+  // but with no withDeadline of its own, unlike every genLive/genFiller call
+  // above -- its own worst case is comparable to or worse than one topic
+  // blurb (no cancellation on withDeadline means a caller giving up doesn't
+  // stop the underlying call: an orphaned generateEditorNote kept running
+  // and consuming real Anthropic/DeepSeek spend, counted toward
+  // topicBlurbPaidCallCount/deepseekCallCount, for a result that was
+  // silently discarded once it eventually resolved). Reuses
+  // TOPIC_GEN_DEADLINE_MS -- the existing catch below already has a clean
+  // fallback intro, so a timeout here just takes that path instead of a
+  // real failure, same as it always could.
   let editorIntro: string;
   try {
-    editorIntro = await generateEditorNote(user, blurbs, fallbackTopicIds);
+    editorIntro = await withDeadline(
+      generateEditorNote(user, blurbs, fallbackTopicIds),
+      TOPIC_GEN_DEADLINE_MS,
+      "editor-note"
+    );
   } catch (e) {
     console.warn(`[assemble] editor note failed, using fallback intro: ${e instanceof Error ? e.message : e}`);
     const labels = blurbs.map((b) => b.topicLabel.toLowerCase());
