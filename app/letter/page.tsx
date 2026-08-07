@@ -5,6 +5,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { verifyLetterToken } from "@/lib/letter-token";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { coerceThemeId } from "@/lib/themes";
+import { hasActiveAccess } from "@/lib/access";
 import type { Issue, ThemeId } from "@/lib/types";
 
 // The weekly email's "Read the full letter" target — the view-in-browser
@@ -44,6 +45,7 @@ export default async function LetterPage({
 
   let issue: Issue | null = null;
   let theme: ThemeId = "forest";
+  let accessEnded = false;
   try {
     const sb = await supabaseServiceClient();
     // v2 tokens name ONE issue — load exactly that letter, so every email's
@@ -60,10 +62,19 @@ export default async function LetterPage({
       issueQuery = issueQuery.eq("week_of", weekOf);
     }
     const [{ data: userRow }, { data: issueRow }] = await Promise.all([
-      sb.from("users").select("first_name, city, theme").eq("id", userId).maybeSingle(),
+      sb.from("users").select("first_name, city, theme, cancelled_at").eq("id", userId).maybeSingle(),
       issueQuery.order("week_of", { ascending: false }).limit(1).maybeSingle(),
     ]);
-    if (issueRow) {
+    // alpha-drift-r15-03: this route uses the service-role client (a signed
+    // token, not a session), which bypasses the issues table's RLS policy
+    // entirely -- so the cancelled_at check that policy now enforces for
+    // /inbox, /archive, and /inbox/[issueId] has to be done explicitly here
+    // too, or a disputed/cancelled subscriber's 90-day-lived email links
+    // would keep working long after every other read path correctly cuts
+    // them off. Matches hasActiveAccess()'s exact rule (lib/access.ts).
+    if (issueRow && !hasActiveAccess(userRow?.cancelled_at)) {
+      accessEnded = true;
+    } else if (issueRow) {
       const row = issueRow as IssueRow;
       theme = coerceThemeId(userRow?.theme) ?? "forest";
       issue = {
@@ -88,6 +99,7 @@ export default async function LetterPage({
     issue = null;
   }
 
+  if (accessEnded) return <LinkProblem reason="access-ended" />;
   if (!issue) return <LinkProblem reason="no-letter" />;
 
   return (
@@ -144,7 +156,33 @@ export default async function LetterPage({
   );
 }
 
-function LinkProblem({ reason }: { reason: "expired" | "no-letter" }) {
+function LinkProblem({ reason }: { reason: "expired" | "no-letter" | "access-ended" }) {
+  if (reason === "access-ended") {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <div className="text-center space-y-6 max-w-md">
+          <div
+            className="alpha-display text-6xl font-bold"
+            style={{ color: "var(--accent-ink)", opacity: 0.6 }}
+          >
+            α
+          </div>
+          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+            This letter isn&apos;t available anymore.
+          </p>
+          <p className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
+            Your subscription has ended, so this link no longer opens. Want
+            back in?
+          </p>
+          <div className="pt-2">
+            <Link href="/welcome" className="alpha-button">
+              Start a new letter →
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
   return (
     <main className="min-h-screen flex items-center justify-center px-6">
       <div className="text-center space-y-6 max-w-md">
