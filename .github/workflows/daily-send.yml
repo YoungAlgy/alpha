@@ -55,9 +55,44 @@ on:
     # instead of the watchdog alerting on pre-retry data, and (c) nowhere
     # near the 00:00 UTC boundary where lib/cadence.ts's currentPeriodIso()
     # would roll over to a new day's weekOf and silently generate a SECOND
-    # real letter instead of recovering the missed one. Do not schedule any
-    # retry slot at or after 16:00 UTC without also moving the watchdog.
+    # real letter instead of recovering the missed one. Scheduled AFTER
+    # letter-watchdog.yml's 16:00 UTC check on purpose, not before it -- see
+    # this retry's own header comment for why that ordering is fine (the
+    # watchdog firing on pre-retry data is an acceptable, even useful,
+    # earliest-possible signal, not a bug).
     - cron: '0 15 * * *'
+    # Second offset retry, added 2026-08-06 after a real GitHub Actions
+    # platform-wide outage (githubstatus.com incident starting 15:22 UTC,
+    # "job was not acquired by Runner of type hosted even after multiple
+    # attempts") took out BOTH the 14:00 primary and the 15:00 retry above
+    # on the same day -- confirming a single offset retry isn't always
+    # enough. Recovered that day via a manual local run (build + `next
+    # start` + curl the same route directly, bypassing GitHub Actions
+    # entirely); this is the automated version of that same idea, three
+    # hours further out, giving a longer-than-usual GitHub-side incident
+    # more room to clear before requiring a human.
+    #
+    # 18:00 UTC specifically: (a) well past 16:00 UTC, so this is
+    # deliberately AFTER letter-watchdog.yml's check -- an alert may
+    # already have fired by the time this recovers things, which is fine
+    # (early signal beats no signal; see letter-watchdog.yml's own header
+    # for why it can't reliably self-heal-and-suppress mid-day), (b) still
+    # a comfortable 6 hours before the 00:00 UTC weekOf rollover, and (c)
+    # far enough past the 15:00 UTC retry's own 30-minute timeout that the
+    # concurrency group above can never see two schedules genuinely overlap.
+    #
+    # This does NOT make alpha immune to a GitHub-wide outage -- the 2026-
+    # 08-06 incident lasted from 15:22 UTC to past midnight, well beyond
+    # even this retry's slot, and no number of same-platform retries can
+    # survive an outage that outlasts all of them. What it buys is coverage
+    # for the much more common case: a shorter (sub-4-hour) GitHub Actions
+    # degradation, which two retries already weren't guaranteed to clear
+    # but three comfortably should. A genuinely platform-independent dead-
+    # man's-switch (e.g. an external cron/uptime service pinging a
+    # heartbeat and alerting Algy directly if the daily send never
+    # completes) is the only way to close the remaining gap -- flagged to
+    # Algy, not built here, since it requires him to create that account.
+    - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
       weekOf:
@@ -69,9 +104,9 @@ permissions:
   contents: read
 
 # Prevents a manual workflow_dispatch from overlapping a scheduled run (or,
-# in principle, the two schedules overlapping if GitHub ever delivers one
-# late enough to collide with the other). Without this, two concurrent full
-# generation passes would both pay real Anthropic/Gemini/Groq/DeepSeek/Brave
+# in principle, any two of the three schedules overlapping if GitHub ever
+# delivers one late enough to collide with another). Without this, two
+# concurrent full generation passes would both pay real Anthropic/Gemini/Groq/DeepSeek/Brave
 # costs for the same undelivered subscribers before the delivered_at CAS
 # picks a winner, and their two Resend calls sharing one idempotency key
 # would race into a 409. cancel-in-progress: false -- queue behind the
@@ -87,10 +122,11 @@ jobs:
     timeout-minutes: 30
     steps:
       # Skips the expensive checkout/npm ci/build/start below when today's
-      # send is already fully covered -- mainly matters for the 15:00 UTC
-      # offset retry: on the common day the 14:00 primary already delivered
-      # to everyone, this retry used to pay for a full install+build+server
-      # boot just to hit the route and find zero undelivered subscribers.
+      # send is already fully covered -- mainly matters for the 15:00 and
+      # 18:00 UTC offset retries: on the common day the 14:00 primary
+      # already delivered to everyone, a retry used to pay for a full
+      # install+build+server boot just to hit the route and find zero
+      # undelivered subscribers.
       # Added 2026-08-05, deliberately AFTER first declining to (see
       # alpha_full_app_review_2026-08-05.md in Claude's memory) -- this
       # pipeline's idempotency/timing invariants are carefully reasoned
