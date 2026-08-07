@@ -1,0 +1,57 @@
+name: Database backup
+
+# alpha-drift-r14-09 (review 2026-08-06): the repo had zero backup/point-in-
+# time-recovery story for the Supabase Postgres database. Free-tier Supabase
+# has no automatic PITR -- a bad SQL editor action, a botched migration, or
+# the project itself disappearing (already happened to a sibling project
+# this session, went NXDOMAIN with no warning) meant total, unrecoverable
+# loss of every subscriber row for a paying-customer product.
+#
+# Daily export of the 3 source-of-truth tables (users, issues,
+# support_tickets -- see scripts/backup-critical-tables.mjs's own comment
+# for why NOT topic_blurbs/stripe_webhook_events/resend_webhook_events)
+# to a GitHub Actions artifact. Not a full pg_dump/PITR replacement -- a
+# baseline safety net using infrastructure this repo already has, not a new
+# paid service or a new account. Restore is manual (re-insert the JSON via
+# the Supabase SQL editor or REST API) -- there's no automated restore path,
+# by design: an automated restore is a much higher-risk piece of tooling
+# (a bug there could overwrite good data) than this repo's own bar for
+# "build it now vs. flag it" supports for a first pass.
+#
+# 30-day artifact retention, not GitHub's max (90d) or indefinite -- keeps
+# a real recovery window (a mistake noticed within a month is recoverable)
+# without needlessly growing how many historical PII snapshots exist at
+# once. Reuses the SAME Supabase credentials daily-send.yml already has
+# (SEND_SUPABASE_URL / SEND_SUPABASE_SECRET_KEY) rather than minting a new
+# secret copy -- see docs/SECRETS.md, this repo already has enough copies
+# of each credential without adding a 4th/5th for a new workflow.
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # 08:00 UTC -- well clear of the 14:00/15:00/18:00 send windows and the 16:00 watchdog
+  workflow_dispatch: {} # manual run button, for testing or an ad-hoc snapshot before a risky migration
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Export users, issues, support_tickets
+        env:
+          SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+        run: |
+          export BACKUP_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          node scripts/backup-critical-tables.mjs backup
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: alpha-db-backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 30
