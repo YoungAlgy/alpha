@@ -29,11 +29,24 @@ export interface SelectionResult<T> {
 }
 
 export async function selectLetterSections<T>(
-  pool: string[],
+  rawPool: string[],
   letterSize: number,
   genLive: (topicId: string) => Promise<T | null>,
   genFiller: (topicId: string) => Promise<T | null>
 ): Promise<SelectionResult<T>> {
+  // alpha-drift-r16-11 (found+fixed 2026-08-07): defense-in-depth against a
+  // duplicate topic id anywhere in the pool -- Pass 1 below had no dedup
+  // check at all (Pass 2's `!chosen.some(...)` guard only protects itself,
+  // and even that only checks against already-CHOSEN items, not other
+  // entries gathered into the same candidates batch). A duplicate id could
+  // otherwise occupy two section slots in one letter with the identical
+  // cached blurb (genLive's inFlight map returns the SAME promise for a
+  // repeated id). Deduping the pool up front, ranking-order preserved,
+  // closes every path into this function at once -- the write-path
+  // validation gap this round also fixed (app/api/generate/route.ts), plus
+  // any already-affected user's historically-written duplicate, plus any
+  // future write path that might reintroduce one.
+  const pool = Array.from(new Set(rawPool));
   const size = Math.max(1, Math.floor(letterSize));
   const chosen: ChosenSection<T>[] = [];
   const live = (id: string) => genLive(id).catch(() => null);

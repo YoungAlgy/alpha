@@ -97,6 +97,17 @@ const ids = (r: { chosen: { topicId: string }[] }) => r.chosen.map((c) => c.topi
   check("(9) unreached trailing entry never even called", !calls.includes("never-reached"));
 }
 
+// (10) alpha-drift-r16-11: a duplicate topic id in the pool must not
+// occupy two section slots. Dedup happens up front, ranking order of the
+// FIRST occurrence preserved.
+{
+  const calls: string[] = [];
+  const r = await selectLetterSections(["a", "b", "a", "c", "b", "d"], 4, liveGen(new Set(), calls), fillerGen());
+  check("(10) duplicate ids collapsed, letter fills from real distinct topics: a,b,c,d", ids(r) === "a,b,c,d");
+  check("(10) each distinct topic generated exactly once (cost bound holds)", calls.filter((c) => c === "a").length === 1 && calls.filter((c) => c === "b").length === 1);
+  check("(10) no duplicate topicId anywhere in chosen", new Set(r.chosen.map((c) => c.topicId)).size === r.chosen.length);
+}
+
 // (8) poolCap: letterSize + a fixed 5 backups, capped at the catalog max.
 check("(8) poolCap(5) = 10 (5 favorites + 5 backups)", poolCap(5) === 10);
 check("(8) poolCap(10) = 15 (add a bundle, still 5 backups)", poolCap(10) === 15);

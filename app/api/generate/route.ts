@@ -41,9 +41,22 @@ const ProfileSchema = z.object({
   // self-serve /api/account/topics route locks down against smuggled/garbage
   // ids (including Object.prototype names like "constructor" that a plain `in`
   // lookup would wrongly accept) -- this onboarding path needs the same gate.
+  //
+  // alpha-drift-r16-11 (found+fixed 2026-08-07): this refine used to skip
+  // the duplicate-id check lib/account-topics-guards.ts's sibling route
+  // enforces (`new Set(topics).size !== topics.length`), despite this same
+  // file's own comment above claiming it needs "the same gate." A repeated
+  // topic id written here isn't a one-time onboarding glitch -- it's
+  // written verbatim to users.topics and re-read unmodified by every
+  // future cron run, so it regenerates the exact same section twice in
+  // every letter, permanently, burning two of the reader's paid slots on
+  // one topic until they happen to re-touch that exact topic in the editor.
   topics: z.array(z.string().min(1).max(MAX_CUSTOM_TOPIC_LEN + CUSTOM_PREFIX.length)).min(1).max(25).refine(
     (arr) => arr.every(isValidTopicId),
     "unrecognized topic"
+  ).refine(
+    (arr) => new Set(arr).size === arr.length,
+    "duplicate topic"
   ),
   theme: z.string().max(30).default("forest"),
   email: z.string().email().optional(),
