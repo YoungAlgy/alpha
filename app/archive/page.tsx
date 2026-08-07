@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { Wordmark } from "@/components/Wordmark";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { hasActiveAccess } from "@/lib/access";
 import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
@@ -25,16 +26,19 @@ interface ArchiveItem {
   firstLine: string;
 }
 
-type LoadState = "loading" | "error" | "ready";
+type LoadState = "loading" | "error" | "ready" | "ended";
 
 export default function ArchivePage() {
   const [items, setItems] = useState<ArchiveItem[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  // load() has three call sites now (mount, the retry button, loadMore), so
-  // a mounted ref covering the component's whole lifetime guards all of them
-  // instead of a per-call cancellation flag. The effect body must explicitly
+  // load() has two call sites (mount, the retry button); loadMore() is a
+  // separate function with its own independent query and its own mountedRef
+  // checks -- it never calls load(). A mounted ref covering the component's
+  // whole lifetime guards all three functions' async work uniformly, which
+  // is simpler than a per-call cancellation flag even though load() itself
+  // only has two callers. The effect body must explicitly
   // reset this to true, not just rely on useRef's initial value -- found
   // live while testing the pagination fix below: React Strict Mode (dev
   // only, reactStrictMode:true in next.config.ts) mounts effects, cleans
@@ -64,12 +68,22 @@ export default function ArchivePage() {
         if (!mountedRef.current) return;
         if (session) {
           // RLS scopes issues to auth.uid() = user_id — no explicit filter needed.
-          const { data, error } = await sb
-            .from("issues")
-            .select("id, week_of, editor_intro")
-            .order("week_of", { ascending: false })
-            .range(0, PAGE_SIZE - 1);
+          const [{ data, error }, { data: userRow }] = await Promise.all([
+            sb
+              .from("issues")
+              .select("id, week_of, editor_intro")
+              .order("week_of", { ascending: false })
+              .range(0, PAGE_SIZE - 1),
+            sb.from("users").select("cancelled_at").eq("id", session.user.id).maybeSingle(),
+          ]);
           if (!mountedRef.current) return;
+          // alpha-drift-r16-15: same app-level defense-in-depth as /inbox
+          // and /inbox/[issueId] -- see /inbox's comment for why this
+          // can't wait on the pending RLS migration.
+          if (!hasActiveAccess(userRow?.cancelled_at)) {
+            setState("ended");
+            return;
+          }
           if (error) {
             setState("error");
             return;
@@ -169,6 +183,29 @@ export default function ArchivePage() {
               </li>
             ))}
           </ul>
+        )}
+
+        {state === "ended" && (
+          <div className="space-y-5">
+            <p className="alpha-display text-lg" style={{ color: "var(--ink)" }}>
+              Your subscription has ended.
+            </p>
+            <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
+              Want back in? Start a new letter, or reach out if something looks wrong.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Link href="/welcome" className="alpha-button">
+                Start a new letter →
+              </Link>
+              <Link
+                href="/support"
+                className="alpha-ui text-sm underline underline-offset-4 self-center"
+                style={{ color: "var(--ink-soft)" }}
+              >
+                Contact support
+              </Link>
+            </div>
+          </div>
         )}
 
         {state === "error" && (

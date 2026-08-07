@@ -14,6 +14,7 @@ import { FirstLetterCelebration } from "@/components/FirstLetterCelebration";
 import { LetterTOC } from "@/components/LetterTOC";
 import { ShareButton } from "@/components/ShareButton";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { hasActiveAccess } from "@/lib/access";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { nextSendIso } from "@/lib/cadence";
 import { fanfare } from "@/lib/audio";
@@ -30,6 +31,7 @@ export default function InboxPage() {
   const [checked, setChecked] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [accessEnded, setAccessEnded] = useState(false);
 
   useEffect(() => {
     if (!loaded) return;
@@ -55,10 +57,22 @@ export default function InboxPage() {
                 .maybeSingle(),
               sb
                 .from("users")
-                .select("first_name, city, theme")
+                .select("first_name, city, theme, cancelled_at")
                 .eq("id", session.user.id)
                 .maybeSingle(),
             ]);
+            // alpha-drift-r16-15: RLS enforces this too once the pending
+            // migration (20260807000000_issues_rls_active_access_only.sql)
+            // ships, but until then this app-level check is the ONLY thing
+            // stopping a cancelled/disputed subscriber's still-live session
+            // from reading their letters here. Keep both layers even after
+            // the migration lands -- defense in depth, matches the pattern
+            // app/letter/page.tsx already uses (RLS can't reach that route
+            // at all, since it's a service-role client).
+            if (!hasActiveAccess(userRow?.cancelled_at)) {
+              setAccessEnded(true);
+              return;
+            }
             if (!error && data) {
               const themeToApply = coerceThemeId(userRow?.theme) ?? coerceThemeId(state.theme) ?? "forest";
               document.documentElement.setAttribute("data-theme", themeToApply);
@@ -149,6 +163,39 @@ export default function InboxPage() {
     // them pre-filled or see this reader's email dropped into /signin.
     reset();
     window.location.assign(path);
+  }
+
+  if (accessEnded) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <div className="text-center space-y-6 max-w-md">
+          <div
+            className="alpha-display text-6xl font-bold"
+            style={{ color: "var(--accent-ink)", opacity: 0.6 }}
+          >
+            α
+          </div>
+          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+            Your subscription has ended.
+          </p>
+          <p className="alpha-display text-base md:text-lg leading-relaxed" style={{ color: "var(--ink-soft)" }}>
+            Want back in? Start a new letter, or reach out if something looks wrong.
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button type="button" onClick={() => clearAndGo("/welcome")} className="alpha-button">
+              Start a new letter →
+            </button>
+            <Link
+              href="/support"
+              className="alpha-ui text-sm underline underline-offset-4"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              Contact support
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   // Gate on `checked` + no issue so a cold-session race can't flash this

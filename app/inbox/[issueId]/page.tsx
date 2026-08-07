@@ -11,6 +11,7 @@ import { ReadingProgress } from "@/components/ReadingProgress";
 import { LetterTOC } from "@/components/LetterTOC";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { coerceThemeId } from "@/lib/themes";
+import { hasActiveAccess } from "@/lib/access";
 import type { Issue } from "@/lib/types";
 
 // Renders a specific past issue by ID (UUID from public.issues.id) for its
@@ -24,6 +25,7 @@ export default function IssuePage() {
   const issueId = params?.issueId;
   const [issue, setIssue] = useState<Issue | null>(null);
   const [missing, setMissing] = useState(false);
+  const [accessEnded, setAccessEnded] = useState(false);
 
   useEffect(() => {
     // App Router doesn't remount this component when only issueId changes
@@ -40,20 +42,28 @@ export default function IssuePage() {
           const { data: { session } } = await sb.auth.getSession();
           if (cancelled) return;
           if (session && issueId) {
-            const { data, error } = await sb
-              .from("issues")
-              .select("week_of, volume, number, editor_intro, sections")
-              .eq("id", issueId)
-              .eq("user_id", session.user.id)
-              .maybeSingle();
-            if (cancelled) return;
-            if (!error && data) {
-              const { data: userRow } = await sb
+            const [{ data, error }, { data: userRow }] = await Promise.all([
+              sb
+                .from("issues")
+                .select("week_of, volume, number, editor_intro, sections")
+                .eq("id", issueId)
+                .eq("user_id", session.user.id)
+                .maybeSingle(),
+              sb
                 .from("users")
-                .select("first_name, city, theme")
+                .select("first_name, city, theme, cancelled_at")
                 .eq("id", session.user.id)
-                .maybeSingle();
-              if (cancelled) return;
+                .maybeSingle(),
+            ]);
+            if (cancelled) return;
+            // alpha-drift-r16-15: same app-level defense-in-depth as
+            // /inbox -- see that file's comment for why this can't wait
+            // on the pending RLS migration.
+            if (!hasActiveAccess(userRow?.cancelled_at)) {
+              setAccessEnded(true);
+              return;
+            }
+            if (!error && data) {
               const themeId = coerceThemeId(userRow?.theme);
               if (themeId) {
                 document.documentElement.setAttribute("data-theme", themeId);
@@ -81,6 +91,39 @@ export default function IssuePage() {
       cancelled = true;
     };
   }, [issueId]);
+
+  if (accessEnded) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <div className="text-center space-y-6 max-w-md">
+          <div
+            className="alpha-display text-6xl font-bold"
+            style={{ color: "var(--accent-ink)", opacity: 0.6 }}
+          >
+            α
+          </div>
+          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+            Your subscription has ended.
+          </p>
+          <p className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
+            Want back in? Start a new letter, or reach out if something looks wrong.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            <Link href="/welcome" className="alpha-button">
+              Start a new letter →
+            </Link>
+            <Link
+              href="/support"
+              className="alpha-ui text-sm underline underline-offset-4 pt-3"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              Contact support
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (missing) {
     return (
