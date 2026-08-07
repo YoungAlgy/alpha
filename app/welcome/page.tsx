@@ -11,11 +11,14 @@ export default function WelcomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Fallback redirect for an already-signed-in visitor. The middleware
-    // normally catches this first and redirects server-side (no hero paints),
-    // so this only fires in the edge case where the cookie session wasn't
-    // readable there (e.g. Supabase env missing in middleware) but a client
-    // session exists. Harmless when middleware already handled it.
+    // Redirect for an already-signed-in visitor. This is the ONLY thing that
+    // catches this now, not a fallback -- middleware.ts only handles the
+    // apex/www host redirect (alpha-drift-r15-04, found 2026-08-06: the old
+    // server-side signed-in-user redirect was deliberately NOT carried over
+    // during the Cloudflare migration, per src/worker-entry.ts's own
+    // comment). That means a signed-in visitor DOES see the hero paint
+    // briefly before this effect resolves and redirects -- a one-time page
+    // flash, not a functional bug, per that same comment.
     if (!supabaseConfigured()) return;
     (async () => {
       try {

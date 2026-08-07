@@ -110,11 +110,18 @@ export default function InboxPage() {
     };
   }, [loaded, state.theme]);
 
-  // Clear any session, then HARD-navigate. The middleware bounces a cookie-user
-  // off /signin and /welcome back to /inbox, so a Link straight there would loop
-  // a signed-in (or stale-cookie) reader right back to this screen. Signing out
-  // first drops the cookie so the destination actually renders; window.location
-  // forces the middleware to re-evaluate with the cleared cookie.
+  // Clear any session, then HARD-navigate. This client-side redirect (below,
+  // the "already signed in" branch) is the ONLY thing that bounces a
+  // signed-in reader off /signin and /welcome back to /inbox -- middleware.ts
+  // only handles the apex/www host redirect now (alpha-drift-r15-04, found
+  // 2026-08-06: the old server-side version was deliberately NOT carried
+  // over during the Cloudflare migration, per src/worker-entry.ts's own
+  // comment -- losing it just brings back a one-time page flash, not a
+  // functional bug). A Link straight to /signin or /welcome would still loop
+  // a signed-in (or stale-cookie) reader right back to this screen via that
+  // client-side redirect, so signing out first drops the cookie so the
+  // destination actually renders; window.location forces a full reload so
+  // the cleared cookie is what the destination page's own check sees.
   //
   // Skipped for "/signin" specifically: signOut() defaults to GLOBAL scope,
   // which revokes whatever session is CURRENTLY in the shared cookie at call
