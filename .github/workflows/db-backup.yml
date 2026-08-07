@@ -25,6 +25,20 @@ name: Database backup
 # (SEND_SUPABASE_URL / SEND_SUPABASE_SECRET_KEY) rather than minting a new
 # secret copy -- see docs/SECRETS.md, this repo already has enough copies
 # of each credential without adding a 4th/5th for a new workflow.
+#
+# alpha-drift-r15-11 (found+fixed live, 2026-08-07): YoungAlgy/alpha is a
+# PUBLIC repo. GitHub Actions artifacts on a public repo are downloadable
+# by anyone with read access to the repo -- for a public repo, that's
+# effectively anyone, not just collaborators. The first run of this
+# workflow uploaded the raw, unencrypted users/issues/support_tickets JSON
+# (full subscriber emails, names, cities, bios, Stripe customer IDs, raw
+# support-ticket text) as a public artifact for real -- caught live and
+# deleted the same day. Fix: encrypt the whole backup/ directory into one
+# opaque blob (openssl aes-256-cbc+pbkdf2, BACKUP_ENCRYPTION_KEY secret)
+# before it ever reaches upload-artifact, and never let the plaintext
+# files themselves become the uploaded path. The artifact being public is
+# now harmless -- it's ciphertext without the key, which lives only in
+# GitHub Secrets and .env.local (see docs/SECRETS.md).
 
 on:
   schedule:
@@ -49,9 +63,23 @@ jobs:
           export BACKUP_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           node scripts/backup-critical-tables.mjs backup
 
-      - name: Upload backup artifact
+      # This repo is public -- the artifact below is downloadable by anyone,
+      # so the plaintext JSON never leaves this step. Encrypt into one opaque
+      # blob and delete the plaintext before upload-artifact ever sees it.
+      - name: Encrypt backup
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          tar -czf backup.tar.gz -C backup .
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in backup.tar.gz -out backup.tar.gz.enc \
+            -pass env:BACKUP_ENCRYPTION_KEY
+          rm -rf backup backup.tar.gz
+
+      - name: Upload encrypted backup artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: alpha-db-backup-${{ github.run_id }}
-          path: backup/
+          path: backup.tar.gz.enc
           retention-days: 30
