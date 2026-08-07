@@ -122,20 +122,34 @@ export function isFirstSubscription(
 // the correct signal for "when does access end," regardless of which flow
 // set it.
 //
-// terminalStatus must win over everything else: a `subscription.deleted`
-// event correctly sets cancelled_at=now() when a sub ends, but Stripe
-// retries a failed `updated`/`created` delivery for ~3 days — if that retry
-// lands AFTER `deleted` already processed, a terminal sub's own cancel_at
-// may be unset, and an unguarded derivation would write cancelled_at=null,
-// silently resurrecting a churned subscriber's paid access indefinitely.
+// The 3 Stripe statuses this app treats as "the subscription has actually
+// ended" -- everything else (active, trialing, past_due, incomplete, paused)
+// leaves cancelled_at alone (null, unless a real cancel_at is scheduled).
+// Exported on its own (not just inlined in deriveCancelledAt) because
+// scripts/reconcile-stripe-vs-supabase.mts needs the SAME notion of
+// "should this look live in the DB" -- alpha-drift-r15-14 (found+fixed
+// 2026-08-06): that script used to reuse lib/update-quantity-guards.ts's
+// isLiveForManagement (scoped to {active, trialing, past_due} -- its own
+// comment says it exists to answer "should this subscription be findable
+// by the quantity-change flow", not a general liveness check) as its
+// notion of Stripe-side liveness. `incomplete` and `paused` are in neither
+// that set NOR this terminal set, so a subscription in either status was
+// simultaneously "not live" per isLiveForManagement and "not cancelled"
+// per this file's own deriveCancelledAt (cancelled_at stays null) --
+// isLiveForManagement's narrower set produced a false-positive
+// access_mismatch drift alert for a real, ordinary transient Stripe state
+// (incomplete during a pending 3DS/first-payment confirmation; paused via
+// Stripe's own "pause collection" feature) that was never actually a bug.
+export function isTerminalSubscriptionStatus(status: string): boolean {
+  return status === "canceled" || status === "incomplete_expired" || status === "unpaid";
+}
+
 export function deriveCancelledAt(
   status: string,
   cancelAtUnixSeconds: number | null | undefined,
   nowIso: string = new Date().toISOString()
 ): string | null {
-  const terminalStatus =
-    status === "canceled" || status === "incomplete_expired" || status === "unpaid";
-  if (terminalStatus) return nowIso;
+  if (isTerminalSubscriptionStatus(status)) return nowIso;
   if (typeof cancelAtUnixSeconds === "number" && cancelAtUnixSeconds > 0) {
     return new Date(cancelAtUnixSeconds * 1000).toISOString();
   }

@@ -9,11 +9,26 @@
 // retry window... Stripe's dashboard shows it, but nothing here is
 // watching that dashboard."
 //
-// Reuses the REAL app logic (hasActiveAccess, isLiveForManagement,
+// Reuses the REAL app logic (hasActiveAccess, isTerminalSubscriptionStatus,
 // clampQuota) rather than reimplementing the rules here -- importing from
 // lib/ instead of copying them is the whole point: this script's job is to
 // catch drift, not become a second, potentially-inconsistent copy of the
 // same rules it's checking against.
+//
+// alpha-drift-r15-14 (found+fixed 2026-08-06): this used to import
+// isLiveForManagement from lib/update-quantity-guards.ts instead --
+// that set ({active, trialing, past_due}) is scoped to "should this
+// subscription be findable by the quantity-change flow," not a general
+// Stripe-side liveness check, and doesn't cover `incomplete` or `paused`.
+// Neither of those is in deriveCancelledAt's terminal set either (so the
+// DB correctly leaves cancelled_at null for them), which meant a
+// subscription in either status produced a false-positive access_mismatch
+// finding every single reconcile run, for a real, ordinary transient
+// Stripe state that was never actually a bug. isTerminalSubscriptionStatus
+// is the SAME notion of liveness deriveCancelledAt itself uses to decide
+// what the DB should contain -- using it here means this script is
+// actually comparing Stripe against the rule that governs the DB, not
+// against a narrower, unrelated rule that happens to share a name.
 //
 // Run: STRIPE_SECRET_KEY=... SUPABASE_URL=... SUPABASE_SECRET_KEY=... \
 //      RESEND_API_KEY=... npx tsx scripts/reconcile-stripe-vs-supabase.mts
@@ -30,7 +45,7 @@ if (!stripeSecret || !supabaseUrl || !supabaseKey) {
 
 const { getStripeClient } = await import("../lib/stripe.ts");
 const { hasActiveAccess } = await import("../lib/access.ts");
-const { isLiveForManagement } = await import("../lib/update-quantity-guards.ts");
+const { isTerminalSubscriptionStatus } = await import("../lib/webhook-user-mutation.ts");
 const { clampQuota, TOPICS_PER_BUNDLE } = await import("../lib/types.ts");
 const { createClient } = await import("@supabase/supabase-js");
 const { sendOpsAlert } = await import("../lib/email.ts");
@@ -39,10 +54,11 @@ const stripe = getStripeClient();
 const sb = createClient(supabaseUrl, supabaseKey);
 
 // --- 1. Every Stripe subscription, paginated. Keep the "best" one per
-// customer -- prefer a live one (active/trialing/past_due) over a terminal
-// one if a customer somehow has both (e.g. an old canceled sub plus a
-// fresh resubscribe), since the live one is what actually governs access. ---
-type SubSummary = { id: string; status: Parameters<typeof isLiveForManagement>[0]; quantity: number };
+// customer -- prefer a non-terminal one (active/trialing/past_due/
+// incomplete/paused) over a terminal one if a customer somehow has both
+// (e.g. an old canceled sub plus a fresh resubscribe), since the
+// non-terminal one is what actually governs access. ---
+type SubSummary = { id: string; status: Parameters<typeof isTerminalSubscriptionStatus>[0]; quantity: number };
 const subsByCustomer = new Map<string, SubSummary>();
 let startingAfter: string | undefined;
 for (;;) {
@@ -51,7 +67,7 @@ for (;;) {
     const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
     const summary: SubSummary = { id: sub.id, status: sub.status, quantity: sub.items?.data?.[0]?.quantity ?? 1 };
     const existing = subsByCustomer.get(customerId);
-    if (!existing || (isLiveForManagement(summary.status) && !isLiveForManagement(existing.status))) {
+    if (!existing || (!isTerminalSubscriptionStatus(summary.status) && isTerminalSubscriptionStatus(existing.status))) {
       subsByCustomer.set(customerId, summary);
     }
   }
@@ -100,7 +116,7 @@ for (const user of users) {
     });
     continue;
   }
-  const stripeIsLive = isLiveForManagement(sub.status);
+  const stripeIsLive = !isTerminalSubscriptionStatus(sub.status);
   const dbIsLive = hasActiveAccess(user.cancelled_at);
   if (stripeIsLive !== dbIsLive) {
     findings.push({
@@ -128,7 +144,7 @@ for (const user of users) {
 // permanently, so the charge went through but no public.users row exists. ---
 const userCustomerIds = new Set(users.map((u) => u.stripe_customer_id));
 for (const [customerId, sub] of subsByCustomer) {
-  if (isLiveForManagement(sub.status) && !userCustomerIds.has(customerId)) {
+  if (!isTerminalSubscriptionStatus(sub.status) && !userCustomerIds.has(customerId)) {
     findings.push({
       type: "orphaned_stripe_subscription",
       stripeCustomerId: customerId,
