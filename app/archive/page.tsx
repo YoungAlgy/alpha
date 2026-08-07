@@ -8,6 +8,16 @@ import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
+// alpha-drift-r15-05 (found+fixed 2026-08-07): this page had a bare
+// .limit(100) with no pagination anywhere -- the newsletter sends DAILY, so
+// every subscriber who stays subscribed past ~100 days silently lost access
+// to everything older through this UI (no error, just gone -- and with no
+// other browse/search entry point, a truncated letter became permanently
+// unreachable short of knowing its raw UUID). PAGE_SIZE stays 100 (same as
+// before, so the common case — most subscribers, most of the time — is
+// unchanged) but a "Load more" button now fetches the next page via
+// .range() instead of the list silently ending.
+const PAGE_SIZE = 100;
 
 interface ArchiveItem {
   id: string; // /inbox/<id> destination ("inbox" = the localStorage first issue)
@@ -20,11 +30,25 @@ type LoadState = "loading" | "error" | "ready";
 export default function ArchivePage() {
   const [items, setItems] = useState<ArchiveItem[]>([]);
   const [state, setState] = useState<LoadState>("loading");
-  // load() has two call sites (mount + the retry button below), so a mounted
-  // ref covering the component's whole lifetime guards both instead of a
-  // per-call cancellation flag.
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // load() has three call sites now (mount, the retry button, loadMore), so
+  // a mounted ref covering the component's whole lifetime guards all of them
+  // instead of a per-call cancellation flag. The effect body must explicitly
+  // reset this to true, not just rely on useRef's initial value -- found
+  // live while testing the pagination fix below: React Strict Mode (dev
+  // only, reactStrictMode:true in next.config.ts) mounts effects, cleans
+  // them up, then mounts them again to catch exactly this kind of bug. The
+  // FIRST mount's cleanup set this false; without resetting it here, the
+  // SECOND (real) mount left it permanently false, silently no-op-ing every
+  // `if (!mountedRef.current) return` for the rest of the page's life --
+  // the page never left its loading skeleton. Production doesn't double-
+  // invoke effects, so this never showed up live, only in local `next dev`.
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const load = useCallback(async () => {
     if (mountedRef.current) setState("loading");
@@ -44,7 +68,7 @@ export default function ArchivePage() {
             .from("issues")
             .select("id, week_of, editor_intro")
             .order("week_of", { ascending: false })
-            .limit(100);
+            .range(0, PAGE_SIZE - 1);
           if (!mountedRef.current) return;
           if (error) {
             setState("error");
@@ -58,6 +82,7 @@ export default function ArchivePage() {
               firstLine: row.editor_intro,
             }))
           );
+          setHasMore(rows.length === PAGE_SIZE);
           setState("ready");
           return;
         }
@@ -81,6 +106,34 @@ export default function ArchivePage() {
     }
     if (mountedRef.current) setState("ready");
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (!supabaseConfigured() || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const sb = supabaseClient();
+      const {
+        data: { session },
+      } = await sb.auth.getSession();
+      if (!mountedRef.current || !session) return;
+      const from = items.length;
+      const { data, error } = await sb
+        .from("issues")
+        .select("id, week_of, editor_intro")
+        .order("week_of", { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+      if (!mountedRef.current) return;
+      if (error) return; // leave the existing list intact; the button just stays visible to retry
+      const rows = (data || []) as Array<{ id: string; week_of: string; editor_intro: string }>;
+      setItems((prev) => [
+        ...prev,
+        ...rows.map((row) => ({ id: row.id, weekOf: row.week_of, firstLine: row.editor_intro })),
+      ]);
+      setHasMore(rows.length === PAGE_SIZE);
+    } finally {
+      if (mountedRef.current) setLoadingMore(false);
+    }
+  }, [items.length, loadingMore]);
 
   useEffect(() => {
     load();
@@ -161,6 +214,19 @@ export default function ArchivePage() {
               </li>
             ))}
           </ul>
+        )}
+
+        {state === "ready" && hasMore && (
+          <div className="pt-8 text-center">
+            <button
+              type="button"
+              onClick={() => loadMore()}
+              disabled={loadingMore}
+              className="alpha-button"
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
         )}
       </section>
       <Footer />
