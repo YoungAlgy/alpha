@@ -3,7 +3,7 @@ import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/serv
 import { clampQuota } from "@/lib/types";
 import { poolCap } from "@/lib/engine/select-sections";
 import { rateLimit } from "@/lib/rate-limit";
-import { validateTopicsSubmission } from "@/lib/account-topics-guards";
+import { validateTopicsShape, validateTopicsAgainstCap } from "@/lib/account-topics-guards";
 
 export const runtime = "nodejs";
 
@@ -50,15 +50,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
   }
 
-  // The real per-user cap needs a DB read to compute (poolCap depends on
-  // this reader's topic_quota) -- see lib/account-topics-guards.ts for the
-  // full validation chain (empty-pool floor, dup check, isValidTopicId scan)
-  // and why the empty-pool floor in particular matters: the DB's own
+  // Cheap, DB-free shape check first (array, length ceiling, empty floor,
+  // string-type scan) -- a malformed body must 400 in O(1) without ever
+  // reaching the DB, both to avoid paying for a query on garbage input and
+  // so a malformed request during a transient DB read failure still 400s
+  // instead of 500ing. See lib/account-topics-guards.ts for why the
+  // empty-pool floor in particular matters: the DB's own
   // users_topics_len_chk CHECK constraint doesn't catch it (Postgres's
   // array_length of an empty array is NULL, which satisfies that
   // constraint's `topics is null or array_length(...) <= 25` OR), so an
   // empty pool would otherwise silently drop the subscriber from every send
   // (weekly-send/route.ts's skippedEmptyPool path).
+  const shape = validateTopicsShape(body.topics);
+  if (!shape.ok) {
+    return NextResponse.json({ error: shape.error }, { status: 400 });
+  }
+
+  // The real per-user cap needs a DB read to compute (poolCap depends on
+  // this reader's topic_quota).
   const svc = await supabaseServiceClient();
   const { data: row, error: readErr } = await svc
     .from("users")
@@ -71,7 +80,7 @@ export async function POST(req: Request) {
   }
   const cap = poolCap(clampQuota(row?.topic_quota ?? 5));
 
-  const result = validateTopicsSubmission(body.topics, cap);
+  const result = validateTopicsAgainstCap(shape.topics, cap);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

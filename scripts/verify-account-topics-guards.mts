@@ -4,10 +4,20 @@
 // public.users.topics with an empty-pool floor -- see the guard file's own
 // comment for why the DB's CHECK constraint doesn't catch it. Had zero
 // dedicated coverage until this script (found in review 2026-08-06).
+//
+// alpha-drift-r14-02: also covers the two-phase split (validateTopicsShape
+// then validateTopicsAgainstCap) the route now calls separately around its
+// DB read -- an earlier single-function version of this file accidentally
+// let a malformed body reach the DB before being rejected, turning a 400
+// into a 500 during a transient DB read failure. Section (8) locks in that
+// the shape phase alone needs no cap and catches every shape defect on its
+// own, matching what the route now runs before ever touching Supabase.
 // Run: npx tsx scripts/verify-account-topics-guards.mts
 import { TOPICS } from "../lib/topics.ts";
 
-const { validateTopicsSubmission } = await import("../lib/account-topics-guards.ts");
+const { validateTopicsSubmission, validateTopicsShape, validateTopicsAgainstCap } = await import(
+  "../lib/account-topics-guards.ts"
+);
 
 let pass = 0,
   fail = 0;
@@ -80,6 +90,22 @@ check("(7) ok: true", goodResult.ok === true);
 check(
   "(7) the returned topics array matches the input exactly, same order, no mutation",
   goodResult.ok && JSON.stringify(goodResult.topics) === JSON.stringify(realTopics)
+);
+
+console.log("(8) two-phase split — shape alone needs no cap, and rejects a malformed body before any cap is known");
+check("(8) non-array rejected by shape phase alone (no cap argument at all)", validateTopicsShape("not-an-array").ok === false);
+check("(8) empty array rejected by shape phase alone", validateTopicsShape([]).ok === false);
+check("(8) non-string entry rejected by shape phase alone", validateTopicsShape([42]).ok === false);
+const shapeOk = validateTopicsShape(realTopics);
+check("(8) a valid shape passes phase 1", shapeOk.ok === true);
+check(
+  "(8) phase 2 (cap check) on an already-shaped list behaves identically to the combined function",
+  shapeOk.ok && JSON.stringify(validateTopicsAgainstCap(shapeOk.topics, 2)) === JSON.stringify(validateTopicsSubmission(realTopics, 2))
+);
+check(
+  "(8) composed validateTopicsSubmission is exactly shape-then-cap, not a separate third implementation",
+  JSON.stringify(validateTopicsSubmission(realTopics, 25)) ===
+    JSON.stringify(validateTopicsShape(realTopics).ok ? validateTopicsAgainstCap((validateTopicsShape(realTopics) as { ok: true; topics: string[] }).topics, 25) : null)
 );
 
 console.log(`\n${pass} passed, ${fail} failed`);
