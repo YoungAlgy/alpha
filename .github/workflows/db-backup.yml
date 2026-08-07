@@ -39,6 +39,20 @@ name: Database backup
 # files themselves become the uploaded path. The artifact being public is
 # now harmless -- it's ciphertext without the key, which lives only in
 # GitHub Secrets and .env.local (see docs/SECRETS.md).
+#
+# alpha-drift-r16-14 (found+fixed 2026-08-07): the encrypt step above
+# trusted BACKUP_ENCRYPTION_KEY without ever checking it was actually set.
+# `set -euo pipefail` gives no protection here -- openssl does not treat an
+# empty passphrase as an error, it happily encrypts with one and exits 0.
+# Reproduced locally: an empty/unset key still produces a real ciphertext
+# file, decryptable by anyone in one try (`-pass pass:""`), with a fully
+# green CI run as cover. A single accidental secret deletion, an org
+# secrets migration, or a typo'd secret name would silently regress the
+# CRITICAL PII-leak fix this whole workflow exists to close, with nothing
+# anywhere flagging it. Fixed with an explicit non-empty check that fails
+# the job loudly before openssl ever runs -- matching daily-send.yml's own
+# "every required secret present" preflight discipline
+# (scripts/verify-send-preflight.mjs), which this workflow never had.
 
 on:
   schedule:
@@ -71,6 +85,10 @@ jobs:
           BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
+          if [ -z "${BACKUP_ENCRYPTION_KEY}" ]; then
+            echo "::error:: BACKUP_ENCRYPTION_KEY is unset or empty -- refusing to 'encrypt' with an empty passphrase and upload a public artifact that isn't actually protected. Check the GitHub secret still exists (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
           tar -czf backup.tar.gz -C backup .
           openssl enc -aes-256-cbc -pbkdf2 -salt \
             -in backup.tar.gz -out backup.tar.gz.enc \
