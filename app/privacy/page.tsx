@@ -1,9 +1,34 @@
+import type { Metadata } from "next";
 import { LegalLayout } from "@/components/LegalLayout";
 
-export const metadata = {
-  title: "Privacy",
-  description:
-    "How alpha. handles your data: what we store, what we never do with it (no ads, no selling), and how deletion works.",
+// alpha-drift-r15-08/10 (found+fixed 2026-08-06): this page is in both
+// robots.ts's allow list and sitemap.ts, but only ever set flat
+// title/description -- Next doesn't deep-merge openGraph/twitter across
+// route segments, so it silently inherited the ROOT layout's whole object
+// (og:title/og:url literally identified this page as the homepage, verified
+// live via curl). canonical was also missing -- app/page.tsx and
+// app/sample/page.tsx both set alternates.canonical deliberately; this page
+// never did.
+const PATH = "/privacy";
+const TITLE = "Privacy";
+const DESCRIPTION =
+  "How alpha. handles your data: what we store, what we never do with it (no ads, no selling), and how deletion works.";
+
+export const metadata: Metadata = {
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: `https://alpha.everyday.report${PATH}` },
+  openGraph: {
+    title: `${TITLE} | alpha.`,
+    description: DESCRIPTION,
+    url: `https://alpha.everyday.report${PATH}`,
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: `${TITLE} | alpha.`,
+    description: DESCRIPTION,
+  },
 };
 
 export default function PrivacyPage() {

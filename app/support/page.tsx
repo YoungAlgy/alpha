@@ -1,12 +1,32 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { Wordmark } from "@/components/Wordmark";
 import { SupportForm } from "./SupportForm";
 
-export const metadata = {
-  title: "Support",
-  description:
-    "Get help with alpha. Billing, topics, sign-in, or anything else. Send a message and a real person replies.",
+// alpha-drift-r15-08/10: see app/privacy/page.tsx's comment -- same fix,
+// same reason (indexable page silently inheriting the root layout's
+// homepage openGraph/twitter/canonical).
+const PATH = "/support";
+const TITLE = "Support";
+const DESCRIPTION =
+  "Get help with alpha. Billing, topics, sign-in, or anything else. Send a message and a real person replies.";
+
+export const metadata: Metadata = {
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: `https://alpha.everyday.report${PATH}` },
+  openGraph: {
+    title: `${TITLE} | alpha.`,
+    description: DESCRIPTION,
+    url: `https://alpha.everyday.report${PATH}`,
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: `${TITLE} | alpha.`,
+    description: DESCRIPTION,
+  },
 };
 
 export default function SupportPage() {

@@ -1,9 +1,29 @@
+import type { Metadata } from "next";
 import { LegalLayout } from "@/components/LegalLayout";
 
-export const metadata = {
-  title: "Terms",
-  description:
-    "The terms of service for alpha. A $5/month personal letter, every day. Billing, cancellation, refunds, and what you can expect from the service.",
+// alpha-drift-r15-08/10: see app/privacy/page.tsx's comment -- same fix,
+// same reason (indexable page silently inheriting the root layout's
+// homepage openGraph/twitter/canonical).
+const PATH = "/terms";
+const TITLE = "Terms";
+const DESCRIPTION =
+  "The terms of service for alpha. A $5/month personal letter, every day. Billing, cancellation, refunds, and what you can expect from the service.";
+
+export const metadata: Metadata = {
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: `https://alpha.everyday.report${PATH}` },
+  openGraph: {
+    title: `${TITLE} | alpha.`,
+    description: DESCRIPTION,
+    url: `https://alpha.everyday.report${PATH}`,
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: `${TITLE} | alpha.`,
+    description: DESCRIPTION,
+  },
 };
 
 export default function TermsPage() {
