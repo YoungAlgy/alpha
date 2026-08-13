@@ -113,6 +113,13 @@ const ids = (r: { chosen: { topicId: string }[] }) => r.chosen.map((c) => c.topi
 // independently return the SAME url (simulating two topics surfacing the
 // same underlying article) -- the second must be rejected and backfilled
 // from the next-ranked topic, not both shown.
+//
+// alpha-drift-r17-11/12 (found+fixed 2026-08-07): the rejected topic used
+// to land in skippedDry (misreported as "quiet" -- it had real content) AND
+// get picked back up by Pass 2's filler loop, paying for a SECOND real
+// generation on the same topic id, contradicting this file's own "cost
+// stays ≈ letterSize" invariant. Now it must land in dedupedByUrl instead,
+// stay OUT of skippedDry, and filler must never be called for it at all.
 {
   const urlByTopic: Record<string, string> = {
     a: "https://example.com/fed-rate-story",
@@ -121,9 +128,15 @@ const ids = (r: { chosen: { topicId: string }[] }) => r.chosen.map((c) => c.topi
   };
   const genLiveWithUrl = async (id: string) => ({ topicId: id, url: urlByTopic[id] });
   const extractUrls = (v: { url: string }) => [v.url];
-  const r = await selectLetterSections(["a", "b", "c", "d"], 2, genLiveWithUrl, fillerGen(), extractUrls);
+  const fillerCalls: string[] = [];
+  const trackedFiller = async (id: string) => {
+    fillerCalls.push(id);
+    return { topicId: id, url: `filler:${id}` };
+  };
+  const r = await selectLetterSections(["a", "b", "c", "d"], 2, genLiveWithUrl, trackedFiller, extractUrls);
   check("(11) colliding topic 'b' rejected, backfilled by 'c'", ids(r) === "a,c");
-  check("(11) 'b' reported as skipped (not chosen, not filler)", r.skippedDry.includes("b"));
+  check("(11) 'b' reported in dedupedByUrl, NOT skippedDry -- it had real content, wasn't quiet", r.dedupedByUrl.includes("b") && !r.skippedDry.includes("b"));
+  check("(11) filler was NEVER called for 'b' -- no second paid generation for a deduped topic", !fillerCalls.includes("b"));
 }
 
 // (12) Without extractUrls (the default), no dedup happens -- confirms the

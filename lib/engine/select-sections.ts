@@ -26,6 +26,13 @@ export interface SelectionResult<T> {
   chosen: ChosenSection<T>[]; // in rank order
   skippedDry: string[]; // topics with no fresh info this period, not used
   usedFiller: string[]; // topics filled from the last-resort filler
+  // alpha-drift-r17-11/12 (found+fixed 2026-08-07): topics whose Pass-1 live
+  // candidate had real, fresh content but got rejected for citing a URL an
+  // earlier-chosen section of this SAME letter already used -- distinct
+  // from skippedDry (genuinely no fresh signal) so callers can log/report
+  // them accurately instead of misreporting a real-content-but-deduped
+  // topic as "quiet."
+  dedupedByUrl: string[];
 }
 
 /** Every URL a candidate section cites (normalized), for the cross-topic
@@ -93,6 +100,15 @@ export async function selectLetterSections<T>(
   // once earlier topics already filled the letter; those were never checked,
   // so they are not "quiet" and must not be reported as skippedDry.
   const attempted = new Set<string>();
+  // alpha-drift-r17-11 (found+fixed 2026-08-07): a topic rejected here for a
+  // URL collision was never added to `chosen`, so Pass 2's own dedup check
+  // (`!chosen.some(...)`) didn't see it either -- Pass 2 would pick the
+  // IDENTICAL topic id back up as a filler candidate and pay for a second
+  // real generation call, contradicting this file's own "cost stays ≈
+  // letterSize" invariant (one live call already happened AND got
+  // discarded, purely for citing an already-used URL). Track these
+  // separately so Pass 2 can exclude them too.
+  const dedupedByUrl = new Set<string>();
 
   // Pass 1 — walk the pool in rank order, in parallel waves sized to what's
   // still needed, keeping topics that produced FRESH content. Common case
@@ -107,14 +123,19 @@ export async function selectLetterSections<T>(
     const results = await Promise.all(batch.map(live));
     batch.forEach((topicId, k) => {
       const value = results[k];
-      if (value != null && chosen.length < size && !isUrlCollision(value)) {
-        chosen.push({ topicId, rank: start + k, value, source: "live" });
-        recordUrls(value);
+      if (value == null || chosen.length >= size) return;
+      if (isUrlCollision(value)) {
+        dedupedByUrl.add(topicId);
+        return;
       }
+      chosen.push({ topicId, rank: start + k, value, source: "live" });
+      recordUrls(value);
     });
   }
 
-  const skippedDry = pool.filter((id) => attempted.has(id) && !chosen.some((c) => c.topicId === id));
+  const skippedDry = pool.filter(
+    (id) => attempted.has(id) && !chosen.some((c) => c.topicId === id) && !dedupedByUrl.has(id)
+  );
 
   // Pass 2 — last resort. The pool's live signal didn't fill the letter (a
   // quiet period). Fill remaining slots with filler for the top dry topics so
@@ -129,7 +150,7 @@ export async function selectLetterSections<T>(
     const candidates: Array<{ topicId: string; rank: number }> = [];
     while (candidates.length < size - chosen.length && fillCursor < pool.length) {
       const topicId = pool[fillCursor];
-      if (!chosen.some((c) => c.topicId === topicId)) {
+      if (!chosen.some((c) => c.topicId === topicId) && !dedupedByUrl.has(topicId)) {
         candidates.push({ topicId, rank: fillCursor });
       }
       fillCursor++;
@@ -151,6 +172,7 @@ export async function selectLetterSections<T>(
     chosen,
     skippedDry: skippedDry.filter((id) => !usedFiller.includes(id)),
     usedFiller,
+    dedupedByUrl: Array.from(dedupedByUrl),
   };
 }
 

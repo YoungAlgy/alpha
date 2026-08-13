@@ -343,6 +343,17 @@ export async function generateIssue(
       `[assemble] ${weekOf}: skipped ${selection.skippedDry.length} quiet topic(s): ${selection.skippedDry.join(", ")}`
     );
   }
+  // alpha-drift-r17-12 (found+fixed 2026-08-07): a topic dropped for citing
+  // a URL an earlier section of this SAME letter already used has real,
+  // fresh content -- it isn't "quiet" (skippedDry) and isn't a bundle-
+  // upgrade under-fill either. Logged separately so an on-call engineer
+  // reading this line isn't misdirected toward topic_quota/users.topics
+  // when the actual cause is a same-day story overlap between two topics.
+  if (selection.dedupedByUrl.length > 0) {
+    console.warn(
+      `[assemble] ${weekOf}: deduped ${selection.dedupedByUrl.length} topic(s) citing a URL already used elsewhere in this same letter: ${selection.dedupedByUrl.join(", ")}`
+    );
+  }
   if (blurbs.length === 0) {
     throw new Error("All topic sections failed to generate");
   }
@@ -364,8 +375,24 @@ export async function generateIssue(
   // this codebase has no precedent of logging a subscriber's raw email;
   // the aggregate shortfall is still enough to spot the pattern in logs.
   if (blurbs.length < size) {
+    // alpha-drift-r17-12: this used to hardcode "likely a recent bundle
+    // upgrade" as the cause -- true when this warning was first written,
+    // but the URL-collision dedup added the same round can independently
+    // shrink blurbs.length below size on a day when topic_quota/users.topics
+    // are perfectly fine. Name the actual observed cause(s) instead of
+    // guessing one.
+    const causes: string[] = [];
+    if (genPool.length < size) {
+      causes.push(`genPool has only ${genPool.length} topics -- likely a recent bundle upgrade the reader hasn't re-ranked topics for yet`);
+    }
+    if (selection.dedupedByUrl.length > 0) {
+      causes.push(`${selection.dedupedByUrl.length} topic(s) deduped for citing an already-used URL this letter (see the line above)`);
+    }
+    if (causes.length === 0) {
+      causes.push("cause not identified from genPool size or URL dedup -- check skippedDry/generation failures above");
+    }
     console.warn(
-      `[assemble] ${weekOf}: letter under-filled -- ${blurbs.length}/${size} sections (genPool has only ${genPool.length} topics; likely a recent bundle upgrade the reader hasn't re-ranked topics for yet)`
+      `[assemble] ${weekOf}: letter under-filled -- ${blurbs.length}/${size} sections (${causes.join("; ")})`
     );
   }
 
