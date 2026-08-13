@@ -111,6 +111,22 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
       },
+      {
+        // alpha-drift-r16-07 (found+fixed 2026-08-07): /letter is the ONE
+        // page route (not under /api/) that server-renders real subscriber
+        // PII -- name, city, editor's note, full letter body -- keyed
+        // solely by a signed token in ?t=, with no session/cookie required.
+        // It already sets `dynamic = "force-dynamic"` and enforces
+        // hasActiveAccess(), but dynamic rendering alone says nothing about
+        // caching, exactly the gap /api/health's own comment already
+        // documents learning once on this same OpenNext/Cloudflare stack.
+        // This is also the one route email security gateways (Defender Safe
+        // Links, Proofpoint, Mimecast) auto-fetch on every subscriber's
+        // behalf (see app/api/unsubscribe/route.ts's own comment) -- exactly
+        // the traffic pattern that would prime a caching intermediary.
+        source: "/letter",
+        headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
+      },
     ];
   },
 };

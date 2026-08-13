@@ -117,6 +117,27 @@ const CHECKS = [
       };
     },
   },
+  {
+    // alpha-drift-r16-07 (found+fixed 2026-08-07): /letter server-renders
+    // real subscriber PII (name, city, letter body) keyed only by a signed
+    // token, no session required -- the same "must never be cacheable"
+    // stakes as /api/health above. next.config.ts's headers() rule for
+    // this path turned out to be insufficient on its own (Next's own
+    // dynamic-page rendering sets a competing default that wins over it);
+    // the real fix lives in src/worker-entry.ts, which runs after Next has
+    // already built the response. This check is what would have caught
+    // that gap immediately instead of relying on a manual curl.
+    name: "/letter is not stale-cached",
+    hard: true,
+    run: async () => {
+      const res = await fetchWithTimeout(`${BASE_URL}/letter?t=smoke-test-invalid-token-${Date.now()}`);
+      const cc = res.headers.get("cache-control") || "";
+      return {
+        ok: cc.includes("no-store"),
+        detail: `Cache-Control: ${cc || "(none)"} -- this route carries real subscriber PII and must never be cacheable by an intermediary (email security gateways auto-fetch this exact URL shape)`,
+      };
+    },
+  },
 ];
 
 let hardFailures = 0;

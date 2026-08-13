@@ -217,6 +217,27 @@ export default {
 
     const response: Response = await openNextWorker.fetch(downstreamRequest, env, ctx)
 
+    // alpha-drift-r16-07 (found+fixed 2026-08-07): /letter server-renders
+    // real subscriber PII (name, city, editor's note, full letter body)
+    // keyed solely by a signed token in ?t=, no session required -- the
+    // exact traffic pattern email security gateways (Defender Safe Links,
+    // Proofpoint, Mimecast) auto-fetch on every subscriber's behalf. It
+    // already sets dynamic="force-dynamic" and enforces hasActiveAccess(),
+    // but next.config.ts's headers() rule for this path was tried FIRST and
+    // found insufficient: Next's own dynamic-page rendering sets its own
+    // default `Cache-Control: no-cache, must-revalidate` on the response
+    // AFTER next.config.ts's rule would apply, silently winning over the
+    // stricter `no-store` this route actually needs (confirmed live via
+    // curl against a local dev server). This Worker layer runs strictly
+    // after Next has already built the full response, so it's the one
+    // place late enough to actually override it.
+    if (url.pathname === '/letter') {
+      const headers = new Headers(response.headers)
+      headers.set('Cache-Control', 'no-store, must-revalidate')
+      for (const cookie of setCookieHeaders) headers.append('Set-Cookie', cookie)
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+    }
+
     if (setCookieHeaders.length === 0) return response
 
     const headers = new Headers(response.headers)
