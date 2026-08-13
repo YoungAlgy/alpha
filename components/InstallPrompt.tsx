@@ -93,11 +93,19 @@ export function InstallPrompt() {
       >
         Add
       </button>
+      {/* alpha-drift-r16-03 (found+fixed 2026-08-07): had zero touch-target
+          padding (just the glyph itself, ~14x18px) next to the more
+          consequential "Add" button with only a 12px gap between them on
+          this banner, the one UI surface explicitly aimed at mobile
+          installs. p-2 -m-2 matches the topics page's remove-chip pattern
+          (the negative margin cancels the padding's layout impact, so the
+          tap target grows without the banner's compact visual design
+          changing at all). */}
       <button
         type="button"
         onClick={dismiss}
         aria-label="Dismiss"
-        className="alpha-ui text-sm"
+        className="alpha-ui text-sm p-2 -m-2"
         style={{ color: "var(--ink-soft)" }}
       >
         ✕
