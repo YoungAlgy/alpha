@@ -6,7 +6,21 @@ import { chime, tap } from "@/lib/audio";
 import { setTheme, getCurrentTheme } from "@/lib/theme";
 import type { ThemeId } from "@/lib/types";
 
-export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
+// alpha-drift-r16-01 (found+fixed 2026-08-07): the dropdown is a fixed
+// w-64 (256px) panel positioned relative to this component's OWN wrapper,
+// which sizes to the toggle button's content width -- it doesn't know
+// where on the page that wrapper sits. `right-0` (grow leftward from the
+// button) is correct when the wrapper sits near the viewport's RIGHT edge
+// (app/inbox/page.tsx and app/inbox/[issueId]/page.tsx: last item in a
+// right-aligned `justify-between` header) but wrong when it sits near the
+// LEFT edge (app/settings/page.tsx: first item in a left-aligned row
+// directly against the page's own padding) -- confirmed live on a real
+// mobile viewport that ~30% of the panel, including the leading text of
+// every theme's label and blurb, rendered off the left edge of the screen
+// with no way to scroll to it. `align` lets each call site say which
+// direction has room to grow; defaults to "right" (today's behavior,
+// unchanged for both inbox placements) so only Settings needs to opt in.
+export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: boolean; align?: "left" | "right" }) {
   const [active, setActive] = useState<ThemeId>("forest");
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -80,7 +94,7 @@ export function ThemeSwitcher({ compact = false }: { compact?: boolean }) {
       </button>
       {open && (
         <div
-          className="absolute right-0 mt-2 w-64 z-50 alpha-card overflow-hidden"
+          className={`absolute ${align === "left" ? "left-0" : "right-0"} mt-2 w-64 z-50 alpha-card overflow-hidden`}
           style={{ background: "var(--paper)" }}
           onKeyDown={(e) => {
             if (e.key === "Escape") {

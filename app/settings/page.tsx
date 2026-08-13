@@ -366,7 +366,10 @@ export default function SettingsPage() {
             instantly.
           </p>
           <div className="flex items-center gap-4 flex-wrap">
-            <ThemeSwitcher />
+            {/* align="left": this row sits against the page's own left
+                padding (see ThemeSwitcher's own comment on why the default
+                right-anchored dropdown ran off-screen here on mobile). */}
+            <ThemeSwitcher align="left" />
             <Link
               href="/theme"
               className="alpha-ui text-sm underline underline-offset-4"
