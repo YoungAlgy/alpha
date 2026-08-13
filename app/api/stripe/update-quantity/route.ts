@@ -183,12 +183,49 @@ export async function POST(req: Request) {
     );
   }
 
+  // alpha-drift-r17-04 (found+fixed 2026-08-07): there's no lock serializing
+  // overlapping requests for the same user -- two tabs clicking OPPOSITE
+  // directions within the same 30s window compute different nextQty values
+  // (different idempotency keys, so Stripe applies BOTH updates instead of
+  // deduping them), and whichever HTTP call happens to reach Stripe last
+  // wins the item's real quantity, decided by network timing, not
+  // application logic. Trusting the LOCALLY COMPUTED nextQty for the DB
+  // write-through below (the old code) made this worse: whichever of the
+  // two concurrent DB writes landed last stuck, independently of which
+  // Stripe update actually won -- so the DB could represent a value NEITHER
+  // Stripe call nor the other request intended. Re-fetching the subscription
+  // fresh right after this request's own update call and writing/returning
+  // THAT converges the DB (and this response) to whatever Stripe's real
+  // final state is, regardless of request ordering -- the exact same
+  // self-healing principle the customer.subscription.updated webhook
+  // already uses (re-reads live quantity rather than trusting a snapshot).
+  // Doesn't eliminate the race entirely (a per-user mutex would, at much
+  // higher complexity for a narrow two-tabs-clicking-fast scenario) but
+  // means the DB can never end up holding a value Stripe never actually
+  // confirmed.
+  let confirmedQty = nextQty;
+  try {
+    const fresh = await stripe.subscriptions.retrieve(sub.id);
+    const freshItem = fresh.items.data[0];
+    if (typeof freshItem?.quantity === "number") {
+      confirmedQty = freshItem.quantity;
+    }
+  } catch (e) {
+    // Best-effort: the update above already succeeded, so fall back to the
+    // locally-computed nextQty rather than failing a request whose Stripe-
+    // side mutation is already real. The webhook still reconciles later.
+    console.warn(
+      "[update-quantity] post-update retrieve failed, using locally-computed quantity:",
+      e instanceof Error ? e.message : e
+    );
+  }
+
   // Write through to public.users immediately so the UI reflects without
   // waiting on the webhook round-trip. Surface a failed write instead of
   // returning 200 with a stale DB — Stripe is already updated (source of
   // truth; the subscription.updated webhook re-mirrors and throws on failure),
   // so tell the client the truth and let the webhook reconcile.
-  const newQuota = clampQuota(nextQty * TOPICS_PER_BUNDLE);
+  const newQuota = clampQuota(confirmedQty * TOPICS_PER_BUNDLE);
   const { error: quotaErr } = await svc
     .from("users")
     .update({ topic_quota: newQuota })
@@ -209,10 +246,10 @@ export async function POST(req: Request) {
   // price object is ever missing unit_amount.
   const unitAmount =
     typeof item.price?.unit_amount === "number" ? item.price.unit_amount : PRICE_PER_BUNDLE_CENTS;
-  const monthlyCents = unitAmount * nextQty;
+  const monthlyCents = unitAmount * confirmedQty;
 
   return NextResponse.json({
-    quantity: nextQty,
+    quantity: confirmedQty,
     topicQuota: newQuota,
     monthlyCents,
   });
