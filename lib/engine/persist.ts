@@ -1,6 +1,6 @@
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { coerceGender } from "@/lib/demographics";
-import { sendOpsAlert } from "@/lib/email";
+import { sendOpsAlert, removeResendSuppression } from "@/lib/email";
 import type { Issue, UserProfile } from "@/lib/types";
 
 interface PersistResult {
@@ -137,6 +137,23 @@ export async function persistIssueIfPossible(
     // "magiclink" token back. Read the real type Supabase assigned instead
     // of assuming it matches the request.
     const verificationType = linkData.properties?.verification_type ?? "magiclink";
+
+    // alpha-drift-r18-01 (found+fixed 2026-08-07): this endpoint has its own
+    // find-or-create-by-email path, entirely separate from the Stripe webhook
+    // -- generateLink above will happily mint a fresh auth user (and this
+    // function then writes a full profile row) for an email that bounced or
+    // complained on a PREVIOUS, since-deleted account. This app's own
+    // bounced_at/complained_at columns don't even apply here (a brand-new
+    // row starts NULL either way) -- the actual problem lives entirely in
+    // Resend's own account-level suppression list, which is keyed by email,
+    // not by this app's user id. Reaching this line means generateLink just
+    // confirmed a real, auth-capable email, which is as strong a signal of
+    // genuine re-consent as the webhook's successful checkout -- so clear
+    // any stale suppression the same way. AWAITED (never fire-and-forget --
+    // see assemble.ts's blurb-cache write for why that class of bug is real
+    // on Workers), but failures here can't block onboarding: removeResend
+    // Suppression already swallows and logs its own errors.
+    await removeResendSuppression(email);
 
     // Sync the profile fields onto public.users (service role bypasses RLS).
     // Surface failures: this row is what the weekly cron reads — a silently

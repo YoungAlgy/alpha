@@ -164,23 +164,28 @@ export async function POST(req: Request) {
                 .update(mut.patch)
                 .eq("id", userId);
               if (updErr) throw new Error(`user update failed: ${updErr.message}`);
-              // alpha-drift-r17-06: this app's own bounced_at/complained_at
-              // columns are only half the fix -- Resend maintains its own
-              // separate account-level suppression list that also has to be
-              // cleared, or the cron would keep calling sendLetterNotification
-              // for an "active" subscriber Resend silently keeps skipping.
-              // AWAITED, not fire-and-forget: an unawaited call here can be
-              // silently abandoned once this handler returns and the
-              // platform tears the invocation down (the exact bug class
-              // already found+fixed once in assemble.ts's blurb-cache write
-              // -- see that comment). Best-effort in the sense that a
-              // failure never throws/retries the WEBHOOK (removeResend
-              // Suppression already swallows and logs its own errors), just
-              // awaited so it actually gets a chance to complete.
-              if (mut.patch.bounced_at === null || mut.patch.complained_at === null) {
-                await removeResendSuppression(email);
-              }
             }
+            // alpha-drift-r18-01 (found+fixed 2026-08-07): the round-17 fix
+            // for this (alpha-drift-r17-06) only called removeResendSuppression
+            // in the UPDATE branch above, gated on bounced_at/complained_at
+            // being nulled in the patch -- but a fresh INSERT (a genuinely
+            // new signup, OR a resubscribe after a full account deletion,
+            // which mints a BRAND NEW auth user id for the same email) never
+            // ran it at all, and its row's bounced_at/complained_at simply
+            // start NULL rather than being explicitly cleared, so nothing
+            // ever signaled "clear Resend's suppression too." Resend's
+            // suppression list is keyed by EMAIL, not by this app's user id
+            // -- a reader who bounced/complained, deleted their account, and
+            // resubscribed with the same address would look perfectly clean
+            // to this app's own gate while Resend kept silently dropping
+            // every send, forever, with zero error surfaced anywhere. Moved
+            // outside the insert/update branch and unconditional: any real
+            // successful checkout is strong, verified intent to receive
+            // mail at this address, and removeResendSuppression is already
+            // idempotent (a 404 -- never actually suppressed -- is treated
+            // as success), so calling it on every checkout completion,
+            // insert or update, is safe and closes both paths at once.
+            await removeResendSuppression(email);
             // One-time welcome email on first subscription. Best-effort — its
             // own try/catch, never blocks or retries the webhook. The
             // isFirstSubscription gate (pre-write row) keeps retries from
