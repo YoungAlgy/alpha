@@ -106,7 +106,10 @@ const BodySchema = z.object({
 // endpoint would mint THAT victim a sign-in link and overwrite their profile.
 async function verifyPaid(
   sessionId: string | undefined
-): Promise<{ ok: true; verifiedEmail: string | null } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; verifiedEmail: string | null; verifiedUserId?: string }
+  | { ok: false; error: string }
+> {
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secret) return { ok: true, verifiedEmail: null }; // dev / Stripe-less stub flow
 
@@ -126,7 +129,17 @@ async function verifyPaid(
       // Access runs through the paid period — a future cancelled_at (cancel-
       // at-period-end) still counts as active. See lib/access.hasActiveAccess.
       if (data?.subscribed_at && hasActiveAccess(data.cancelled_at)) {
-        return { ok: true, verifiedEmail: user.email?.toLowerCase().trim() ?? null };
+        // verifiedUserId: this IS an existing account, unlike the Stripe-
+        // session branch below (a true first-time signup with nothing to
+        // race against) -- lets persistIssueIfPossible re-check this exact
+        // user still exists right before it would otherwise create a new
+        // one for the same email if this account got deleted mid-request
+        // (alpha-drift-r17-03).
+        return {
+          ok: true,
+          verifiedEmail: user.email?.toLowerCase().trim() ?? null,
+          verifiedUserId: user.id,
+        };
       }
     }
   } catch {
@@ -237,8 +250,16 @@ export async function POST(req: Request) {
       "onboarding generateIssue"
     );
 
-    // Best-effort persistence (doesn't block on failure)
-    const persistence = await persistIssueIfPossible(profile, issue, weekOf);
+    // Best-effort persistence (doesn't block on failure). verifiedUserId is
+    // only set for an already-authenticated re-generate call -- see
+    // verifyPaid's comment and persist.ts's expectedUserId param for why
+    // this closes a real deleted-account-resurrection race.
+    const persistence = await persistIssueIfPossible(
+      profile,
+      issue,
+      weekOf,
+      "verifiedUserId" in paid ? paid.verifiedUserId : undefined
+    );
 
     // Establish the session server-side instead of shipping a bearer link to
     // the client (found in review 2026-08-06 -- see persist.ts's hashedToken

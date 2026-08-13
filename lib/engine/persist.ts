@@ -64,7 +64,27 @@ function nonEmptyProfileFields(profile: UserProfile): Record<string, string | st
 export async function persistIssueIfPossible(
   profile: UserProfile,
   issue: Issue,
-  weekOf: string
+  weekOf: string,
+  // alpha-drift-r17-03 (found+fixed 2026-08-07): pass the userId verifyPaid()
+  // already resolved for an AUTHENTICATED re-generate call (never set for a
+  // true first-time/anonymous signup, where there's no existing account to
+  // race against). generateLink's find-or-create-by-email behavior below is
+  // exactly the mechanism that let a deleted account get silently
+  // resurrected: /api/generate can run up to GENERATE_DEADLINE_MS=105s, and
+  // if the SAME user deletes their account (app/api/account/delete/route.ts,
+  // cascades within seconds) while their own generate call is still in
+  // flight, generateLink finds no auth user for that email anymore and
+  // IMPLICITLY CREATES A NEW ONE -- this function then inserts a full
+  // profile row from the stale in-memory object and the caller establishes
+  // a fresh session, undoing the deletion moments after it happened. When
+  // expectedUserId is set, re-verify that exact user still exists right
+  // before generateLink -- narrows the race window from the full up-to-105s
+  // generation time down to the couple of Supabase round trips between this
+  // check and generateLink itself (doesn't eliminate the race entirely --
+  // that would need a DB-level lock -- but a proportionate reduction from
+  // "the whole generation" to "milliseconds," matching this file's own
+  // established bar elsewhere for a real risk vs. full-fix complexity).
+  expectedUserId?: string
 ): Promise<PersistResult | null> {
   if (!supabaseConfigured()) return null;
   // We can't write to public.users / public.issues without a user_id (RLS).
@@ -77,6 +97,16 @@ export async function persistIssueIfPossible(
 
   try {
     const sb = await supabaseServiceClient();
+
+    if (expectedUserId) {
+      const { data: stillExists } = await sb.auth.admin.getUserById(expectedUserId);
+      if (!stillExists?.user) {
+        console.warn(
+          `[persist] expectedUserId ${expectedUserId} (${email}) no longer exists -- account was likely deleted while this generate call was in flight. Skipping persistence rather than letting generateLink create a new account for this email.`
+        );
+        return null;
+      }
+    }
 
     // Find-or-create auth user + grab a sign-in link in one call
     const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
