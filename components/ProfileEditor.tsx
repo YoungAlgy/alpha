@@ -242,6 +242,7 @@ export function ProfileEditor() {
                   key={g}
                   type="button"
                   disabled={!loaded || busy}
+                  aria-pressed={active}
                   onClick={() => {
                     setForm((f) => ({ ...f, gender: f.gender === g ? "" : g }));
                     if (msg) setMsg(null);

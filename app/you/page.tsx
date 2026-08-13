@@ -119,6 +119,7 @@ export default function YouPage() {
                 <button
                   key={g.value}
                   type="button"
+                  aria-pressed={active}
                   onClick={() => { setGender(active ? null : g.value); tap(); }}
                   className="alpha-ui text-sm px-4 py-2 rounded-full border transition"
                   style={{
@@ -134,6 +135,7 @@ export default function YouPage() {
             })}
             <button
               type="button"
+              aria-pressed={gender === "skip"}
               onClick={() => { setGender(gender === "skip" ? null : "skip"); tap(); }}
               className="alpha-ui text-sm px-4 py-2 rounded-full border transition"
               style={{

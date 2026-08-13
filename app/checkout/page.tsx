@@ -200,7 +200,7 @@ export default function CheckoutPage() {
             </span>
           </div>
           {alreadySubscribed ? (
-            <div className="space-y-3">
+            <div className="space-y-3" role="status">
               <p
                 className="alpha-ui text-sm text-center"
                 style={{ color: "var(--ink)" }}

@@ -138,6 +138,14 @@ export async function POST(req: Request) {
         {
           from,
           to: ownerEmail,
+          // alpha-drift-r18-01 (found+fixed 2026-08-07): this file's own
+          // top-of-file comment already documented the intent -- "emailed to
+          // the owner as the reply-to address" -- but the actual send call
+          // never set it, so hitting Reply on this notification fell back to
+          // the From address (alpha@everyday.report), which has no MX record
+          // and bounces. Setting replyTo to the submitter's own address lets
+          // Algy just hit Reply and respond directly to them.
+          replyTo: body.name ? `${body.name} <${body.email}>` : body.email,
           subject: `[alpha. support] ${body.name || body.email}`,
           text: `From: ${body.name ? `${body.name} <${body.email}>` : body.email}\n\n${body.message}`,
         },
