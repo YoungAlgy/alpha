@@ -66,9 +66,18 @@ export default function YouPage() {
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
             A couple things about you.
           </h1>
+          {/* alpha-drift-r17-08 (found+fixed 2026-08-07): this used to say
+              "Both are optional" unconditionally, even when Zodiac was
+              picked on the prior step -- in that case birthday is required
+              to continue (Continue stays disabled, the Skip button is
+              removed from the DOM entirely below), and only the dynamic
+              helper text under the input actually said so. The static
+              claim right above the form was left contradicting the form
+              itself. */}
           <p className="alpha-ui text-sm md:text-base" style={{ color: "var(--ink-soft)" }}>
-            This tunes the letter so it reads like it was written for you. Both are
-            optional, and never shared.
+            {zodiacPicked
+              ? "This tunes the letter so it reads like it was written for you. Gender is optional; birthday isn't, since you picked Zodiac. Never shared."
+              : "This tunes the letter so it reads like it was written for you. Both are optional, and never shared."}
           </p>
         </div>
 

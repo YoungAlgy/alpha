@@ -288,7 +288,7 @@ export function ProfileEditor() {
           value={form.funBlurb}
           onChange={(v) => set("funBlurb", v)}
           placeholder="Florida pollinator gardening"
-          hint="Optional. We'll find one fun item for you most days."
+          hint="Optional. We'll weave this into your letters when it fits."
           multiline
           disabled={!loaded || busy}
           maxLength={BLURB_CAPS.funBlurb}
