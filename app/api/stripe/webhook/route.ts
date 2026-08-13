@@ -3,7 +3,7 @@ import type Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { checkoutUserMutation, isFirstSubscription, deriveCancelledAt, isTerminalSubscriptionStatus } from "@/lib/webhook-user-mutation";
-import { sendWelcomeEmail, resendConfigured, sendOpsAlert } from "@/lib/email";
+import { sendWelcomeEmail, resendConfigured, sendOpsAlert, removeResendSuppression } from "@/lib/email";
 import { clampQuota, TOPICS_PER_BUNDLE } from "@/lib/types";
 import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
 
@@ -164,6 +164,22 @@ export async function POST(req: Request) {
                 .update(mut.patch)
                 .eq("id", userId);
               if (updErr) throw new Error(`user update failed: ${updErr.message}`);
+              // alpha-drift-r17-06: this app's own bounced_at/complained_at
+              // columns are only half the fix -- Resend maintains its own
+              // separate account-level suppression list that also has to be
+              // cleared, or the cron would keep calling sendLetterNotification
+              // for an "active" subscriber Resend silently keeps skipping.
+              // AWAITED, not fire-and-forget: an unawaited call here can be
+              // silently abandoned once this handler returns and the
+              // platform tears the invocation down (the exact bug class
+              // already found+fixed once in assemble.ts's blurb-cache write
+              // -- see that comment). Best-effort in the sense that a
+              // failure never throws/retries the WEBHOOK (removeResend
+              // Suppression already swallows and logs its own errors), just
+              // awaited so it actually gets a chance to complete.
+              if (mut.patch.bounced_at === null || mut.patch.complained_at === null) {
+                await removeResendSuppression(email);
+              }
             }
             // One-time welcome email on first subscription. Best-effort — its
             // own try/catch, never blocks or retries the webhook. The

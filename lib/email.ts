@@ -32,6 +32,47 @@ export function resendConfigured(): boolean {
   return resendConfiguredInternal();
 }
 
+// alpha-drift-r17-06 (found+fixed 2026-08-07): Resend maintains its OWN
+// account-level suppression list, separate from this app's bounced_at/
+// complained_at columns -- populated automatically on a hard bounce or
+// complaint, per Resend's docs (resend.com/docs/dashboard/emails/email-
+// suppressions): entries are removed "manually only," never auto-expire,
+// and re-adding happens automatically if the underlying cause isn't
+// addressed. Clearing this app's own DB columns (see
+// lib/webhook-user-mutation.ts's checkoutUserMutation) is necessary but NOT
+// sufficient to restore delivery -- Resend would keep silently skipping the
+// send regardless of what this app's own tables say. The `resend` SDK
+// version installed here doesn't wrap this endpoint (confirmed against its
+// own .d.ts -- no `suppressions` client property), so this calls Resend's
+// REST API directly: DELETE https://api.resend.com/suppressions/{email}
+// (resend.com/docs/api-reference/suppressions/remove-suppression).
+// Best-effort by design, matching every other Resend call in this file: a
+// removal failure must never block or fail the caller's own DB write (a
+// real subscriber's re-consent is recorded either way; this is cleanup on
+// top of that, not the source of truth). A 404 (the address was never
+// actually suppressed -- e.g. bounced_at was set by something other than a
+// REAL Resend-side suppression, or it's already been manually removed) is
+// treated as success, not failure, same "already in the end state we
+// wanted" reasoning as lib/gotrue-errors.ts's isUserNotFoundError.
+export async function removeResendSuppression(email: string): Promise<boolean> {
+  if (!resendConfiguredInternal()) return false;
+  try {
+    const res = await fetch(`https://api.resend.com/suppressions/${encodeURIComponent(email)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY!.trim()}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok && res.status !== 404) {
+      console.warn(`[email] removeResendSuppression failed for an address: HTTP ${res.status}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("[email] removeResendSuppression threw:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 // Retry-with-backoff around a single emails.send() call. Added 2026-08-05
 // (resilience audit finding): a single transient Resend error used to
 // propagate straight up to the cron's caller, which for the letter path

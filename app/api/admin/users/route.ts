@@ -6,6 +6,7 @@ import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
+import { removeResendSuppression } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -219,7 +220,7 @@ export async function POST(req: Request) {
     // a paying sub is managed in Stripe, never comped over.
     const { data: existing } = await sb
       .from("users")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, email")
       .eq("id", body.userId)
       .maybeSingle();
     // alpha-drift-r17-01 (found+fixed 2026-08-07): isFreeGrantEligible(undefined)
@@ -264,6 +265,17 @@ export async function POST(req: Request) {
     if (error) {
       console.error("[admin/users] grant_free failed:", error.message);
       return NextResponse.json({ error: "Couldn't grant free access. Try again." }, { status: 500 });
+    }
+    // alpha-drift-r17-06: this app's own bounced_at/complained_at columns
+    // are only half the fix -- Resend maintains its own separate account-
+    // level suppression list that also has to be cleared, or the cron
+    // would keep calling sendLetterNotification for an "active" subscriber
+    // Resend silently keeps skipping. Awaited (not fire-and-forget) so it
+    // gets a real chance to complete before this handler returns; a
+    // failure here never fails the grant itself (removeResendSuppression
+    // already swallows and logs its own errors).
+    if (existing.email) {
+      await removeResendSuppression(existing.email);
     }
     return NextResponse.json({ ok: true });
   }
