@@ -346,6 +346,28 @@ export async function generateIssue(
   if (blurbs.length === 0) {
     throw new Error("All topic sections failed to generate");
   }
+  // alpha-drift-r16-13 (found+fixed 2026-08-07): topic_quota is raised
+  // independently of users.topics by customer.subscription.updated and
+  // /api/stripe/update-quantity -- neither touches the topics array, and
+  // nothing in the UI forces a reader to rank more topics right after
+  // upgrading. If genPool (the reader's own picks + the generic-fallback
+  // tail) ends up smaller than the new, larger `size`, the letter
+  // structurally cannot fill every paid slot even on a day when every
+  // candidate topic has fresh content -- not the "quiet day" case the
+  // skippedDry warning above already covers. This was previously silent:
+  // only the `=== 0` total-failure case above logged anything. A warning
+  // here at least makes this class of under-delivery visible in logs
+  // instead of persisting indefinitely until the reader happens to revisit
+  // /topics -- matches the skippedDry warning's own severity (console.warn,
+  // not an ops alert: this degrades a letter, it doesn't drop one). No
+  // per-reader identifier in the message -- UserProfile carries no id, and
+  // this codebase has no precedent of logging a subscriber's raw email;
+  // the aggregate shortfall is still enough to spot the pattern in logs.
+  if (blurbs.length < size) {
+    console.warn(
+      `[assemble] ${weekOf}: letter under-filled -- ${blurbs.length}/${size} sections (genPool has only ${genPool.length} topics; likely a recent bundle upgrade the reader hasn't re-ranked topics for yet)`
+    );
+  }
 
   // Sections whose topicId isn't in the reader's OWN pool came from the
   // generic-fallback tail (buildGenerationPool) — a stand-in shown because
