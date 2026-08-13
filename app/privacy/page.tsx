@@ -85,6 +85,17 @@ export default function PrivacyPage() {
           Anthropic does not retain that data for training.
         </li>
         <li>
+          <strong>Google (Gemini), Groq, and DeepSeek</strong> are backup writers.
+          If Anthropic is down or unavailable, we automatically fall back to one
+          of these so your letter still arrives. They see the same name, city,
+          and topic prefs Anthropic does, only when a fallback actually fires.
+        </li>
+        <li>
+          <strong>Brave Search</strong>, with <strong>Google (Gemini)</strong> as a
+          backup, finds the sources your letter links to. Your topic picks go
+          out as search queries; nothing else about you does.
+        </li>
+        <li>
           <strong>Resend</strong> delivers letters and account emails.
         </li>
         <li>
@@ -105,10 +116,14 @@ export default function PrivacyPage() {
 
       <H2>Cookies</H2>
       <p>
-        We use only the cookies needed to keep you logged in and remember your
-        theme. No advertising cookies. Source links in your letters show a small
-        site icon loaded from Google&apos;s public favicon service, which sees the
-        domain of the article but nothing else about you.
+        We use the cookies needed to keep you logged in and remember your
+        theme. No advertising cookies. If we&apos;ve turned on product
+        analytics for the app, that tool sets its own first-party cookie too,
+        just to tell your visits apart from someone else&apos;s — same rules
+        as the analytics itself: never sold, off by default. Source links in
+        your letters show a small site icon loaded from Google&apos;s public
+        favicon service, which sees the domain of the article but nothing
+        else about you.
       </p>
 
       <H2>Children</H2>

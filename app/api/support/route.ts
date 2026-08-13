@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { CreateEmailRequestOptions } from "resend";
 import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { resendConfigured } from "@/lib/email";
+import { resendConfigured, sanitizeDisplayName } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest, isDuplicateSubmission } from "@/lib/rate-limit";
 import { isValidEmail } from "@/lib/validate-email";
 
@@ -134,6 +134,8 @@ export async function POST(req: Request) {
       // own CreateEmailRequestOptions type -- the cast below is a type-only
       // gap, not a runtime risk.
       const sendOptions = { signal: AbortSignal.timeout(15_000) } as CreateEmailRequestOptions;
+      // sanitizeDisplayName: see its own comment in lib/email.ts (alpha-drift-r19-01).
+      const safeName = body.name ? sanitizeDisplayName(body.name) : "";
       const result = await resend.emails.send(
         {
           from,
@@ -145,9 +147,9 @@ export async function POST(req: Request) {
           // the From address (alpha@everyday.report), which has no MX record
           // and bounces. Setting replyTo to the submitter's own address lets
           // Algy just hit Reply and respond directly to them.
-          replyTo: body.name ? `${body.name} <${body.email}>` : body.email,
-          subject: `[alpha. support] ${body.name || body.email}`,
-          text: `From: ${body.name ? `${body.name} <${body.email}>` : body.email}\n\n${body.message}`,
+          replyTo: safeName ? `${safeName} <${body.email}>` : body.email,
+          subject: `[alpha. support] ${safeName || body.email}`,
+          text: `From: ${safeName ? `${safeName} <${body.email}>` : body.email}\n\n${body.message}`,
         },
         sendOptions
       );

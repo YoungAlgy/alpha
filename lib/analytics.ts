@@ -20,6 +20,28 @@ let started = false;
 let posthog: typeof import("posthog-js").default | null = null;
 let queue: Array<() => void> = [];
 
+// alpha-drift-r19-01 (found+fixed 2026-08-07): app/privacy/page.tsx promises
+// "We don't track which individual letters you read." /inbox/[issueId]'s
+// pathname literally IS that individual letter's public.issues.id (a UUID),
+// and PostHog attaches the current page URL to EVERY event it sends while a
+// reader is on that page — not just the manual capturePageview() call below,
+// but every autocaptured click too, since posthog-js enriches $current_url/
+// $pathname from window.location automatically for anything it captures.
+// Patching capturePageview() alone would leave autocapture leaking the same
+// UUID. sanitize_properties runs on every outgoing event regardless of how
+// it was captured, so it's the one place that actually closes this for good.
+const ISSUE_URL_PATTERN = /\/inbox\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+// Exported for scripts/verify-analytics-redaction.mts only.
+export function redactIssueIds<T extends Record<string, unknown>>(properties: T): T {
+  for (const key of Object.keys(properties)) {
+    const value = properties[key];
+    if (typeof value === "string" && value.includes("/inbox/")) {
+      (properties as Record<string, unknown>)[key] = value.replace(ISSUE_URL_PATTERN, "/inbox/[id]");
+    }
+  }
+  return properties;
+}
+
 export function initAnalytics(): void {
   if (started || typeof window === "undefined") return;
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
@@ -35,6 +57,7 @@ export function initAnalytics(): void {
       disable_session_recording: true, // funnel metrics only — no screen capture
       person_profiles: "identified_only",
       respect_dnt: true,
+      sanitize_properties: (properties) => redactIssueIds(properties),
     });
     const pending = queue;
     queue = [];

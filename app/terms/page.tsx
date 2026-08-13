@@ -37,9 +37,13 @@ export default function TermsPage() {
       <H2>The service</H2>
       <p>
         alpha. is a paid email/web newsletter. You pick a set of topics, and
-        every day we deliver a letter written for you by AI from real sources. Every link must come from a live web search made that period, a rule
-        enforced in code. We may add features over time. We may also remove or
-        change features when it makes the product better.
+        every day we deliver a letter written for you by AI from real sources,
+        with every link starting as a live web search made that period. On a
+        rare day something upstream breaks and we can&apos;t finish a fresh
+        letter in time; rather than send nothing, we&apos;ll resend your most
+        recent one and say so plainly in the letter itself. We may add
+        features over time. We may also remove or change features when it
+        makes the product better.
       </p>
 
       <H2>Subscription &amp; billing</H2>

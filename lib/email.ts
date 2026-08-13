@@ -12,6 +12,27 @@ function resendConfiguredInternal(): boolean {
   return !!process.env.RESEND_API_KEY?.trim();
 }
 
+// alpha-drift-r19-01 (found+fixed 2026-08-07): app/api/support/route.ts's
+// replyTo build (round 18) interpolates a free-text, user-controlled display
+// name straight into a compound RFC 5322 mailbox (`${name} <${email}>`) with
+// zero sanitization -- name has no character restriction, unlike email,
+// which is already regex-constrained. A name containing '<'/'>' (e.g. "X
+// <attacker@evil.com>") produces a malformed compound address with two
+// bracketed address groups: either the send fails outright, or however
+// Resend/the receiving client resolves the ambiguity, hitting Reply could
+// land on an address embedded in the crafted name instead of the real
+// sender's. Strips the characters that let a display-name string escape its
+// position in the mailbox: '<'/'>' (a second address), '"' (breaking a
+// quoted-string), and any control character (CR/LF header injection being
+// the classic case). Lives here (not in the route file) because a route.ts
+// can only export the reserved HTTP-method names -- an extra named export
+// either fails Next's route typing or is silently untestable the way every
+// other route helper in this codebase already handles it (lib/webhook-user-
+// mutation.ts, lib/gotrue-errors.ts, etc.).
+export function sanitizeDisplayName(name: string): string {
+  return name.replace(/[\r\n<>"]/g, "").trim();
+}
+
 let _resend: Resend | null = null;
 function resendClient(): Resend {
   if (_resend) return _resend;
