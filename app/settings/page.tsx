@@ -275,7 +275,7 @@ export default function SettingsPage() {
         {(showResume || resumed) && (
           <Section title="Letters">
             {resumed ? (
-              <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
+              <p className="alpha-ui text-sm" role="status" style={{ color: "var(--ink-soft)" }}>
                 You&apos;re back on. Your next letter lands tomorrow.
               </p>
             ) : (

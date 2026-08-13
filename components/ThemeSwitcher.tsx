@@ -25,6 +25,7 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const activeOptionRef = useRef<HTMLButtonElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Focus choreography for the dropdown: move focus into the listbox (onto
   // the active option) when it opens, since neither toggleOpen nor pick()
@@ -32,6 +33,24 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
   // from the toggle with no way to jump straight into the option list.
   useEffect(() => {
     if (open) activeOptionRef.current?.focus();
+  }, [open]);
+
+  // alpha-drift-r18-01 (found+fixed 2026-08-07): Escape only worked while
+  // focus stayed inside the panel (the onKeyDown below is scoped to the
+  // panel div) -- a mouse user who opened this, then clicked anywhere else
+  // on the page, got a dropdown that stayed open and visually detached from
+  // whatever they were now doing, with no way to dismiss it except finding
+  // the toggle button again. mousedown (not click) so the dismiss fires
+  // before whatever the user clicked on handles its own click.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
   useEffect(() => {
@@ -80,14 +99,14 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapperRef}>
       <button
         ref={toggleRef}
         type="button"
         onClick={toggleOpen}
         className="alpha-ui text-sm font-medium px-3 py-2.5 rounded-full border"
         style={{ borderColor: "var(--rule)", color: "var(--ink-soft)" }}
-        aria-haspopup="true"
+        aria-haspopup="listbox"
         aria-expanded={open}
       >
         {compact ? "Theme" : `Theme: ${labelFor(active)}`}
@@ -103,10 +122,10 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
             }
           }}
         >
-          <div className="alpha-mono px-4 py-3 border-b" style={{ borderColor: "var(--rule)" }}>
+          <div id="theme-switcher-label" className="alpha-mono px-4 py-3 border-b" style={{ borderColor: "var(--rule)" }}>
             CHOOSE A THEME
           </div>
-          <ul role="listbox" className="max-h-80 overflow-auto">
+          <ul role="listbox" aria-labelledby="theme-switcher-label" className="max-h-80 overflow-auto">
             {THEMES.map((t) => (
               <li key={t.id}>
                 <button

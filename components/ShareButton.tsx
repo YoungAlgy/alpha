@@ -66,7 +66,7 @@ export function ShareButton({
   }
 
   return (
-    <button type="button" onClick={onShare} className={className} style={style}>
+    <button type="button" onClick={onShare} className={className} style={style} aria-live="polite">
       {copied ? "Link copied ✓" : label}
     </button>
   );
