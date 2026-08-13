@@ -40,8 +40,17 @@ export function ShareButton({
         await navigator.share(data);
         track("shared", { context, method: "native" });
         return;
-      } catch {
-        // user cancelled or it failed — fall through to clipboard
+      } catch (e) {
+        // alpha-drift-r16-02/10 (found+fixed 2026-08-07): declining the
+        // native share sheet (the single most common gesture on this
+        // control) rejects with AbortError -- that used to be treated
+        // identically to a real failure, silently overwriting the
+        // clipboard with a false "Link copied ✓" AND firing "shared" as if
+        // it completed. A cancelled share is simply not a share: stop here,
+        // no clipboard write, no fake success message, no track call. Any
+        // OTHER rejection (a real API failure) still falls through to the
+        // clipboard fallback below, unchanged.
+        if (e instanceof Error && e.name === "AbortError") return;
       }
     }
     // Fallback: copy the link
