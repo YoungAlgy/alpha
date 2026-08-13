@@ -67,6 +67,18 @@ export function InstallPrompt() {
 
   return (
     <div
+      // alpha-drift-r18-01 (found+fixed 2026-08-07): this banner appears
+      // unprompted, ~2.4s after arrival, with no user action triggering it --
+      // without a live region a screen reader user would never know it
+      // showed up at all. role="status" + aria-live="polite" (not focus
+      // management): moving focus INTO a passive, un-requested banner would
+      // yank a screen reader user away from whatever they were already
+      // reading, which WAI-ARIA's own guidance reserves for a true modal
+      // (alertdialog) the user has to act on -- this is dismissible chrome,
+      // not a blocking prompt, so it should announce itself without
+      // stealing attention.
+      role="status"
+      aria-live="polite"
       className="fixed bottom-4 inset-x-4 md:bottom-6 md:right-6 md:left-auto md:max-w-sm z-40 alpha-card p-4 flex items-center gap-3"
       style={{
         boxShadow: "0 12px 30px rgba(0,0,0,0.10)",

@@ -35,9 +35,39 @@ export const metadata: Metadata = {
   },
 };
 
+// alpha-drift-r18-01 (found+fixed 2026-08-07): the homepage has a full
+// Organization+WebSite+Product JSON-LD graph (app/page.tsx), but /sample --
+// the second-highest sitemap-priority page (0.9), already set up as
+// openGraph.type: "article" -- had none at all. No datePublished/
+// dateModified: SAMPLE_ISSUE.weekOf is a hand-authored placeholder string
+// ("A SAMPLE ISSUE"), not a real date, and this file's own header comment
+// says to keep it evergreen -- fabricating a date here would be the exact
+// mistake app/sitemap.ts already deliberately avoids by omitting
+// lastModified rather than faking `new Date()`.
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: "A sample issue from alpha.",
+  description: `See what a letter from alpha. looks like. ${PITCH}`,
+  url: "https://alpha.everyday.report/sample",
+  author: { "@type": "Organization", name: "alpha.", url: "https://alpha.everyday.report" },
+  publisher: {
+    "@type": "Organization",
+    name: "alpha.",
+    url: "https://alpha.everyday.report",
+    logo: "https://alpha.everyday.report/icon-512.png",
+  },
+  isPartOf: { "@type": "WebSite", name: "alpha.", url: "https://alpha.everyday.report" },
+};
+
 export default function SamplePage() {
   return (
     <main className="flex-1">
+      <script
+        type="application/ld+json"
+        // Static, app-controlled object — no user input. Standard Next JSON-LD pattern.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
       {/* Top ribbon — honest framing + a way back to the pitch */}
       <div
         className="w-full border-b"

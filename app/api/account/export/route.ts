@@ -66,11 +66,21 @@ export async function GET() {
   // carry a real user_id (app/api/support/route.ts, fixed 2026-08-06) --
   // anonymous submissions and anything filed before that fix won't appear
   // here even though they exist in the table.
+  // alpha-drift-r18-01 (found+fixed 2026-08-07): the sibling issues query
+  // above already guards against PostgREST's silent 1,000-row select cap
+  // with an explicit .limit() well past any realistic count -- this query
+  // had no such guard at all, so a subscriber who somehow filed more than
+  // 1,000 support tickets would silently get a truncated export with no
+  // indication anything was cut off. Vanishingly unlikely in practice
+  // (support tickets aren't a daily-cadence table like issues), but the
+  // fix costs nothing and keeps both queries in this file honest about the
+  // same failure mode.
   const { data: supportTickets, error: supportErr } = await svc
     .from("support_tickets")
     .select("*")
     .eq("user_id", user.id)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(5000);
   if (supportErr) {
     console.error("[account/export] support_tickets fetch failed:", supportErr.message);
     return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
@@ -78,6 +88,25 @@ export async function GET() {
 
   return NextResponse.json({
     exported_at: new Date().toISOString(),
+    // alpha-drift-r18-01 (found+fixed 2026-08-07): app/privacy/page.tsx
+    // promises "everything we have about you," but this export never read
+    // Supabase Auth's OWN record at all -- separate from the public.users
+    // profile row above, and the actual source of truth for sign-in history.
+    // Already have it for free: `user` (fetched above to authenticate this
+    // request in the first place) IS that record, just never included in
+    // the response. Low practical impact today (this app never sets any
+    // custom user_metadata), but the built-in fields (when the account was
+    // created, when it last signed in, whether the email is confirmed) are
+    // still real data about the reader that belongs in an "everything"
+    // export regardless.
+    auth: {
+      id: user.id,
+      email: user.email,
+      created_at: user.created_at,
+      last_sign_in_at: user.last_sign_in_at,
+      email_confirmed_at: user.email_confirmed_at,
+      user_metadata: user.user_metadata,
+    },
     profile,
     issues,
     support_tickets: supportTickets,
