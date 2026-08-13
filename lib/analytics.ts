@@ -39,6 +39,25 @@ export function initAnalytics(): void {
     const pending = queue;
     queue = [];
     pending.forEach((fn) => fn());
+  }).catch((e) => {
+    // alpha-drift-r16-08 (found+fixed 2026-08-07): `started` was set to
+    // true BEFORE this import settled, with no .catch() at all -- a failed
+    // chunk load (network blip, an ad blocker that blocklists posthog-js by
+    // name, or a stale chunk hash after a deploy) left `started` permanently
+    // true while `posthog` stayed null forever, so every future track()/
+    // capturePageview() call for the rest of this page's life silently hit
+    // the `if (!started) return` fast-path's SIBLING branch (queue up to 20
+    // pending events that would never flush), indistinguishable from
+    // analytics working normally -- no error, no console signal, just a
+    // session (or every session, for a persistent condition like a proxy)
+    // with zero analytics data. Reset `started` on failure so the NEXT
+    // PostHogProvider mount/navigation (which calls initAnalytics() again)
+    // gets a real retry instead of being permanently locked out by the
+    // first failed attempt, and log it so a persistent failure is at least
+    // visible in the console instead of silent.
+    console.warn("[analytics] posthog-js failed to load, will retry on next navigation:", e);
+    started = false;
+    posthog = null;
   });
 }
 
@@ -55,7 +74,19 @@ function capture(event: string, props?: Record<string, unknown>): void {
 }
 
 export function capturePageview(path: string): void {
-  capture("$pageview", { $current_url: path });
+  // alpha-drift-r16-09 (found+fixed 2026-08-07): $current_url was set to
+  // the bare pathname (e.g. "/checkout") instead of a full absolute URL --
+  // PostHog's documented Next.js App Router pattern builds this as
+  // `window.origin + pathname` specifically because $current_url is
+  // expected to be a full URL: the Web Analytics dashboard, the Paths
+  // insight, and session-recording/toolbar URL correlation all key off it.
+  // Every OTHER event this app fires (autocapture clicks, checkout_started,
+  // etc.) never overrides $current_url and gets the SDK's own correctly-
+  // computed full URL automatically -- this was the one capture site
+  // clobbering it with a broken value, undermining the exact
+  // "measurable step by step" purpose PostHogProvider's own comment states.
+  const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+  capture("$pageview", { $current_url: url });
 }
 
 // Money-moment events. Safe no-ops when analytics isn't configured.
