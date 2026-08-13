@@ -95,9 +95,23 @@ const nextConfig: NextConfig = {
             // caught by actually loading a real <img> in a browser and
             // watching for a securitypolicyviolation event, not just by
             // reading Digest.tsx's fetch URL.
+            //
+            // CAUGHT LIVE (2026-08-13): Cloudflare auto-injects a
+            // <script src="static.cloudflareinsights.com/beacon.min.js">
+            // into every response for this zone (Web Analytics is on in the
+            // dashboard) -- this CSP has been silently blocking it since the
+            // day it shipped, confirmed via zero network requests ever
+            // reaching that host despite the tag being present in the DOM.
+            // No console error was visible through one check method (a
+            // console.log/error listener), only through a direct
+            // securitypolicyviolation-style check -- same lesson as the
+            // gstatic redirect above: verify CSP changes against real
+            // network activity, not just the console. script-src covers the
+            // beacon load; connect-src covers the RUM data it POSTs back to
+            // cloudflareinsights.com after loading.
             key: "Content-Security-Policy",
             value:
-              `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' ${supabaseOrigin} https://us.i.posthog.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`,
+              `default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' ${supabaseOrigin} https://us.i.posthog.com https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`,
           },
         ],
       },
