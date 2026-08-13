@@ -252,10 +252,24 @@ export default function AdminAccountsPage() {
           </p>
         )}
 
+        {/* alpha-drift-r19-01 (found+fixed 2026-08-07): was a bare "Loading…"
+            line, unlike every sibling data page (app/archive/page.tsx,
+            inbox/[issueId]'s LetterLoader) which both render a pulse
+            skeleton shaped like the eventual content to avoid a layout
+            jump. Shape mirrors a real row below: name+email line, a status
+            badge, a metadata line. */}
         {!users && !err && (
-          <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
-            Loading…
-          </p>
+          <ul className="space-y-4 animate-pulse" aria-hidden>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <li key={i} className="border-b pb-4" style={{ borderColor: "var(--rule)" }}>
+                <div className="flex items-baseline justify-between gap-4 mb-2">
+                  <div className="h-5 w-48 rounded" style={{ background: "var(--rule)" }} />
+                  <div className="h-3 w-16 rounded" style={{ background: "var(--rule)" }} />
+                </div>
+                <div className="h-3 w-64 rounded" style={{ background: "var(--rule)" }} />
+              </li>
+            ))}
+          </ul>
         )}
 
         {users && users.length === 0 && (

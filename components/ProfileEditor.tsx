@@ -162,7 +162,28 @@ export function ProfileEditor() {
     }
   }
 
-  if (loaded && supabaseConfigured() && !signedIn) {
+  // alpha-drift-r19-01 (found+fixed 2026-08-07): the only loading gate here
+  // used to be the signed-in check just below, which is itself gated on
+  // `loaded` -- while loaded was still false, THAT condition was false too,
+  // so the component fell through and rendered the full form immediately
+  // with form=EMPTY (every field blank, merely disabled). A returning
+  // subscriber briefly saw their own profile as if it were empty. Same
+  // pulse-skeleton pattern as app/archive/page.tsx and app/settings/
+  // accounts/page.tsx's user list, shaped like the eventual field list.
+  if (!loaded) {
+    return (
+      <div className="space-y-5 animate-pulse" aria-hidden>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i}>
+            <div className="h-3 w-20 mb-2 rounded" style={{ background: "var(--rule)" }} />
+            <div className="h-9 w-full rounded" style={{ background: "var(--rule)" }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (supabaseConfigured() && !signedIn) {
     return (
       <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
         Sign in to edit your details.
