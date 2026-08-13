@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
@@ -35,6 +35,25 @@ export default function TopicsPage() {
   // The signed-in reader's birthday, only to warn when they pick Zodiac without
   // one (that section gets skipped). Mirrors the onboarding "you" step gate.
   const [userBirthday, setUserBirthday] = useState<string | null>(null);
+  // alpha-drift-r19-01 (found+fixed 2026-08-07): the signed-in hydrate below
+  // is a real network round trip with no loading gate. For a base-tier
+  // (5-topic) subscriber revisiting Settings -> Change topics on the SAME
+  // device they onboarded on, onboarding's own localStorage prefill
+  // (picked=5, just below) can already satisfy `ready` in submit() before
+  // this hydrate flips `signedIn` true -- so a click in that window takes
+  // the UNSIGNED branch: never POSTs the edit (silently never persisted, no
+  // error shown) and pushes an already-onboarded, paying subscriber into
+  // /fun (onboarding) instead of back to /settings. Starts true only when
+  // there's no hydrate to wait for at all (supabaseConfigured() false).
+  const [topicsHydrated, setTopicsHydrated] = useState(!supabaseConfigured());
+  // alpha-drift-r19-01: submit()'s re-entry guard used plain React state
+  // (saving), the same race this codebase's own sibling save actions
+  // document and fix elsewhere (ProfileEditor.tsx's saveInFlight, settings/
+  // page.tsx's confirmInFlight/resumeInFlight/deleteInFlight) -- a
+  // sub-16ms double click or a duplicate touch event can fire two
+  // concurrent POST /api/account/topics requests before React flushes the
+  // disabled prop. A synchronous ref latch closes the window state can't.
+  const saveInFlight = useRef(false);
 
   useEffect(() => {
     if (loaded && state.topics) setPicked(state.topics);
@@ -80,6 +99,11 @@ export default function TopicsPage() {
         // recurring failure here would otherwise look like a successful
         // save to the reader while silently writing nothing to the DB.
         console.warn("[topics] signed-in hydrate failed:", e instanceof Error ? e.message : e);
+      } finally {
+        // Unconditional: reached whether a session existed, the row fetch
+        // succeeded, or it threw -- every one of those is "we now know
+        // everything we're going to know," so submit() is safe from here.
+        if (!cancelled) setTopicsHydrated(true);
       }
     })();
     return () => {
@@ -162,40 +186,55 @@ export default function TopicsPage() {
     // Onboarding picks exactly the quota; signed-in editors must at least fill
     // their favorites (backups are optional extras).
     const ready = signedIn ? picked.length >= quota : picked.length === quota;
-    if (!ready || saving) return;
+    // topicsHydrated: see its own comment on the state declaration above
+    // (alpha-drift-r19-01) -- without it this could fire with `signedIn`
+    // still at its pre-hydrate default. saveInFlight.current: the
+    // synchronous re-entry guard `saving` (React state) can't provide on
+    // its own -- see that ref's own comment.
+    if (!ready || saving || !topicsHydrated || saveInFlight.current) return;
+    saveInFlight.current = true;
     setSaveError(null);
-    if (signedIn && supabaseConfigured()) {
-      // Persist the ranked pool to the DB FIRST. If the write fails, stay on the
-      // page with an error instead of navigating away as if it saved (the
-      // letter reads topics from the DB, so a silent failure would lose the
-      // change). Only mirror to local state + leave once the DB write lands.
-      // Routed through the server (service role) rather than a direct browser
-      // write, matching every other mutation in the app -- see
-      // app/api/account/topics/route.ts.
-      setSaving(true);
-      try {
-        const res = await fetch("/api/account/topics", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ topics: picked }),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          throw new Error(body?.error || "save failed");
+    try {
+      if (signedIn && supabaseConfigured()) {
+        // Persist the ranked pool to the DB FIRST. If the write fails, stay on
+        // the page with an error instead of navigating away as if it saved
+        // (the letter reads topics from the DB, so a silent failure would
+        // lose the change). Only mirror to local state + leave once the DB
+        // write lands. Routed through the server (service role) rather than
+        // a direct browser write, matching every other mutation in the app
+        // -- see app/api/account/topics/route.ts.
+        setSaving(true);
+        try {
+          const res = await fetch("/api/account/topics", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ topics: picked }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => null);
+            throw new Error(body?.error || "save failed");
+          }
+        } catch {
+          setSaving(false);
+          setSaveError("Couldn't save your topics. Check your connection and try again.");
+          return;
         }
-      } catch {
-        setSaving(false);
-        setSaveError("Couldn't save your topics. Check your connection and try again.");
+        confirm();
+        update({ topics: picked });
+        router.push("/settings" as never);
         return;
       }
       confirm();
       update({ topics: picked });
-      router.push("/settings" as never);
-      return;
+      router.push("/fun" as never);
+    } finally {
+      // Unconditional: every return path above (save failed, save succeeded
+      // and navigated, or the unsigned onboarding path) needs the latch
+      // released, not just the failure path -- a navigate-away doesn't
+      // synchronously unmount this component, so leaving it stuck true
+      // would silently disable a real re-attempt if the user stayed put.
+      saveInFlight.current = false;
     }
-    confirm();
-    update({ topics: picked });
-    router.push("/fun" as never);
   }
 
   const onbRemaining = quota - picked.length;
@@ -542,11 +581,11 @@ export default function TopicsPage() {
           <button
             type="button"
             onClick={submit}
-            disabled={!ready || saving}
+            disabled={!ready || saving || !topicsHydrated}
             className="alpha-button"
             style={{
-              opacity: ready && !saving ? 1 : 0.3,
-              cursor: ready && !saving ? "pointer" : "not-allowed",
+              opacity: ready && !saving && topicsHydrated ? 1 : 0.3,
+              cursor: ready && !saving && topicsHydrated ? "pointer" : "not-allowed",
             }}
           >
             {saving ? "Saving…" : signedIn ? "Save" : "Continue →"}

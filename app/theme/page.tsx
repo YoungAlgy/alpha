@@ -18,6 +18,17 @@ export default function ThemePage() {
   const { state, loaded } = useOnboarding();
   const [picked, setPicked] = useState<ThemeId>("forest");
   const [signedIn, setSignedIn] = useState(false);
+  // alpha-drift-r19-01 (found+fixed 2026-08-07): the signed-in hydrate below
+  // is a real network round trip with no loading gate anywhere in the
+  // render -- Continue's submit() ran unconditionally, so a signed-in
+  // reader who clicks it before that round trip resolves gets `picked`
+  // still at its "forest" default AND `signedIn` still false, silently
+  // overwriting their real saved theme (of ~9 options) with the default and
+  // routing them into onboarding's /name step instead of back to /settings.
+  // Starts true only when there's no hydrate to wait for at all
+  // (supabaseConfigured() false — this is a pure onboarding-localStorage
+  // flow with nothing async to race).
+  const [themeHydrated, setThemeHydrated] = useState(!supabaseConfigured());
 
   useEffect(() => {
     if (loaded && state.theme) {
@@ -38,6 +49,11 @@ export default function ThemePage() {
         if (cancelled) return;
         if (!session) return;
         setSignedIn(true);
+        // Note: intentionally set BEFORE the row fetch below, not after —
+        // signedIn's only job here is choosing submit()'s redirect target
+        // (/settings vs /name), and that decision is already correct the
+        // instant we know a session exists, independent of whether the
+        // theme row fetch that follows succeeds.
         // Hydrate `picked` from the DB (the source of truth) for a signed-in
         // reader. Without this, a returning subscriber on a fresh device —
         // where localStorage is empty so `picked` is still the "forest"
@@ -59,6 +75,11 @@ export default function ThemePage() {
         // back to "forest" (see the comment above) -- a swallowed failure
         // here lets that exact regression resurface with no trace.
         console.warn("[theme] signed-in hydrate failed:", e instanceof Error ? e.message : e);
+      } finally {
+        // Unconditional: reached whether a session existed, the row fetch
+        // succeeded, or it threw -- every one of those is "we now know
+        // everything we're going to know," so Continue is safe from here.
+        if (!cancelled) setThemeHydrated(true);
       }
     })();
     return () => {
@@ -80,6 +101,10 @@ export default function ThemePage() {
   }
 
   function submit() {
+    // themeHydrated gate: see its own comment on the state declaration
+    // above (alpha-drift-r19-01) -- without it this could fire with
+    // `picked`/`signedIn` still at their pre-hydrate defaults.
+    if (!themeHydrated) return;
     confirm();
     // Guarantee the final pick is saved (idempotent if pickTheme already did).
     setTheme(picked);
@@ -214,7 +239,13 @@ export default function ThemePage() {
           >
             Picked: <span style={{ color: "var(--ink)" }}>{THEMES.find(t => t.id === picked)?.label}</span>
           </span>
-          <button type="button" onClick={submit} className="alpha-button">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!themeHydrated}
+            className="alpha-button"
+            style={{ opacity: themeHydrated ? 1 : 0.5, cursor: themeHydrated ? "pointer" : "not-allowed" }}
+          >
             Continue →
           </button>
         </div>
