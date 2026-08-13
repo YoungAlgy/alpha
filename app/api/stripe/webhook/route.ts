@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
-import { checkoutUserMutation, isFirstSubscription, deriveCancelledAt } from "@/lib/webhook-user-mutation";
+import { checkoutUserMutation, isFirstSubscription, deriveCancelledAt, isTerminalSubscriptionStatus } from "@/lib/webhook-user-mutation";
 import { sendWelcomeEmail, resendConfigured, sendOpsAlert } from "@/lib/email";
 import { clampQuota, TOPICS_PER_BUNDLE } from "@/lib/types";
 import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
@@ -285,11 +285,13 @@ export async function POST(req: Request) {
         //     subscription.deleted, so a normal delete flow doesn't churn ~3d of
         //     futile retries.
         if ((subRows?.length ?? 0) === 0) {
-          const terminal =
-            sub.status === "canceled" ||
-            sub.status === "incomplete_expired" ||
-            sub.status === "unpaid";
-          if (terminal) {
+          // alpha-drift-r16-16 (found+fixed 2026-08-07): this used to hand-
+          // duplicate isTerminalSubscriptionStatus's exact 3-status list
+          // inline -- the same file's own deriveCancelledAt call above
+          // already goes through the real function. Reusing it here means
+          // this retry-vs-absorb decision can never silently drift from
+          // the canonical definition the way a second hand-copy could.
+          if (isTerminalSubscriptionStatus(sub.status)) {
             console.warn(
               `[stripe-webhook] subscription mirror matched 0 rows for customer ${customerId} (status=${sub.status}, account deleted?) — no-op`
             );
