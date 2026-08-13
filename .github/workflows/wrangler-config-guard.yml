@@ -202,3 +202,44 @@ jobs:
             exit 1
           fi
           echo "OK: worker-entry.ts still implements async scheduled()."
+
+  # alpha-drift-r19-01 (found+fixed 2026-08-07): the `guard` job above only
+  # ever inspects wrangler.jsonc and grep's worker-entry.ts's own text -- it
+  # never actually builds the app. daily-send.yml (this repo's only other
+  # workflow that runs `npm run build`, at its own "Build" step) was, until
+  # this job existed, the FIRST place a broken commit's TypeScript error, bad
+  # import, or syntax error anywhere under app/ or lib/ would surface -- and
+  # since master doesn't change between daily-send.yml's own 14:00/15:00/
+  # 18:00 UTC same-day retries, all three would fail identically on the same
+  # broken commit, producing a genuine full missed day. This job mirrors
+  # daily-send.yml's own build step (same secrets, same env) so a broken
+  # commit is caught within a minute or two of the push instead of at the
+  # next scheduled send.
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
+
+      - name: Build (same command + secrets as daily-send.yml's own build step)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
+        run: npm run build
