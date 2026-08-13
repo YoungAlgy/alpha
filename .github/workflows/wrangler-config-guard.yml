@@ -242,4 +242,25 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
           NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
-        run: npm run build
+        # Retries, not a single npm run build: this job's own first live run
+        # (2026-08-07) failed with "Module not found: Can't resolve
+        # '@vercel/turbopack-next/internal/font/google/font'" -- next/font/
+        # google fetches font CSS from Google Fonts over the network at
+        # build time, and a transient blip reaching it surfaces as a build
+        # failure with no code changed at all (confirmed: a bare re-run of
+        # the identical commit succeeded). daily-send.yml's OWN identical
+        # build step has the same exposure but is cushioned by its
+        # 14:00/15:00/18:00 UTC same-day retry windows; this job is
+        # single-shot with no such cushion, so a false-positive CI failure
+        # here would undermine exactly the "fails loudly, not silently"
+        # trust this job exists to build. 3 attempts, 15s apart.
+        run: |
+          for attempt in 1 2 3; do
+            if npm run build; then
+              exit 0
+            fi
+            echo "::warning::Build attempt $attempt/3 failed (often a transient next/font/google fetch blip -- see this step's own comment). Retrying..."
+            sleep 15
+          done
+          echo "::error::Build failed 3/3 attempts."
+          exit 1
