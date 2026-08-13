@@ -13,7 +13,7 @@
 // clean and passes lint" if silently reordered or off-by-one'd in a future
 // refactor, with nothing to catch it.
 // Run: npx tsx scripts/verify-rate-limit.mts
-const { rateLimit, isDuplicateSubmission, clientKeyFromRequest } = await import("../lib/rate-limit.ts");
+const { rateLimit, isDuplicateSubmission, clientKeyFromRequest, _debugMapSizes } = await import("../lib/rate-limit.ts");
 
 let pass = 0,
   fail = 0;
@@ -108,6 +108,48 @@ const reqRealIp = new Request("https://alpha.everyday.report/api/support", { hea
 check("(11) x-real-ip used when neither cf-connecting-ip nor x-forwarded-for present", clientKeyFromRequest(reqRealIp) === "3.3.3.3");
 const reqNone = new Request("https://alpha.everyday.report/api/support");
 check("(11) 'unknown' when no IP-bearing header is present at all", clientKeyFromRequest(reqNone) === "unknown");
+
+// --- alpha-drift-r18-01 (found+fixed 2026-08-07): neither Map evicted an
+// expired entry, growing unbounded for the life of a warm isolate. Eviction
+// is deliberately behavior-neutral (an expired-but-present entry already
+// behaves identically to a missing one from the public API's point of
+// view -- see rateLimit's own `!b || b.resetAt < now` check), so the only
+// way to actually prove memory gets freed, not just that behavior stays
+// correct, is via _debugMapSizes(), exported for exactly this. ------------
+console.log("(12) rateLimit — sweep actually shrinks the buckets Map once past the threshold, not just tolerates it");
+{
+  const before = _debugMapSizes().buckets;
+  // 1005 distinct, already-expired-by-the-time-we-check keys -- pushes the
+  // Map past BUCKET_SWEEP_THRESHOLD (1000) entirely with garbage this test
+  // owns, so the assertion below can't be satisfied by coincidental cleanup
+  // of some OTHER test's keys above.
+  for (let i = 0; i < 1005; i++) {
+    rateLimit(`sweep-test-bucket-${Date.now()}-${i}`, { limit: 1, windowMs: 10 });
+  }
+  await sleep(50); // let every one of them genuinely expire
+  const grown = _debugMapSizes().buckets;
+  check("(12) Map genuinely grew past the sweep threshold", grown - before >= 1000);
+  // One more call is what triggers sweepBuckets (checked at the TOP of
+  // rateLimit, before this call's own key is added) -- so this call's own
+  // fresh key can't itself be swept, but every expired one from the loop
+  // above should be gone by the time it returns.
+  rateLimit(`sweep-test-trigger-${Date.now()}`, { limit: 1, windowMs: 60_000 });
+  const after = _debugMapSizes().buckets;
+  check(
+    `(12) sweep evicted the expired entries -- size dropped from ${grown} to ${after}, not left to grow forever`,
+    after < grown - 900
+  );
+}
+
+console.log("(13) isDuplicateSubmission — crossing the sweep threshold doesn't break correctness (can't observe the 1hr eviction ceiling itself in a fast test -- no injectable clock, and unlike rateLimit's caller-provided windowMs, SUBMISSION_MAX_AGE_MS is an internal constant chosen to safely outlive every real windowMs this file is called with, not something a test should shrink just to make it fast)");
+{
+  for (let i = 0; i < 1005; i++) {
+    isDuplicateSubmission(`sweep-test-submission-${Date.now()}-${i}`, 60_000);
+  }
+  const freshKey = `sweep-test-submission-fresh-${Date.now()}`;
+  check("(13) a fresh key past the threshold still correctly reports 'not a duplicate' first", isDuplicateSubmission(freshKey, 60_000) === false);
+  check("(13) the SAME key immediately after still correctly reports 'IS a duplicate'", isDuplicateSubmission(freshKey, 60_000) === true);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

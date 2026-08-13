@@ -114,6 +114,21 @@ export async function GET(req: Request) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate.res;
 
+  // alpha-drift-r18-01 (found+fixed 2026-08-07): unlike POST (below, 30/hour
+  // per admin), this had zero rate limiting despite gatherStats() doing a
+  // full paginated table scan on every single call -- requireAdmin() already
+  // restricts this to one trusted account, so the risk isn't abuse from an
+  // outsider, it's a runaway client (a buggy retry loop, an open admin tab
+  // left auto-refreshing) hammering a full-table scan with no backstop at
+  // all. A generous cap matching POST's own window.
+  const listLimited = rateLimit(`admin-users-list:${gate.userId}`, { limit: 60, windowMs: 60 * 60 * 1000 });
+  if (!listLimited.ok) {
+    return NextResponse.json(
+      { error: `Too many requests. Try again in ${Math.ceil(listLimited.retryAfterSec / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(listLimited.retryAfterSec) } }
+    );
+  }
+
   // Without q/before, the row list is capped at the newest 200 signups with no
   // way to reach anyone older — gatherStats() below still counts the whole
   // table correctly, but the actionable list would silently hide everyone else.

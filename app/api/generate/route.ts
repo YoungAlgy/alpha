@@ -217,6 +217,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: paid.error }, { status: 402 });
   }
 
+  // alpha-drift-r18-01 (found+fixed 2026-08-07): the IP-keyed limit above is
+  // the only throttle on this route, but verifyPaid()'s authenticated branch
+  // (an "already-subscribed" re-generate call) needs no Stripe sessionId at
+  // all -- an attacker with ONE valid paid account and many source IPs (or a
+  // shared/rotating proxy) could drive real, metered Anthropic/Gemini/Brave
+  // generation spend past the intended 3/hour cap indefinitely, since the IP
+  // key resets per address. Every sibling account-mutation route (admin
+  // actions, update-quantity) keys its limit on the resolved user id for
+  // exactly this reason. Keyed separately from the IP limit (not instead of
+  // it) so a legitimate subscriber behind a shared office/NAT IP is never
+  // penalized by other unrelated traffic on that same address.
+  if (paid.verifiedUserId) {
+    const userLimited = rateLimit(`generate-user:${paid.verifiedUserId}`, {
+      limit: 3,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!userLimited.ok) {
+      return NextResponse.json(
+        { error: `Too many requests. Try again in ${Math.ceil(userLimited.retryAfterSec / 60)} minutes.` },
+        { status: 429, headers: { "Retry-After": String(userLimited.retryAfterSec) } }
+      );
+    }
+  }
+
   try {
     const weekOf = body.weekOf || defaultWeekOf();
     // Cast: zod's refine (above) already rejected any topic id that isn't a
