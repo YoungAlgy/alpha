@@ -131,12 +131,27 @@ export default function ArchivePage() {
       } = await sb.auth.getSession();
       if (!mountedRef.current || !session) return;
       const from = items.length;
-      const { data, error } = await sb
-        .from("issues")
-        .select("id, week_of, editor_intro")
-        .order("week_of", { ascending: false })
-        .range(from, from + PAGE_SIZE - 1);
+      // alpha-drift-r17-10 (found+fixed 2026-08-07): loadMore only ever
+      // checked session existence, not hasActiveAccess -- load() (above)
+      // already gates on it, but load() only runs once at mount. If a
+      // subscriber's access is revoked (a dispute, a cancellation) WHILE
+      // they have this page open with more pages available, "Load more"
+      // fetched additional issues with no re-check. Re-check every time,
+      // not just at mount.
+      const [{ data, error }, { data: userRow }] = await Promise.all([
+        sb
+          .from("issues")
+          .select("id, week_of, editor_intro")
+          .order("week_of", { ascending: false })
+          .range(from, from + PAGE_SIZE - 1),
+        sb.from("users").select("cancelled_at").eq("id", session.user.id).maybeSingle(),
+      ]);
       if (!mountedRef.current) return;
+      if (!hasActiveAccess(userRow?.cancelled_at)) {
+        setState("ended");
+        setItems([]);
+        return;
+      }
       if (error) return; // leave the existing list intact; the button just stays visible to retry
       const rows = (data || []) as Array<{ id: string; week_of: string; editor_intro: string }>;
       setItems((prev) => [
