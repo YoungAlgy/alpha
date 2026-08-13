@@ -7,6 +7,7 @@ import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
 import { BLURB_CAPS } from "@/lib/types";
 import type { UserProfile } from "@/lib/types";
+import { codePointSafeSlice } from "@/lib/text-truncate";
 
 const SYSTEM_PROMPT = `You are the editor of Alpha, a personal letter.
 
@@ -57,7 +58,9 @@ Sign-off comes later, so do not add one yourself. Just write the prose of the ed
 function clamp(s: string | undefined, max: number): string | undefined {
   if (!s) return undefined;
   const t = s.trim();
-  return t.length > max ? t.slice(0, max) : t;
+  // codePointSafeSlice, not raw .slice(): see its own comment
+  // (alpha-drift-r19-01) -- a plain .slice() can split a surrogate pair.
+  return t.length > max ? codePointSafeSlice(t, max) : t;
 }
 
 // Distinct class for callClaude()'s two "the call succeeded but the content

@@ -4,7 +4,7 @@
 // length defense (both the sender-side cap and the CSS-side overflow-wrap
 // fallback), added alongside those fixes.
 import { writeFileSync } from "node:fs";
-const { renderHTML, renderWelcomeHTML } = await import("../lib/email.ts");
+const { renderHTML, renderWelcomeHTML, escapeHtml } = await import("../lib/email.ts");
 const { SAMPLE_ISSUE } = await import("../lib/sample-issue.ts");
 
 const OUT_DIR = process.env.ALPHA_PREVIEW_DIR || ".";
@@ -22,9 +22,18 @@ const sectionListWithLongHeadline = [
   ...SAMPLE_ISSUE.sections.slice(1).map((s) => `• ${s.topicLabel}`),
 ].join("\n");
 
+// alpha-drift-r19-01 (found+fixed 2026-08-07): renderHTML/renderText no
+// longer append their own ellipsis -- the caller (sendLetterNotification)
+// now decides, based on whether editorIntro actually got truncated. Mirrors
+// that same logic here so this preview stays honest about the real
+// contract. SAMPLE_ISSUE.editorIntro is well under 320 chars, so this
+// exercises the "genuinely not truncated -- no ellipsis at all" case, the
+// exact scenario the fix closes (was previously always "…", even here).
+const sampleTruncated = SAMPLE_ISSUE.editorIntro.length > 320;
+const sampleTeaser = SAMPLE_ISSUE.editorIntro.slice(0, 320).trim() + (sampleTruncated ? "…" : "");
 const html = renderHTML({
   firstName: SAMPLE_ISSUE.recipientFirstName,
-  teaser: SAMPLE_ISSUE.editorIntro.slice(0, 320).trim(),
+  teaser: sampleTeaser,
   sectionList: sectionListWithLongHeadline,
   inboxUrl: "https://alpha.everyday.report/inbox",
   weekOf: SAMPLE_ISSUE.weekOf,
@@ -65,6 +74,13 @@ function runChecks(label: string, html: string): boolean {
       "every gold wordmark dot carries alpha-gold (masthead + footer, at least 2)",
       (html.match(/<span class="alpha-gold" style="color:#C9A961;">\.<\/span>/g) || []).length >= 2,
     ],
+    // alpha-drift-r19-01: same overflow-wrap/word-break defense as the <pre>
+    // sectionList block below, now on the greeting h1 too (raw firstName,
+    // up to 60 chars, can be a single unbroken token).
+    [
+      "greeting h1 has overflow-wrap + word-break",
+      /<h1 class="alpha-ink" style="[^"]*overflow-wrap:anywhere;word-break:break-word;[^"]*">/.test(html),
+    ],
   ];
   // Only the letter template has a <pre> sectionList block -- the welcome
   // email doesn't render one at all, so this check doesn't apply there.
@@ -72,6 +88,18 @@ function runChecks(label: string, html: string): boolean {
     checks.push([
       "pre block has overflow-wrap + word-break (CSS-side headline overflow defense)",
       /white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;/.test(html),
+    ]);
+    // alpha-drift-r19-01: SAMPLE_ISSUE.editorIntro is genuinely under 320
+    // chars (not truncated), so the teaser this script built above has no
+    // trailing ellipsis -- confirms renderHTML itself no longer appends one
+    // unconditionally (it used to, regardless of what the caller passed in).
+    // Compared against the HTML-escaped form -- the teaser contains real
+    // apostrophes ("they'll", "I'd"), which escapeHtml turns into &#39; in
+    // the rendered output, so a raw-string .includes() would never match.
+    const escapedSampleTeaser = escapeHtml(sampleTeaser);
+    checks.push([
+      "teaser has no stray ellipsis when the source wasn't actually truncated",
+      !sampleTruncated && html.includes(escapedSampleTeaser) && !html.includes(`${escapedSampleTeaser}…`),
     ]);
   }
   let ok = true;

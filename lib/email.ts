@@ -253,7 +253,15 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   // the preheader (inbox preview text), so we keep the click pull too.
   const subject = subjectLine(params.firstName, params.issueNumber, params.issue.weekOf);
   const preheader = previewFromIssue(params.issue);
-  const teaser = params.issue.editorIntro.slice(0, 320).trim();
+  // alpha-drift-r19-01 (found+fixed 2026-08-07): both renderers used to
+  // append an ellipsis to this unconditionally, even when slice() never
+  // actually cut anything off -- most visibly on assemble.ts's own generic
+  // fallback sentence (fires when every generation tier fails), which is
+  // well under 320 chars and already ends in a period, so the reader got a
+  // stray "...let the rest wait.…" in both the HTML card and the plain-text
+  // body. Same truncation-flag guard MAX_HEADLINE_LEN uses just below.
+  const editorIntroTruncated = params.issue.editorIntro.length > 320;
+  const teaser = params.issue.editorIntro.slice(0, 320).trim() + (editorIntroTruncated ? "…" : "");
   // Topic label + the lead item's actual headline. The old label-only list
   // made every email look IDENTICAL day to day (a reader's topics never
   // change, so "IN THIS ISSUE • Personal finance • Real estate ..." read the
@@ -580,11 +588,20 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
                 <div class="alpha-ink-soft" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
                   ${escapeHtml(weekOf.toUpperCase())}
                 </div>
-                <h1 class="alpha-ink" style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;">
+                <!-- alpha-drift-r19-01 (found+fixed 2026-08-07): same
+                     overflow-wrap/word-break gap as the sectionList <pre>
+                     block below, for the same reason -- firstName is raw,
+                     unmoderated user input (up to 60 chars, LIMITS.first_name
+                     in app/api/account/profile/route.ts) and cleanRequired()
+                     only collapses whitespace runs, never requires any at
+                     all, so a single unbroken 60-char token (no spaces, RTL,
+                     CJK, anything pasted without spaces) is valid saved
+                     input that runs on EVERY daily send. -->
+                <h1 class="alpha-ink" style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;overflow-wrap:anywhere;word-break:break-word;">
                   Hi ${escapeHtml(firstName)},
                 </h1>
                 <p class="alpha-ink" style="font-size:18px;line-height:1.6;margin:0 0 32px;">
-                  ${escapeHtml(teaser)}…
+                  ${escapeHtml(teaser)}
                 </p>
                 <p class="alpha-ink-soft" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;margin:0 0 8px;">
                   IN THIS ISSUE
@@ -628,7 +645,7 @@ function renderText({ firstName, teaser, sectionList, inboxUrl, letterUrl, weekO
 
 Hi ${firstName},
 
-${teaser}…
+${teaser}
 
 IN THIS ISSUE
 ${sectionList}
@@ -777,7 +794,10 @@ export function renderWelcomeHTML({
                 <div class="alpha-ink-soft" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;text-align:center;margin-bottom:32px;">
                   WELCOME
                 </div>
-                <h1 class="alpha-ink" style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;">
+                <!-- alpha-drift-r19-01: same overflow-wrap/word-break gap
+                     and fix as renderHTML's greeting h1 above -- see that
+                     comment. -->
+                <h1 class="alpha-ink" style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;overflow-wrap:anywhere;word-break:break-word;">
                   You're in, ${escapeHtml(firstName)}.
                 </h1>
                 <p class="alpha-ink" style="font-size:18px;line-height:1.6;margin:0 0 24px;">

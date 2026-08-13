@@ -3,6 +3,7 @@ import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/serv
 import { parseBirthday, coerceGender } from "@/lib/demographics";
 import { BLURB_CAPS } from "@/lib/types";
 import { rateLimit } from "@/lib/rate-limit";
+import { codePointSafeSlice } from "@/lib/text-truncate";
 
 export const runtime = "nodejs";
 
@@ -33,8 +34,10 @@ function cleanRequired(raw: unknown, cap: number): { value: string } | { error: 
   if (typeof raw !== "string") return { error: "missing" };
   // Bound before the regex so a pathological multi-MB payload can't make
   // normalization superlinear; the final slice still enforces the real cap.
-  const bounded = raw.length > cap * 8 ? raw.slice(0, cap * 8) : raw;
-  const v = bounded.replace(/\s+/g, " ").trim().slice(0, cap);
+  // codePointSafeSlice, not raw .slice(): see its own comment
+  // (alpha-drift-r19-01) -- a plain .slice() can split a surrogate pair.
+  const bounded = raw.length > cap * 8 ? codePointSafeSlice(raw, cap * 8) : raw;
+  const v = codePointSafeSlice(bounded.replace(/\s+/g, " ").trim(), cap);
   if (v.length === 0) return { error: "empty" };
   return { value: v };
 }
@@ -44,8 +47,8 @@ function cleanRequired(raw: unknown, cap: number): { value: string } | { error: 
 // collapsed) so a deliberately formatted blurb survives.
 function cleanOptional(raw: unknown, cap: number): string | null {
   if (typeof raw !== "string") return null;
-  const bounded = raw.length > cap * 8 ? raw.slice(0, cap * 8) : raw;
-  const v = bounded.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, cap);
+  const bounded = raw.length > cap * 8 ? codePointSafeSlice(raw, cap * 8) : raw;
+  const v = codePointSafeSlice(bounded.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim(), cap);
   return v.length > 0 ? v : null;
 }
 

@@ -1,6 +1,13 @@
 import Link from "next/link";
 
-export const metadata = { title: "Lost? | alpha." };
+// alpha-drift-r19-01 (found+fixed 2026-08-07): a plain string title here
+// gets the root layout's title.template ("%s · alpha.") appended on top of
+// it, same as any other page -- but this string already ended in "alpha.",
+// so the browser tab read "Lost? | alpha. · alpha." (doubled). Every other
+// page in the app sets a bare page name (e.g. app/privacy/page.tsx: "Privacy")
+// and lets the template add its own single "· alpha." suffix; this is the
+// one page that baked the suffix in by hand.
+export const metadata = { title: "Lost?" };
 
 export default function NotFound() {
   return (
