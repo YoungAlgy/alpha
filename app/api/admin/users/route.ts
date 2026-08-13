@@ -124,14 +124,33 @@ export async function GET(req: Request) {
   const q = searchParams.get("q")?.trim();
   const before = searchParams.get("before");
 
+  // alpha-drift-r17-09 (found+fixed 2026-08-07): .limit(200) used to be
+  // baked into the base query before branching on q/before -- PostgREST
+  // combines every query-string param (filter + limit) into ONE SQL query,
+  // so `email=ilike...&limit=200` really is "up to 200 of the MATCHING
+  // rows," not "the 200 newest overall, then filtered" -- but that still
+  // directly contradicted this route's own comment above ("q searches
+  // every user by email regardless of the cap") and the frontend's
+  // assumption (app/settings/accounts/page.tsx hides "Load more" during a
+  // search because it assumes the results are always one complete page).
+  // Once past 200 real matches, search silently truncated with no
+  // indication or way to page through the rest. Only cap the two BROWSE
+  // paths (plain newest-first list, and the `before`-cursor page-back) --
+  // the search path relies on PostgREST's own default row cap (~1000) as
+  // its backstop instead of an artificial 200, so it actually searches
+  // "every user... regardless of the cap" the way the comment always said.
   const sb = await supabaseServiceClient();
   let usersQuery = sb
     .from("users")
     .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, created_at")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (q) usersQuery = usersQuery.ilike("email", `%${q}%`);
-  else if (before) usersQuery = usersQuery.lt("created_at", before);
+    .order("created_at", { ascending: false });
+  if (q) {
+    usersQuery = usersQuery.ilike("email", `%${q}%`);
+  } else if (before) {
+    usersQuery = usersQuery.lt("created_at", before).limit(200);
+  } else {
+    usersQuery = usersQuery.limit(200);
+  }
 
   const [{ data: users, error }, stats] = await Promise.all([
     usersQuery,
