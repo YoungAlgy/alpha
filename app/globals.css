@@ -154,6 +154,16 @@
 }
 
 [data-theme="midnight"] {
+  /* alpha-drift-r16-04 (found+fixed 2026-08-07): color-scheme is the CSS-
+     native way to tell the browser a subtree is dark, so native form
+     controls (date pickers, scrollbars, etc.) render matching chrome
+     instead of jarring light-on-dark. This was the only one of the app's
+     7 dark themes missing it before this fix -- see this block's own
+     comment on the checkout page date input for the concrete symptom that
+     surfaced it. Set once per dark [data-theme] block here rather than as
+     a per-element inline style, so it's not just the 2 known birthday date
+     inputs that get it right, but any native control anywhere. */
+  color-scheme: dark;
   --paper: #0F1419;
   --paper-deep: #1A2028;
   --ink: #E8D5A8;
@@ -241,6 +251,7 @@
 /* Tuxedo — obsidian + champagne gold. The brand pack as a theme:
    Playfair headings, Bebas eyebrow labels (override below), film grain. */
 [data-theme="mitch"] {
+  color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
   --paper: #0A0A0B;
   --paper-deep: #15151A;
   --ink: #ECE6D8;
@@ -395,6 +406,7 @@
 }
 
 [data-theme="trading-terminal"] {
+  color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
   --paper: #080A11;
   --paper-deep: #0E1019;
   --ink: #D6E8E6;
@@ -487,6 +499,7 @@
 }
 
 [data-theme="studio"] {
+  color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
   --paper: #0E0F13;
   --paper-deep: #16181F;
   --ink: #E8EAF0;
@@ -507,6 +520,7 @@
 }
 
 [data-theme="pirate"] {
+  color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
   --paper: #0F0A08;
   --paper-deep: #1A120D;
   --ink: #F0E6D2;
@@ -527,6 +541,7 @@
 }
 
 [data-theme="miami"] {
+  color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
   --paper: #0A0A0F;
   --paper-deep: #15151B;
   --ink: #F2EFE8;
@@ -567,6 +582,7 @@
 }
 
 [data-theme="casino"] {
+  color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
   --paper: #0A0A0A;
   --paper-deep: #141414;
   --ink: #F5EFE6;

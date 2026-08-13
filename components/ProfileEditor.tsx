@@ -207,7 +207,13 @@ export function ProfileEditor() {
             disabled={!loaded || busy}
             onChange={(e) => set("birthday", e.target.value)}
             className="w-full alpha-ui text-base bg-transparent border-b pt-2 pb-2 focus:outline-none focus:border-current"
-            style={{ color: "var(--ink)", borderColor: "var(--rule)", colorScheme: "light" }}
+            // alpha-drift-r16-04 (found+fixed 2026-08-07): no colorScheme
+            // override here anymore -- it hardcoded "light", mismatching
+            // native date-picker chrome on any of the app's 7 dark themes.
+            // app/globals.css now sets color-scheme:dark on those themes'
+            // own [data-theme] blocks, which correctly cascades down to
+            // this element without needing a per-input override at all.
+            style={{ color: "var(--ink)", borderColor: "var(--rule)" }}
           />
           <span
             className="alpha-ui text-xs block mt-1"

@@ -84,7 +84,11 @@ export default function YouPage() {
             max="2014-12-31"
             onChange={(e) => setBirthday(e.target.value)}
             className="alpha-display text-2xl md:text-3xl bg-transparent border-b pt-2 pb-3 focus:outline-none focus:border-current"
-            style={{ color: "var(--ink)", borderColor: "var(--rule)", colorScheme: "light" }}
+            // alpha-drift-r16-04: see components/ProfileEditor.tsx's
+            // matching birthday input for why colorScheme:"light" was
+            // removed here too -- app/globals.css's per-theme
+            // color-scheme now handles this correctly.
+            style={{ color: "var(--ink)", borderColor: "var(--rule)" }}
           />
           <p className="alpha-ui text-xs mt-2" style={{ color: zodiacPicked && !birthday ? "var(--accent-ink)" : "var(--ink-soft)" }}>
             {zodiacPicked && !birthday
