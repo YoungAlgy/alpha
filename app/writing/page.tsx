@@ -52,7 +52,12 @@ export default function WritingPage() {
   useEffect(() => {
     if (!loaded || startedRef.current) return;
     if (!state.firstName || !state.topics || state.topics.length === 0) {
-      router.push("/welcome" as never);
+      // alpha-drift-r16-06 (found+fixed 2026-08-07): replace, not push --
+      // see app/checkout/page.tsx's matching gate for the full back-button-
+      // trap reasoning. A push here meant Back from /welcome landed right
+      // back on this same incomplete state, which immediately bounced
+      // forward again.
+      router.replace("/welcome" as never);
       return;
     }
     startedRef.current = true;

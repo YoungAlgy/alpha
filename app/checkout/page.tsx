@@ -7,6 +7,7 @@ import { useOnboarding } from "@/lib/onboarding-state";
 import { topicLabel, topicEmoji } from "@/lib/topics";
 import { THEMES, SWATCHES, coerceThemeId } from "@/lib/themes";
 import { track } from "@/lib/analytics";
+import { isProfileComplete } from "@/lib/checkout-guards";
 import type { ThemeId } from "@/lib/types";
 
 export default function CheckoutPage() {
@@ -17,13 +18,29 @@ export default function CheckoutPage() {
   const [stripeErr, setStripeErr] = useState<string | null>(null);
   const [alreadySubscribed, setAlreadySubscribed] = useState(false);
 
-  // Same completeness gate app/writing/page.tsx enforces post-payment — checked
-  // here too so a direct link, cleared localStorage, or a back-button race
-  // never gets as far as a real Stripe charge for a profile with no name/topics.
+  // Same completeness gate /api/stripe/checkout itself enforces server-side
+  // (lib/checkout-guards.ts's isProfileComplete) — checked here too so a
+  // direct link, cleared localStorage, or a back-button race never gets as
+  // far as a real Stripe charge for an incomplete profile. Reusing the real
+  // function, not a hand-copied subset of its checks: alpha-drift-r16-05
+  // (found+fixed 2026-08-07) — this used to check only firstName+topics,
+  // missing the email check the server-side gate requires. A visitor who
+  // reached /checkout with those two set but no email (a direct link
+  // skipping past /email) saw a fully rendered, payable page; clicking
+  // Subscribe then hit the server gate's generic "finish setting up your
+  // profile" error with no indication the problem was a missing email and
+  // no redirect back to fix it — a self-inflicted dead end from the two
+  // gates disagreeing. router.replace, not push (alpha-drift-r16-06): a
+  // push here meant Back from /welcome landed right back on this same
+  // incomplete state, which immediately bounced forward again -- the
+  // browser back button was effectively non-functional at that point in
+  // the flow. Matches every other incomplete-state bounce in the funnel
+  // (app/welcome/page.tsx, components/onboarding/QuestionStep.tsx,
+  // app/you/page.tsx), which already use replace for the same reason.
   useEffect(() => {
     if (!loaded) return;
-    if (!state.firstName || !state.topics || state.topics.length === 0) {
-      router.push("/welcome" as never);
+    if (!isProfileComplete({ firstName: state.firstName, topics: state.topics, email: state.email })) {
+      router.replace("/welcome" as never);
     }
   }, [loaded, state, router]);
 
@@ -215,7 +232,10 @@ export default function CheckoutPage() {
               className="alpha-ui text-xs text-center"
               style={{ color: "var(--accent-ink)" }}
             >
-              {stripeErr}. Try again, or email youngalgy@gmail.com.
+              {/* Every server-side error message here already ends in a
+                  period (see /api/stripe/checkout's own error strings) --
+                  appending another produced a visible ".." */}
+              {stripeErr} Try again, or email youngalgy@gmail.com.
             </p>
           )}
           <p
