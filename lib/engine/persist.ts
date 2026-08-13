@@ -146,14 +146,34 @@ export async function persistIssueIfPossible(
     // bounced_at/complained_at columns don't even apply here (a brand-new
     // row starts NULL either way) -- the actual problem lives entirely in
     // Resend's own account-level suppression list, which is keyed by email,
-    // not by this app's user id. Reaching this line means generateLink just
-    // confirmed a real, auth-capable email, which is as strong a signal of
-    // genuine re-consent as the webhook's successful checkout -- so clear
-    // any stale suppression the same way. AWAITED (never fire-and-forget --
-    // see assemble.ts's blurb-cache write for why that class of bug is real
-    // on Workers), but failures here can't block onboarding: removeResend
-    // Suppression already swallows and logs its own errors.
-    await removeResendSuppression(email);
+    // not by this app's user id.
+    //
+    // alpha-drift-r19-01 (found+fixed 2026-08-07): this used to run
+    // unconditionally on EVERY call, including an already-subscribed
+    // reader's Nth re-generate (verifyPaid()'s authenticated branch is live
+    // and repeatable -- see app/api/generate/route.ts's own user-keyed rate
+    // limit, added the same round for exactly that reason). removeResend
+    // Suppression carries its own 15s network timeout and sits OUTSIDE
+    // generateIssue's withDeadline wrapper -- GENERATE_DEADLINE_MS=105s
+    // against a 120s maxDuration leaves only ~15s of designed headroom for
+    // everything after generation, so an unconditional extra 15s-capable
+    // call here could alone push an ordinary regenerate into a hard
+    // platform timeout during a Resend slowdown, for a reader who was never
+    // suppressed and gains nothing from the check. verificationType (just
+    // computed above) already tells us exactly who needs this: "signup"
+    // means generateLink just implicitly CREATED this auth user -- a true
+    // first-time signup, or a resubscribe after a full account deletion
+    // (same implicit-create path, since the old account no longer exists to
+    // find) -- both real re-consent moments where a stale suppression could
+    // exist. "magiclink" means an already-existing, continuously-active
+    // account, which was never suppressed by definition of still existing
+    // normally. AWAITED (never fire-and-forget -- see assemble.ts's
+    // blurb-cache write for why that class of bug is real on Workers), but
+    // failures here can't block onboarding: removeResendSuppression already
+    // swallows and logs its own errors.
+    if (verificationType !== "magiclink") {
+      await removeResendSuppression(email);
+    }
 
     // Sync the profile fields onto public.users (service role bypasses RLS).
     // Surface failures: this row is what the weekly cron reads — a silently

@@ -95,6 +95,70 @@ console.log("(A) lib/engine/persist.ts's persistIssueIfPossible -- INSERT branch
   }
 }
 
+console.log("(C) alpha-drift-r19-01: persistIssueIfPossible SKIPS removeResendSuppression for a RETURNING user (verificationType=magiclink), not just runs it unconditionally");
+{
+  const email = `alpha-test-r19-01-returning-${Date.now()}@example.invalid`;
+  try {
+    const { persistIssueIfPossible } = await import("../lib/engine/persist.ts");
+    const fakeProfile = {
+      email,
+      firstName: "Test",
+      city: "",
+      topics: ["ai-news"],
+    } as Parameters<typeof persistIssueIfPossible>[0];
+    const fakeIssue = {
+      id: "test",
+      volume: 1,
+      number: 1,
+      weekOf: "2099-01-01",
+      recipientFirstName: "Test",
+      recipientCity: "",
+      editorIntro: "test",
+      sections: [],
+    } as Parameters<typeof persistIssueIfPossible>[1];
+
+    // First call: no existing auth user for this email yet -> generateLink
+    // implicitly creates one (verificationType="signup") -- establishes a
+    // genuinely EXISTING account, same as any real first-time signup.
+    const first = await persistIssueIfPossible(fakeProfile, fakeIssue, "2099-01-01");
+    check("(C setup) first call created a real account", first !== null);
+
+    // NOW suppress the email -- models a subscriber who bounced/complained
+    // SOME TIME AFTER their account already existed (the realistic order:
+    // account first, bounce later -- not the INSERT-path race test A covers).
+    const suppress = await addSuppression(email);
+    check("(C setup) address suppressed on Resend's real list", suppress.ok);
+    const stillSuppressed = await getSuppression(email);
+    check("(C setup) confirmed suppressed via GET", stillSuppressed.ok);
+
+    // Second call, SAME email: the auth user from the first call now
+    // exists, so generateLink returns verificationType="magiclink" this
+    // time (a genuine RETURNING reader, e.g. a re-generate call) -- the
+    // exact case alpha-drift-r19-01 gates removeResendSuppression OUT of,
+    // since running it on every such call risked eating /api/generate's
+    // tight remaining time budget for zero benefit to an account that was
+    // never suppressed at signup time.
+    const second = await persistIssueIfPossible(fakeProfile, fakeIssue, "2099-01-02");
+    check("(C) second call (returning user) also succeeded", second !== null);
+
+    const afterSecondCall = await getSuppression(email);
+    check(
+      "(C) address is STILL suppressed after the second (returning-user) call -- removeResendSuppression correctly did NOT fire -- THE FIX THIS TEST PROVES",
+      afterSecondCall.ok
+    );
+  } finally {
+    await cleanupByEmail(email);
+    // Not covered by cleanupByEmail (which only deletes the auth user) --
+    // this test intentionally left a real suppression entry behind to prove
+    // the gate worked, so remove it directly rather than leaving test debris
+    // on the real Resend account.
+    await fetch(`https://api.resend.com/suppressions/${encodeURIComponent(email)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${resendKey}` },
+    }).catch(() => undefined);
+  }
+}
+
 console.log("(B) app/api/stripe/webhook/route.ts's checkout.session.completed -- INSERT branch (real route, signed request)");
 {
   // A local-only test webhook secret, freshly randomized -- never the real
