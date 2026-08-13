@@ -28,12 +28,48 @@ export interface SelectionResult<T> {
   usedFiller: string[]; // topics filled from the last-resort filler
 }
 
+/** Every URL a candidate section cites (normalized), for the cross-topic
+ *  dedup below — a candidate collides if ANY of its URLs was already used
+ *  by an earlier-chosen section of this same letter (a topic-blurb can hold
+ *  several items, so this isn't just "the one headline article"). Optional
+ *  and generic-friendly: callers that pass nothing get today's behavior
+ *  unchanged. */
+export type UrlExtractor<T> = (value: T) => string[];
+
 export async function selectLetterSections<T>(
   rawPool: string[],
   letterSize: number,
   genLive: (topicId: string) => Promise<T | null>,
-  genFiller: (topicId: string) => Promise<T | null>
+  genFiller: (topicId: string) => Promise<T | null>,
+  // alpha-drift-r16-12 (found+fixed 2026-08-07): getRecentlyCitedUrls (in
+  // lib/engine/blurb-cache.ts, upstream of genLive) only excludes a TOPIC's
+  // OWN citations from PRIOR periods -- nothing stopped two DIFFERENT
+  // topics in the SAME letter from independently surfacing and citing the
+  // identical article (concretely reachable: GENERIC_FALLBACK_TOPICS
+  // co-locates personal-finance + macro-markets, and a shared Fed-rate/
+  // jobs story is exactly the kind of piece both would plausibly cite the
+  // same day). Fixing this at generation time would mean threading one
+  // subscriber's own-letter context into the SHARED per-topic-week cache/
+  // inFlight promise that every OTHER subscriber with that topic reuses
+  // verbatim -- exactly the cost-sharing property this whole cache system
+  // exists for, and this function would break it. Fixing it HERE instead
+  // (selection time, per subscriber) leaves that shared generation/cache
+  // model completely untouched: a URL-colliding candidate just isn't
+  // CHOSEN for this one subscriber's letter, backfilling from the next-
+  // ranked topic exactly like a dry (no-fresh-content) topic already does
+  // -- the underlying blurb is still cached and still serves every other
+  // subscriber whose own letter has no collision.
+  extractUrls?: UrlExtractor<T>
 ): Promise<SelectionResult<T>> {
+  const usedUrls = new Set<string>();
+  const isUrlCollision = (value: T): boolean => {
+    if (!extractUrls) return false;
+    return extractUrls(value).some((u) => usedUrls.has(u));
+  };
+  const recordUrls = (value: T): void => {
+    if (!extractUrls) return;
+    for (const u of extractUrls(value)) usedUrls.add(u);
+  };
   // alpha-drift-r16-11 (found+fixed 2026-08-07): defense-in-depth against a
   // duplicate topic id anywhere in the pool -- Pass 1 below had no dedup
   // check at all (Pass 2's `!chosen.some(...)` guard only protects itself,
@@ -71,8 +107,9 @@ export async function selectLetterSections<T>(
     const results = await Promise.all(batch.map(live));
     batch.forEach((topicId, k) => {
       const value = results[k];
-      if (value != null && chosen.length < size) {
+      if (value != null && chosen.length < size && !isUrlCollision(value)) {
         chosen.push({ topicId, rank: start + k, value, source: "live" });
+        recordUrls(value);
       }
     });
   }
@@ -101,9 +138,10 @@ export async function selectLetterSections<T>(
     const results = await Promise.all(candidates.map((c) => filler(c.topicId)));
     candidates.forEach((c, k) => {
       const value = results[k];
-      if (value != null && chosen.length < size) {
+      if (value != null && chosen.length < size && !isUrlCollision(value)) {
         chosen.push({ topicId: c.topicId, rank: c.rank, value, source: "filler" });
         usedFiller.push(c.topicId);
+        recordUrls(value);
       }
     });
   }

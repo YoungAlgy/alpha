@@ -108,6 +108,47 @@ const ids = (r: { chosen: { topicId: string }[] }) => r.chosen.map((c) => c.topi
   check("(10) no duplicate topicId anywhere in chosen", new Set(r.chosen.map((c) => c.topicId)).size === r.chosen.length);
 }
 
+// (11) alpha-drift-r16-12: cross-topic URL collision within one letter.
+// genLive returns a value carrying a "url" field; two different topics
+// independently return the SAME url (simulating two topics surfacing the
+// same underlying article) -- the second must be rejected and backfilled
+// from the next-ranked topic, not both shown.
+{
+  const urlByTopic: Record<string, string> = {
+    a: "https://example.com/fed-rate-story",
+    b: "https://example.com/fed-rate-story", // same article as "a"
+    c: "https://example.com/unrelated-story",
+  };
+  const genLiveWithUrl = async (id: string) => ({ topicId: id, url: urlByTopic[id] });
+  const extractUrls = (v: { url: string }) => [v.url];
+  const r = await selectLetterSections(["a", "b", "c", "d"], 2, genLiveWithUrl, fillerGen(), extractUrls);
+  check("(11) colliding topic 'b' rejected, backfilled by 'c'", ids(r) === "a,c");
+  check("(11) 'b' reported as skipped (not chosen, not filler)", r.skippedDry.includes("b"));
+}
+
+// (12) Without extractUrls (the default), no dedup happens -- confirms the
+// parameter is truly optional and every existing caller is unaffected.
+{
+  const urlByTopic: Record<string, string> = { a: "https://example.com/x", b: "https://example.com/x" };
+  const genLiveWithUrl = async (id: string) => ({ topicId: id, url: urlByTopic[id] });
+  const r = await selectLetterSections(["a", "b"], 2, genLiveWithUrl, fillerGen());
+  check("(12) no extractUrls passed → both chosen despite identical url (unchanged default behavior)", ids(r) === "a,b");
+}
+
+// (13) A filler-path collision must also be rejected, not just live.
+{
+  const noLive = async () => null;
+  const urlByTopic: Record<string, string> = {
+    a: "https://example.com/story-1",
+    b: "https://example.com/story-1", // filler duplicate of a's filler url
+    c: "https://example.com/story-2",
+  };
+  const fillerWithUrl = async (id: string) => ({ topicId: id, url: urlByTopic[id] });
+  const extractUrls = (v: { url: string }) => [v.url];
+  const r = await selectLetterSections(["a", "b", "c"], 2, noLive, fillerWithUrl, extractUrls);
+  check("(13) filler-path collision also rejected: a,c (not a,b)", ids(r) === "a,c");
+}
+
 // (8) poolCap: letterSize + a fixed 5 backups, capped at the catalog max.
 check("(8) poolCap(5) = 10 (5 favorites + 5 backups)", poolCap(5) === 10);
 check("(8) poolCap(10) = 15 (add a bundle, still 5 backups)", poolCap(10) === 15);

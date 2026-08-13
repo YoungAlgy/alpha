@@ -316,7 +316,27 @@ export async function generateIssue(
   // backups for the quiet ones, filler only as a last resort. Each generator
   // is individually error-trapped inside the selector, so one failed topic is
   // treated as "quiet" and backfilled rather than sinking the whole letter.
-  const selection = await selectLetterSections(genPool, size, genLive, genFiller);
+  //
+  // extractUrls (alpha-drift-r16-12): lets selectLetterSections reject a
+  // candidate whose primary citation was already used by an earlier-chosen
+  // section of THIS letter, so two sections never cite the same article --
+  // see that function's own comment for why this is a selection-time check,
+  // not a change to the shared per-topic-week generation/cache above.
+  const extractBlurbUrls = (blurb: TopicBlurb): string[] => {
+    const urls: string[] = [];
+    for (const item of blurb.items) {
+      if (item.primaryRef?.url) {
+        const n = normalizeUrl(item.primaryRef.url);
+        if (n) urls.push(n);
+      }
+      for (const ref of item.supplementaryRefs ?? []) {
+        const n = normalizeUrl(ref.url);
+        if (n) urls.push(n);
+      }
+    }
+    return urls;
+  };
+  const selection = await selectLetterSections(genPool, size, genLive, genFiller, extractBlurbUrls);
   const blurbs = selection.chosen.map((c) => c.value);
   if (selection.skippedDry.length > 0) {
     console.warn(
