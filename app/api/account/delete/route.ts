@@ -2,18 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { cancelStripeSubscriptionsBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
 import { rateLimit } from "@/lib/rate-limit";
-
-// A GoTrue admin "user not found" error, in whatever shape the SDK happens to
-// surface it (status 404, or a code/message naming the condition) -- checked
-// defensively rather than pinned to one exact shape since this isn't
-// documented as a stable contract. Used below to treat "already gone" as
-// success, not failure.
-function isUserNotFoundError(e: { status?: unknown; code?: unknown; message?: unknown }): boolean {
-  if (e.status === 404) return true;
-  const code = typeof e.code === "string" ? e.code.toLowerCase() : "";
-  const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
-  return code.includes("not_found") || message.includes("not found") || message.includes("not_found");
-}
+import { isUserNotFoundError } from "@/lib/gotrue-errors";
 
 export const runtime = "nodejs";
 

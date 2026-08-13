@@ -5,6 +5,7 @@ import { cancelStripeSubscriptionsBeforeDelete, deleteSupportTicketsBeforeDelete
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
+import { isUserNotFoundError } from "@/lib/gotrue-errors";
 
 export const runtime = "nodejs";
 
@@ -194,8 +195,19 @@ export async function POST(req: Request) {
     // Delete the auth user — cascade removes their public.users + issues rows.
     const { error } = await sb.auth.admin.deleteUser(body.userId);
     if (error) {
-      console.error("[admin/users] delete failed:", error.message);
-      return NextResponse.json({ error: "Couldn't delete user. Try again." }, { status: 500 });
+      // alpha-drift-r17-02 (found+fixed 2026-08-07): the self-serve
+      // account/delete route already treats a not-found error as success
+      // (a race with a second click/tab hitting an already-deleted user) --
+      // this identical deleteUser call site never got the same fix, so an
+      // admin hit a scary generic 500 on a user that was, in fact, already
+      // gone (e.g. a stale admin tab, or the user self-deleted moments
+      // before the admin's click landed).
+      if (isUserNotFoundError(error)) {
+        console.warn(`[admin/users] deleteUser reported not-found for ${body.userId} — already deleted, treating as success`);
+      } else {
+        console.error("[admin/users] delete failed:", error.message);
+        return NextResponse.json({ error: "Couldn't delete user. Try again." }, { status: 500 });
+      }
     }
     return NextResponse.json({ ok: true });
   }
@@ -210,7 +222,18 @@ export async function POST(req: Request) {
       .select("stripe_customer_id")
       .eq("id", body.userId)
       .maybeSingle();
-    if (!isFreeGrantEligible(existing?.stripe_customer_id)) {
+    // alpha-drift-r17-01 (found+fixed 2026-08-07): isFreeGrantEligible(undefined)
+    // returns true (its whole contract is "no stripe_customer_id on file"), so
+    // a userId that matches NO ROW AT ALL (deleted, stale id from another
+    // admin tab) used to pass this guard the same as a genuinely free-grant-
+    // eligible user -- the update below then matched zero rows (no error from
+    // a 0-row update) and this route reported { ok: true } for a write that
+    // never happened. Check existence explicitly first, as its own distinct
+    // failure reason from "has a real Stripe subscription."
+    if (!existing) {
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    }
+    if (!isFreeGrantEligible(existing.stripe_customer_id)) {
       return NextResponse.json(
         { error: "User has a real Stripe subscription. Manage in Stripe, don't comp." },
         { status: 400 }
@@ -220,13 +243,22 @@ export async function POST(req: Request) {
     // Clear unsubscribed_at too: a comp grant is an explicit admin decision to
     // send letters, so it must re-consent a previously-opted-out user (mirrors
     // the paid checkout path) — otherwise re-comping an unsubscribed reader
-    // would silently leave them dropped from every send.
+    // would silently leave them dropped from every send. Clear
+    // bounced_at/complained_at for the same reason (alpha-drift-r17-05,
+    // same round) -- these are Resend delivery-suppression columns, and an
+    // admin's explicit comp decision is exactly the same kind of re-consent
+    // as a paid checkout, which lib/webhook-user-mutation.ts's
+    // checkoutUserMutation clears them on -- an un-comped-then-recomped
+    // reader must not stay permanently excluded from the cron's
+    // `.is("bounced_at", null).is("complained_at", null)` filter.
     const { error } = await sb
       .from("users")
       .update({
         subscribed_at: new Date().toISOString(),
         cancelled_at: null,
         unsubscribed_at: null,
+        bounced_at: null,
+        complained_at: null,
       })
       .eq("id", body.userId);
     if (error) {
@@ -244,7 +276,11 @@ export async function POST(req: Request) {
       .select("stripe_customer_id")
       .eq("id", body.userId)
       .maybeSingle();
-    if (!isFreeGrantEligible(row?.stripe_customer_id)) {
+    // alpha-drift-r17-01: same missing-row check as grant_free above.
+    if (!row) {
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    }
+    if (!isFreeGrantEligible(row.stripe_customer_id)) {
       return NextResponse.json(
         { error: "User has a real Stripe subscription. Manage in Stripe." },
         { status: 400 }

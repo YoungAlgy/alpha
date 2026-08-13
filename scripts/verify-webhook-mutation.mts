@@ -213,6 +213,35 @@ check(
   deriveCancelledAt("trialing", null, NOW) === null
 );
 
+// (11) alpha-drift-r17-05: bounced_at/complained_at must be cleared on every
+// checkout completion (paid re-consent), regardless of whether the
+// subscription happens to be live right now -- unlike cancelled_at, this
+// isn't a billing-access decision, so it isn't gated by subscriptionLive.
+console.log("(11) bounced_at/complained_at cleared on checkout re-consent:");
+for (const live of [true, false]) {
+  const m = checkoutUserMutation(
+    { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: null },
+    { ...idn, subscriptionLive: live }
+  );
+  check(
+    `subscriptionLive=${live} → patch clears bounced_at`,
+    m.kind === "update" && "bounced_at" in m.patch && m.patch.bounced_at === null
+  );
+  check(
+    `subscriptionLive=${live} → patch clears complained_at`,
+    m.kind === "update" && "complained_at" in m.patch && m.patch.complained_at === null
+  );
+}
+// Insert path (brand-new row) starts clean by construction -- no suppression
+// columns to clear, but confirm the row itself has no stray suppression value.
+{
+  const m = checkoutUserMutation(null, idn);
+  check(
+    "insert path: no bounced_at/complained_at set on a fresh row",
+    m.kind === "insert" && !("bounced_at" in m.row) && !("complained_at" in m.row)
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("WEBHOOK MUTATION VERIFICATION FAILED");

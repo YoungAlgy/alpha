@@ -65,9 +65,29 @@ export function checkoutUserMutation(
   // column, so if checkout doesn't clear it, a previously-unsubscribed user
   // who pays again is silently skipped by the weekly cron forever — a paying
   // subscriber receiving nothing.
+  // alpha-drift-r17-05 (found+fixed 2026-08-07): bounced_at/complained_at are
+  // written by app/api/webhooks/resend/route.ts on a hard bounce/complaint
+  // and, before this fix, were NEVER cleared anywhere in the codebase --
+  // grepping every writer confirmed the only mutation site always SETS them,
+  // never nulls either column, so a subscriber who ever bounced/complained
+  // was permanently excluded from the cron's `.is("bounced_at",
+  // null).is("complained_at", null)` filter with zero recovery mechanism,
+  // even after fixing a typo'd address and paying again. Same reasoning as
+  // unsubscribed_at just above: a fresh paid checkout is explicit, real-
+  // world proof this address is live and this reader wants the letters --
+  // Stripe itself just successfully emailed this same address a receipt.
+  // Cleared unconditionally on every checkout completion (not gated behind
+  // subscriptionLive the way cancelled_at is below) because that gate exists
+  // specifically to stop a re-delivered event from resurrecting BILLING
+  // access on an ended subscription -- deliverability suppression isn't a
+  // billing concern, and the underlying payment event proving the address
+  // works already happened regardless of whether the subscription is still
+  // live today.
   const patch: Record<string, unknown> = {
     stripe_customer_id: id.customerId,
     unsubscribed_at: null,
+    bounced_at: null,
+    complained_at: null,
   };
   if (!existing.subscribed_at) patch.subscribed_at = id.nowIso;
   // cancelled_at: clear ONLY a stale (already past/now) cancellation, and ONLY
