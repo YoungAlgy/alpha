@@ -7,7 +7,11 @@
 // the original comments this is ported from.
 //
 // Two jobs carried over unchanged:
-//   1. CSRF defense on 8 state-changing endpoints — this is NOT redundant
+//   1. CSRF defense on 9 state-changing endpoints (alpha-drift-r26-07,
+//      2026-08-14: this said "8" -- stale since /api/generate was added to
+//      lib/csrf-guard.ts's CSRF_GUARDED_SUFFIXES in a later review pass.
+//      That array is the actual source of truth; count it directly rather
+//      than trusting this comment if the two ever drift again) — this is NOT redundant
 //      with anything else. None of those routes have their own Sec-Fetch-Site
 //      check, so dropping this (the way pitchroom's genuinely-redundant auth
 //      gate was dropped) would be a real security regression on account
@@ -26,7 +30,7 @@ import openNextWorker from '../.open-next/worker.js'
 
 export { DOQueueHandler, DOShardedTagCache, BucketCachePurge } from '../.open-next/worker.js'
 
-// CSRF defense on 8 state-changing endpoints — see lib/csrf-guard.ts for the
+// CSRF defense on 9 state-changing endpoints — see lib/csrf-guard.ts for the
 // guard logic itself and why it lives there instead of here (short version:
 // testability — this file's own top-level import above pulls in the built
 // Workers bundle, which a plain node/tsx script can't load).
