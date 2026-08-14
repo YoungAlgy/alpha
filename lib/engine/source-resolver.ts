@@ -8,6 +8,7 @@ import { normalizeUrl } from "./url-guard";
 import { geminiConfigured } from "./gemini-client";
 import { resolveTopicSignalViaGemini } from "./gemini-search";
 import { isCustomTopic, customTopicText, isZodiacTopicId } from "@/lib/topics";
+import { cleanField } from "./text-clean";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
 
@@ -18,22 +19,11 @@ const DEEP_READ_N = 5;
 const MORE_HEADLINES_N = 6;
 const PER_QUERY_COUNT = 10;
 
-function stripTags(s: string): string {
-  return s.replace(/<[^>]+>/g, "").trim();
-}
-
-// Clean a third-party-controlled field (a source's title or description, which
-// come straight from Brave reflecting the page). Strip HTML tags AND any URL:
-// the citable allow-set is built from the resolver's chosen SOURCE urls only
-// (see fetchLiveSignal's citableUrls), but stripping URLs from these fields too
-// means a smuggled link never even reaches the model as prose it might copy into
-// a body. Same case-insensitive bare-URL pattern as fetch-content.sanitizeContent.
-export function cleanField(s: string): string {
-  return stripTags(s)
-    .replace(/https?:\/\/[^\s)\]]+/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
+// cleanField (title/description sanitizer) now lives in ./text-clean, shared
+// with gemini-search.ts. The citable allow-set is built from the resolver's
+// chosen SOURCE urls only (see fetchLiveSignal's citableUrls below); cleanField
+// stripping URLs from title/description fields too means a smuggled link never
+// even reaches the model as prose it might copy into a body.
 
 // Resolves a TopicSignal for (topicId, weekOf). Tries Brave Search first
 // when configured, falls back to hand-written mock signals otherwise.

@@ -29,6 +29,7 @@
 import { geminiGroundedSearch } from "./gemini-client";
 import { hostTier } from "./source-authority";
 import { normalizeUrl } from "./url-guard";
+import { cleanField } from "./text-clean";
 import type { TopicSignal } from "./types";
 import type { TopicId } from "@/lib/types";
 
@@ -112,7 +113,10 @@ export async function resolveTopicSignalViaGemini(
     if (hostTier(host, real) === "denied") continue; // paywall/junk deny list
     if (excludeUrls?.has(norm)) continue; // already cited to this reader recently
     seen.add(norm);
-    survivors.push({ url: real, title: title || host, norm });
+    // cleanField: a citation title is as third-party-controlled as a Brave/
+    // You.com result title, and gets the same tag/URL stripping before it can
+    // reach a prompt (see ./text-clean).
+    survivors.push({ url: real, title: cleanField(title || host), norm });
   }
 
   if (survivors.length === 0) {
@@ -121,7 +125,15 @@ export async function resolveTopicSignalViaGemini(
   }
 
   const sourceLines = survivors.map((s) => `- ${s.title} — ${s.url}`).join("\n");
-  const context = `Research summary for ${topicId} (as of ${weekOf}), gathered live via Gemini grounded search (Brave was rate-limited this run):\n\n${grounded.answerText}\n\n=== SOURCES (real, citable — verified direct links) ===\n${sourceLines}\n\nAll URLs listed above are real and citable. Do NOT invent URLs.`;
+  // cleanField on Gemini's own synthesized answer text: unlike Brave (whose
+  // result title/description already go through cleanField in
+  // source-resolver.ts) or the deep-read path (sanitizeContent in
+  // fetch-content.ts), this is model-generated prose reflecting whatever it
+  // read, including any tag-shaped or URL-shaped text on a page it grounded
+  // against. Stripped here so it can't break topic-blurb.ts's <signal> fence
+  // or smuggle an uncited link into the letter as prose.
+  const cleanedAnswer = cleanField(grounded.answerText);
+  const context = `Research summary for ${topicId} (as of ${weekOf}), gathered live via Gemini grounded search (Brave was rate-limited this run):\n\n${cleanedAnswer}\n\n=== SOURCES (real, citable — verified direct links) ===\n${sourceLines}\n\nAll URLs listed above are real and citable. Do NOT invent URLs.`;
   const citableUrls = new Set(survivors.map((s) => s.norm));
 
   return { topicId, weekOf, context, citableUrls };

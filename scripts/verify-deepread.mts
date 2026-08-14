@@ -11,7 +11,7 @@ const { sanitizeContent } = await import("../lib/engine/fetch-content.ts");
 const { hostTier, tierRank } = await import("../lib/engine/source-authority.ts");
 const { rankAndDedup } = await import("../lib/engine/source-rank.ts");
 const { extractSignalUrls, normalizeUrl, isAllowedUrl } = await import("../lib/engine/url-guard.ts");
-const { cleanField } = await import("../lib/engine/source-resolver.ts");
+const { cleanField } = await import("../lib/engine/text-clean.ts");
 
 let pass = 0, fail = 0;
 const check = (label: string, cond: boolean) => { console.log(`  ${cond ? "OK " : "XX "} ${label}`); cond ? pass++ : fail++; };
