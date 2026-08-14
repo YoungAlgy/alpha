@@ -1,6 +1,19 @@
 import { zodiacSign } from "./demographics";
 import type { TopicId, FixedTopicId } from "./types";
 import { stripPromptFenceChars } from "./prompt-fence";
+import { codePointSafeSlice } from "./text-truncate";
+
+// alpha-drift-r21-03 (found+fixed 2026-08-14): a lone/unpaired UTF-16
+// surrogate survives every step of makeCustomTopic's cleanup below untouched
+// (stripPromptFenceChars only strips '<'/'>', collapsing whitespace/trim/
+// lowercase don't touch surrogates either) -- codePointSafeSlice alone only
+// prevents CREATING a new one by cutting mid-pair, it doesn't reject one a
+// caller submits directly. Matches JS's own regex definition of an unpaired
+// surrogate: a high surrogate not immediately followed by a low one, or a
+// low surrogate not immediately preceded by a high one.
+function hasLoneSurrogate(s: string): boolean {
+  return /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
+}
 
 export interface TopicMeta {
   id: FixedTopicId;
@@ -201,7 +214,12 @@ export function isValidTopicId(id: string): boolean {
   if (id === "zodiac") return true;
   if (isCustomTopic(id)) {
     const text = customTopicText(id);
-    return text.length > 0 && text.length <= MAX_CUSTOM_TOPIC_LEN && makeCustomTopic(text) === id;
+    // alpha-drift-r21-03: code-point count, not text.length (UTF-16 code
+    // units) -- a valid custom topic containing astral emoji could have
+    // MORE code units than code points, wrongly failing this bound even
+    // when well under the real MAX_CUSTOM_TOPIC_LEN limit.
+    const codePointLen = Array.from(text).length;
+    return codePointLen > 0 && codePointLen <= MAX_CUSTOM_TOPIC_LEN && makeCustomTopic(text) === id;
   }
   return Object.prototype.hasOwnProperty.call(TOPIC_BY_ID, id);
 }
@@ -223,10 +241,26 @@ export function isValidTopicId(id: string): boolean {
  *  one function every custom topic id must be built through, is also
  *  self-healing for any already-stored id: isValidTopicId's own round-trip
  *  check (`makeCustomTopic(text) === id`) now fails for an id containing
- *  either character, since re-deriving it strips them and no longer matches. */
+ *  either character, since re-deriving it strips them and no longer matches.
+ *
+ *  alpha-drift-r21-03 (found+fixed 2026-08-14, self-audit of the fix above):
+ *  the truncation below still used plain .slice(), unlike codePointSafeSlice/
+ *  codePointSafeTruncate everywhere ELSE this app truncates untrusted text
+ *  (lib/email.ts, lib/engine/editor-note.ts's clamp) -- a cut at UTF-16 code
+ *  UNIT 80 could split a surrogate pair (an astral emoji) in two, leaving a
+ *  lone unpaired surrogate: invalid UTF-16 with no valid UTF-8 encoding.
+ *  Worse, isValidTopicId's own round-trip check used text.length (also a
+ *  code-unit count), so an already-short, directly-submitted id with an
+ *  EMBEDDED lone surrogate was a pure identity no-op through every step here
+ *  and passed as "well-formed" -- self-healing for the r20-01 case above,
+ *  but not this one. hasLoneSurrogate rejects that case outright, and
+ *  codePointSafeSlice makes the truncation itself safe. */
 export function makeCustomTopic(text: string): `custom:${string}` | null {
-  const clean = stripPromptFenceChars(text).replace(/\s+/g, " ").trim().toLowerCase().slice(0, MAX_CUSTOM_TOPIC_LEN).trim();
-  if (clean.length < 2) return null;
+  const clean = codePointSafeSlice(
+    stripPromptFenceChars(text).replace(/\s+/g, " ").trim().toLowerCase(),
+    MAX_CUSTOM_TOPIC_LEN
+  ).trim();
+  if (clean.length < 2 || hasLoneSurrogate(clean)) return null;
   return `${CUSTOM_PREFIX}${clean}`;
 }
 

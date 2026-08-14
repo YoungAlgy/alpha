@@ -125,6 +125,47 @@ check("'NFT drops' matches Web3", suggestCuratedTopic("NFT drops") === "web3-upd
 check("'blockchain news' matches Web3", suggestCuratedTopic("blockchain news") === "web3-updates");
 check("two-word 'hip hop' matches Hip-hop", suggestCuratedTopic("hip hop playlists") === "music-hiphop");
 
+console.log("(9) alpha-drift-r21-03 (found+fixed 2026-08-14): makeCustomTopic no longer mints an unpaired UTF-16 surrogate");
+{
+  // A directly-submitted id with an EMBEDDED lone high surrogate (no low
+  // surrogate partner anywhere nearby) -- short enough that no truncation
+  // is even involved. Before the fix, every cleanup step (stripPromptFenceChars,
+  // whitespace collapse, trim, lowercase, plain .slice) left it untouched,
+  // and text.length <= MAX_CUSTOM_TOPIC_LEN made makeCustomTopic's own
+  // .slice(0, 80) a no-op identity, so isValidTopicId's round-trip check
+  // (`makeCustomTopic(text) === id`) passed it as "well-formed."
+  const loneHighSurrogate = "crypto \uD800 trends";
+  check("(9) a lone high surrogate makes makeCustomTopic return null (rejected, not silently corrupted)", makeCustomTopic(loneHighSurrogate) === null);
+
+  const loneLowSurrogate = "crypto \uDC00 trends";
+  check("(9) a lone low surrogate is also rejected", makeCustomTopic(loneLowSurrogate) === null);
+
+  // A hand-crafted id string carrying the SAME lone surrogate, submitted
+  // directly as if already stored -- isValidTopicId must reject it too,
+  // not just makeCustomTopic when building fresh.
+  const maliciousId = `${CUSTOM_PREFIX}crypto \uD800 trends`;
+  check("(9) isValidTopicId rejects a hand-crafted id containing a lone surrogate", isValidTopicId(maliciousId) === false);
+
+  // A genuinely well-formed astral emoji (surrogate PAIR, not lone) must
+  // still work completely normally -- this fix must not over-reject valid
+  // Unicode text, only truly unpaired surrogates.
+  const validEmoji = "crypto 😀 trends"; // 😀, a real surrogate pair
+  const built = makeCustomTopic(validEmoji);
+  check("(9) a real (paired) emoji is NOT rejected", built !== null);
+  check("(9) the emoji survives whole in the built id, not split", built !== null && built.includes("😀"));
+  check("(9) that same built id round-trips through isValidTopicId as valid", built !== null && isValidTopicId(built) === true);
+}
+
+console.log("(10) alpha-drift-r21-03: truncation at MAX_CUSTOM_TOPIC_LEN is code-point-safe, can't split a pair mid-emoji");
+{
+  // 79 'a's + one astral emoji (2 UTF-16 units) straddles the old raw
+  // .slice(0, 80) cut point exactly -- the classic mid-pair split.
+  const straddling = "a".repeat(79) + "😀"; // 79 code points + 1 emoji = 80 code points, 81 UTF-16 units
+  const built = makeCustomTopic(straddling);
+  check("(10) the whole emoji is either fully included or fully excluded, never split", built === null || !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(built));
+  check("(10) built id, if non-null, round-trips as valid (no corruption survived)", built === null || isValidTopicId(built) === true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("CUSTOM TOPIC HELPER VERIFICATION FAILED");
