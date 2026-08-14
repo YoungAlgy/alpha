@@ -1,6 +1,6 @@
 # Alpha
 
-A $5/mo personal newsletter. Users pick 5 topics from a curated menu of 25 (add-on bundles up to 25 topics, $25/mo); every day (14:00 UTC) we deliver an AI-written letter built from real sources — every cited link must come from that send's live search, enforced in code (lib/engine/url-guard.ts). Each send only looks at what's new since the last one (lib/cadence.ts).
+A $5/mo personal newsletter. Users pick 5 topics from a curated menu of 38 (add-on bundles up to 25 topics, $25/mo cap); every day (14:00 UTC) we deliver an AI-written letter built from real sources — every cited link must come from that send's live search, enforced in code (lib/engine/url-guard.ts). Each send only looks at what's new since the last one (lib/cadence.ts).
 
 Lives at `alpha.everyday.report` (its own domain, app at the root — no basePath). `everyday.report` redirects there. The old home, `youngalgy.com/alpha/*`, 308-redirects page paths here, but `/alpha/api/*` is 301-redirected, not proxied — the youngalgy.com Vercel project this used to proxy to is gone. That breaks one-click unsubscribe (GET/POST, List-Unsubscribe-Post) for any letter sent before the 2026-07-03 domain move; see next.config.ts for detail. Old magic-link/email-change callbacks are NOT proxied — they survive only because browsers follow the 308 to `/auth/callback` AND `https://youngalgy.com/alpha/auth/callback**` stays in the Supabase redirect allowlist. Never remove that allowlist entry.
 
@@ -9,7 +9,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 | Layer | Tool |
 |---|---|
 | Framework | Next.js 16 (App Router, Turbopack) |
-| Styling | Tailwind CSS 4 + CSS custom properties (10 themes) |
+| Styling | Tailwind CSS 4 + CSS custom properties (25 themes) |
 | Hosting | Cloudflare Workers (via OpenNext) for the website; the daily send itself runs on GitHub Actions (see Deployment below) |
 | DB / Auth | Supabase (project `xpqxhdciaoicsnyyfshy` in the "Algy" org) |
 | AI | Claude Sonnet 5 (topic blurbs) + Claude Opus 4.8 (editor's note) via `@anthropic-ai/sdk` |
@@ -64,8 +64,8 @@ components/
 
 lib/
   types.ts                    canonical app types (Issue, UserProfile, ItemKind, ThemeId, TopicId)
-  topics.ts                   25-topic registry (latest add: trading-cards, 2026-06-10)
-  themes.ts                   10-theme registry
+  topics.ts                   38-topic registry (latest add: trading-cards, 2026-06-10, plus more since)
+  themes.ts                   25-theme registry
   audio.ts                    Web Audio synth sound palette
   onboarding-state.ts         localStorage state + ONBOARDING_STEPS ordering
   user-sync.ts                Supabase user sync + delete-account
