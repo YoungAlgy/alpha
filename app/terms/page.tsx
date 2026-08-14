@@ -90,8 +90,16 @@ export default function TermsPage() {
 
       <H2>Account &amp; security</H2>
       <p>
+        {/* alpha-drift-r20-07 (found+fixed 2026-08-13): this used to promise
+            we'd "revoke all active sessions" on a compromised account -- no
+            such action exists anywhere in the codebase (the admin panel can
+            delete, grant free, or revoke free; every sign-out is self-serve).
+            Deleting the account is the real lever: it blocks future sign-in
+            immediately and (since the alpha-drift-r20-05 fix) also cuts off
+            an already-signed-in session on another device the next time it
+            tries to load a letter. Promise what we can actually do. */}
         Keep your magic-link email private. If your account is compromised, email us
-        and we&apos;ll revoke all active sessions.
+        and we&apos;ll delete it so you can start fresh with a new one.
       </p>
 
       <H2>Disclaimers</H2>
