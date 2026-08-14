@@ -29,8 +29,19 @@ function resendConfiguredInternal(): boolean {
 // either fails Next's route typing or is silently untestable the way every
 // other route helper in this codebase already handles it (lib/webhook-user-
 // mutation.ts, lib/gotrue-errors.ts, etc.).
+//
+// alpha-drift-r20-01 (found+fixed 2026-08-13, self-audit of the fix above):
+// the original regex missed ',' -- the RFC 5322 ADDRESS-LIST delimiter. A
+// bare email needs no angle brackets to be a valid standalone mailbox entry,
+// so a name like "attacker@evil.com, Foo" produces the Reply-To value
+// "attacker@evil.com, Foo <real@submitter.com>", which most mail-header
+// parsers split into TWO real addresses: the attacker's bare one, plus the
+// real submitter's Name+angle-addr. This reopened the exact "reply could
+// land on an embedded address" risk the original fix's own commit message
+// describes closing -- the '<email>' vector was closed, the comma-delimited
+// multi-address vector was not.
 export function sanitizeDisplayName(name: string): string {
-  return name.replace(/[\r\n<>"]/g, "").trim();
+  return name.replace(/[\r\n<>",]/g, "").trim();
 }
 
 let _resend: Resend | null = null;

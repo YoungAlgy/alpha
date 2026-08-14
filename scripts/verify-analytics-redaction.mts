@@ -57,13 +57,39 @@ console.log("(5) a UUID that appears somewhere OTHER than right after /inbox/ is
   check("(5) unrelated UUID left alone", out.$current_url === props.$current_url);
 }
 
-console.log("(6) non-string property values pass through untouched (no crash on numbers/booleans/objects)");
+console.log("(6) non-string, non-container property values pass through untouched (no crash on numbers/booleans)");
 {
-  const props = { count: 42, active: true, meta: { nested: "/inbox/3f2a1b4c-5d6e-4f70-8091-a2b3c4d5e6f7" } };
+  const props = { count: 42, active: true };
   const out = redactIssueIds({ ...props });
   check("(6) number untouched", out.count === 42);
   check("(6) boolean untouched", out.active === true);
-  check("(6) nested object reference untouched (redaction is shallow, by design -- top-level string props only, matching every known PostHog URL property)", out.meta === props.meta);
+}
+
+console.log("(6b) alpha-drift-r20-01: a nested object's string properties ARE now redacted too -- the original 'shallow by design' behavior was itself the bug");
+{
+  const props = { meta: { nested: "/inbox/3f2a1b4c-5d6e-4f70-8091-a2b3c4d5e6f7" } };
+  const out = redactIssueIds({ ...props }) as { meta: { nested: string } };
+  check("(6b) nested string redacted", out.meta.nested === "/inbox/[id]");
+}
+
+console.log("(7b) alpha-drift-r20-01: the actual bug -- PostHog's $elements array (autocapture click events) carries the real href in a nested attr__href string");
+{
+  // Mirrors posthog-js's own autocapture.js shape: $elements is an array of
+  // element-descriptor objects, the clicked link's href sits in attr__href.
+  const props = {
+    event: "$autocapture",
+    $elements: [
+      { tag_name: "a", attr__href: "/inbox/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", attr__class: "link" },
+      { tag_name: "li" },
+    ],
+  };
+  const out = redactIssueIds({ ...props }) as typeof props;
+  check(
+    "(7b) $elements[0].attr__href redacted -- THE GAP THIS FIX CLOSES (an archive letter-link click no longer leaks the real issue UUID)",
+    out.$elements[0].attr__href === "/inbox/[id]"
+  );
+  check("(7b) sibling element with no href untouched, no crash", out.$elements[1].tag_name === "li");
+  check("(7b) non-URL string on the SAME element (attr__class) left alone", out.$elements[0].attr__class === "link");
 }
 
 console.log("(7) multiple distinct issue ids in the SAME string (e.g. a referrer chain) all get redacted, not just the first");

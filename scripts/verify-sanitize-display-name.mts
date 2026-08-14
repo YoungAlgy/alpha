@@ -51,6 +51,23 @@ check("(6) caller's own falsy-check treats that as 'no name', correctly falling 
 console.log("(7) leading/trailing whitespace introduced by stripping is trimmed");
 check("(7) 'Jane <> Doe' -> 'Jane  Doe' collapses correctly (no leading/trailing space at minimum)", sanitizeDisplayName("  Jane  ") === "Jane");
 
+console.log("(8) alpha-drift-r20-01: comma (the RFC 5322 address-list delimiter) stripped -- closes the multi-address vector the original fix missed");
+{
+  const attack = "attacker@evil.com, Foo";
+  const out = sanitizeDisplayName(attack);
+  check("(8) comma stripped from the sanitized name", !out.includes(","));
+  check("(8) result is 'attacker@evil.com Foo' (garbled but inert, one token, not an address list)", out === "attacker@evil.com Foo");
+}
+
+console.log("(9) alpha-drift-r20-01: the actual attack this fix closes -- a compound mailbox built from the attack name is a SINGLE address, not two");
+{
+  const name = sanitizeDisplayName("attacker@evil.com, Foo");
+  const compound = `${name} <realsubmitter@example.com>`;
+  const commaCount = (compound.match(/,/g) || []).length;
+  check("(9) zero commas in the final compound string -- can't be parsed as an address list with a second entry", commaCount === 0);
+  check("(9) exactly the real submitter's address remains a valid, unambiguous mailbox", compound === "attacker@evil.com Foo <realsubmitter@example.com>");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("SANITIZE-DISPLAY-NAME VERIFICATION FAILED");

@@ -31,13 +31,41 @@ let queue: Array<() => void> = [];
 // UUID. sanitize_properties runs on every outgoing event regardless of how
 // it was captured, so it's the one place that actually closes this for good.
 const ISSUE_URL_PATTERN = /\/inbox\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+// alpha-drift-r20-01 (found+fixed 2026-08-13, self-audit of the fix above):
+// the original version only checked `typeof value === "string"` on the
+// TOP-LEVEL properties -- but PostHog's autocapture emits $elements as an
+// ARRAY of element-descriptor objects for click events, each carrying the
+// clicked element's real href verbatim in a nested attr__href string
+// (confirmed against posthog-js's own autocapture source). A string check
+// on the top level skips arrays entirely, so clicking an /archive letter
+// link ($elements[0].attr__href = "/inbox/<uuid>") sent the raw issue UUID
+// straight through, unredacted -- defeating the exact promise this file
+// exists to keep. Recurses into arrays and plain objects (not just the
+// one known-bad shape) so any OTHER nested string PostHog's SDK might
+// carry a URL in is covered too, not just the one shape this round happened
+// to catch.
+function redactValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.includes("/inbox/") ? value.replace(ISSUE_URL_PATTERN, "/inbox/[id]") : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactValue);
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      out[key] = redactValue((value as Record<string, unknown>)[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
 // Exported for scripts/verify-analytics-redaction.mts only.
 export function redactIssueIds<T extends Record<string, unknown>>(properties: T): T {
   for (const key of Object.keys(properties)) {
-    const value = properties[key];
-    if (typeof value === "string" && value.includes("/inbox/")) {
-      (properties as Record<string, unknown>)[key] = value.replace(ISSUE_URL_PATTERN, "/inbox/[id]");
-    }
+    (properties as Record<string, unknown>)[key] = redactValue(properties[key]);
   }
   return properties;
 }
