@@ -22,6 +22,8 @@ interface AdminUserRow {
   subscribed_at: string | null;
   cancelled_at: string | null;
   unsubscribed_at: string | null;
+  bounced_at: string | null;
+  complained_at: string | null;
   created_at: string;
 }
 
@@ -109,7 +111,7 @@ export default function AdminAccountsPage() {
     }
   }
 
-  async function act(userId: string, action: "delete" | "grant_free" | "revoke_free", confirmMsg?: string) {
+  async function act(userId: string, action: "delete" | "grant_free" | "revoke_free" | "clear_suppression", confirmMsg?: string) {
     if (confirmMsg && !confirm(confirmMsg)) return;
     setBusy(userId);
     try {
@@ -290,6 +292,11 @@ export default function AdminAccountsPage() {
               const created = new Date(u.created_at).toLocaleDateString();
               const isGranted = !!u.subscribed_at && !u.stripe_customer_id;
               const isBusy = busy === u.id;
+              // alpha-drift-r20-06: deliverability suppression is orthogonal
+              // to billing status (statusLabel above) -- a Paying subscriber
+              // can be silently bounce-suppressed too, so this is its own
+              // badge, not folded into status.label.
+              const isSuppressed = !!u.bounced_at || !!u.complained_at;
               return (
                 <li
                   key={u.id}
@@ -308,11 +315,22 @@ export default function AdminAccountsPage() {
                         {u.email}
                       </span>
                     </div>
-                    <span
-                      className="alpha-mono text-xs"
-                      style={{ color: status.color }}
-                    >
-                      {status.label.toUpperCase()}
+                    <span className="flex items-center gap-2 shrink-0">
+                      {isSuppressed && (
+                        <span
+                          className="alpha-mono text-xs"
+                          style={{ color: "var(--accent-ink)" }}
+                          title={u.bounced_at ? `Bounced ${new Date(u.bounced_at).toLocaleDateString()}` : `Complained ${new Date(u.complained_at!).toLocaleDateString()}`}
+                        >
+                          SUPPRESSED
+                        </span>
+                      )}
+                      <span
+                        className="alpha-mono text-xs"
+                        style={{ color: status.color }}
+                      >
+                        {status.label.toUpperCase()}
+                      </span>
                     </span>
                   </div>
                   <div
@@ -369,6 +387,23 @@ export default function AdminAccountsPage() {
                         style={{ color: "var(--ink-soft)", opacity: isBusy ? 0.4 : 1 }}
                       >
                         Revoke free
+                      </button>
+                    )}
+                    {isSuppressed && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          act(
+                            u.id,
+                            "clear_suppression",
+                            `Clear delivery suppression for ${u.email}? Their next send will go through normally.`
+                          )
+                        }
+                        className="alpha-ui text-xs underline underline-offset-4"
+                        style={{ color: "var(--accent-ink)", opacity: isBusy ? 0.4 : 1 }}
+                      >
+                        Clear suppression
                       </button>
                     )}
                     <button

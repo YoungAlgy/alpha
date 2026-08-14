@@ -157,7 +157,15 @@ export async function GET(req: Request) {
   const sb = await supabaseServiceClient();
   let usersQuery = sb
     .from("users")
-    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, created_at")
+    // alpha-drift-r20-06 (found+fixed 2026-08-13): bounced_at/complained_at
+    // were never selected here, so a continuously-subscribed reader who
+    // bounces or complains mid-subscription (a genuine Resend delivery-
+    // suppression event, not a billing change) was invisible in this list --
+    // silently excluded from every future send by the cron's own
+    // .is("bounced_at", null).is("complained_at", null) filter with no way
+    // for an admin to even SEE it happened, let alone fix it. See the new
+    // clear_suppression action below.
+    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, bounced_at, complained_at, created_at")
     .order("created_at", { ascending: false });
   if (q) {
     usersQuery = usersQuery.ilike("email", `%${q}%`);
@@ -180,7 +188,7 @@ export async function GET(req: Request) {
 }
 
 const ActionBodySchema = z.object({
-  action: z.enum(["delete", "grant_free", "revoke_free"]),
+  action: z.enum(["delete", "grant_free", "revoke_free", "clear_suppression"]),
   userId: z.string().uuid(),
 });
 type ActionBody = z.infer<typeof ActionBodySchema>;
@@ -353,6 +361,49 @@ export async function POST(req: Request) {
     if (error) {
       console.error("[admin/users] revoke_free failed:", error.message);
       return NextResponse.json({ error: "Couldn't revoke free access. Try again." }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === "clear_suppression") {
+    // alpha-drift-r20-06 (found+fixed 2026-08-13): bounced_at/complained_at
+    // (this app's DB flags) and Resend's own account-level suppression list
+    // were ONLY ever cleared on a re-consent moment -- a fresh Stripe
+    // checkout (lib/webhook-user-mutation.ts) or a first-time
+    // signup/resubscribe-after-deletion (lib/engine/persist.ts, gated on
+    // verificationType !== "magiclink"). A CONTINUOUSLY-subscribed reader
+    // (never re-checks out, never gets deleted) who bounces or complains
+    // mid-subscription -- e.g. a transient bounce on one day's send -- has
+    // no such moment ahead of them: every later magic-link exchange for an
+    // existing user resolves to "magiclink", so persist.ts's gate never
+    // fires again, and grant_free (the only other clearer) explicitly
+    // REFUSES to act on anyone with a real Stripe subscription. That left a
+    // PAYING subscriber with literally no recovery path -- silently
+    // excluded from every future send by the cron's own
+    // .is("bounced_at", null).is("complained_at", null) filter, forever.
+    // This is deliberately its own action, not folded into grant_free/
+    // revoke_free: deliverability suppression is orthogonal to billing
+    // state, so unlike those two, this one has NO isFreeGrantEligible gate
+    // -- it must work on a real paying subscriber, which is exactly the
+    // case those two can't touch.
+    const { data: row } = await sb
+      .from("users")
+      .select("email")
+      .eq("id", body.userId)
+      .maybeSingle();
+    if (!row) {
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    }
+    const { error } = await sb
+      .from("users")
+      .update({ bounced_at: null, complained_at: null })
+      .eq("id", body.userId);
+    if (error) {
+      console.error("[admin/users] clear_suppression failed:", error.message);
+      return NextResponse.json({ error: "Couldn't clear suppression. Try again." }, { status: 500 });
+    }
+    if (row.email) {
+      await removeResendSuppression(row.email);
     }
     return NextResponse.json({ ok: true });
   }
