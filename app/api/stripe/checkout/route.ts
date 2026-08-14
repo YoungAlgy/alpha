@@ -153,17 +153,27 @@ export async function POST(req: Request) {
       // testers get in with NO card. Normal $5 signups still collect a card.
       payment_method_collection: "if_required",
       // Session-level metadata so the webhook can read it from the Session
-      // event directly. (subscription_data.metadata also gets set on the
-      // resulting Subscription for downstream sub events.)
+      // event directly.
+      //
+      // alpha-drift-r28-07 (2026-08-15): this used to ALSO duplicate the
+      // same two fields onto subscription_data.metadata, "for downstream
+      // sub events" -- but grepped the whole codebase and nothing anywhere
+      // ever reads a Subscription's metadata; the webhook's only read of
+      // either field is `session.metadata` at checkout.session.completed
+      // (app/api/stripe/webhook/route.ts). The Subscription copy was pure
+      // dead weight that existed for a "downstream" use case that was never
+      // built, while adding real exposure: lib/stripe-cancel.ts's account-
+      // deletion cleanup never scrubbed it, so a deleted reader's real name
+      // and city stayed attached to their (canceled but still retrievable)
+      // Subscription object forever. Removed -- the Checkout Session's own
+      // copy below is unavoidable (Stripe Checkout Sessions have no
+      // metadata-update endpoint, confirmed against the SDK's own
+      // SessionUpdateParams type: no `metadata` field exists there), so
+      // that one genuinely can't be cleared on delete and is now disclosed
+      // in app/privacy/page.tsx instead of silently left unmentioned.
       metadata: {
         alpha_first_name: body.firstName ?? "",
         alpha_city: body.city ?? "",
-      },
-      subscription_data: {
-        metadata: {
-          alpha_first_name: body.firstName ?? "",
-          alpha_city: body.city ?? "",
-        },
       },
       success_url: `${origin}/writing?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/checkout`,
