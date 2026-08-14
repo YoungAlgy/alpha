@@ -368,12 +368,24 @@ function formatShort(iso: string): string {
   return d.toLocaleString("en-US", { month: "short", day: "numeric" });
 }
 
+// alpha-drift-r29-03 (2026-08-14): this used to be 5 hardcoded {bg, ink}
+// hex/rgba literals, calibrated for a light cream --paper and never
+// adapting to any of the app's 25 themes -- the only hardcoded colors
+// under app/settings, unlike every other element on this same page (which
+// already reads var(--ink-soft)/var(--accent-ink)/var(--rule)/var(--paper)
+// throughout). Contrast against a dark theme's near-black --paper landed
+// around 2.3-2.5:1, well under WCAG's own 3:1 floor for bold text this
+// size -- the same failure class prior rounds fixed repeatedly for
+// --accent-ink (R23/#159, R24/#169, R25/#180). Now real theme tokens (see
+// app/globals.css's :root + the 7 dark [data-theme] blocks), so each
+// theme's own calibrated palette applies instead of one fixed light-mode
+// set.
 const TAG_COLORS: Record<Tag, { bg: string; ink: string; label: string }> = {
-  new: { bg: "rgba(98, 80, 168, 0.14)", ink: "#5947A5", label: "new" },
-  improved: { bg: "rgba(60, 132, 80, 0.16)", ink: "#2F6B40", label: "improved" },
-  fixed: { bg: "rgba(212, 158, 60, 0.18)", ink: "#8A6324", label: "fixed" },
-  reliability: { bg: "rgba(63, 113, 158, 0.16)", ink: "#2F587C", label: "reliability" },
-  security: { bg: "rgba(176, 65, 65, 0.16)", ink: "#8B3434", label: "security" },
+  new: { bg: "var(--tag-new-bg)", ink: "var(--tag-new-ink)", label: "new" },
+  improved: { bg: "var(--tag-improved-bg)", ink: "var(--tag-improved-ink)", label: "improved" },
+  fixed: { bg: "var(--tag-fixed-bg)", ink: "var(--tag-fixed-ink)", label: "fixed" },
+  reliability: { bg: "var(--tag-reliability-bg)", ink: "var(--tag-reliability-ink)", label: "reliability" },
+  security: { bg: "var(--tag-security-bg)", ink: "var(--tag-security-ink)", label: "security" },
 };
 
 function TagChip({ tag }: { tag: Tag }) {

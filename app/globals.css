@@ -31,6 +31,32 @@
   --radius: 6px;
   --radius-card: 8px;
   --shadow-card: 0 1px 0 rgba(31, 61, 46, 0.06);
+
+  /* alpha-drift-r29-03 (2026-08-14): app/settings/changelog/page.tsx's
+     TagChip badge colors used to be 5 hardcoded {bg, ink} literals -- the
+     ONLY hardcoded colors under app/settings (confirmed via
+     `grep -rnE "#[0-9A-Fa-f]{3,8}|rgba?\(" app/settings`), calibrated for a
+     light cream --paper and never adapting to any of the app's 25 themes,
+     including the 7 dark ones. Contrast computed against the actual
+     composited badge background on a dark theme (e.g. 'new' on mitch:
+     ink #5947A5 over rgba(98,80,168,0.14) composited onto --paper #0A0A0B)
+     landed around 2.3-2.5:1, well under even the 3:1 large-text floor --
+     the same WCAG-contrast failure class prior rounds fixed repeatedly for
+     --accent-ink (R23/#159, R24/#169, R25/#180), just via hardcoded
+     literals instead of a bad per-theme token value. Defined here as real
+     theme tokens (light values, matching every other themed color in this
+     file) with dark-appropriate overrides in each of the 7 dark
+     [data-theme] blocks below -- see the midnight block's own comment. */
+  --tag-new-bg: rgba(98, 80, 168, 0.14);
+  --tag-new-ink: #5947A5;
+  --tag-improved-bg: rgba(60, 132, 80, 0.16);
+  --tag-improved-ink: #2F6B40;
+  --tag-fixed-bg: rgba(212, 158, 60, 0.18);
+  --tag-fixed-ink: #8A6324;
+  --tag-reliability-bg: rgba(63, 113, 158, 0.16);
+  --tag-reliability-ink: #2F587C;
+  --tag-security-bg: rgba(176, 65, 65, 0.16);
+  --tag-security-ink: #8B3434;
 }
 
 [data-theme="soft"] {
@@ -178,6 +204,25 @@
   --paper-deep: #1A2028;
   --ink: #E8D5A8;
   --ink-soft: #9DA8B5;
+  /* alpha-drift-r29-03 (2026-08-14): see the :root block's own comment --
+     the :root defaults for --tag-*-bg/--tag-*-ink are calibrated for a
+     light --paper and fail WCAG contrast on a near-black one. One shared
+     dark-mode palette (lighter, more-saturated ink per hue) applied
+     identically across all 7 dark [data-theme] blocks, the same way
+     color-scheme:dark itself is set identically in every one -- these 7
+     themes' --paper values all sit in the same #08-#15 near-black range,
+     so one calibrated set covers all of them rather than needing 7
+     individually hand-tuned palettes for a MEDIUM-severity badge color. */
+  --tag-new-bg: rgba(147, 120, 220, 0.22);
+  --tag-new-ink: #B8A6E8;
+  --tag-improved-bg: rgba(90, 200, 120, 0.22);
+  --tag-improved-ink: #8FDB9E;
+  --tag-fixed-bg: rgba(224, 158, 60, 0.24);
+  --tag-fixed-ink: #F0C978;
+  --tag-reliability-bg: rgba(90, 170, 220, 0.22);
+  --tag-reliability-ink: #8FC6EC;
+  --tag-security-bg: rgba(210, 90, 90, 0.22);
+  --tag-security-ink: #F0A0A0;
   --rule: #2A323D;
   --accent: #7BA7D9;
   --accent-ink: #A9C7E8;
@@ -276,6 +321,17 @@
    Playfair headings, Bebas eyebrow labels (override below), film grain. */
 [data-theme="mitch"] {
   color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
+  /* alpha-drift-r29-03 -- see the midnight block's own comment */
+  --tag-new-bg: rgba(147, 120, 220, 0.22);
+  --tag-new-ink: #B8A6E8;
+  --tag-improved-bg: rgba(90, 200, 120, 0.22);
+  --tag-improved-ink: #8FDB9E;
+  --tag-fixed-bg: rgba(224, 158, 60, 0.24);
+  --tag-fixed-ink: #F0C978;
+  --tag-reliability-bg: rgba(90, 170, 220, 0.22);
+  --tag-reliability-ink: #8FC6EC;
+  --tag-security-bg: rgba(210, 90, 90, 0.22);
+  --tag-security-ink: #F0A0A0;
   --paper: #0A0A0B;
   --paper-deep: #15151A;
   --ink: #ECE6D8;
@@ -431,6 +487,17 @@
 
 [data-theme="trading-terminal"] {
   color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
+  /* alpha-drift-r29-03 -- see the midnight block's own comment */
+  --tag-new-bg: rgba(147, 120, 220, 0.22);
+  --tag-new-ink: #B8A6E8;
+  --tag-improved-bg: rgba(90, 200, 120, 0.22);
+  --tag-improved-ink: #8FDB9E;
+  --tag-fixed-bg: rgba(224, 158, 60, 0.24);
+  --tag-fixed-ink: #F0C978;
+  --tag-reliability-bg: rgba(90, 170, 220, 0.22);
+  --tag-reliability-ink: #8FC6EC;
+  --tag-security-bg: rgba(210, 90, 90, 0.22);
+  --tag-security-ink: #F0A0A0;
   --paper: #080A11;
   --paper-deep: #0E1019;
   --ink: #D6E8E6;
@@ -524,6 +591,17 @@
 
 [data-theme="studio"] {
   color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
+  /* alpha-drift-r29-03 -- see the midnight block's own comment */
+  --tag-new-bg: rgba(147, 120, 220, 0.22);
+  --tag-new-ink: #B8A6E8;
+  --tag-improved-bg: rgba(90, 200, 120, 0.22);
+  --tag-improved-ink: #8FDB9E;
+  --tag-fixed-bg: rgba(224, 158, 60, 0.24);
+  --tag-fixed-ink: #F0C978;
+  --tag-reliability-bg: rgba(90, 170, 220, 0.22);
+  --tag-reliability-ink: #8FC6EC;
+  --tag-security-bg: rgba(210, 90, 90, 0.22);
+  --tag-security-ink: #F0A0A0;
   --paper: #0E0F13;
   --paper-deep: #16181F;
   --ink: #E8EAF0;
@@ -545,6 +623,17 @@
 
 [data-theme="pirate"] {
   color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
+  /* alpha-drift-r29-03 -- see the midnight block's own comment */
+  --tag-new-bg: rgba(147, 120, 220, 0.22);
+  --tag-new-ink: #B8A6E8;
+  --tag-improved-bg: rgba(90, 200, 120, 0.22);
+  --tag-improved-ink: #8FDB9E;
+  --tag-fixed-bg: rgba(224, 158, 60, 0.24);
+  --tag-fixed-ink: #F0C978;
+  --tag-reliability-bg: rgba(90, 170, 220, 0.22);
+  --tag-reliability-ink: #8FC6EC;
+  --tag-security-bg: rgba(210, 90, 90, 0.22);
+  --tag-security-ink: #F0A0A0;
   --paper: #0F0A08;
   --paper-deep: #1A120D;
   --ink: #F0E6D2;
@@ -566,6 +655,17 @@
 
 [data-theme="miami"] {
   color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
+  /* alpha-drift-r29-03 -- see the midnight block's own comment */
+  --tag-new-bg: rgba(147, 120, 220, 0.22);
+  --tag-new-ink: #B8A6E8;
+  --tag-improved-bg: rgba(90, 200, 120, 0.22);
+  --tag-improved-ink: #8FDB9E;
+  --tag-fixed-bg: rgba(224, 158, 60, 0.24);
+  --tag-fixed-ink: #F0C978;
+  --tag-reliability-bg: rgba(90, 170, 220, 0.22);
+  --tag-reliability-ink: #8FC6EC;
+  --tag-security-bg: rgba(210, 90, 90, 0.22);
+  --tag-security-ink: #F0A0A0;
   --paper: #0A0A0F;
   --paper-deep: #15151B;
   --ink: #F2EFE8;
@@ -607,6 +707,17 @@
 
 [data-theme="casino"] {
   color-scheme: dark; /* alpha-drift-r16-04 -- see the midnight block's own comment */
+  /* alpha-drift-r29-03 -- see the midnight block's own comment */
+  --tag-new-bg: rgba(147, 120, 220, 0.22);
+  --tag-new-ink: #B8A6E8;
+  --tag-improved-bg: rgba(90, 200, 120, 0.22);
+  --tag-improved-ink: #8FDB9E;
+  --tag-fixed-bg: rgba(224, 158, 60, 0.24);
+  --tag-fixed-ink: #F0C978;
+  --tag-reliability-bg: rgba(90, 170, 220, 0.22);
+  --tag-reliability-ink: #8FC6EC;
+  --tag-security-bg: rgba(210, 90, 90, 0.22);
+  --tag-security-ink: #F0A0A0;
   --paper: #0A0A0A;
   --paper-deep: #141414;
   --ink: #F5EFE6;
