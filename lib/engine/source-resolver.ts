@@ -8,6 +8,7 @@ import { normalizeUrl } from "./url-guard";
 import { geminiConfigured } from "./gemini-client";
 import { resolveTopicSignalViaGemini } from "./gemini-search";
 import { isCustomTopic, customTopicText, isZodiacTopicId } from "@/lib/topics";
+import { stripPromptFenceChars } from "@/lib/prompt-fence";
 import { cleanField } from "./text-clean";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
@@ -50,8 +51,22 @@ async function tryFallback(
 
 // A custom ("your own thing") topic has no catalog query set — derive a few
 // from the user's free text. freshness:"pw" at the call site handles recency.
+//
+// alpha-drift-r27-03 (2026-08-14): this used to read customTopicText(topicId)
+// directly -- the RAW, unsanitized accessor. Every other consumer of a
+// custom topic's display text goes through topicLabel(), which applies
+// stripPromptFenceChars() as documented defense-in-depth for any topic id
+// that predates the makeCustomTopic fix (2026-08-13) and is still sitting
+// in a reader's saved topics. This was the one call site that bypassed it --
+// and unlike topic-blurb.ts's <signal>/<topic-request> fences (which need a
+// fence BREAK to matter), the resulting text here becomes Gemini's ENTIRE,
+// unfenced prompt body (resolveTopicSignalViaGemini), so even plain-English
+// injected text works without needing '<'/'>' at all. Sanitizes directly
+// with stripPromptFenceChars rather than going through topicLabel(), which
+// ALSO title-cases the text -- fine for a display label, not appropriate to
+// silently alter the literal search query text sent to Brave/Gemini/You.com.
 function customQueries(topicId: string): string[] {
-  const t = customTopicText(topicId);
+  const t = stripPromptFenceChars(customTopicText(topicId));
   if (!t) return [];
   return [t, `${t} news`, `${t} latest`];
 }
