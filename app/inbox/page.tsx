@@ -161,11 +161,23 @@ export default function InboxPage() {
   // THIS one, a pre-emptive signOut() here would revoke the OTHER tab's
   // brand-new session seconds after it was created. Unneeded anyway --
   // signInWithOtp()/verifyOtp() on the /signin page naturally supersede any
-  // existing session. Kept only for "/welcome" ("I'm new, start fresh"),
-  // the actual shared/library-computer scenario this function exists for.
-  async function clearAndGo(path: string) {
+  // existing session.
+  //
+  // alpha-drift-r26-03 (2026-08-14): the IDENTICAL race applies to the "I'm
+  // new, start fresh" button below, which also calls clearAndGo("/welcome")
+  // from a context where THIS tab already believes signedIn is false -- same
+  // stale-snapshot exposure as /signin, same fix. The two OTHER /welcome
+  // call sites (accessEnded's "Start a new letter →", and "Sign out" in the
+  // no-letter-yet screen's signedIn branch) are different: both fire from a
+  // context where this tab's own signed-in state is real and current, so
+  // there's a genuine session here worth clearing before navigating, and
+  // skipping it would reintroduce the original signed-in-reader-bounced-
+  // back-from-/welcome loop this function exists to prevent. skipSignOut
+  // lets each call site opt into whichever behavior actually matches what it
+  // knows about its own auth state, instead of keying it off the path alone.
+  async function clearAndGo(path: string, opts: { skipSignOut?: boolean } = {}) {
     try {
-      if (path !== "/signin" && supabaseConfigured()) await supabaseClient().auth.signOut();
+      if (path !== "/signin" && !opts.skipSignOut && supabaseConfigured()) await supabaseClient().auth.signOut();
     } catch (e) {
       // Logged, not silent: this is the shared/library-computer sign-out
       // path (see the comment above) -- a swallowed failure here means the
@@ -282,7 +294,7 @@ export default function InboxPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => clearAndGo("/welcome")}
+                  onClick={() => clearAndGo("/welcome", { skipSignOut: true })}
                   className="alpha-ui text-sm underline underline-offset-4"
                   style={{ color: "var(--ink-soft)" }}
                 >
