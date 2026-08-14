@@ -466,14 +466,25 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     // apply for other kinds of bad items, now also covering a bad ref shape,
     // not just a missing headline/body.
     const isStringOrAbsent = (v: unknown): boolean => v === undefined || v === null || typeof v === "string";
+    // alpha-drift-r29-01 (2026-08-14, self-audit): isStringOrAbsent's own
+    // undefined/null tolerance was the gap here -- `r?.label`/`r?.note` on a
+    // NULL ARRAY ELEMENT (not a bad .label/.note field, the element itself
+    // being `null`, e.g. `supplementaryRefs: [null, {...}]`) both evaluate to
+    // `undefined`, which isStringOrAbsent correctly treats as "field absent,
+    // fine" -- so the guard below never flagged it, and the null element
+    // reached the unguarded `r.label`/`r.note` reads in the .map() ~30 lines
+    // down, throwing a TypeError uncaught anywhere in this call chain. The
+    // exact failure this whole shape guard was built to prevent (r28-09),
+    // just via an array-ELEMENT-shape gap the guard's per-field checks never
+    // covered. `r === null || typeof r !== "object"` rejects the malformed
+    // element itself before ever touching .label/.note.
+    const isValidRefEntry = (r: unknown): boolean =>
+      r !== null && typeof r === "object" && isStringOrAbsent((r as { label?: unknown }).label) && isStringOrAbsent((r as { note?: unknown }).note);
     const shapeValidItems = parsed.items.filter((it) => {
       if (typeof it?.headline !== "string" || it.headline.trim().length === 0) return false;
       if (typeof it?.body !== "string" || it.body.trim().length === 0) return false;
       if (it.primaryRef && (!isStringOrAbsent(it.primaryRef.label) || !isStringOrAbsent(it.primaryRef.note))) return false;
-      if (
-        Array.isArray(it.supplementaryRefs) &&
-        it.supplementaryRefs.some((r) => !isStringOrAbsent(r?.label) || !isStringOrAbsent(r?.note))
-      ) {
+      if (Array.isArray(it.supplementaryRefs) && it.supplementaryRefs.some((r) => !isValidRefEntry(r))) {
         return false;
       }
       return true;

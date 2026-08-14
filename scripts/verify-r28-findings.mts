@@ -41,12 +41,19 @@ console.log("(2) app/api/stripe/webhook/route.ts: dispute alert fires before the
   check("(2c) the !customerId branch was found", !!noCustomerMatch);
   const noCustomerBlock = noCustomerMatch ? noCustomerMatch[1] : "";
   check("(2d) the specific 'couldn't identify the subscriber' alert is sent inside that branch", /sendOpsAlert\(\s*"alpha\. dispute opened -- couldn't identify the subscriber"/.test(noCustomerBlock));
-  // Ordering proof: the alert call must appear BEFORE the retrieveError rethrow
-  // within the same block, not just both be present somewhere in the file.
+  // alpha-drift-r29-02 (2026-08-14, self-audit): round 29 added a day-bucket
+  // to this alert's key AND narrowed the rethrow to fire only on a
+  // TRANSIENT failure (isTransientStripeError), not unconditionally --
+  // both changes land inside this same branch, so the exact ordering/
+  // conditional-shape assertions this check used to make no longer match
+  // verbatim. The underlying claim this check exists to prove (alert fires
+  // before whatever throw follows) still holds; the precise corrected
+  // shape (day-bucketed key, transient-only rethrow) is now owned by
+  // verify-r29-findings.mts checks 2c-2f, not re-duplicated here.
   const alertIdx = noCustomerBlock.indexOf("sendOpsAlert(");
-  const throwIdx = noCustomerBlock.indexOf("if (retrieveError) throw retrieveError;");
-  check("(2e) the alert fires BEFORE the conditional rethrow (both found, alert first)", alertIdx >= 0 && throwIdx >= 0 && alertIdx < throwIdx);
-  check("(2f) the rethrow is now conditional on retrieveError, not unconditional", /if \(retrieveError\) throw retrieveError;/.test(noCustomerBlock));
+  const throwIdx = noCustomerBlock.indexOf("throw retrieveError;");
+  check("(2e) the alert fires BEFORE whatever rethrow follows (both found, alert first -- exact conditional shape now owned by verify-r29-findings.mts)", alertIdx >= 0 && throwIdx >= 0 && alertIdx < throwIdx);
+  check("(2f) a rethrow of retrieveError still exists in this branch (now gated on isTransientStripeError -- see verify-r29-findings.mts)", /throw retrieveError;/.test(noCustomerBlock));
 }
 
 console.log("(3) SEO metadata: 6 indexable pages carry siteName + og:image + twitter summary_large_image");
@@ -149,7 +156,17 @@ console.log("(9) lib/engine/topic-blurb.ts: finalizeBlurb's shape guard now vali
   const src = readFileSync(new URL("../lib/engine/topic-blurb.ts", import.meta.url), "utf8");
   check("(9a) isStringOrAbsent helper exists", /const isStringOrAbsent = \(v: unknown\): boolean => v === undefined \|\| v === null \|\| typeof v === "string";/.test(src));
   check("(9b) primaryRef.label/.note are validated, dropping the item if either is a truthy non-string", /if \(it\.primaryRef && \(!isStringOrAbsent\(it\.primaryRef\.label\) \|\| !isStringOrAbsent\(it\.primaryRef\.note\)\)\) return false;/.test(src));
-  check("(9c) supplementaryRefs[].label/.note are validated the same way", /it\.supplementaryRefs\.some\(\(r\) => !isStringOrAbsent\(r\?\.label\) \|\| !isStringOrAbsent\(r\?\.note\)\)/.test(src));
+  // alpha-drift-r29-01 (2026-08-14, self-audit): round 29 found this exact
+  // r?.label/r?.note optional-chaining form let a NULL array element (not
+  // a bad field, the element itself) through -- `r?.label` on r=null is
+  // `undefined`, which isStringOrAbsent treats as valid. Replaced with
+  // isValidRefEntry, which rejects non-object entries outright before ever
+  // touching .label/.note. The exact corrected shape and a behavioral
+  // reproduction of the null-element crash are now owned by
+  // verify-r29-findings.mts checks 1a-1j, not re-duplicated here -- this
+  // check now only confirms supplementaryRefs entries are still validated
+  // in SOME form, not the precise (and since-corrected) predicate shape.
+  check("(9c) supplementaryRefs entries are still validated in the shape guard (exact predicate now owned by verify-r29-findings.mts)", /it\.supplementaryRefs\.some\(\(r\) => !isValidRefEntry\(r\)\)/.test(src));
   check("(9d) the corrected comment no longer claims sanitizeVoice 'wouldn't crash' on bad input", /which was never actually true for this input class/.test(src));
 
   // Behavioral proof: replicate isStringOrAbsent's real logic (it's a local
