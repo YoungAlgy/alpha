@@ -332,7 +332,9 @@ export default function TopicsPage() {
                             onClick={() => toggle(id as TopicId)}
                             disabled={chipAtLimit}
                             aria-pressed={chipPicked}
-                            className="alpha-ui text-sm px-3 py-2 rounded-full inline-flex items-center gap-1.5"
+                            // alpha-drift-r20-11 (found+fixed 2026-08-13):
+                            // same touch-target bump as the gender toggles.
+                            className="alpha-ui text-sm px-3 py-2.5 rounded-full inline-flex items-center gap-1.5"
                             style={{
                               background: chipPicked ? "var(--callout-bg)" : "transparent",
                               border: `1.5px solid ${chipPicked ? "var(--accent)" : "var(--rule)"}`,
@@ -410,7 +412,12 @@ export default function TopicsPage() {
             <button
               type="submit"
               disabled={picked.length >= poolMax || !customText.trim()}
-              className="alpha-ui text-sm underline underline-offset-4"
+              // alpha-drift-r20-10 (found+fixed 2026-08-13): live-measured at
+              // 27x20px, under the WCAG 2.5.8 AA 24x24 minimum. p-2/-m-2
+              // grows the tap target without shifting the visual glyph or
+              // its position relative to the input -- same pattern this
+              // file already uses on the topic-pill remove button above.
+              className="alpha-ui text-sm underline underline-offset-4 p-2 -m-2"
               style={{
                 color: "var(--accent-ink)",
                 opacity: picked.length >= poolMax || !customText.trim() ? 0.4 : 1,
@@ -561,7 +568,14 @@ export default function TopicsPage() {
           </p>
         )}
 
-        <div className="sticky bottom-4 flex items-center justify-between gap-4 pt-4">
+        {/* alpha-drift-r20-09 (found+fixed 2026-08-13): this bar had no
+            background at all -- just position:sticky with transparent
+            content -- so scrolling pill cards visually overlapped the
+            Continue/Save button for nearly the entire scroll on mobile.
+            alpha-card (solid paper background + border + shadow) is the
+            same "floating over content" treatment InstallPrompt.tsx already
+            uses for its own fixed bottom banner. */}
+        <div className="alpha-card sticky bottom-4 flex items-center justify-between gap-4 p-4">
           <span
             role="status"
             aria-live="polite"

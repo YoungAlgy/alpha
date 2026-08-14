@@ -121,7 +121,12 @@ export default function YouPage() {
                   type="button"
                   aria-pressed={active}
                   onClick={() => { setGender(active ? null : g.value); tap(); }}
-                  className="alpha-ui text-sm px-4 py-2 rounded-full border transition"
+                  // alpha-drift-r20-11 (found+fixed 2026-08-13): py-2 measured
+                  // ~38px tall live, 2px under the commonly-cited 40px mobile
+                  // touch-target guideline (still passed WCAG's stricter 24px
+                  // floor, but worth the bump since these sit right next to
+                  // each other in a row).
+                  className="alpha-ui text-sm px-4 py-2.5 rounded-full border transition"
                   style={{
                     borderColor: active ? "var(--accent)" : "var(--rule)",
                     background: active ? "var(--callout-bg)" : "transparent",
@@ -137,7 +142,9 @@ export default function YouPage() {
               type="button"
               aria-pressed={gender === "skip"}
               onClick={() => { setGender(gender === "skip" ? null : "skip"); tap(); }}
-              className="alpha-ui text-sm px-4 py-2 rounded-full border transition"
+              // alpha-drift-r20-11: same touch-target bump as the two gender
+              // buttons above.
+              className="alpha-ui text-sm px-4 py-2.5 rounded-full border transition"
               style={{
                 borderColor: gender === "skip" ? "var(--accent)" : "var(--rule)",
                 background: gender === "skip" ? "var(--callout-bg)" : "transparent",
