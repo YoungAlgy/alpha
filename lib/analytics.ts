@@ -32,6 +32,22 @@ let queue: Array<() => void> = [];
 // it was captured, so it's the one place that actually closes this for good.
 const ISSUE_URL_PATTERN = /\/inbox\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
+// alpha-drift-r23-03 (found+fixed 2026-08-14): GlobalErrorListeners.tsx
+// (this round) tracks "unhandled_rejection"/"uncaught_error" with the raw
+// `.message` text of whatever error/rejection it catches -- by design an
+// UNBOUNDED-scope catch-all (any window-level error nothing else handled),
+// not a fixed set of known-safe event shapes like every other track() call
+// site in this app. A live audit of every current throw site found none
+// that interpolate raw user-submitted text (email, name) into a thrown
+// message today, but nothing GUARANTEES a future one won't -- this is
+// defense in depth for that unbounded surface, not a fix for a proven
+// leak. Same email-shaped-substring scrub PostHog's own recommended PII
+// scrubbing pattern uses; deliberately simple (doesn't attempt full RFC
+// 5322 validation) since this only needs to catch the common case well
+// enough to keep an accidental email out of an error message, not validate
+// a form field.
+const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
 // alpha-drift-r20-01 (found+fixed 2026-08-13, self-audit of the fix above):
 // the original version only checked `typeof value === "string"` on the
 // TOP-LEVEL properties -- but PostHog's autocapture emits $elements as an
@@ -47,7 +63,9 @@ const ISSUE_URL_PATTERN = /\/inbox\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 // to catch.
 function redactValue(value: unknown): unknown {
   if (typeof value === "string") {
-    return value.includes("/inbox/") ? value.replace(ISSUE_URL_PATTERN, "/inbox/[id]") : value;
+    let v = value.includes("/inbox/") ? value.replace(ISSUE_URL_PATTERN, "/inbox/[id]") : value;
+    if (v.includes("@")) v = v.replace(EMAIL_PATTERN, "[email]");
+    return v;
   }
   if (Array.isArray(value)) {
     return value.map(redactValue);

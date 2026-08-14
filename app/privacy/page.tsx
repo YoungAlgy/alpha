@@ -64,9 +64,13 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Usage signals:</strong> basic product analytics (like page
-          views), only if we&apos;ve turned it on for the app. Off by default.
-          Used only to improve the product, never sold. We don&apos;t track
-          which individual letters you read or collect device fingerprinting.
+          views) and error reports when something breaks in your browser, only
+          if we&apos;ve turned it on for the app. Off by default. Used only to
+          improve the product, never sold. We don&apos;t track which
+          individual letters you read or collect device fingerprinting. Error
+          reports carry a technical description of what went wrong (never
+          anything you typed into a form), and any email address that
+          somehow ends up in one is stripped before it&apos;s recorded.
         </li>
       </ul>
 
@@ -89,24 +93,30 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Anthropic (Claude)</strong> writes the short editor&apos;s note at
-          the top of your letter, and also writes each topic section when our
-          free-tier writers below can&apos;t. Your name, city, topic prefs,
-          gender, a generation label derived from your birthday (like
-          &quot;Millennial,&quot; never the exact date), and any optional
-          job/project/fun context you shared are included in the generation
-          request so the letter feels written for you; Anthropic runs on a
-          paid tier that does not retain that data for training.
+          the top of your letter — the one part of the letter built from your
+          name, city, topic prefs, gender, a generation label derived from
+          your birthday (like &quot;Millennial,&quot; never the exact date),
+          and any optional job/project/fun context you shared, so the note
+          feels written for you. Anthropic runs on a paid tier that does not
+          retain that data for training. Anthropic can also write a topic
+          section itself, as the last-resort tier if the writers below all
+          come up short for that topic — in that role it never sees your
+          profile, only the topic and that day&apos;s research, same as the
+          writers below.
         </li>
         <li>
           <strong>Google (Gemini), Groq, and DeepSeek</strong> write each day&apos;s
           topic sections first, cheapest-tier first, with Anthropic stepping in
-          only if all three come up short. Anthropic still writes your editor&apos;s
-          note directly, falling back to these three only if it&apos;s briefly
-          down. Whichever one writes a section sees the same fields Anthropic
-          does. We use Google&apos;s free Gemini API tier for this, and Google&apos;s
-          own terms for that free tier allow them to use what we send to
-          improve their products — unlike Anthropic&apos;s paid-tier guarantee
-          above, we can&apos;t promise Google won&apos;t.
+          only if all three come up short. None of the four ever see your
+          profile when writing a topic section — only the topic itself and
+          that day&apos;s research. Gemini, Groq, and DeepSeek also back up the
+          editor&apos;s note if Anthropic is briefly down; in that specific
+          role, whichever one steps in sees the same profile fields
+          Anthropic&apos;s own editor&apos;s note does. We use Google&apos;s free Gemini
+          API tier for this, and Google&apos;s own terms for that free tier allow
+          them to use what we send to improve their products — unlike
+          Anthropic&apos;s paid-tier guarantee above, we can&apos;t promise Google
+          won&apos;t.
         </li>
         <li>
           <strong>Brave Search</strong>, with <strong>Google (Gemini)</strong> and{" "}
