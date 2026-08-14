@@ -41,9 +41,30 @@ on:
 permissions:
   contents: read # only need to read the repo to check config files
 
+# alpha-drift-r23-06 (found+fixed 2026-08-14): mirrors daily-send.yml's own
+# concurrency block. Without this, an ordinary push landing close to the
+# new Monday 13:00 UTC schedule slot (or repo-keepalive.yml's own Monday
+# 12:00 UTC auto-push, see that file) could launch a second, fully
+# overlapping run of these jobs -- wasted Actions minutes, not unsafe (all
+# three jobs are read-only checks with no shared mutable state), but cheap
+# to close outright.
+concurrency:
+  group: alpha-wrangler-config-guard
+  cancel-in-progress: false
+
 jobs:
   guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # alpha-drift-r23-01 (found+fixed 2026-08-14): the r22-01 schedule
+    # trigger above was added specifically for the dependency-audit job
+    # (see that job's own comment) -- but GitHub Actions has no per-job
+    # trigger syntax, `on:` scopes the WHOLE workflow, so the schedule
+    # event silently also fired this job and `build` below every Monday
+    # with no corresponding commit, contradicting the r22-01 comment's own
+    # stated intent. Excluded here so only push/workflow_dispatch run it,
+    # same as before r22-01 ever touched this file.
+    if: github.event_name != 'schedule'
     steps:
       # Pinned to a commit SHA (v4's HEAD as of 2026-08-05), not the mutable
       # `v4` tag -- standard supply-chain hardening, cheap to do since this
@@ -224,6 +245,16 @@ jobs:
   # next scheduled send.
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # alpha-drift-r23-01 (found+fixed 2026-08-14): same fix as the guard
+    # job above -- this job should only run on push/workflow_dispatch, not
+    # the r22-01 schedule trigger meant for dependency-audit alone. Also
+    # closes a real risk r23 flagged: without a timeout-minutes bound
+    # (GitHub defaults to 360 when omitted), a build that HANGS rather than
+    # fails outright (this job's own comment below documents a real prior
+    # next/font/google fetch issue) could now occupy a runner for hours,
+    # unattended, on a schedule-triggered run nobody's watching.
+    if: github.event_name != 'schedule'
     permissions:
       contents: read
     steps:
@@ -288,6 +319,7 @@ jobs:
   # which push alone would never re-check).
   dependency-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
