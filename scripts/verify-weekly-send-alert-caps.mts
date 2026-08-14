@@ -84,6 +84,21 @@ console.log("(4) source: the ops-alert email lines use the SAME capped helper, n
   check("(4g) the alert's failures line still surfaces the true remainder count when truncated", /failures\.length > EMAIL_LIST_CAP \? ` \(\+\$\{failures\.length - EMAIL_LIST_CAP\} more\)` : ""/.test(src));
 }
 
+console.log("(7) alpha-drift-r23-04 (found+fixed 2026-08-14, self-audit): the stuck-claim RECLAIM block (runs BEFORE the per-subscriber send loop) shares the SAME cap, not a separately hand-written unbounded list");
+{
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
+
+  check("(7a) EMAIL_LIST_CAP/capList/capListLine now live near the top of the handler, before the reclaim block, not after it", (() => {
+    const capDefIdx = src.indexOf("const EMAIL_LIST_CAP = 25;");
+    const reclaimMatch = src.match(/\.from\("issues"\)\s*\.update\(\{ delivered_at: null \}\)/);
+    return capDefIdx > -1 && !!reclaimMatch && reclaimMatch.index !== undefined && capDefIdx < reclaimMatch.index;
+  })());
+  check("(7b) the reclaim block's console.warn uses the capped line, not a raw unbounded join", /RECLAIMED \$\{reclaimed!\.length\} stuck claim\(s\)[^`]*\$\{idsLine\}/.test(src));
+  check("(7c) the reclaim block's sendOpsAlert body ALSO uses the capped line", /a prior run likely died between claiming and Resend confirming\. Reclaimed and will be retried this run\. user_id\(s\): \$\{idsLine\}/.test(src));
+  check("(7d) idsLine is built via capListLine, not a separately hand-written truncation", /const idsLine = capListLine\(ids\);/.test(src));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("WEEKLY-SEND-ALERT-CAPS VERIFICATION FAILED");

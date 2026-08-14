@@ -154,6 +154,19 @@ for (const [customerId, sub] of subsByCustomer) {
 }
 
 // --- 5. Report + alert. ---
+// alpha-drift-r23-05 (found+fixed 2026-08-14): the loop above scales with
+// EVERY user who has a stripe_customer_id (paginated in 1000-row chunks,
+// no upper cap on total users checked) -- a systemic webhook failure or
+// schema-drift bug (this script's own header comment names both as real
+// causes) can desync a large slice of the paying user base at once, and
+// `findings` used to join fully unbounded into the ops-alert email body.
+// Same bug class round 22 fixed in weekly-send/route.ts. Only the EMAIL is
+// capped (with a real remainder count so truncation is never silent) --
+// the console.log'd summary below is deliberately left uncapped: unlike an
+// email, a GitHub Actions log isn't a deliverability/readability concern,
+// and it's the one place someone would actually go to get the FULL list
+// for real remediation work if a genuinely large-scale desync happened.
+const FINDINGS_CAP = 25;
 const summary = {
   checkedAt: new Date().toISOString(),
   usersWithStripeCustomerId: users.length,
@@ -164,7 +177,9 @@ const summary = {
 console.log(JSON.stringify(summary, null, 2));
 
 if (findings.length > 0) {
-  const body = findings.map((f) => `- [${f.type}] ${f.detail} (stripe customer ${f.stripeCustomerId}${f.userId ? `, user ${f.userId}` : ""})`).join("\n");
+  const body =
+    findings.slice(0, FINDINGS_CAP).map((f) => `- [${f.type}] ${f.detail} (stripe customer ${f.stripeCustomerId}${f.userId ? `, user ${f.userId}` : ""})`).join("\n") +
+    (findings.length > FINDINGS_CAP ? `\n\n(+${findings.length - FINDINGS_CAP} more not shown -- see the full findings list in this run's own GitHub Actions log)` : "");
   // Best-effort: never blocks the workflow from reporting its own exit code
   // below, which is the durable signal the workflow step reads.
   await sendOpsAlert(

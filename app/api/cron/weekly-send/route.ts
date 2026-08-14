@@ -215,6 +215,31 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // alpha-drift-r22-01 (found+fixed 2026-08-14): every per-subscriber email
+  // list this route builds used to go into the ops-alert email AND the
+  // CRON_SECRET-gated JSON response completely unbounded -- fine on an
+  // ordinary day (a handful of names), but a genuinely bad run (a systemic
+  // outage failing most of the subscriber list) could dump thousands of
+  // real subscriber email addresses into one alert email and one API
+  // response with no cap at all. One shared cap + one shared helper feeds
+  // every list this route builds, so they can't independently drift apart
+  // the way `failures`'s alert-email copy and JSON-summary copy already had.
+  //
+  // alpha-drift-r23-04 (found+fixed 2026-08-14, self-audit): this used to
+  // live much further down, right before the JSON summary is built -- but
+  // the stuck-claim RECLAIM block runs long before that point and builds
+  // its own separate, still-uncapped user_id list into an ops-alert email
+  // (a prior run dying mid-send, exactly the scenario that block exists to
+  // detect and recover from, is also exactly the scenario that could
+  // realistically reclaim a large slice of the subscriber list at once).
+  // Moved to the top of the handler so every list-building site in this
+  // route -- not just the ones after this comment used to sit -- shares the
+  // same cap.
+  const EMAIL_LIST_CAP = 25;
+  const capList = (arr: string[]) => arr.slice(0, EMAIL_LIST_CAP);
+  const capListLine = (arr: string[]) =>
+    capList(arr).join(", ") + (arr.length > EMAIL_LIST_CAP ? ` (+${arr.length - EMAIL_LIST_CAP} more)` : "");
+
   // Allow ?weekOf=YYYY-MM-DD override (useful for backfills + admin testing
   // when the schedule hasn't fired yet). Defaults to today (the send date).
   // CRON: GitHub Actions' daily-send.yml drives every send, "0 14 * * *"
@@ -464,9 +489,10 @@ export async function GET(req: Request) {
         `[cron/weekly-send] stuck-claim reclaim query failed: ${reclaimErr.message} — continuing without reclaiming.`
       );
     } else if ((reclaimed?.length ?? 0) > 0) {
-      const ids = reclaimed!.map((r) => r.user_id).join(", ");
+      const ids = reclaimed!.map((r) => r.user_id);
+      const idsLine = capListLine(ids);
       console.warn(
-        `[cron/weekly-send] RECLAIMED ${reclaimed!.length} stuck claim(s) for weekOf=${weekOf} (delivered_at was set with no proof of send, older than ${RECLAIM_SAFETY_MARGIN_MS / 60000}min): ${ids}`
+        `[cron/weekly-send] RECLAIMED ${reclaimed!.length} stuck claim(s) for weekOf=${weekOf} (delivered_at was set with no proof of send, older than ${RECLAIM_SAFETY_MARGIN_MS / 60000}min): ${idsLine}`
       );
       // Visible on purpose: a reclaim means a PRIOR run genuinely died
       // mid-send. That's worth Algy knowing happened even though this run
@@ -474,7 +500,7 @@ export async function GET(req: Request) {
       // "nothing noticed" gap one step over. Best-effort, never blocks.
       await sendOpsAlert(
         `[alpha] Reclaimed ${reclaimed!.length} stuck claim(s)`,
-        `weekOf=${weekOf}: ${reclaimed!.length} subscriber(s) had delivered_at set with no proof of send (older than ${RECLAIM_SAFETY_MARGIN_MS / 60000} minutes) -- a prior run likely died between claiming and Resend confirming. Reclaimed and will be retried this run. user_id(s): ${ids}`
+        `weekOf=${weekOf}: ${reclaimed!.length} subscriber(s) had delivered_at set with no proof of send (older than ${RECLAIM_SAFETY_MARGIN_MS / 60000} minutes) -- a prior run likely died between claiming and Resend confirming. Reclaimed and will be retried this run. user_id(s): ${idsLine}`
       );
     }
   }
@@ -1177,22 +1203,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // alpha-drift-r22-01 (found+fixed 2026-08-14): every one of the per-
-  // subscriber email lists below used to go into the ops-alert email AND
-  // the CRON_SECRET-gated JSON response completely unbounded -- fine on an
-  // ordinary day (a handful of names), but a genuinely bad run (a systemic
-  // outage failing most of the subscriber list) could dump thousands of
-  // real subscriber email addresses into one alert email and one API
-  // response with no cap at all. `failures` already had a `.slice(0, 25)`
-  // in the JSON summary below, but even THAT wasn't shared with the alert
-  // email's own `failures.map(...).join("; ")`, which used the full,
-  // uncapped array -- two independent copies of "the same list, capped"
-  // that had already drifted apart. One shared cap + one shared set of
-  // capped slices now feeds both surfaces, so they can't drift again.
-  const EMAIL_LIST_CAP = 25;
-  const capList = (arr: string[]) => arr.slice(0, EMAIL_LIST_CAP);
-  const capListLine = (arr: string[]) =>
-    capList(arr).join(", ") + (arr.length > EMAIL_LIST_CAP ? ` (+${arr.length - EMAIL_LIST_CAP} more)` : "");
   const cappedBackupSharedSentEmails = capList(backupSharedSentEmails);
   const cappedBackupFreshSentEmails = capList(backupFreshSentEmails);
   const cappedBackupStaleSentEmails = capList(backupStaleSentEmails);
