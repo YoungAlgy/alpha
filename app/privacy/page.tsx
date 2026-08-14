@@ -47,6 +47,13 @@ export default function PrivacyPage() {
           <strong>Account basics:</strong> your first name, email address, and city.
         </li>
         <li>
+          <strong>Optional personalization:</strong> your birthday and gender, if
+          you choose to share them. Both are optional and only tune the letter
+          (which topics unlock, how it&apos;s voiced) — birthday unlocks the daily
+          Zodiac topic and, as a broad generation label like &quot;Millennial&quot;
+          (never the exact date), shapes tone.
+        </li>
+        <li>
           <strong>Your interests:</strong> the topics you picked (5-25 depending on
           your plan tier), your chosen theme, and any optional context you shared
           (what you do, what you&apos;re working on, a non-work interest).
@@ -80,20 +87,23 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Anthropic (Claude)</strong> generates the content of your letter
-          from publicly-sourced material. Your name, city, and topic prefs are
-          included in the generation request so the letter feels written for you;
-          Anthropic does not retain that data for training.
+          from publicly-sourced material. Your name, city, topic prefs, gender,
+          a generation label derived from your birthday (like &quot;Millennial,&quot;
+          never the exact date), and any optional job/project/fun context you
+          shared are included in the generation request so the letter feels
+          written for you; Anthropic does not retain that data for training.
         </li>
         <li>
           <strong>Google (Gemini), Groq, and DeepSeek</strong> are backup writers.
           If Anthropic is down or unavailable, we automatically fall back to one
-          of these so your letter still arrives. They see the same name, city,
-          and topic prefs Anthropic does, only when a fallback actually fires.
+          of these so your letter still arrives. They see the same fields
+          Anthropic does, only when a fallback actually fires.
         </li>
         <li>
-          <strong>Brave Search</strong>, with <strong>Google (Gemini)</strong> as a
-          backup, finds the sources your letter links to. Your topic picks go
-          out as search queries; nothing else about you does.
+          <strong>Brave Search</strong>, with <strong>Google (Gemini)</strong> and{" "}
+          <strong>You.com</strong> as backups, finds the sources your letter links
+          to. Your topic picks go out as search queries; nothing else about you
+          does.
         </li>
         <li>
           <strong>Resend</strong> delivers letters and account emails.
