@@ -46,11 +46,28 @@ export async function POST() {
   }
 
   const svc = await supabaseServiceClient();
-  const { data: row } = await svc
+  // alpha-drift-r26-04 (2026-08-14): this used to discard `error` here,
+  // so a genuinely failed read (never throws, resolves as {data:null,
+  // error:{...}}) was indistinguishable from "no row" and fell straight
+  // into the same 200 {changed:false} "nothing to do" response below --
+  // this route's own purpose is keeping the letter-delivery mirror in
+  // sync, so a silently-swallowed read failure means it silently stays
+  // stale with zero signal, undermining the reason the route exists.
+  // Every write later in this function already checks error and alerts
+  // on failure; this read was the one gap.
+  const { data: row, error: rowError } = await svc
     .from("users")
     .select("email, stripe_customer_id")
     .eq("id", user.id)
     .maybeSingle();
+  if (rowError) {
+    console.error("[account/email/reconcile] mirror read failed:", rowError.message);
+    sendOpsAlert(
+      "alpha: email mirror read failed",
+      `Reconcile couldn't read public.users for user ${user.id} before comparing it to their confirmed auth email. Their mirror may be stale with nothing recorded here to show it. DB error: ${rowError.message}`
+    ).catch(() => {});
+    return NextResponse.json({ error: "Couldn't sync. Try again." }, { status: 500 });
+  }
 
   // Already in sync (or no row) — nothing to do.
   if (!row || (row.email ?? "").toLowerCase() === authEmail) {
