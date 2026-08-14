@@ -56,7 +56,17 @@ export async function POST(req: Request) {
 
   let body: Body = {};
   try {
-    body = (await req.json()) as Body;
+    const parsed = (await req.json()) as Body | null;
+    // alpha-drift-r31-02 (2026-08-14): a literal JSON `null` body parses
+    // successfully -- this catch block only ever sees a genuine parse
+    // failure -- so without this check `body` was reassigned straight to
+    // `null`, and the very next line's `body.direction` read threw an
+    // unhandled TypeError instead of the clean "direction must be..." 400
+    // a missing/malformed body already gets. Normalizing a null parse to
+    // `{}` reuses that exact existing validation path rather than adding a
+    // new one -- matches this catch block's own "empty body acceptable,
+    // validated below" philosophy for the parse-failure case.
+    if (parsed && typeof parsed === "object") body = parsed;
   } catch {
     // empty body acceptable, validated below
   }

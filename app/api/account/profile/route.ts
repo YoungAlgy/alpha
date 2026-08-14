@@ -78,6 +78,17 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
   }
+  // alpha-drift-r31-02 (2026-08-14): a literal JSON `null` body parses
+  // successfully (`Request.json()` on `null` doesn't throw -- it's valid
+  // JSON), so the try/catch above never fires and `body` becomes the JS
+  // value `null`. Every property read below (`body.firstName` etc.) would
+  // then throw an unhandled TypeError instead of this route's own clean
+  // 400 -- the same guard sibling routes get for free from a Zod
+  // `.parse()`, which this route intentionally doesn't use (its fields are
+  // individually validated via cleanRequired/LIMITS below, not one schema).
+  if (typeof body !== "object" || body === null) {
+    return NextResponse.json({ error: "Bad request." }, { status: 400 });
+  }
 
   const firstName = cleanRequired(body.firstName, LIMITS.first_name);
   if ("error" in firstName) {

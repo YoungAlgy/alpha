@@ -49,6 +49,13 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
   }
+  // alpha-drift-r31-02 (2026-08-14): a literal JSON `null` body parses
+  // successfully -- the try/catch above never fires -- so without this,
+  // `body.topics` below would throw an unhandled TypeError reading a
+  // property off `null` instead of this route's own clean 400.
+  if (typeof body !== "object" || body === null) {
+    return NextResponse.json({ error: "Bad request." }, { status: 400 });
+  }
 
   // Cheap, DB-free shape check first (array, length ceiling, empty floor,
   // string-type scan) -- a malformed body must 400 in O(1) without ever
