@@ -151,6 +151,24 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // alpha-drift-r30-02 (2026-08-14): components/Footer.tsx used to seed its
+  // copyright year via `useState(() => new Date().getFullYear())`, on the
+  // belief that a useState lazy initializer "freezes" the value from the
+  // server render. It doesn't -- the initializer function re-executes fresh
+  // on the CLIENT'S OWN hydration render too, so the statically-prerendered
+  // HTML (baked at build time) and the client's hydration pass (evaluated
+  // against the visitor's live clock) only agreed within the same calendar
+  // year, producing a real hydration text mismatch on 8+ static pages the
+  // moment a page is visited after a Dec-to-Jan rollover with no fresh
+  // deploy since. Next's `env` config is the one mechanism that actually
+  // freezes a value identically into BOTH the server-prerendered output and
+  // the client bundle -- it's a compile-time literal substitution, not a
+  // runtime read, so `process.env.NEXT_PUBLIC_BUILD_YEAR` resolves to the
+  // exact same string wherever the bundle runs. Computed once per `next
+  // build` invocation, no manual Algy step needed.
+  env: {
+    NEXT_PUBLIC_BUILD_YEAR: String(new Date().getFullYear()),
+  },
 };
 
 export default nextConfig;
