@@ -125,6 +125,19 @@ export async function generateEditorNote(
   // existing test) is unaffected.
   fallbackTopicIds: Set<string> = new Set()
 ): Promise<string> {
+  // alpha-drift-r21-05 (found+fixed 2026-08-14, self-audit of round 20's own
+  // findLexicalTells retry): assemble.ts wraps this whole call in
+  // withDeadline(), which never cancels an orphaned invocation -- if the
+  // caller times out, this function keeps running to completion in the
+  // background regardless, and assemble.ts's own comment documents the
+  // accepted worst case as "one extra Opus call." The retry below adds a
+  // SECOND possible Claude call inside one invocation, which can double
+  // that already-wasted spend on a result nobody will ever read. Tracked
+  // here (not threaded in from assemble.ts, to avoid coupling this file to
+  // that caller's specific deadline constant) so the retry can skip itself
+  // once enough time has already elapsed that the caller almost certainly
+  // gave up -- see the guard right before the retry call below.
+  const startedAt = Date.now();
   const blurbSummaries = blurbs
     .map((b) => `• ${b.topicLabel}${fallbackTopicIds.has(b.topicId) ? " (stand-in topic)" : ""}: ${b.intro}`)
     .join("\n");
@@ -266,7 +279,17 @@ Write the editor's note for this reader's letter today.`;
   // is not worth the extra latency/cost — those tiers are the last resort
   // already, and verified to slip more often than Claude in the first place).
   let tells = findLexicalTells(clean);
-  if (tells.length > 0 && usedClaude) {
+  // alpha-drift-r21-05: skip the retry once we've already burned most of
+  // assemble.ts's TOPIC_GEN_DEADLINE_MS (75_000ms) budget -- at that point
+  // the caller has almost certainly already timed out and moved on to its
+  // fallback intro, so a second Claude call would just double the wasted
+  // spend on a result nobody will read, not fix anything for a real reader.
+  const RETRY_TIME_BUDGET_MS = 60_000;
+  const withinRetryBudget = Date.now() - startedAt < RETRY_TIME_BUDGET_MS;
+  if (tells.length > 0 && usedClaude && !withinRetryBudget) {
+    console.warn(`[editor-note] Claude note slipped a banned word (${tells.join(", ")}) but skipping the retry -- already ${Date.now() - startedAt}ms into this call, likely an orphaned/timed-out invocation`);
+  }
+  if (tells.length > 0 && usedClaude && withinRetryBudget) {
     console.warn(`[editor-note] Claude note slipped a banned word (${tells.join(", ")}), retrying once`);
     try {
       const retryClean = sanitizeVoice(await callClaude());

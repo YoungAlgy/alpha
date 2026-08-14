@@ -44,6 +44,19 @@ console.log("(1) source-level regression guard: the mechanism is actually wired,
   check("(1) the retry's own output is re-checked for a meta-leak before being trusted", /retryClean[\s\S]{0,80}containsMetaLeak/.test(src));
 }
 
+console.log("(1b) alpha-drift-r21-05 (found+fixed 2026-08-14, self-audit): the retry is bounded by a time budget so it can't double an orphaned call's Opus spend unconditionally");
+{
+  const src = readFileSync(new URL("../lib/engine/editor-note.ts", import.meta.url), "utf8");
+  check("(1b) a startedAt timestamp is tracked from the top of the function", /const startedAt = Date\.now\(\)/.test(src));
+  check("(1b) a RETRY_TIME_BUDGET_MS constant gates the retry", /RETRY_TIME_BUDGET_MS/.test(src));
+  check("(1b) the retry's own condition actually includes the time-budget check, not just tells/usedClaude", /tells\.length > 0 && usedClaude && withinRetryBudget/.test(src));
+  check("(1b) a skipped retry (budget exceeded) is logged, not silent", /skipping the retry/.test(src));
+  // assemble.ts's own comment (the thing this fix corrects) should no longer
+  // claim an unconditional single-extra-call bound without qualification.
+  const assembleSrc = readFileSync(new URL("../lib/engine/assemble.ts", import.meta.url), "utf8");
+  check("(1b) assemble.ts's cost-bound comment was updated to acknowledge the retry", /alpha-drift-r21-05/.test(assembleSrc));
+}
+
 function captureWarnings<T>(fn: () => Promise<T>): Promise<{ result: T; warnings: string[] }> {
   const warnings: string[] = [];
   const real = console.warn;

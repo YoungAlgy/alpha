@@ -386,6 +386,20 @@ export async function POST(req: Request) {
     // state, so unlike those two, this one has NO isFreeGrantEligible gate
     // -- it must work on a real paying subscriber, which is exactly the
     // case those two can't touch.
+    //
+    // alpha-drift-r21-06 (found+fixed 2026-08-14, self-audit): this used to
+    // clear the DB flags FIRST, then call removeResendSuppression after --
+    // the daily cron's own eligibility filter (.is("bounced_at",
+    // null).is("complained_at", null)) reads the DB directly, so the instant
+    // that UPDATE committed, this reader became cron-eligible again even
+    // though Resend's own suppression entry hadn't actually been removed
+    // yet. A send landing in that window would be silently dropped by
+    // Resend with nothing in this app's own tables ever showing it failed --
+    // reintroducing, in a narrow window, the exact problem this action
+    // exists to fix. Reordered to match the ALREADY-correct pattern
+    // lib/engine/persist.ts uses (Resend cleared before any DB write): clear
+    // Resend FIRST, and only clear the DB flags -- the thing the cron
+    // actually reads -- once that's confirmed to have actually worked.
     const { data: row } = await sb
       .from("users")
       .select("email")
@@ -394,16 +408,23 @@ export async function POST(req: Request) {
     if (!row) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
+    if (row.email) {
+      const cleared = await removeResendSuppression(row.email);
+      if (!cleared) {
+        console.error(`[admin/users] clear_suppression: removeResendSuppression failed for ${body.userId}, leaving DB flags untouched`);
+        return NextResponse.json(
+          { error: "Couldn't clear the Resend suppression. Left the DB flags untouched so the cron doesn't pick this reader up while Resend is still silently dropping their mail. Try again." },
+          { status: 502 }
+        );
+      }
+    }
     const { error } = await sb
       .from("users")
       .update({ bounced_at: null, complained_at: null })
       .eq("id", body.userId);
     if (error) {
       console.error("[admin/users] clear_suppression failed:", error.message);
-      return NextResponse.json({ error: "Couldn't clear suppression. Try again." }, { status: 500 });
-    }
-    if (row.email) {
-      await removeResendSuppression(row.email);
+      return NextResponse.json({ error: "Resend suppression cleared, but the DB update failed. Try again." }, { status: 500 });
     }
     return NextResponse.json({ ok: true });
   }

@@ -67,6 +67,19 @@ console.log("(1) route: the action exists, is reachable, and is NOT billing-gate
   check("(1) handles the missing-row case explicitly (mirrors grant_free/revoke_free's alpha-drift-r17-01 fix)", /User not found/.test(branch));
 }
 
+console.log("(1c) alpha-drift-r21-06 (found+fixed 2026-08-14, self-audit): Resend is cleared BEFORE the DB flags, not after -- closes a narrow window where the cron's own eligibility filter could pick the reader up while Resend was still silently suppressing them");
+{
+  const branchStart = routeSrc.indexOf('body.action === "clear_suppression"');
+  const branchEnd = routeSrc.indexOf("\n  return NextResponse.json({ error: \"Unknown action\"", branchStart);
+  const branch = branchStart > -1 && branchEnd > -1 ? routeSrc.slice(branchStart, branchEnd) : "";
+  const resendCallIdx = branch.indexOf("removeResendSuppression(");
+  const dbUpdateIdx = branch.indexOf('.update({ bounced_at: null, complained_at: null })');
+  check("(1c) both the Resend call and the DB update were found in the branch", resendCallIdx > -1 && dbUpdateIdx > -1);
+  check("(1c) removeResendSuppression is called BEFORE the DB update, not after", resendCallIdx > -1 && dbUpdateIdx > -1 && resendCallIdx < dbUpdateIdx);
+  check("(1c) a failed Resend clear short-circuits BEFORE reaching the DB update (checks the boolean return value)", /const cleared = await removeResendSuppression/.test(branch) && /if \(!cleared\)/.test(branch));
+  check("(1c) the failure response explains WHY the DB was left untouched, not just a generic error", /leaving DB flags untouched|Left the DB flags untouched/.test(branch));
+}
+
 console.log("(2) route: a suppressed reader is now visible in the admin list (was previously invisible)");
 {
   check("(2) bounced_at is selected in the GET query", /\.select\([^)]*bounced_at/.test(routeSrc));

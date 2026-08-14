@@ -112,9 +112,9 @@ export default function IssuePage() {
           >
             α
           </div>
-          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
             Your subscription has ended.
-          </p>
+          </h1>
           <p className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
             Want back in? Start a new letter, or reach out if something looks wrong.
           </p>
@@ -145,9 +145,9 @@ export default function IssuePage() {
           >
             α
           </div>
-          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
             Can&apos;t find that letter.
-          </p>
+          </h1>
           <p
             className="alpha-display text-base"
             style={{ color: "var(--ink-soft)" }}

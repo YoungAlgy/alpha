@@ -61,7 +61,7 @@ export default async function LetterPage({
     if (weekOf) {
       issueQuery = issueQuery.eq("week_of", weekOf);
     }
-    const [{ data: userRow }, { data: issueRow }] = await Promise.all([
+    const [{ data: userRow, error: userError }, { data: issueRow }] = await Promise.all([
       sb.from("users").select("first_name, city, theme, cancelled_at").eq("id", userId).maybeSingle(),
       issueQuery.order("week_of", { ascending: false }).limit(1).maybeSingle(),
     ]);
@@ -72,7 +72,23 @@ export default async function LetterPage({
     // too, or a disputed/cancelled subscriber's 90-day-lived email links
     // would keep working long after every other read path correctly cuts
     // them off. Matches hasActiveAccess()'s exact rule (lib/access.ts).
-    if (issueRow && !hasActiveAccess(userRow?.cancelled_at)) {
+    //
+    // alpha-drift-r21-07 (found+fixed 2026-08-14, self-audit): the round-20
+    // deleted-account-access fix (!userError && !userRow) only reached the
+    // 4 session-based pages (/inbox, /inbox/[issueId], /archive) -- this
+    // route was never touched, even though it has the identical gap and a
+    // WORSE blast radius: its token is valid for up to 90 days with no
+    // session to invalidate, and it reads via the service-role client,
+    // which bypasses RLS entirely. A cascade-deleted `users` row makes
+    // userRow null; hasActiveAccess(undefined) reads that as "never
+    // cancelled" i.e. active -- if issues.user_id ever survives the account
+    // delete (no CASCADE, or a future schema change), this would have
+    // rendered a deleted reader's orphaned letter to anyone still holding
+    // the link. !userError && !userRow is a genuine zero-row result
+    // (.maybeSingle()'s error is null on a real "not found"), not a query
+    // failure -- so this can't misread a transient hiccup as deletion.
+    const accountDeleted = !userError && !userRow;
+    if (issueRow && (accountDeleted || !hasActiveAccess(userRow?.cancelled_at))) {
       accessEnded = true;
     } else if (issueRow) {
       const row = issueRow as IssueRow;
@@ -167,9 +183,9 @@ function LinkProblem({ reason }: { reason: "expired" | "no-letter" | "access-end
           >
             α
           </div>
-          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
             This letter isn&apos;t available anymore.
-          </p>
+          </h1>
           <p className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
             Your subscription has ended, so this link no longer opens. Want
             back in?
@@ -192,11 +208,11 @@ function LinkProblem({ reason }: { reason: "expired" | "no-letter" | "access-end
         >
           α
         </div>
-        <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+        <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
           {reason === "expired"
             ? "This letter link has expired."
             : "Couldn't load your letter."}
-        </p>
+        </h1>
         <p className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
           No worries. Sign in with your email and we&apos;ll take you straight
           to your latest letter. We&apos;ll send a 6-digit code, no password.

@@ -191,9 +191,13 @@ export default function InboxPage() {
           >
             α
           </div>
-          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+          {/* alpha-drift-r21-08 (found+fixed 2026-08-14): an <h1>, not a
+              styled <p> -- this state fully replaces the page, so it's the
+              only heading a screen-reader user navigating by heading (NVDA/
+              JAWS "H" key) would ever find here. */}
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
             Your subscription has ended.
-          </p>
+          </h1>
           <p className="alpha-display text-base md:text-lg leading-relaxed" style={{ color: "var(--ink-soft)" }}>
             Want back in? Start a new letter, or reach out if something looks wrong.
           </p>
@@ -226,9 +230,9 @@ export default function InboxPage() {
           >
             α
           </div>
-          <p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
             No letter on this device yet.
-          </p>
+          </h1>
           {signedIn ? (
             <>
               {/* Already signed in: never link to /signin or /welcome (the

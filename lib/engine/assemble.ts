@@ -419,9 +419,20 @@ export async function generateIssue(
   // Real fix needs cancellation threaded into the orphaned attempt (skip this
   // call once a fallback has taken over for that subscriber) — cross-cutting,
   // same complexity class as the AbortController work already deferred for
-  // the search+blurb path; not rushing it in. Cost is bounded (one extra
-  // Opus call, not a whole search+generation chain) and only recurs on an
-  // actual timeout, not every send.
+  // the search+blurb path; not rushing it in. Cost is bounded (usually one
+  // extra Opus call, not a whole search+generation chain) and only recurs on
+  // an actual timeout, not every send.
+  //
+  // alpha-drift-r21-05 (found+fixed 2026-08-14, self-audit): editor-note.ts's
+  // findLexicalTells retry-once (added round 20) can add a SECOND Claude call
+  // inside one invocation, which would have doubled the worst case above --
+  // fixed there with a time-budget guard (skips the retry once ~60s of this
+  // TOPIC_GEN_DEADLINE_MS-bounded 75s window have already elapsed, since a
+  // call still running that long has almost certainly already been orphaned
+  // by this withDeadline). The "one extra Opus call" bound above holds again
+  // in the common case; a slow first call landing inside that 60s window that
+  // ALSO trips the lexical-tell check is the one remaining edge where two
+  // calls can still complete after this function has already given up.
   // alpha-drift-r15-07 (found+fixed 2026-08-06): this call ran the SAME
   // Claude -> Gemini -> Groq -> DeepSeek escalation shape as topic-blurb.ts,
   // but with no withDeadline of its own, unlike every genLive/genFiller call
