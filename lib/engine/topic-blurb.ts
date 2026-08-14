@@ -454,14 +454,30 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     // only validates that `items` is an array and `intro` is a string — an
     // individual element can still be malformed (e.g. `{}`, or a `headline`
     // the model omitted) while the array itself is well-formed. sanitizeVoice
-    // tolerates non-string input silently (`if (!s) return s`), so a bad item
-    // wouldn't crash, but WOULD ship "undefined undefined" as visible text —
-    // a subscriber-facing failure worse than dropping the one bad item, which
-    // is exactly what url-guard/meta-leak already do for other kinds of bad
-    // items. Same "drop the item, keep the rest" philosophy.
-    const shapeValidItems = parsed.items.filter(
-      (it) => typeof it?.headline === "string" && it.headline.trim().length > 0 && typeof it?.body === "string" && it.body.trim().length > 0
-    );
+    // only tolerates FALSY input silently (`if (!s) return s`) -- a TRUTHY
+    // non-string (a bare JSON number/boolean/object the model returned for a
+    // ref's label or note, e.g. `{"label": 2026}`) reaches `s.replace(...)`
+    // and throws a TypeError, uncaught anywhere in this call chain, aborting
+    // the ENTIRE 5-tier fallback chain for this topic instead of just
+    // dropping the one bad item (alpha-drift-r28-09, 2026-08-15 -- the
+    // original version of this comment claimed sanitizeVoice "wouldn't
+    // crash," which was never actually true for this input class). Same
+    // "drop the item, keep the rest" philosophy url-guard/meta-leak already
+    // apply for other kinds of bad items, now also covering a bad ref shape,
+    // not just a missing headline/body.
+    const isStringOrAbsent = (v: unknown): boolean => v === undefined || v === null || typeof v === "string";
+    const shapeValidItems = parsed.items.filter((it) => {
+      if (typeof it?.headline !== "string" || it.headline.trim().length === 0) return false;
+      if (typeof it?.body !== "string" || it.body.trim().length === 0) return false;
+      if (it.primaryRef && (!isStringOrAbsent(it.primaryRef.label) || !isStringOrAbsent(it.primaryRef.note))) return false;
+      if (
+        Array.isArray(it.supplementaryRefs) &&
+        it.supplementaryRefs.some((r) => !isStringOrAbsent(r?.label) || !isStringOrAbsent(r?.note))
+      ) {
+        return false;
+      }
+      return true;
+    });
     if (shapeValidItems.length < parsed.items.length) {
       console.warn(
         `[topic-blurb] ${topicId} ${weekOf}: dropped ${parsed.items.length - shapeValidItems.length} malformed item(s) (missing headline/body)`
