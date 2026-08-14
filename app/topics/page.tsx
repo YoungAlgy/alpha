@@ -35,6 +35,12 @@ export default function TopicsPage() {
   // The signed-in reader's birthday, only to warn when they pick Zodiac without
   // one (that section gets skipped). Mirrors the onboarding "you" step gate.
   const [userBirthday, setUserBirthday] = useState<string | null>(null);
+  // alpha-drift-r32-02 (2026-08-14): move()/removeAt() only ever changed
+  // visual state (color/opacity/position) -- a screen reader user got no
+  // feedback at all that a reorder or remove even happened, unlike this
+  // page's own custom-topic error (role="alert") and Zodiac warning
+  // (role="status"). One shared live region announces the result of both.
+  const [announcement, setAnnouncement] = useState("");
   // alpha-drift-r19-01 (found+fixed 2026-08-07): the signed-in hydrate below
   // is a real network round trip with no loading gate. For a base-tier
   // (5-topic) subscriber revisiting Settings -> Change topics on the SAME
@@ -163,6 +169,7 @@ export default function TopicsPage() {
 
   function removeAt(id: TopicId) {
     unselect();
+    setAnnouncement(`${topicLabel(id)} removed from your lineup.`);
     setPicked((prev) => prev.filter((t) => t !== id));
   }
 
@@ -170,11 +177,21 @@ export default function TopicsPage() {
   // across the favorites/backups line just changes whether it fills the letter.
   function move(from: number, dir: -1 | 1) {
     const to = from + dir;
+    if (to < 0 || to >= picked.length) return;
+    // alpha-drift-r32-02: computed from the closure's own `picked`/`quota`
+    // (both already in scope every render) rather than inside the setPicked
+    // updater below -- an updater can run twice under dev Strict Mode, and
+    // a setState call nested in another setState's updater is the kind of
+    // side effect React explicitly warns updaters should stay free of.
+    const item = picked[from];
+    const wasFav = from < quota;
+    const isFav = to < quota;
+    const statusChange = wasFav === isFav ? "" : isFav ? ", now a favorite" : ", now a backup";
+    setAnnouncement(`${topicLabel(item)} moved to position ${to + 1} of ${picked.length}${statusChange}.`);
     setPicked((prev) => {
-      if (to < 0 || to >= prev.length) return prev;
       const next = prev.slice();
-      const [item] = next.splice(from, 1);
-      next.splice(to, 0, item);
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
       return next;
     });
     tap();
@@ -478,6 +495,11 @@ export default function TopicsPage() {
               </p>
             </div>
 
+            {/* alpha-drift-r32-02 (2026-08-14): sr-only, announces move()/
+                removeAt() results -- see the state comment above. */}
+            <p role="status" aria-live="polite" className="sr-only">
+              {announcement}
+            </p>
             <div role="list" className="space-y-2">
               {picked.map((id, i) => {
                 const isFav = i < quota;
@@ -513,6 +535,14 @@ export default function TopicsPage() {
                         {i + 1}
                       </span>
                       <span className="alpha-display text-sm font-semibold flex-1 min-w-0 truncate">
+                        {/* alpha-drift-r32-02 (2026-08-14): the rank number and
+                            favorite-vs-backup status above were both
+                            aria-hidden/color-only -- a screen reader heard
+                            nothing but the bare topic name. sr-only prefix
+                            restores both without changing the visual line. */}
+                        <span className="sr-only">
+                          {isFav ? `Favorite ${i + 1}` : `Backup ${i + 1 - quota}`}:{" "}
+                        </span>
                         {topicEmoji(id)} {topicLabel(id)}
                       </span>
                       {/* Reorder pair and remove are separated (ml-2 gap) and each button
