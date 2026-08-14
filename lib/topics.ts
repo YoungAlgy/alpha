@@ -260,7 +260,14 @@ export function makeCustomTopic(text: string): `custom:${string}` | null {
     stripPromptFenceChars(text).replace(/\s+/g, " ").trim().toLowerCase(),
     MAX_CUSTOM_TOPIC_LEN
   ).trim();
-  if (clean.length < 2 || hasLoneSurrogate(clean)) return null;
+  // alpha-drift-r22-02 (found+fixed 2026-08-14, self-audit): this minimum-
+  // length gate still used clean.length (UTF-16 code units), one line below
+  // the codePointSafeSlice fix above and inconsistent with isValidTopicId's
+  // own code-point count a few lines up. A single astral character (one
+  // code point, e.g. a lone emoji) is 2 UTF-16 units -- clean.length reads
+  // that as "long enough" and lets it through as a real custom topic, when
+  // by every other measure in this file it's a single character.
+  if (Array.from(clean).length < 2 || hasLoneSurrogate(clean)) return null;
   return `${CUSTOM_PREFIX}${clean}`;
 }
 

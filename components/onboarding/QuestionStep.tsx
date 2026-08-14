@@ -110,7 +110,19 @@ export function QuestionStep({
     tap();
     setSkipping(true);
     skipTimer.current = setTimeout(() => {
-      update({ [field]: undefined } as Partial<OnboardingState>);
+      // alpha-drift-r22-05 (found+fixed 2026-08-14): this used to force-write
+      // `undefined` unconditionally -- fine the first time through a fresh
+      // step (value starts empty), but a reader who already answered this
+      // optional question, then hit Back to revisit it, lands here with the
+      // field PRE-FILLED from state (see the useEffect above). Skip's job is
+      // "don't require an answer," not "delete what I already answered" --
+      // clicking it on a revisit silently erased a value they'd already
+      // saved, even if they never touched the input. Save whatever's
+      // currently in the box (same `trimmed || undefined` submit() uses)
+      // instead of always clearing it: an untouched revisit keeps the saved
+      // value, a genuinely empty field still clears to undefined exactly as
+      // before.
+      update({ [field]: trimmed || undefined } as Partial<OnboardingState>);
       router.push(`/${nextStep(currentPath)}` as never);
     }, 280);
   }

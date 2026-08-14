@@ -166,6 +166,24 @@ console.log("(10) alpha-drift-r21-03: truncation at MAX_CUSTOM_TOPIC_LEN is code
   check("(10) built id, if non-null, round-trips as valid (no corruption survived)", built === null || isValidTopicId(built) === true);
 }
 
+console.log("(11) alpha-drift-r22-02 (found+fixed 2026-08-14, self-audit): the minimum-length gate counts CODE POINTS, not UTF-16 code units");
+{
+  // A single astral emoji is ONE code point but TWO UTF-16 code units --
+  // the old `clean.length < 2` read that as "long enough" and let a single
+  // character through as a real custom topic, inconsistent with the
+  // codePointSafeSlice fix one line above it in the same function.
+  const singleEmoji = "😀";
+  check("(11a) sanity: a single emoji is 2 UTF-16 units but 1 code point", singleEmoji.length === 2 && Array.from(singleEmoji).length === 1);
+  check("(11b) makeCustomTopic rejects a single emoji as too short (code-point count, not .length)", makeCustomTopic(singleEmoji) === null);
+  // Two distinct code points (even if each is itself multi-unit) should
+  // still pass -- this isn't a blanket "reject all astral text" regression.
+  const twoEmoji = "😀😁";
+  check("(11c) two distinct emoji (2 code points) still pass", makeCustomTopic(twoEmoji) !== null);
+  // A plain 1-char ASCII string was already rejected before this fix
+  // (check (line 22) above) -- confirms the fix didn't loosen that case.
+  check("(11d) plain single ASCII char is still rejected", makeCustomTopic("a") === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("CUSTOM TOPIC HELPER VERIFICATION FAILED");
