@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { cancelStripeSubscriptionsBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
+import { cleanUpStripeCustomerBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
 import { rateLimit } from "@/lib/rate-limit";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
+import { removeResendSuppression } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -53,18 +54,33 @@ export async function POST() {
 
   const svc = await supabaseServiceClient();
 
-  // Cancel any Stripe subscription FIRST — deleting the auth user cascades away
-  // public.users (incl. stripe_customer_id), and the deleted account can't reach
-  // the billing portal, so a still-active subscription would bill forever with
-  // no way to stop it. Best-effort: a Stripe hiccup must never block the user's
-  // right to delete their account.
-  await cancelStripeSubscriptionsBeforeDelete(svc, user.id, "[account/delete]");
+  // Cancel any Stripe subscription and delete the Customer object FIRST —
+  // deleting the auth user cascades away public.users (incl.
+  // stripe_customer_id), and the deleted account can't reach the billing
+  // portal, so a still-active subscription would bill forever with no way to
+  // stop it. Best-effort: a Stripe hiccup must never block the user's right
+  // to delete their account.
+  await cleanUpStripeCustomerBeforeDelete(svc, user.id, "[account/delete]");
 
   // Delete the user's support tickets outright rather than letting the FK
   // cascade just null out user_id — see deleteSupportTicketsBeforeDelete's
   // own comment for why. Best-effort, like the Stripe step above: a failure
   // here must not block the user's right to delete their account.
   await deleteSupportTicketsBeforeDelete(svc, user.id, "[account/delete]");
+
+  // alpha-drift-r20-01 (found+fixed 2026-08-13): if this reader ever hard-
+  // bounced or complained, Resend keeps that as its own account-level
+  // suppression-list record, keyed by email, entirely separate from (and
+  // outliving) every Supabase trace this route already clears -- a real
+  // third-party record surviving the "all associated data (irreversible)"
+  // promise below. Reusing removeResendSuppression() here isn't about
+  // re-enabling delivery (they're gone, we won't email them again) -- the
+  // underlying call is DELETE /suppressions/{email}, so the effect wanted
+  // either way is identical: the record stops existing at Resend. Best-
+  // effort, same as the two calls above.
+  if (user.email) {
+    await removeResendSuppression(user.email);
+  }
 
   const { error } = await svc.auth.admin.deleteUser(user.id);
   if (error) {

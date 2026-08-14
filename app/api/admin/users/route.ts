@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { cancelStripeSubscriptionsBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
+import { cleanUpStripeCustomerBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
@@ -217,16 +217,30 @@ export async function POST(req: Request) {
   const sb = await supabaseServiceClient();
 
   if (body.action === "delete") {
-    // Cancel any Stripe subscription FIRST (mirrors self-serve account/delete):
-    // deleting the auth user cascades public.users away incl. stripe_customer_id,
-    // so a still-active sub would bill forever with no way to stop it. Best-effort
-    // — a Stripe hiccup must never block the admin delete.
-    await cancelStripeSubscriptionsBeforeDelete(sb, body.userId, "[admin/delete]");
+    // alpha-drift-r20-01 (found+fixed 2026-08-13): need the email BEFORE the
+    // cascade-delete below removes it, to clear any Resend suppression-list
+    // trace tied to it (see the removeResendSuppression call further down).
+    const { data: targetUser } = await sb
+      .from("users")
+      .select("email")
+      .eq("id", body.userId)
+      .maybeSingle();
+    // Cancel any Stripe subscription and delete the Customer object FIRST
+    // (mirrors self-serve account/delete): deleting the auth user cascades
+    // public.users away incl. stripe_customer_id, so a still-active sub
+    // would bill forever with no way to stop it. Best-effort — a Stripe
+    // hiccup must never block the admin delete.
+    await cleanUpStripeCustomerBeforeDelete(sb, body.userId, "[admin/delete]");
     // Same reasoning as self-serve account/delete: support_tickets.user_id is
     // ON DELETE SET NULL, not CASCADE, so skipping this would leave an
     // admin-initiated delete short of the "all associated data" promise on
     // the privacy page while self-serve deletes correctly clear it.
     await deleteSupportTicketsBeforeDelete(sb, body.userId, "[admin/delete]");
+    // Same reasoning as self-serve account/delete: a real third-party
+    // suppression record can outlive every Supabase trace otherwise.
+    if (targetUser?.email) {
+      await removeResendSuppression(targetUser.email);
+    }
     // Delete the auth user — cascade removes their public.users + issues rows.
     const { error } = await sb.auth.admin.deleteUser(body.userId);
     if (error) {

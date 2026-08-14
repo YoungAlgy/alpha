@@ -4,28 +4,41 @@
 // subscriptions. The real SDK method signatures are verified by `next build`
 // typechecking the actual `stripe.subscriptions.cancel(...)` call.)
 //
-// Also verifies cancelStripeSubscriptionsBeforeDelete -- the wrapper both
-// real delete flows (account/delete, admin/users) actually call, which adds
-// the Supabase stripe_customer_id lookup and swallows every error so a
-// Stripe hiccup never blocks account deletion. None of that lookup/
-// error-swallowing logic was covered before this: a wrong column name, a
-// broken maybeSingle() chain, or an exception path that isn't actually
-// caught fails silently by design (a deleted user keeps getting billed with
-// the account gone), and nothing but a billing complaint would surface it.
+// Also verifies cleanUpStripeCustomerBeforeDelete -- the wrapper both real
+// delete flows (account/delete, admin/users) actually call, which adds the
+// Supabase stripe_customer_id lookup, cancels subscriptions, THEN deletes
+// the Customer object itself (alpha-drift-r20-01, 2026-08-13 -- the function
+// used to stop at cancelling subscriptions, leaving the Customer record,
+// including a typically-saved default payment method, retrievable at Stripe
+// forever after account deletion), and swallows every error so a Stripe
+// hiccup never blocks account deletion. None of that lookup/error-swallowing
+// logic was covered before this: a wrong column name, a broken maybeSingle()
+// chain, or an exception path that isn't actually caught fails silently by
+// design, and nothing but a billing complaint (or, for the customer-delete
+// step, a privacy complaint) would surface it.
 // Run: npx tsx scripts/verify-stripe-cancel-on-delete.mts
-const { cancelCustomerSubscriptions, cancelStripeSubscriptionsBeforeDelete } = await import("../lib/stripe-cancel.ts");
+const { cancelCustomerSubscriptions, cleanUpStripeCustomerBeforeDelete } = await import("../lib/stripe-cancel.ts");
 
 type Sub = { id: string; status: string };
-function stub(subs: Sub[], throwOn: string[] = []) {
+function stub(subs: Sub[], throwOn: string[] = [], customerDelThrows = false) {
   const cancelledCalls: string[] = [];
+  const customerDelCalls: string[] = [];
   const client = {
     cancelledCalls,
+    customerDelCalls,
     subscriptions: {
       list: async (_args: unknown) => ({ data: subs }),
       cancel: async (id: string) => {
         if (throwOn.includes(id)) throw new Error("simulated stripe failure");
         cancelledCalls.push(id);
         return { id, status: "canceled" };
+      },
+    },
+    customers: {
+      del: async (id: string) => {
+        if (customerDelThrows) throw new Error("No such customer: simulated already-deleted");
+        customerDelCalls.push(id);
+        return { id, deleted: true };
       },
     },
   };
@@ -91,7 +104,7 @@ const r4 = await cancelCustomerSubscriptions(
 console.log(`(4) all terminal → ${JSON.stringify(r4)}`);
 check("cancelled 0, skipped 2", r4.cancelled.length === 0 && r4.skipped === 2);
 
-// ---- cancelStripeSubscriptionsBeforeDelete: the wrapper both real delete
+// ---- cleanUpStripeCustomerBeforeDelete: the wrapper both real delete
 // flows call, with the Supabase lookup + error-swallowing stubbed out ----
 
 // Minimal stub of the .from("users").select(...).eq("id", userId).maybeSingle()
@@ -121,16 +134,18 @@ function supabaseStub(row: { stripe_customer_id: string | null } | null, rejectW
   };
 }
 
-// (5) Customer id exists -> looks up the right user AND calls the Stripe
-// cancel path (via the injected stub client, never the real getStripeClient()).
-console.log("(5) customer id exists -- looks up the right user, calls Stripe cancel");
+// (5) Customer id exists -> looks up the right user, cancels subscriptions,
+// AND deletes the Customer object (via the injected stub client, never the
+// real getStripeClient()).
+console.log("(5) customer id exists -- looks up the right user, cancels subs, deletes the Customer object");
 process.env.STRIPE_SECRET_KEY = "sk_test_verify_script_only";
 try {
   const svc5 = supabaseStub({ stripe_customer_id: "cus_delete_me" });
   const stripe5 = stub([{ id: "sub_live", status: "active" }]);
-  await cancelStripeSubscriptionsBeforeDelete(svc5 as never, "user_123", "[verify]", stripe5 as never);
+  await cleanUpStripeCustomerBeforeDelete(svc5 as never, "user_123", "[verify]", stripe5 as never);
   check("(5) looked up exactly the requested userId", svc5.queriedIds.length === 1 && svc5.queriedIds[0] === "user_123");
   check("(5) called through to the injected Stripe client, not the real singleton", stripe5.cancelledCalls.includes("sub_live"));
+  check("(5) alpha-drift-r20-01: also deletes the Customer object itself, not just its subscriptions", stripe5.customerDelCalls.includes("cus_delete_me"));
 } finally {
   delete process.env.STRIPE_SECRET_KEY;
 }
@@ -141,8 +156,9 @@ process.env.STRIPE_SECRET_KEY = "sk_test_verify_script_only";
 try {
   const svc6 = supabaseStub({ stripe_customer_id: null });
   const stripe6 = stub([{ id: "sub_should_not_be_touched", status: "active" }]);
-  await cancelStripeSubscriptionsBeforeDelete(svc6 as never, "user_456", "[verify]", stripe6 as never);
+  await cleanUpStripeCustomerBeforeDelete(svc6 as never, "user_456", "[verify]", stripe6 as never);
   check("(6) did not cancel anything (Stripe client never reached)", stripe6.cancelledCalls.length === 0);
+  check("(6) did not attempt a customer delete either", stripe6.customerDelCalls.length === 0);
 } finally {
   delete process.env.STRIPE_SECRET_KEY;
 }
@@ -156,7 +172,7 @@ try {
   const stripe7 = stub([]);
   let threw = false;
   try {
-    await cancelStripeSubscriptionsBeforeDelete(svc7 as never, "user_789", "[verify]", stripe7 as never);
+    await cleanUpStripeCustomerBeforeDelete(svc7 as never, "user_789", "[verify]", stripe7 as never);
   } catch {
     threw = true;
   }
@@ -180,12 +196,35 @@ delete process.env.STRIPE_SECRET_KEY;
   const svc8 = supabaseStub({ stripe_customer_id: "cus_should_not_be_reached" });
   let threw = false;
   try {
-    await cancelStripeSubscriptionsBeforeDelete(svc8 as never, "user_000", "[verify]");
+    await cleanUpStripeCustomerBeforeDelete(svc8 as never, "user_000", "[verify]");
   } catch {
     threw = true;
   }
   check("(8) did not throw", !threw);
   check("(8) never even reached the Supabase lookup (early return)", svc8.queriedIds.length === 0);
+}
+
+// (9) alpha-drift-r20-01: customers.del() itself throws (e.g. a race with a
+// second delete click already having removed the Customer, or a genuine API
+// hiccup) -- must be swallowed independently of the subscription-cancel
+// step, and must never throw out of the wrapper (best-effort, same as every
+// other failure mode this function already tolerates).
+console.log("(9) customers.del() throws -- swallowed, subscriptions were still cancelled first, does not throw");
+process.env.STRIPE_SECRET_KEY = "sk_test_verify_script_only";
+try {
+  const svc9 = supabaseStub({ stripe_customer_id: "cus_already_gone" });
+  const stripe9 = stub([{ id: "sub_live_9", status: "active" }], [], true);
+  let threw = false;
+  try {
+    await cleanUpStripeCustomerBeforeDelete(svc9 as never, "user_999", "[verify]", stripe9 as never);
+  } catch {
+    threw = true;
+  }
+  check("(9) did not throw despite customers.del() rejecting", !threw);
+  check("(9) subscription cancel still ran first (independent of the customer-delete outcome)", stripe9.cancelledCalls.includes("sub_live_9"));
+  check("(9) the failed delete attempt is not recorded as a successful call", stripe9.customerDelCalls.length === 0);
+} finally {
+  delete process.env.STRIPE_SECRET_KEY;
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

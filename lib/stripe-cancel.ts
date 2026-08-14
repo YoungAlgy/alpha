@@ -57,7 +57,24 @@ export async function cancelCustomerSubscriptions(
 
 // Shared entry point for both delete flows (self-serve account/delete and
 // admin/users delete): looks up the target user's stripe_customer_id, builds
-// a Stripe client, and cancels their subscriptions via the function above.
+// a Stripe client, cancels their subscriptions via the function above, THEN
+// permanently deletes the Stripe Customer object itself.
+//
+// alpha-drift-r20-01 (found+fixed 2026-08-13): this function used to stop at
+// cancelling subscriptions -- it never called stripe.customers.del(). The
+// Customer record (name, email, billing address, and typically a saved
+// default payment method, since Checkout runs in subscription mode) then
+// survived account deletion at Stripe indefinitely, directly contradicting
+// app/privacy/page.tsx's "Delete your account and all associated data
+// (irreversible)" promise. customers.del() is Stripe's own supported
+// "delete this customer" operation: it detaches payment methods and makes
+// the Customer record itself unretrievable, while (by Stripe's own design)
+// past Charges/Invoices remain under the now-orphaned id for the legally
+// required accounting trail -- the same "delete the profile, keep what
+// compliance requires" balance this app already strikes for support_tickets
+// (see deleteSupportTicketsBeforeDelete below). Renamed from
+// cancelStripeSubscriptionsBeforeDelete to reflect the now-larger scope.
+//
 // Best-effort + swallows its own errors — a Stripe hiccup must never block
 // either delete flow. logPrefix distinguishes the two call sites in logs
 // (e.g. "[account/delete]" vs "[admin/delete]").
@@ -72,7 +89,7 @@ export async function cancelCustomerSubscriptions(
 // try/catch starts, so it would call (and let a throwing) getStripeClient()
 // escape uncaught in exactly the "Stripe not configured" case the early
 // return exists to short-circuit -- caught in review, not live.
-export async function cancelStripeSubscriptionsBeforeDelete(
+export async function cleanUpStripeCustomerBeforeDelete(
   svc: SupabaseClient,
   userId: string,
   logPrefix: string,
@@ -88,10 +105,24 @@ export async function cancelStripeSubscriptionsBeforeDelete(
       .maybeSingle();
     const customerId = row?.stripe_customer_id;
     if (!customerId) return;
-    const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(stripeClient ?? getStripeClient(), customerId);
+    const stripe = stripeClient ?? getStripeClient();
+    const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(stripe, customerId);
     console.log(
       `${logPrefix} stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
     );
+    try {
+      await stripe.customers.del(customerId);
+      console.log(`${logPrefix} stripe ${customerId}: customer object deleted`);
+    } catch (delErr) {
+      // A genuinely already-deleted customer (a retry, a race with a second
+      // delete click) throws here too -- Stripe's error message for that
+      // case contains "No such customer", distinct from a real API failure.
+      // Either way this is best-effort: log and move on, never block delete.
+      console.warn(
+        `${logPrefix} stripe ${customerId}: customer delete failed:`,
+        delErr instanceof Error ? delErr.message : delErr
+      );
+    }
   } catch (e) {
     console.warn(
       `${logPrefix} subscription cancel failed (proceeding with delete):`,
@@ -101,7 +132,7 @@ export async function cancelStripeSubscriptionsBeforeDelete(
 }
 
 // Shared entry point for both delete flows, same reasoning as
-// cancelStripeSubscriptionsBeforeDelete above: support_tickets.user_id is ON
+// cleanUpStripeCustomerBeforeDelete above: support_tickets.user_id is ON
 // DELETE SET NULL, not CASCADE, so deleting the auth user alone would just
 // null out user_id and leave the ticket's name/email/message text sitting in
 // the table with nothing tying it back to an account -- orphaned PII, not

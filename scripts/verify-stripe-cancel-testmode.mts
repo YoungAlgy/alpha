@@ -1,8 +1,10 @@
-// REAL end-to-end check of cancelCustomerSubscriptions (the account-deletion
-// path) against TEST Stripe: creates a throwaway product/price/customer/
-// subscription, cancels it via the actual helper, asserts it's canceled +
-// idempotent, then cleans up. HARD-REFUSES anything but a test key, so it can
-// never touch the live account / the real subscriber.
+// REAL end-to-end check of cancelCustomerSubscriptions AND stripe.customers.del()
+// (the full account-deletion path -- see cleanUpStripeCustomerBeforeDelete in
+// lib/stripe-cancel.ts) against TEST Stripe: creates a throwaway product/price/
+// customer/subscription, cancels the subscription via the actual helper,
+// asserts it's canceled + idempotent, then deletes the Customer object itself
+// and confirms it's genuinely gone, then cleans up. HARD-REFUSES anything but
+// a test key, so it can never touch the live account / a real subscriber.
 //
 // Run AFTER putting your sk_test_ key in .env.local:
 //   npx tsx scripts/verify-stripe-cancel-testmode.mts
@@ -63,6 +65,32 @@ try {
   console.log(`(2) idempotent second pass → ${JSON.stringify(r2)}`);
   check("second pass cancels nothing", r2.cancelled.length === 0);
   check("second pass skips the canceled sub", r2.skipped >= 1);
+
+  // alpha-drift-r20-01 (found+fixed 2026-08-13): the account-deletion flow
+  // now also deletes the Stripe Customer object itself (not just its
+  // subscriptions) -- see cleanUpStripeCustomerBeforeDelete in the same
+  // lib/stripe-cancel.ts. Exercises the real Stripe API call this test-mode
+  // customer will go through anyway as part of this script's own cleanup
+  // below, just moved up here so it's asserted on rather than silently
+  // swallowed in a `finally` block.
+  await stripe.customers.del(customer.id);
+  console.log(`(3) stripe.customers.del(${customer.id}) called`);
+  let retrieveThrew = false;
+  let retrievedDeleted = false;
+  try {
+    const retrieved = await stripe.customers.retrieve(customer.id);
+    retrievedDeleted = "deleted" in retrieved && retrieved.deleted === true;
+  } catch {
+    retrieveThrew = true;
+  }
+  check(
+    "(3) customer object is genuinely gone -- retrieve() either throws or reports deleted:true",
+    retrieveThrew || retrievedDeleted
+  );
+  // Deletion clears customerId so the `finally` cleanup below doesn't try
+  // to delete an already-deleted customer (Stripe would just no-op/error on
+  // that anyway, but this keeps the cleanup log accurate).
+  customerId = undefined;
 } catch (e) {
   console.error(`harness error: ${e instanceof Error ? e.message : e}`);
   fail++;
