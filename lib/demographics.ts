@@ -29,6 +29,31 @@ export type ZodiacSign =
 // this stays correct indefinitely rather than needing a periodic manual bump.
 const MIN_AGE_YEARS = 13;
 
+// alpha-drift-r26-06 (2026-08-14): extracted from parseBirthday's own
+// round-trip check so OTHER "YYYY-MM-DD" fields with no birthday-specific
+// year-range constraint (weekOf in app/api/generate/route.ts and app/api/
+// cron/weekly-send/route.ts's ?weekOf= override) can reuse the same real
+// fix instead of each hand-rolling a weaker version. JS's Date parser
+// SILENTLY ROLLS OVER an impossible day-of-month instead of throwing or
+// producing NaN -- `new Date('2026-04-31T00:00:00Z')` parses fine and
+// normalizes to May 1 (April only has 30 days) -- so a check that only
+// tests `Number.isNaN(new Date(...))` can never catch this class of input;
+// it has to compare the parsed fields back against what was actually asked
+// for, which is what this round-trip does.
+export function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
+// String-shaped convenience wrapper for isValidCalendarDate -- the common
+// case at most call sites, which start from a raw "YYYY-MM-DD" string, not
+// already-parsed numbers.
+export function isValidCalendarDateString(raw: string): boolean {
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return !!m && isValidCalendarDate(+m[1], +m[2], +m[3]);
+}
+
 // A birthday is stored as an ISO date string "YYYY-MM-DD". Parse leniently and
 // return null for anything that isn't a real, sane date (year 1900..a real
 // minimum age from today).
@@ -37,11 +62,9 @@ export function parseBirthday(raw: string | null | undefined): { year: number; m
   const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return null;
   const year = +m[1], month = +m[2], day = +m[3];
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  // Reject impossible day-of-month (e.g. Feb 30) by round-tripping through Date.
-  const d = new Date(Date.UTC(year, month - 1, day));
-  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return null;
+  if (!isValidCalendarDate(year, month, day)) return null;
   if (year < 1900) return null;
+  const d = new Date(Date.UTC(year, month - 1, day));
   // Date-based (not year-only) comparison: correctly handles a reader whose
   // birthday hasn't happened yet this calendar year (e.g. checked in August
   // for someone born in September -- they're still under MIN_AGE_YEARS until

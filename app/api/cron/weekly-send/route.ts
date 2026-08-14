@@ -17,7 +17,7 @@ import { withDeadline } from "@/lib/with-deadline";
 import type { UserProfile, TopicId, Issue } from "@/lib/types";
 import type { TopicBlurb } from "@/lib/engine/types";
 import { clampQuota } from "@/lib/types";
-import { coerceGender } from "@/lib/demographics";
+import { coerceGender, isValidCalendarDateString } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
 import { RECLAIM_GRANDFATHER_CUTOFF } from "@/lib/delivery-proof";
 
@@ -248,8 +248,14 @@ export async function GET(req: Request) {
   // one schedule covers every send day.
   const url = new URL(req.url);
   const weekOfOverride = url.searchParams.get("weekOf");
+  // alpha-drift-r26-06 (2026-08-14): a shape-only regex check accepts an
+  // impossible calendar date (e.g. "2026-04-31") that JS's Date parser
+  // silently rolls over rather than rejecting -- the same gap fixed in
+  // app/api/generate/route.ts's weekOf schema. Lower real exposure here
+  // (CRON_SECRET-gated, trusted-operator-only), but the fix is one shared
+  // helper call away, so there's no reason to leave the weaker check.
   const weekOf =
-    weekOfOverride && /^\d{4}-\d{2}-\d{2}$/.test(weekOfOverride)
+    weekOfOverride && /^\d{4}-\d{2}-\d{2}$/.test(weekOfOverride) && isValidCalendarDateString(weekOfOverride)
       ? weekOfOverride
       : currentPeriodIso();
   // Cadence gate. CADENCE_UTC_DAYS is every day today, so this is currently a

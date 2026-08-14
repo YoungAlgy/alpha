@@ -11,7 +11,7 @@ import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/serv
 import { hasActiveAccess } from "@/lib/access";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { withDeadline } from "@/lib/with-deadline";
-import { parseBirthday } from "@/lib/demographics";
+import { parseBirthday, isValidCalendarDateString } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
 import { BLURB_CAPS } from "@/lib/types";
 import { deliverLetterOnce, type DeliveryStore } from "@/lib/letter-delivery";
@@ -69,9 +69,19 @@ const BodySchema = z.object({
   // couple days of slop for timezone/clock skew rather than left open: an
   // unbounded weekOf keys the issues upsert below, so it could overwrite any
   // already-delivered issue (past or future) in a reader's archive.
+  // alpha-drift-r26-06 (2026-08-14): the old refine only checked
+  // Number.isNaN, which JS's Date parser never trips for an impossible
+  // day-of-month -- it silently rolls over instead (2026-04-31 becomes
+  // May 1), letting the raw, still-invalid string reach persistIssueIfPossible's
+  // upsert into public.issues.week_of, a strict Postgres `date` column that
+  // rejects it outright. That upsert failure was only console.warned, not
+  // surfaced, so the reader got a real letter that silently never saved to
+  // their archive. isValidCalendarDateString does the same real round-trip
+  // check ProfileSchema.birthday already relies on via parseBirthday, just
+  // above in this same schema.
   weekOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => {
+    if (!isValidCalendarDateString(s)) return false;
     const d = new Date(`${s}T00:00:00Z`).getTime();
-    if (Number.isNaN(d)) return false;
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     return Math.abs(today.getTime() - d) <= 2 * 24 * 60 * 60 * 1000;
