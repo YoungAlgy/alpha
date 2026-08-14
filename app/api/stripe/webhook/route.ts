@@ -385,11 +385,27 @@ export async function POST(req: Request) {
         const dispute = event.data.object as Stripe.Dispute;
         const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id;
         // Disputes don't carry a customer id directly -- retrieve the charge
-        // to get it. A retrieve failure here can't be fixed by Stripe
-        // retrying the SAME dispute event (the charge id itself isn't
-        // wrong), so this alerts and moves on rather than throwing --
-        // matches invoice.payment_failed's own no-throw judgment call just
-        // above.
+        // to get it.
+        //
+        // alpha-drift-r27-06 (2026-08-14): this used to only log a retrieve
+        // failure and fall through to the "couldn't identify the subscriber"
+        // alert below, never throwing -- on the reasoning that "Stripe
+        // retrying the SAME dispute event can't fix it (the charge id
+        // itself isn't wrong)." True for a PERMANENT failure, but not for
+        // the far more common transient one (a momentary Stripe 5xx, a
+        // network blip, a rate limit) -- exactly the failure class a
+        // redelivery-triggered retry WOULD fix, since nothing about the
+        // identifier itself is wrong. Every other Stripe/Supabase call in
+        // this handler throws specifically to get Stripe's automatic retry
+        // (the #35 pattern -- see this SAME case block's disputeErr throw
+        // ~40 lines below, guarding the identical access-revocation this
+        // retrieve blocks) -- this was the one call that didn't. Rethrowing
+        // routes it through the outer catch's existing retry/alert
+        // machinery instead of silently forgoing a retry here. The
+        // `if (!customerId)` alert below still covers the genuinely
+        // different case where the retrieve SUCCEEDS but the charge simply
+        // has no customer attached -- nothing to retry there, so that path
+        // is untouched.
         let customerId: string | null = null;
         try {
           const charge = await stripe.charges.retrieve(chargeId);
@@ -399,6 +415,7 @@ export async function POST(req: Request) {
             `[stripe-webhook] dispute ${dispute.id}: charge retrieve failed:`,
             e instanceof Error ? e.message : e
           );
+          throw e;
         }
         if (!customerId) {
           await sendOpsAlert(
@@ -488,10 +505,21 @@ export async function POST(req: Request) {
         const charge = event.data.object as Stripe.Charge;
         const customerId = typeof charge.customer === "string" ? charge.customer : charge.customer?.id ?? null;
         const full = charge.amount_refunded >= charge.amount;
+        // alpha-drift-r27-05 (2026-08-14): this used to key on charge.id,
+        // the one alert in this file scoped to the underlying Charge
+        // instead of the Stripe Event -- every sibling alert here uses
+        // event.id (the generic failure alert below) or dispute.id (each
+        // scoped to one distinct dispute lifecycle event). Stripe supports
+        // multiple partial refunds against a single charge, and each fires
+        // its own charge.refunded event sharing the SAME charge.id but a
+        // different amount_refunded -- keying on charge.id risked a second,
+        // materially different refund (e.g. a partial that just became
+        // full) getting deduped away against the first alert instead of
+        // reaching Algy. event.id uniquely identifies THIS refund event.
         await sendOpsAlert(
           "alpha. charge refunded",
           `Charge ${charge.id} refunded (${full ? "full" : "partial"}: $${(charge.amount_refunded / 100).toFixed(2)} of $${(charge.amount / 100).toFixed(2)})${customerId ? ` for customer ${customerId}` : ""}. Access was NOT automatically revoked -- a refund alone doesn't cancel the subscription. If this should also end their access, cancel their subscription in Stripe or via the admin panel.`,
-          `alpha-refund-${charge.id}`
+          `alpha-refund-${event.id}`
         );
         break;
       }
@@ -532,10 +560,28 @@ export async function POST(req: Request) {
     // customer is left with no users row / no quota / no welcome email and no one
     // finds out. event.id keys the alert so Stripe's own retries of the same event
     // don't re-page repeatedly. Best-effort: sendOpsAlert never throws.
+    //
+    // alpha-drift-r27-07 (2026-08-14): "don't re-page repeatedly" only held
+    // for the first 24 hours -- Resend's own send-idempotency window is 24h,
+    // but Stripe retries a failing delivery with backoff for up to 3 days.
+    // Every retry re-enters this catch (insertedDedupRow is deliberately
+    // deleted above so the dedup guard never short-circuits a retry), and
+    // once a retry lands more than 24h after the FIRST attempt, Resend no
+    // longer recognizes `alpha-webhook-fail-${event.id}` as a duplicate and
+    // sends a fresh alert -- for the exact prolonged-outage scenario this
+    // alert exists to catch, Algy got paged again on every subsequent
+    // retry, not once, risking alert fatigue burying the one alert meant to
+    // surface a real multi-day failure. Adding a UTC day bucket to the key
+    // caps it at one alert per calendar day a failure persists -- silence
+    // for retries within the same day (matching the original intent),
+    // still genuinely re-alerting daily if the failure outlives Resend's
+    // window, instead of either re-paging on every retry or going quiet
+    // after the first day.
+    const dayBucket = new Date().toISOString().slice(0, 10);
     await sendOpsAlert(
       "alpha. webhook processing failed",
       `event ${event.id} (${event.type}): ${msg}`,
-      `alpha-webhook-fail-${event.id}`
+      `alpha-webhook-fail-${event.id}-${dayBucket}`
     );
     return NextResponse.json({ received: false, error: "handler error" }, { status: 500 });
   }
