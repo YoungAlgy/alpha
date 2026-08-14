@@ -43,6 +43,12 @@ export default function AdminAccountsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // alpha-drift-r32-04 (2026-08-14): act() only ever alert()'d on FAILURE --
+  // a successful grant/revoke/clear/delete gave a sighted admin the visual
+  // row-list reload as feedback, but a screen reader user got no
+  // confirmation an action even happened, unlike settings/page.tsx's own
+  // billingMsg pattern for the exact same "did my click work" question.
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [q, setQ] = useState("");
   // Search runs against the whole table, so it always comes back as one full
   // (non-appendable) page — "Load more" only makes sense on the unfiltered,
@@ -111,9 +117,10 @@ export default function AdminAccountsPage() {
     }
   }
 
-  async function act(userId: string, action: "delete" | "grant_free" | "revoke_free" | "clear_suppression", confirmMsg?: string) {
+  async function act(userId: string, email: string, action: "delete" | "grant_free" | "revoke_free" | "clear_suppression", confirmMsg?: string) {
     if (confirmMsg && !confirm(confirmMsg)) return;
     setBusy(userId);
+    setActionMsg(null);
     try {
       const res = await fetch("/api/admin/users", {
         method: "POST",
@@ -125,6 +132,15 @@ export default function AdminAccountsPage() {
       // Reload through whatever search was active, so acting on a result found
       // past the newest-200 window doesn't bounce the admin back to page one.
       await load(activeSearch ? { search: activeSearch } : undefined);
+      const verb =
+        action === "delete"
+          ? "Deleted"
+          : action === "grant_free"
+          ? "Granted free access to"
+          : action === "revoke_free"
+          ? "Revoked free access from"
+          : "Cleared delivery suppression for";
+      setActionMsg(`${verb} ${email}.`);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Action failed.");
     } finally {
@@ -271,6 +287,12 @@ export default function AdminAccountsPage() {
           </p>
         )}
 
+        {/* alpha-drift-r32-04 (2026-08-14): sr-only, announces act()'s
+            result -- see the state comment above. */}
+        <p role="status" aria-live="polite" className="sr-only">
+          {actionMsg}
+        </p>
+
         {/* alpha-drift-r19-01 (found+fixed 2026-08-07): was a bare "Loading…"
             line, unlike every sibling data page (app/archive/page.tsx,
             inbox/[issueId]'s LetterLoader) which both render a pulse
@@ -387,6 +409,7 @@ export default function AdminAccountsPage() {
                         onClick={() =>
                           act(
                             u.id,
+                            u.email,
                             "grant_free",
                             `Grant ${u.email} a free alpha. subscription?`
                           )
@@ -407,6 +430,7 @@ export default function AdminAccountsPage() {
                         onClick={() =>
                           act(
                             u.id,
+                            u.email,
                             "revoke_free",
                             `Revoke ${u.email}'s free subscription?`
                           )
@@ -424,6 +448,7 @@ export default function AdminAccountsPage() {
                         onClick={() =>
                           act(
                             u.id,
+                            u.email,
                             "clear_suppression",
                             `Clear delivery suppression for ${u.email}? Their next send will go through normally.`
                           )
@@ -440,6 +465,7 @@ export default function AdminAccountsPage() {
                       onClick={() =>
                         act(
                           u.id,
+                          u.email,
                           "delete",
                           `Permanently delete ${u.email}? This removes auth + their letters. Cannot be undone.`
                         )
