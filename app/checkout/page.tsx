@@ -230,7 +230,11 @@ export default function CheckoutPage() {
             <p
               role="alert"
               className="alpha-ui text-xs text-center"
-              style={{ color: "var(--accent-ink)" }}
+              // alpha-drift-r23-02 (found+fixed 2026-08-14): --accent-ink
+              // fails WCAG AA 4.5:1 against --paper in 12+ themes -- --ink
+              // clears every theme, same swap round 21 already made for
+              // the admin page's own error text.
+              style={{ color: "var(--ink)" }}
             >
               {/* Every server-side error message here already ends in a
                   period (see /api/stripe/checkout's own error strings) --

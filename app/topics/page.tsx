@@ -427,8 +427,11 @@ export default function TopicsPage() {
               Add
             </button>
           </form>
+          {/* alpha-drift-r23-02 (found+fixed 2026-08-14): --accent-ink
+              fails WCAG AA 4.5:1 against --paper in 12+ themes -- --ink
+              clears every theme. */}
           {customErr && (
-            <p role="alert" aria-live="assertive" className="alpha-ui text-xs" style={{ color: "var(--accent-ink)" }}>
+            <p role="alert" aria-live="assertive" className="alpha-ui text-xs" style={{ color: "var(--ink)" }}>
               {customErr}
             </p>
           )}
@@ -576,11 +579,14 @@ export default function TopicsPage() {
             same "floating over content" treatment InstallPrompt.tsx already
             uses for its own fixed bottom banner. */}
         <div className="alpha-card sticky bottom-4 flex items-center justify-between gap-4 p-4">
+          {/* alpha-drift-r23-02 (found+fixed 2026-08-14): --accent-ink
+              fails WCAG AA 4.5:1 against --paper in 12+ themes -- --ink
+              clears every theme. */}
           <span
             role="status"
             aria-live="polite"
             className="alpha-ui text-sm"
-            style={{ color: saveError ? "var(--accent-ink)" : "var(--ink-soft)" }}
+            style={{ color: saveError ? "var(--ink)" : "var(--ink-soft)" }}
           >
             {saveError
               ? saveError

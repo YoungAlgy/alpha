@@ -132,8 +132,32 @@ export default function YouPage() {
             // removed here too -- app/globals.css's per-theme
             // color-scheme now handles this correctly.
             style={{ color: "var(--ink)", borderColor: "var(--rule)" }}
+            // alpha-drift-r23-07 (found+fixed 2026-08-14): the r22-04 fix
+            // added real validation that silently disables Continue on an
+            // out-of-range typed date, but neither the input nor its hint
+            // text had any aria wiring -- a screen-reader user got zero
+            // announcement that anything changed. aria-describedby always
+            // points at the hint (whichever of its 3 states is showing);
+            // aria-invalid reflects the SAME format-validity check
+            // birthdayValid/canContinue already gate on, not just "empty."
+            aria-describedby="alpha-birthday-hint"
+            aria-invalid={birthday.length > 0 && !birthdayValid}
           />
-          <p className="alpha-ui text-xs mt-2" style={{ color: (zodiacPicked && !birthday) || (birthday.length > 0 && !birthdayValid) ? "var(--accent-ink)" : "var(--ink-soft)" }}>
+          {/* alpha-drift-r23-02 (found+fixed 2026-08-14): --accent-ink fails
+              WCAG AA 4.5:1 text contrast against --paper in 12+ of this
+              app's themes, including the default "forest" (2.88:1) -- there
+              is no dedicated --danger/--error token, and this is genuine
+              small-reading-size validation text a reader needs to be able
+              to read to know why Continue is disabled. --ink clears 4.5:1
+              in every theme (verified in round 21's admin-page fix); same
+              swap, not a new token, to stay consistent with that precedent. */}
+          <p
+            id="alpha-birthday-hint"
+            role="status"
+            aria-live="polite"
+            className="alpha-ui text-xs mt-2"
+            style={{ color: (zodiacPicked && !birthday) || (birthday.length > 0 && !birthdayValid) ? "var(--ink)" : "var(--ink-soft)" }}
+          >
             {birthday.length > 0 && !birthdayValid
               ? "That date doesn't look right. Double check the day, month, and year."
               : zodiacPicked && !birthday
@@ -206,7 +230,15 @@ export default function YouPage() {
             <button
               type="button"
               onClick={skip}
-              className="alpha-ui text-sm underline underline-offset-4"
+              // alpha-drift-r23-09 (found+fixed 2026-08-14): ~20px tall
+              // (bare text-sm, no padding), under the WCAG 2.5.8 24px
+              // floor, sitting right next to Continue -- same "these sit
+              // right next to each other" configuration r20-11 already
+              // bumped elsewhere on this page. p-2 -m-2 (InstallPrompt.tsx's
+              // established pattern): the negative margin cancels the
+              // padding's layout impact, so the tap target grows without
+              // moving anything visually.
+              className="alpha-ui text-sm underline underline-offset-4 p-2 -m-2"
               style={{ color: "var(--ink-soft)" }}
             >
               Skip

@@ -195,7 +195,11 @@ export function QuestionStep({
           role="alert"
           aria-live="assertive"
           className="alpha-ui text-sm"
-          style={{ color: "var(--accent-ink)" }}
+          // alpha-drift-r23-02 (found+fixed 2026-08-14): --accent-ink fails
+          // WCAG AA 4.5:1 against --paper in 12+ themes -- --ink clears
+          // every theme, same swap round 21 already made for the admin
+          // page's own error text.
+          style={{ color: "var(--ink)" }}
         >
           {error}
         </p>
@@ -217,7 +221,13 @@ export function QuestionStep({
             <button
               type="button"
               onClick={skip}
-              className="alpha-ui text-sm underline underline-offset-4"
+              // alpha-drift-r23-09 (found+fixed 2026-08-14): ~20px tall
+              // (bare text-sm, no padding), under the WCAG 2.5.8 24px
+              // floor, sitting right next to Continue. p-2 -m-2
+              // (InstallPrompt.tsx's established pattern): the negative
+              // margin cancels the padding's layout impact, so the tap
+              // target grows without moving anything visually.
+              className="alpha-ui text-sm underline underline-offset-4 p-2 -m-2"
               style={{ color: "var(--ink-soft)" }}
             >
               Skip

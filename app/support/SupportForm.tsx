@@ -100,8 +100,11 @@ export function SupportForm() {
       >
         {status === "sending" ? "Sending…" : "Send →"}
       </button>
+      {/* alpha-drift-r23-02 (found+fixed 2026-08-14): --accent-ink fails
+          WCAG AA 4.5:1 against --paper in 12+ themes -- --ink clears
+          every theme. */}
       {error && (
-        <p role="alert" className="alpha-ui text-sm" style={{ color: "var(--accent-ink)" }}>
+        <p role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>
           {error} Try emailing us directly.
         </p>
       )}

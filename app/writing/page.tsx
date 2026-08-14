@@ -245,9 +245,20 @@ export default function WritingPage() {
             α
           </span>
         </div>
+        {/* alpha-drift-r23-08 (found+fixed 2026-08-14): this whole ~45s
+            automated wait screen had zero ARIA live region and the bar
+            carried no role=progressbar -- unlike ProgressDots.tsx, used one
+            step earlier in the same funnel, which already gets this right.
+            role=progressbar + aria-value* here so assistive tech can query
+            real progress on demand, mirroring that component's pattern. */}
         <div
           className="w-48 mx-auto h-[3px] rounded-full overflow-hidden"
           style={{ background: "var(--rule)" }}
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuetext={done ? "Your letter is ready." : `Writing your letter, ${pct}% done`}
         >
           <div
             style={{
@@ -259,7 +270,12 @@ export default function WritingPage() {
           />
         </div>
         <div>
+          {/* aria-live="polite" so the ONE transition that actually matters
+              -- writing to ready -- gets announced once, without narrating
+              every 6s step change (which would just be noise over a 45s wait). */}
           <p
+            role="status"
+            aria-live="polite"
             className="alpha-display text-2xl md:text-3xl font-bold tracking-tight mb-2"
           >
             {done ? "Your letter is ready." : "Writing your letter…"}
@@ -290,9 +306,12 @@ export default function WritingPage() {
                   style={{
                     width: 14,
                     height: 14,
+                    // alpha-drift-r23-02 (found+fixed 2026-08-14):
+                    // --accent-ink fails WCAG AA 4.5:1 against --paper in
+                    // 12+ themes -- --ink clears every theme.
                     color:
                       status === "done"
-                        ? "var(--accent-ink)"
+                        ? "var(--ink)"
                         : "var(--ink-soft)",
                   }}
                 >
@@ -383,7 +402,10 @@ export default function WritingPage() {
               type="button"
               onClick={() => router.push("/inbox" as never)}
               className="underline underline-offset-4"
-              style={{ color: "var(--accent-ink)" }}
+              // alpha-drift-r23-02 (found+fixed 2026-08-14): --accent-ink
+              // fails WCAG AA 4.5:1 against --paper in 12+ themes -- --ink
+              // clears every theme.
+              style={{ color: "var(--ink)" }}
             >
               Wait on the inbox →
             </button>

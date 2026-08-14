@@ -44,11 +44,19 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-size: 0.9rem;
     font-weight: 600;
+    line-height: 1.3;
     color: #F4EFE0;
     background: #1F3D2E;
     border: none;
     border-radius: 6px;
-    padding: 10px 20px;
+    /* alpha-drift-r23-09 (found+fixed 2026-08-14): this is the app's one
+       fallback UI for exactly the scenario -- a flaky connection -- the
+       r20-11/r16-03 touch-target bumps elsewhere in the app were written
+       for, but this file lives outside the component system (a static
+       file, not JSX) so it was structurally excluded from both sweeps.
+       Was ~37px tall, under the ~40px guideline; 14px vertical padding
+       clears it with real margin. */
+    padding: 14px 24px;
     cursor: pointer;
   }
 </style>
