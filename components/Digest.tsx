@@ -174,9 +174,14 @@ function Item({ item }: { item: DigestItem }) {
   return (
     <div>
       {kindLabel && (
+        // alpha-drift-r25-04 (2026-08-14): --accent-ink fails WCAG AA 4.5:1
+        // against --paper in most themes (2.88:1 default); this label is
+        // plain informational text, not decoration, so it needs a token
+        // that clears 4.5:1 -- --ink-soft does, in all 26 themes, and is
+        // already this app's established color for muted meta text.
         <div
           className="alpha-mono mb-2"
-          style={{ color: "var(--accent-ink)" }}
+          style={{ color: "var(--ink-soft)" }}
         >
           {item.kind.toUpperCase()}
         </div>

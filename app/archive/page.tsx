@@ -273,7 +273,10 @@ export default function ArchivePage() {
                   href={item.id === "inbox" ? "/inbox" : `/inbox/${item.id}`}
                   className="block group py-1"
                 >
-                  <div className="alpha-mono mb-1" style={{ color: "var(--accent-ink)" }}>
+                  {/* alpha-drift-r25-04: --accent-ink fails WCAG AA 4.5:1 vs --paper in
+                  most themes; this week label is plain informational text, so it needs
+                  --ink-soft (passes 4.5:1 in all 26 themes), not --accent-ink. */}
+                  <div className="alpha-mono mb-1" style={{ color: "var(--ink-soft)" }}>
                     {weekLabel(item.weekOf).toUpperCase()}
                   </div>
                   <p className="alpha-display text-lg md:text-xl font-semibold leading-snug group-hover:opacity-70">

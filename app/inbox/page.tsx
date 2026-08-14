@@ -366,9 +366,12 @@ export default function InboxPage() {
             <ThemeSwitcher />
           </div>
         </div>
+        {/* alpha-drift-r25-04: --accent-ink fails WCAG AA 4.5:1 vs --paper in most
+        themes; this meta line is plain informational text, so it needs --ink-soft
+        (passes 4.5:1 in all 26 themes), not --accent-ink. */}
         <div
           className="max-w-5xl mx-auto px-6 pb-3 alpha-mono text-center"
-          style={{ color: "var(--accent-ink)" }}
+          style={{ color: "var(--ink-soft)" }}
         >
           {weekLabel(issue.weekOf).toUpperCase()} · {minutes} MIN READ · NEXT ONE SHIPS {nextSendLabel().toUpperCase()}
         </div>
