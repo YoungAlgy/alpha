@@ -75,13 +75,21 @@ export default function PrivacyPage() {
       </ul>
 
       <H2>How we use it</H2>
+      {/* alpha-drift-r25-03 (2026-08-14): this used to call ALL our backup AI
+      providers "the free backup providers" who "don't carry that same
+      guarantee" as Anthropic's no-training promise. DeepSeek isn't free --
+      it runs on a paid, metered balance (lib/engine/deepseek-client.ts's own
+      comment says so) -- and nothing in the codebase backs a training-policy
+      claim about Groq or DeepSeek specifically, only Gemini's (see the
+      Third-party processors section below, which already gets this right).
+      Narrowed the caveat to the one backup it's actually substantiated for. */}
       <p>
         We use your data only to (a) generate and deliver your letters,
         (b) bill your subscription, and (c) improve alpha. We don&apos;t share it
         with advertisers. Our primary AI provider, Anthropic, runs on a paid
-        tier that doesn&apos;t use your data to train their models. The free
-        backup providers we fall back to (see below) don&apos;t carry that
-        same guarantee.
+        tier that doesn&apos;t use your data to train their models. Google&apos;s
+        free Gemini tier, one of our backups, doesn&apos;t carry that same
+        guarantee — see below for what that means in practice.
       </p>
 
       <H2>Third-party processors</H2>
@@ -143,6 +151,19 @@ export default function PrivacyPage() {
         <li>Delete your account and all associated data (irreversible) from the same place.</li>
         <li>Email us to revoke any consent or ask what we have.</li>
       </ul>
+      {/* alpha-drift-r25-01 (2026-08-14): "(irreversible)" above is true of what
+      the app itself can do for you -- there's no undo button and no way to
+      restore an account on request. It doesn't mean every trace disappears
+      the instant you click delete, and this note says so plainly instead of
+      leaving a real gap unmentioned. */}
+      <p>
+        One caveat on that: we keep an encrypted daily backup of the database
+        for up to 30 days, as a safety net against our own mistakes, not
+        yours. If you delete your account, your data can still exist in a
+        backup taken before you deleted it until that backup ages out on its
+        own. Nobody looks at these day to day, and we don&apos;t use them to
+        bring back an account you chose to delete.
+      </p>
 
       <H2>Cookies</H2>
       <p>
