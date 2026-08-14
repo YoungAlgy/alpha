@@ -96,16 +96,106 @@ console.log(
 );
 
 // --- 4) Invariant: no blurb, from any tier, on any run, has a banned word --
-console.log("(4) No returned blurb — from any tier, any run — ever contains a banned word");
+// alpha-drift-r22-02 (found+fixed 2026-08-14, self-audit): this invariant
+// check used to scan the SAME narrower blob (headline+body only) the
+// production bug itself used -- widened to match the real fix's full scope
+// (ref labels + supplementary notes too), so this test can't pass green
+// while silently missing the exact class of leak the fix closes.
+console.log("(4) No returned blurb — from any tier, any run — ever contains a banned word (full scope: intro, headline, body, ref labels, supplementary notes)");
 let anyTells = false;
 for (const [i, b] of allBlurbs.entries()) {
-  const tells = findLexicalTells([b.intro, ...b.items.map((it) => `${it.headline} ${it.body}`)].join(" "));
+  const blob = [
+    b.intro,
+    ...b.items.map((it) =>
+      [it.headline, it.body, it.primaryRef?.label, ...(it.supplementaryRefs?.flatMap((r) => [r.label, r.note]) ?? [])]
+        .filter(Boolean)
+        .join(" ")
+    ),
+  ].join(" ");
+  const tells = findLexicalTells(blob);
   if (tells.length > 0) {
     console.log(`  XX run ${i + 1} shipped banned words: ${tells.join(", ")}`);
     anyTells = true;
   }
 }
-check("(4) zero banned words across all captured blurbs", !anyTells);
+check("(4) zero banned words across all captured blurbs, full scope", !anyTells);
+
+// --- 5) alpha-drift-r22-02: the actual bug -- a banned word hiding ONLY in
+// a ref label/note used to be invisible to the tells check ---
+console.log("(5) alpha-drift-r22-02: reproduce the exact gap -- a banned word ONLY in a citation label/note");
+{
+  // Mirrors topic-blurb.ts's real itemTextBlob() shape exactly.
+  const itemTextBlob = (it: { headline: string; body: string; primaryRef?: { label: string }; supplementaryRefs?: { label: string; note?: string }[] }) =>
+    [it.headline, it.body, it.primaryRef?.label, ...(it.supplementaryRefs?.flatMap((r) => [r.label, r.note]) ?? [])]
+      .filter(Boolean)
+      .join(" ");
+
+  const item = {
+    headline: "A clean, banned-word-free headline",
+    body: "A clean, banned-word-free body paragraph with nothing suspicious in it at all.",
+    primaryRef: { label: "Real leverage in modern finance" }, // the banned word lives ONLY here
+  };
+
+  // The OLD, narrower scope this bug used -- reproduced exactly, not guessed.
+  const oldScopeTells = findLexicalTells(`${item.headline} ${item.body}`);
+  check("(5) sanity: the OLD narrow scope (headline+body only) finds NOTHING -- proves the bug was real, not already caught some other way", oldScopeTells.length === 0);
+
+  // The NEW, fixed scope (itemTextBlob, matching the real production code).
+  const newScopeTells = findLexicalTells(itemTextBlob(item));
+  check("(5) the FIXED full scope (itemTextBlob) actually catches the word hiding in the ref label", newScopeTells.includes("leverage"));
+
+  // Source-level guard: confirm the REAL file shares one itemTextBlob
+  // between the meta-leak filter and the tells check, not two independently
+  // hand-copied blobs that could silently drift apart again.
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../lib/engine/topic-blurb.ts", import.meta.url), "utf8");
+  check("(5) source: itemTextBlob is defined once", (src.match(/const itemTextBlob = /g) ?? []).length === 1);
+  check("(5) source: the meta-leak filter calls itemTextBlob(it)", /containsMetaLeak\(itemTextBlob\(it\)\)/.test(src));
+  check("(5) source: the tells check ALSO uses itemTextBlob via cleanItems.map, not a separately hand-written blob", /findLexicalTells\(\[intro, \.\.\.cleanItems\.map\(itemTextBlob\)\]/.test(src));
+}
+
+// --- 6) alpha-drift-r22-04: primaryRef.note -- structurally IDENTICAL to
+// supplementaryRefs[].note, but itemTextBlob (and the sanitizer that maps
+// over every item before it) never referenced it at all -- a second,
+// independent instance of the exact SAME class of gap #5 above closed for
+// labels, just one field over -- caught by the same self-audit pass that
+// wrote test #5, on the very item it had just fixed. ---
+console.log("(6) alpha-drift-r22-04: primaryRef.note gets the SAME sanitization + tells-scan treatment as supplementaryRefs[].note, not silently skipped");
+{
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../lib/engine/topic-blurb.ts", import.meta.url), "utf8");
+
+  // (a) itemTextBlob's real shape now includes primaryRef.note. Compared
+  // against the r22-02-fixed-but-still-incomplete scope (label, but not
+  // primaryRef.note) reproduced locally here, since that intermediate shape
+  // no longer exists in the real file to import.
+  const r22_02Scope = (it: { headline: string; body: string; primaryRef?: { label: string }; supplementaryRefs?: { label: string; note?: string }[] }) =>
+    [it.headline, it.body, it.primaryRef?.label, ...(it.supplementaryRefs?.flatMap((r) => [r.label, r.note]) ?? [])]
+      .filter(Boolean)
+      .join(" ");
+  const itemTextBlobWithNote = (it: { headline: string; body: string; primaryRef?: { label: string; note?: string }; supplementaryRefs?: { label: string; note?: string }[] }) =>
+    [it.headline, it.body, it.primaryRef?.label, it.primaryRef?.note, ...(it.supplementaryRefs?.flatMap((r) => [r.label, r.note]) ?? [])]
+      .filter(Boolean)
+      .join(" ");
+  const item = {
+    headline: "A clean, banned-word-free headline",
+    body: "A clean, banned-word-free body paragraph with nothing suspicious in it at all.",
+    primaryRef: { label: "A clean label", note: "This source will leverage its position" }, // banned word lives ONLY in primaryRef.note
+  };
+  check("(6a) sanity: the r22-02 scope (label but not primaryRef.note) finds NOTHING -- confirms this is a distinct, still-real gap", findLexicalTells(r22_02Scope(item)).length === 0);
+  check("(6b) the FIXED full scope (including primaryRef.note) catches the word", findLexicalTells(itemTextBlobWithNote(item)).includes("leverage"));
+
+  // (b) source: itemTextBlob's real definition now reads primaryRef?.note.
+  check("(6c) source: itemTextBlob's real definition includes primaryRef?.note", /it\.primaryRef\?\.label, it\.primaryRef\?\.note,/.test(src));
+
+  // (c) source: the sanitizer mapping (finalizeBlurb's `mapped =`) now
+  // sanitizes primaryRef.note too, not just label -- confirms the fix isn't
+  // ONLY visible to the tells scan while still shipping raw to the reader.
+  check(
+    "(6d) source: the sanitizer's primaryRef mapping now sanitizes note as well as label",
+    /primaryRef: it\.primaryRef\s*\n\s*\? \{ \.\.\.it\.primaryRef, label: sanitizeVoice\(it\.primaryRef\.label\), note: it\.primaryRef\.note \? sanitizeVoice\(it\.primaryRef\.note\) : it\.primaryRef\.note \}/.test(src)
+  );
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

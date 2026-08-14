@@ -160,7 +160,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "The clearest strategic thinker on tech and business",
           body:
-            "Ben Thompson's Stratechery is the reference for understanding why tech companies do what they do: platforms, aggregation, leverage. Dense, but it changes how you see the whole board.",
+            "Ben Thompson's Stratechery is the reference for understanding why tech companies do what they do: platforms, aggregation, who actually holds the power. Dense, but it changes how you see the whole board.",
           primaryRef: {
             label: "Stratechery",
             url: "https://stratechery.com",

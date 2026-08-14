@@ -19,10 +19,19 @@ function stripTags(s: string): string {
 // CJK) an LLM could still read as tag-shaped punctuation, the same gap
 // lib/prompt-fence.ts's stripPromptFenceChars fixed for its own call sites
 // this same round. Layered on top here (not instead of stripTags) so the
-// two keep doing their own jobs: stripTags removes a REAL tag's inner
-// content along with it (e.g. "<script>alert(1)</script>" -> "" not
-// "alert(1)"), stripPromptFenceChars only strips the bracket characters
-// themselves -- running both catches everything either one alone would miss.
+// two keep doing their own jobs: stripTags removes the ASCII tag
+// DELIMITERS only, leaving any text between them in place (e.g.
+// "<script>alert(1)</script>" -> "alert(1)", not ""), so it alone can't
+// stop a smuggled prompt-fence-shaped tag's own inner text from surviving.
+// stripPromptFenceChars strips the bracket characters themselves wherever
+// they appear, tag-shaped or not -- running both catches everything either
+// one alone would miss.
+// alpha-drift-r22-03 (found+fixed 2026-08-14, self-audit): the paragraph
+// above used to claim stripTags reduces "<script>alert(1)</script>" to ""
+// -- it doesn't; the regex only eats the <...> delimiters themselves, so
+// the real output is "alert(1)". Corrected so this comment can't send a
+// future reader looking for content-stripping behavior that was never
+// actually here.
 export function cleanField(s: string): string {
   return stripPromptFenceChars(stripTags(s))
     .replace(/https?:\/\/[^\s)\]]+/gi, "")

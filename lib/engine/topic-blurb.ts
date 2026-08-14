@@ -471,8 +471,15 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       kind: narrowKind(it.kind),
       headline: sanitizeVoice(it.headline),
       body: sanitizeVoice(it.body),
+      // alpha-drift-r22-04 (found+fixed 2026-08-14, self-audit): this used to
+      // spread `...it.primaryRef` and sanitize ONLY label, leaving note
+      // (same optional Reference field supplementaryRefs[].note carries, and
+      // just as capable of holding model-generated free text) through
+      // completely raw -- the one field this exact shape sanitizes on every
+      // OTHER ref in the item. Matched to the supplementaryRefs.map below,
+      // which already sanitizes both label and note.
       primaryRef: it.primaryRef
-        ? { ...it.primaryRef, label: sanitizeVoice(it.primaryRef.label) }
+        ? { ...it.primaryRef, label: sanitizeVoice(it.primaryRef.label), note: it.primaryRef.note ? sanitizeVoice(it.primaryRef.note) : it.primaryRef.note }
         : undefined,
       supplementaryRefs:
         Array.isArray(it.supplementaryRefs) && it.supplementaryRefs.length > 0
@@ -515,16 +522,30 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     // item drops, the blurb returns empty — the cost-tiering above escalates
     // on that, and if this WAS already the Claude/last-resort call, the
     // assembler backfills.
-    const cleanItems = items.filter((it) => {
-      const blob = [
-        it.headline,
-        it.body,
-        it.primaryRef?.label,
-        ...(it.supplementaryRefs?.flatMap((r) => [r.label, r.note]) ?? []),
-      ]
+    //
+    // alpha-drift-r22-02 (found+fixed 2026-08-14, self-audit): itemTextBlob
+    // is the single definition of "everything in one item a reader could
+    // actually read" -- ref labels and supplementary notes included. Pulled
+    // out into its own function because the lexical-tells check further
+    // down used to build a NARROWER blob (just headline+body), so a banned
+    // word slipping into a citation's label or note -- Gemini's/a source's
+    // own wording, which the cost-tiering comment right below this one
+    // explicitly documents as a real, observed failure mode -- would trip
+    // the meta-leak guard but never the tells check, letting it ship
+    // undetected and unescalated.
+    //
+    // alpha-drift-r22-04 (found+fixed 2026-08-14, self-audit): this blob
+    // still missed primaryRef.note -- same optional Reference field as
+    // supplementaryRefs[].note, and the mapping above sanitizes it now, but
+    // it was never actually included here. A banned word or meta-leak
+    // hiding ONLY in a primary citation's note would have shipped past
+    // BOTH guards, the exact class of gap this function exists to close.
+    const itemTextBlob = (it: ParsedItem): string =>
+      [it.headline, it.body, it.primaryRef?.label, it.primaryRef?.note, ...(it.supplementaryRefs?.flatMap((r) => [r.label, r.note]) ?? [])]
         .filter(Boolean)
         .join(" ");
-      if (containsMetaLeak(blob)) {
+    const cleanItems = items.filter((it) => {
+      if (containsMetaLeak(itemTextBlob(it))) {
         console.warn(`[voice-guard] ${topicId} ${weekOf}: dropped meta-leak item "${it.headline}"`);
         return false;
       }
@@ -548,7 +569,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     // test run. A subscriber reading one of these is the exact "sounds like a
     // machine wrote this" failure this whole voice system exists to prevent,
     // so it counts as "not good enough" the same way an empty section does.
-    const tells = findLexicalTells([intro, ...cleanItems.map((it) => `${it.headline} ${it.body}`)].join(" "));
+    const tells = findLexicalTells([intro, ...cleanItems.map(itemTextBlob)].join(" "));
     if (tells.length > 0) {
       console.warn(`[voice-guard] ${topicId} ${weekOf}: lexical tells slipped: ${tells.join(", ")}`);
     }

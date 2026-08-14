@@ -23,6 +23,7 @@
 //      titles before they're spliced in.
 //
 // Run: npx tsx scripts/verify-topic-blurb-fence.mts
+import { readFileSync } from "node:fs";
 const { cleanField } = await import("../lib/engine/text-clean.ts");
 const { stripPromptFenceChars } = await import("../lib/prompt-fence.ts");
 
@@ -54,6 +55,17 @@ console.log("(3b) alpha-drift-r21-04 (found+fixed 2026-08-14): cleanField also s
   // regression to guard is that this still works exactly as before, not
   // that it was ever "remove element + content" DOM-style stripping.
   check("(3b) a real ASCII tag's markup is still stripped, same as before this fix", cleanField("<script>alert(1)</script> real text") === "alert(1) real text");
+}
+
+console.log("(3c) alpha-drift-r22-03 (found+fixed 2026-08-14, self-audit): text-clean.ts's own comment no longer misdescribes stripTags as removing an element's inner content");
+{
+  // The line above (3b) already PROVES the real behavior (content survives,
+  // only the tag markup is stripped) -- this just confirms the file's own
+  // documentation was corrected to match it, so a future reader can't be
+  // sent looking for content-stripping behavior that was never actually here.
+  const src = readFileSync(new URL("../lib/engine/text-clean.ts", import.meta.url), "utf8");
+  check("(3c) the false claim ('-> \"\" not \"alert(1)\"') is gone", !src.includes('-> "" not "alert(1)"'));
+  check("(3c) the comment now states the real, tested behavior (delimiters only, content survives)", src.includes('-> "alert(1)", not ""'));
 }
 
 console.log("(4) the actual attack: signal.context trying to close topic-blurb's new <signal> fence");
