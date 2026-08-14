@@ -35,15 +35,25 @@ export default function TermsPage() {
       </p>
 
       <H2>The service</H2>
+      {/* alpha-drift-r24-05 (2026-08-14): the resend-your-most-recent-letter
+      fallback needs a prior letter to resend, so it can't cover a brand-new
+      subscriber's very first one (app/api/cron/weekly-send/route.ts's own
+      LAYER 2 comment says as much: "No prior letter... stays a hard failure").
+      Added the caveat below rather than promise something the first send
+      can't keep. */}
       <p>
         alpha. is a paid email/web newsletter. You pick a set of topics, and
         every day we deliver a letter written for you by AI from real sources,
         with every link starting as a live web search made that period. On a
         rare day something upstream breaks and we can&apos;t finish a fresh
-        letter in time; rather than send nothing, we&apos;ll resend your most
-        recent one and say so plainly in the letter itself. We may add
-        features over time. We may also remove or change features when it
-        makes the product better.
+        letter in time. Rather than send nothing, we&apos;ll resend your most
+        recent one and say so plainly in the letter itself. That fallback
+        needs a letter of yours already on file, so it doesn&apos;t apply to
+        your very first one as a new subscriber. On the rare day that first
+        letter fails to generate, you simply won&apos;t get one that day, and
+        we try again on the next scheduled send. We may add features over
+        time. We may also remove or change features when it makes the product
+        better.
       </p>
 
       <H2>Subscription &amp; billing</H2>
@@ -52,10 +62,18 @@ export default function TermsPage() {
           monthly to your card. You can add bundles of 5 more topics for $5/mo each
           (up to 25 topics, $25/mo) from Settings → Billing.</li>
         <li>Your subscription auto-renews each month until you cancel.</li>
-        <li>You can cancel any time from Settings → Billing. Cancellation takes
-          effect at the end of the current billing cycle. You keep access until then.
-          If that button doesn&apos;t work for you, email us and we&apos;ll cancel or
-          update your card by hand, same day.</li>
+        {/* alpha-drift-r24-03 (2026-08-14): this used to name Settings → Billing as
+        the normal path and email as a fallback "if that button doesn't work." Live-
+        checked via Stripe: the account has zero Billing Portal configurations, so the
+        button always fails and email is the only path that works today. Rewritten to
+        lead with email and describe the button with an "if it's live for you" hedge,
+        so this stays accurate both now and once the one-time Stripe dashboard config
+        (tracked separately, needs Algy) is done. */}
+        <li>You can cancel any time. Email us and we&apos;ll cancel it the same day,
+          no back and forth. There&apos;s also a Manage subscription button in
+          Settings → Billing for instant self-serve cancellation and card updates,
+          when it&apos;s live for your account. Either way, cancellation takes effect
+          at the end of the current billing cycle and you keep access until then.</li>
         <li>We don&apos;t prorate partial-month refunds, but if something has gone
           materially wrong on our end, email us and we&apos;ll make it right.</li>
       </ul>
