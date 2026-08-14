@@ -12,6 +12,8 @@ import {
 import "./globals.css";
 import { ThemeApplier } from "@/components/ThemeApplier";
 import { PostHogProvider } from "@/components/PostHogProvider";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { GlobalErrorListeners } from "@/components/GlobalErrorListeners";
 import { PITCH, SHARE_LEAD } from "@/lib/copy";
 
 // Fonts: the default Forest theme uses source-serif + newsreader + inter, so
@@ -175,6 +177,8 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: INTRO_SCRIPT }} />
         <ThemeApplier />
+        <ServiceWorkerRegister />
+        <GlobalErrorListeners />
         <PostHogProvider />
         {children}
       </body>

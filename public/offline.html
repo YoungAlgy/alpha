@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>You're offline · alpha.</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #F4EFE0;
+    color: #1F3D2E;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    box-sizing: border-box;
+  }
+  .mark {
+    font-size: 4rem;
+    font-weight: 700;
+    margin: 0 0 8px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  p {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #4A5F50;
+    font-size: 0.95rem;
+    max-width: 22em;
+    line-height: 1.5;
+    margin: 0 0 20px;
+  }
+  button {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #F4EFE0;
+    background: #1F3D2E;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <div class="mark">&alpha;</div>
+  <h1>You're offline.</h1>
+  <p>alpha. couldn't reach the network for this page. Your letters need a live connection to load, since a fresh one is written every day. Reconnect and try again.</p>
+  <button type="button" onclick="location.reload()">Try again</button>
+</body>
+</html>
