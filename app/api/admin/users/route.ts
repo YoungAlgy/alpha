@@ -139,6 +139,29 @@ export async function GET(req: Request) {
   const q = searchParams.get("q")?.trim();
   const before = searchParams.get("before");
 
+  // alpha-drift-r26-08 (2026-08-14): `before` used to reach the .lt() filter
+  // below completely unvalidated -- a malformed value (?before=not-a-date)
+  // reached Postgres as an invalid timestamp literal, which failed the
+  // query and surfaced as a bare 500 "Couldn't load users. Try again."
+  // instead of a clean 400 naming the actual problem. Low real exposure
+  // (requireAdmin() gates this to one fixed trusted account, and the real
+  // frontend always round-trips a genuine created_at value it already got
+  // back from this same route), but a real gap on an otherwise carefully-
+  // validated route -- and a clean error is cheap here regardless.
+  if (before && Number.isNaN(new Date(before).getTime())) {
+    return NextResponse.json({ error: "Invalid 'before' cursor." }, { status: 400 });
+  }
+
+  // alpha-drift-r26-08 (2026-08-14): `q` used to interpolate straight into
+  // an ILIKE pattern with no escaping of ILIKE's own wildcard metacharacters
+  // (% and _). Not a SQL-injection vector (the Supabase client parameterizes
+  // the value) -- but a literal % or _ in the admin's search text was
+  // silently treated as a pattern wildcard instead of a literal character,
+  // e.g. searching for "a_b" would match "axb" too. Escaping both (and the
+  // backslash escape character itself) makes the search match what the
+  // admin actually typed.
+  const escapedQ = q?.replace(/[\\%_]/g, "\\$&");
+
   // alpha-drift-r17-09 (found+fixed 2026-08-07): .limit(200) used to be
   // baked into the base query before branching on q/before -- PostgREST
   // combines every query-string param (filter + limit) into ONE SQL query,
@@ -167,8 +190,8 @@ export async function GET(req: Request) {
     // clear_suppression action below.
     .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, bounced_at, complained_at, created_at")
     .order("created_at", { ascending: false });
-  if (q) {
-    usersQuery = usersQuery.ilike("email", `%${q}%`);
+  if (escapedQ) {
+    usersQuery = usersQuery.ilike("email", `%${escapedQ}%`);
   } else if (before) {
     usersQuery = usersQuery.lt("created_at", before).limit(200);
   } else {
@@ -232,11 +255,28 @@ export async function POST(req: Request) {
     // and pass it straight through to cleanUpStripeCustomerBeforeDelete --
     // it used to re-select the same row itself for that one column, a second
     // query for data this route was already fetching.
-    const { data: targetUser } = await sb
+    //
+    // alpha-drift-r26-01 (2026-08-14): this used to discard `error` from
+    // maybeSingle() entirely, the same gap the GET handler above already
+    // avoids (it checks error and logs+500s). A genuinely failed query
+    // (connection blip, RLS hiccup -- resolves as {data:null, error:{...}},
+    // never throws) then looked IDENTICAL to "this row doesn't exist" --
+    // and combined with round 25's own `targetUser ? ... : null` fix below,
+    // a failed pre-fetch was silently treated as "confirmed no Stripe
+    // customer," so cleanUpStripeCustomerBeforeDelete skipped its cleanup
+    // entirely while auth.admin.deleteUser() still deleted the account —
+    // an active subscription left billing forever with zero log trail.
+    // Checking error first and bailing before any destructive step closes
+    // both the observability gap and that billing-leak path in one fix.
+    const { data: targetUser, error: targetUserError } = await sb
       .from("users")
       .select("email, stripe_customer_id")
       .eq("id", body.userId)
       .maybeSingle();
+    if (targetUserError) {
+      console.error("[admin/users] delete: pre-fetch failed:", targetUserError.message);
+      return NextResponse.json({ error: "Couldn't verify user before delete. Try again." }, { status: 500 });
+    }
     // Cancel any Stripe subscription and delete the Customer object FIRST
     // (mirrors self-serve account/delete): deleting the auth user cascades
     // public.users away incl. stripe_customer_id, so a still-active sub
@@ -296,11 +336,18 @@ export async function POST(req: Request) {
     // state (the cancelled_at: null below would un-cancel them in our mirror).
     // Mirror revoke_free's guard: refuse if they have a real Stripe customer —
     // a paying sub is managed in Stripe, never comped over.
-    const { data: existing } = await sb
+    // alpha-drift-r26-01 (2026-08-14): check error before checking !existing --
+    // otherwise a genuinely failed query (never throws, resolves as
+    // {data:null, error:{...}}) reads as "user not found" with zero log trail.
+    const { data: existing, error: existingError } = await sb
       .from("users")
       .select("stripe_customer_id, email")
       .eq("id", body.userId)
       .maybeSingle();
+    if (existingError) {
+      console.error("[admin/users] grant_free: pre-fetch failed:", existingError.message);
+      return NextResponse.json({ error: "Couldn't verify user. Try again." }, { status: 500 });
+    }
     // alpha-drift-r17-01 (found+fixed 2026-08-07): isFreeGrantEligible(undefined)
     // returns true (its whole contract is "no stripe_customer_id on file"), so
     // a userId that matches NO ROW AT ALL (deleted, stale id from another
@@ -361,11 +408,17 @@ export async function POST(req: Request) {
   if (body.action === "revoke_free") {
     // Only revokes the free-grant flag — does NOT touch real Stripe subs.
     // Guard: only revoke if there's no stripe_customer_id (i.e., they were free-granted).
-    const { data: row } = await sb
+    // alpha-drift-r26-01 (2026-08-14): check error before checking !row, same
+    // reasoning as grant_free above.
+    const { data: row, error: rowError } = await sb
       .from("users")
       .select("stripe_customer_id")
       .eq("id", body.userId)
       .maybeSingle();
+    if (rowError) {
+      console.error("[admin/users] revoke_free: pre-fetch failed:", rowError.message);
+      return NextResponse.json({ error: "Couldn't verify user. Try again." }, { status: 500 });
+    }
     // alpha-drift-r17-01: same missing-row check as grant_free above.
     if (!row) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
@@ -422,11 +475,17 @@ export async function POST(req: Request) {
     // lib/engine/persist.ts uses (Resend cleared before any DB write): clear
     // Resend FIRST, and only clear the DB flags -- the thing the cron
     // actually reads -- once that's confirmed to have actually worked.
-    const { data: row } = await sb
+    // alpha-drift-r26-01 (2026-08-14): check error before checking !row, same
+    // reasoning as grant_free/revoke_free above.
+    const { data: row, error: rowError } = await sb
       .from("users")
       .select("email")
       .eq("id", body.userId)
       .maybeSingle();
+    if (rowError) {
+      console.error("[admin/users] clear_suppression: pre-fetch failed:", rowError.message);
+      return NextResponse.json({ error: "Couldn't verify user. Try again." }, { status: 500 });
+    }
     if (!row) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
