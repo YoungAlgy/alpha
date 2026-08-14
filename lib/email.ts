@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import type { CreateEmailResponse } from "resend";
 import type { Issue } from "@/lib/types";
 import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
+import { codePointSafeTruncate } from "@/lib/text-truncate";
 
 // Single provider: Resend, sending from the verified everyday.report domain.
 // (We previously carried an AWS SES branch as a dual-provider cutover path,
@@ -271,8 +272,18 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   // well under 320 chars and already ends in a period, so the reader got a
   // stray "...let the rest wait.…" in both the HTML card and the plain-text
   // body. Same truncation-flag guard MAX_HEADLINE_LEN uses just below.
-  const editorIntroTruncated = params.issue.editorIntro.length > 320;
-  const teaser = params.issue.editorIntro.slice(0, 320).trim() + (editorIntroTruncated ? "…" : "");
+  //
+  // alpha-drift-r20-08 (found+fixed 2026-08-13): the r19-01 fix above swapped
+  // in codePointSafeSlice everywhere ELSE in this codebase, but this specific
+  // truncated-flag check was missed -- str.length > 320 still counts UTF-16
+  // code UNITS, so editorIntro text containing astral-plane characters
+  // (surrogate pairs, most modern emoji) could read as "truncated" here even
+  // when its actual code-point count is <= 320, reintroducing the exact
+  // spurious-ellipsis bug this comment describes, just one layer deeper.
+  // codePointSafeTruncate derives both the flag and the cut text from the
+  // same Array.from() pass, so they can't disagree.
+  const { text: editorIntroCut, truncated: editorIntroTruncated } = codePointSafeTruncate(params.issue.editorIntro, 320);
+  const teaser = editorIntroCut.trim() + (editorIntroTruncated ? "…" : "");
   // Topic label + the lead item's actual headline. The old label-only list
   // made every email look IDENTICAL day to day (a reader's topics never
   // change, so "IN THIS ISSUE • Personal finance • Real estate ..." read the
@@ -291,7 +302,11 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   const sectionList = params.issue.sections
     .map((s) => {
       const rawLead = s.items?.[0]?.headline?.trim();
-      const lead = rawLead && rawLead.length > MAX_HEADLINE_LEN ? `${rawLead.slice(0, MAX_HEADLINE_LEN - 1).trim()}…` : rawLead;
+      // alpha-drift-r20-08: same UTF-16-vs-code-point truncation-flag bug as
+      // the teaser above, in the sibling guard this comment's own
+      // r19-01 note (nearby) referenced but never actually fixed.
+      const leadCut = rawLead ? codePointSafeTruncate(rawLead, MAX_HEADLINE_LEN - 1) : null;
+      const lead = leadCut?.truncated ? `${leadCut.text.trim()}…` : rawLead;
       return lead ? `• ${s.topicLabel} — ${lead}` : `• ${s.topicLabel}`;
     })
     .join("\n");

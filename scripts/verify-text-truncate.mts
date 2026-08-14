@@ -8,7 +8,7 @@
 // silently corrupts the character or fails outright for input that looked
 // well under the visible limit.
 // Run: npx tsx scripts/verify-text-truncate.mts
-const { codePointSafeSlice } = await import("../lib/text-truncate.ts");
+const { codePointSafeSlice, codePointSafeTruncate } = await import("../lib/text-truncate.ts");
 
 let pass = 0,
   fail = 0;
@@ -66,6 +66,32 @@ check("(6) short string untouched", codePointSafeSlice("hi", 100) === "hi");
 
 console.log("(7) cap of 0 returns empty string, no crash");
 check("(7) cap=0 -> ''", codePointSafeSlice("anything", 0) === "");
+
+console.log("(8) codePointSafeTruncate — alpha-drift-r20-08 (2026-08-13): the truncated-flag bug one layer up");
+{
+  // A string whose UTF-16 .length OVERCOUNTS its real code-point count: 300
+  // 'a's + 20 astral emoji = 320 code points, but 340 UTF-16 units (each
+  // emoji is 2 units). The naive `str.length > 320` check email.ts used to
+  // run would read this as truncated (340 > 320) even though nothing needs
+  // cutting at a 320-code-point cap.
+  const s = "a".repeat(300) + "😀".repeat(20);
+  check("(8) sanity: this fixture's OLD naive check (.length > 320) WOULD have wrongly fired", s.length > 320);
+  check("(8) sanity: its real code-point count is exactly 320, not > 320", Array.from(s).length === 320);
+
+  const { text, truncated } = codePointSafeTruncate(s, 320);
+  check("(8) codePointSafeTruncate correctly reports NOT truncated", truncated === false);
+  check("(8) and returns the string completely unchanged (no spurious cut)", text === s);
+
+  const shortCase = codePointSafeTruncate("hello", 320);
+  check("(8) an ordinary short string: not truncated, unchanged", shortCase.truncated === false && shortCase.text === "hello");
+
+  const cutCase = codePointSafeTruncate("a".repeat(58) + "😀" + "b".repeat(10), 59);
+  check("(8) a genuine cut: truncated=true", cutCase.truncated === true);
+  check("(8) a genuine cut: text matches codePointSafeSlice's own result exactly", cutCase.text === codePointSafeSlice("a".repeat(58) + "😀" + "b".repeat(10), 59));
+
+  const exactCase = codePointSafeTruncate("hello", 5);
+  check("(8) exactly at the cap: NOT truncated (boundary is inclusive)", exactCase.truncated === false && exactCase.text === "hello");
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
