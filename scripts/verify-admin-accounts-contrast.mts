@@ -117,6 +117,38 @@ console.log("(5) alpha-drift-r21-11 (found+fixed 2026-08-14): the admin search i
   check("(5) the search input carries aria-label near its placeholder", ariaLabelBlock.includes('aria-label="Search by email"'));
 }
 
+console.log("(6) alpha-drift-r22-01 (found+fixed 2026-08-14, self-audit): --ink-soft also clears 4.5:1 AA against --paper-deep in EVERY theme, not just --paper");
+{
+  // Check (4) above only ever checked ink-soft against --paper. Real usage
+  // sites -- app/checkout/page.tsx, app/settings/accounts/page.tsx (the
+  // SUPPRESSED badge's own reason text), app/topics/page.tsx -- render
+  // ink-soft text directly on --paper-deep backgrounds (cards, callouts,
+  // badges), a pairing check (4) never exercised. That gap is exactly how
+  // r21-10's sunset fix (5.07:1 vs --paper) shipped still failing 4.37:1
+  // vs --paper-deep -- this check closes the SAME blind spot in the test,
+  // not just the one instance in the one theme it was found in.
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const blocks = css.split(/(?=\[data-theme=|^:root)/m);
+  const results: Array<{ name: string; contrast: number }> = [];
+  for (const b of blocks) {
+    const nameMatch = b.match(/\[data-theme="([^"]+)"\]|^:root/);
+    if (!nameMatch) continue;
+    const name = nameMatch[1] || "root";
+    const paperDeep = b.match(/--paper-deep:\s*(#[0-9A-Fa-f]{6})/);
+    const inkSoft = b.match(/--ink-soft:\s*(#[0-9A-Fa-f]{6})/);
+    if (!paperDeep || !inkSoft) continue;
+    results.push({ name, contrast: contrastRatio(inkSoft[1], paperDeep[1]) });
+  }
+  check("(6) parsed a real, non-trivial number of themes for ink-soft/paper-deep too", results.length >= 20);
+  const failing = results.filter((r) => r.contrast < 4.5);
+  for (const r of failing) console.log(`    XX theme "${r.name}": ink-soft/paper-deep = ${r.contrast.toFixed(2)}:1 (below 4.5:1)`);
+  check("(6) --ink-soft on --paper-deep clears 4.5:1 AA normal-text contrast in EVERY theme", failing.length === 0);
+
+  const sunset = results.find((r) => r.name === "sunset");
+  check("(6) sanity: sunset was found and its real current value is what's being checked", !!sunset);
+  check("(6) sunset specifically clears 4.5:1 vs --paper-deep with real margin (was 4.37:1, the exact r22-01 finding this closes)", !!sunset && sunset.contrast >= 4.5 && sunset.contrast < 6);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("ADMIN-ACCOUNTS-CONTRAST VERIFICATION FAILED");

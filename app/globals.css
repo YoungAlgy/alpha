@@ -97,7 +97,12 @@
   --paper: #ECEEDA;
   --paper-deep: #D4DCC4;
   --ink: #3D3528;
-  --ink-soft: #6B5F4A;
+  /* alpha-drift-r22-01 (found+fixed 2026-08-14, self-audit): same class of
+     gap as sunset's r21-10/r22-01 fixes -- #6B5F4A cleared --paper fine but
+     only 4.41:1 against --paper-deep, under the 4.5:1 AA floor. Darkened
+     along the same hue to #625744: 6.00:1 vs --paper, 5.00:1 vs
+     --paper-deep. */
+  --ink-soft: #625744;
   --rule: #C7D0B5;
   --accent: #A86B4F;
   --accent-ink: #8B5238;
@@ -137,7 +142,12 @@
   --paper: #F4ECD8;
   --paper-deep: #E8DCBE;
   --ink: #2D3A4A;
-  --ink-soft: #5B6A7D;
+  /* alpha-drift-r22-01 (found+fixed 2026-08-14, self-audit): same class of
+     gap as sunset's r21-10/r22-01 fixes -- #5B6A7D cleared --paper fine but
+     only 4.05:1 against --paper-deep, under the 4.5:1 AA floor. Darkened
+     along the same hue to #4E5B6B: 5.88:1 vs --paper, 5.08:1 vs
+     --paper-deep. */
+  --ink-soft: #4E5B6B;
   --rule: #C8D5DF;
   --accent: #E89B6A;
   --accent-ink: #C77C4A;
@@ -238,9 +248,15 @@
      everywhere (dates, city, byline info), so every theme's own value needs
      to clear that bar on its own, not just this theme's headline colors.
      Darkened along the same hue (same mauve/purple direction, just less
-     light) to #7B5977, which computes to 5.07:1 -- comfortable margin, not
-     just barely over the line. */
-  --ink-soft: #7B5977;
+     light) to #7B5977, which computes to 5.07:1 against --paper.
+     alpha-drift-r22-01 (found+fixed 2026-08-14, self-audit): that r21-10 fix
+     only checked --ink-soft against --paper -- real usage sites (checkout,
+     settings/accounts, topics) render it against --paper-deep too, where
+     #7B5977 only cleared 4.37:1, still under the 4.5:1 floor. Darkened again
+     along the same hue to #6F506B: 5.91:1 against --paper, 5.10:1 against
+     --paper-deep -- comfortable margin against BOTH backgrounds this color
+     actually appears on. */
+  --ink-soft: #6F506B;
   --rule: #E8C8AA;
   --accent: #E87C3E;
   --accent-ink: #C8612A;
