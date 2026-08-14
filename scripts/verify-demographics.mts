@@ -3,6 +3,7 @@
 const {
   parseBirthday, generationFromYear, zodiacFromDate, zodiacSign, generationOf,
   toneGuidance, zodiacLabel, generationLabel, coerceGender, demographicSummary,
+  maxBirthdayForMinAge,
 } = await import("../lib/demographics.ts");
 
 let pass = 0, fail = 0;
@@ -18,7 +19,25 @@ check("rejects garbage", parseBirthday("not-a-date") === null);
 check("rejects empty / null", parseBirthday("") === null && parseBirthday(null) === null);
 check("rejects month 13", parseBirthday("1994-13-01") === null);
 check("rejects absurd year", parseBirthday("1850-01-01") === null);
-check("rejects a too-young birthday (post-2014, matches the date input max)", parseBirthday("2018-06-01") === null);
+
+// alpha-drift-r20-01 (found+fixed 2026-08-13): the old test hardcoded an
+// absolute date ("2018-06-01") tied to the OLD fixed-year cutoff (2014) --
+// meaningless once the fix made the boundary relative to today. These
+// compute the boundary live, the same way lib/demographics.ts itself now
+// does, so the test stays correct indefinitely instead of silently testing
+// the wrong thing a year from now.
+console.log("(1b) minimum-age boundary (relative to today, not a fixed year)");
+{
+  const now = new Date();
+  const fmt = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  const exactly13Today = new Date(Date.UTC(now.getUTCFullYear() - 13, now.getUTCMonth(), now.getUTCDate()));
+  const turns13Tomorrow = new Date(exactly13Today.getTime() + 24 * 60 * 60 * 1000); // born 1 day later -> still 12 today
+  check("exactly 13 years old today is ACCEPTED (boundary inclusive -- 'at least 13')", parseBirthday(fmt(exactly13Today)) !== null);
+  check("turns 13 tomorrow -> still 12 today -> REJECTED", parseBirthday(fmt(turns13Tomorrow)) === null);
+  check("clearly too young (5 years old) rejected", parseBirthday(fmt(new Date(Date.UTC(now.getUTCFullYear() - 5, now.getUTCMonth(), now.getUTCDate())))) === null);
+  check("clearly old enough (30 years old) accepted", parseBirthday(fmt(new Date(Date.UTC(now.getUTCFullYear() - 30, now.getUTCMonth(), now.getUTCDate())))) !== null);
+  check("maxBirthdayForMinAge() matches the exact boundary parseBirthday itself uses", parseBirthday(maxBirthdayForMinAge()) !== null && parseBirthday(fmt(turns13Tomorrow)) === null);
+}
 
 // generation (Pew boundaries)
 console.log("(2) generation");

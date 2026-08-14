@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { coerceGender, demographicSummary } from "@/lib/demographics";
+import { coerceGender, demographicSummary, maxBirthdayForMinAge } from "@/lib/demographics";
 import { BLURB_CAPS } from "@/lib/types";
 import type { Gender } from "@/lib/types";
 
@@ -224,7 +224,7 @@ export function ProfileEditor() {
             type="date"
             value={form.birthday}
             min="1920-01-01"
-            max="2014-12-31"
+            max={maxBirthdayForMinAge()}
             disabled={!loaded || busy}
             onChange={(e) => set("birthday", e.target.value)}
             className="w-full alpha-ui text-base bg-transparent border-b pt-2 pb-2 focus:outline-none focus:border-current"

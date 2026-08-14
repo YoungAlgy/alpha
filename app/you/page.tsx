@@ -6,7 +6,7 @@ import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding, nextStep } from "@/lib/onboarding-state";
 import { confirm as audioConfirm, tap } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { coerceGender, demographicSummary } from "@/lib/demographics";
+import { coerceGender, demographicSummary, maxBirthdayForMinAge } from "@/lib/demographics";
 import type { Gender } from "@/lib/types";
 
 const GENDERS: { value: Gender; label: string }[] = [
@@ -90,7 +90,7 @@ export default function YouPage() {
             type="date"
             value={birthday}
             min="1920-01-01"
-            max="2014-12-31"
+            max={maxBirthdayForMinAge()}
             onChange={(e) => setBirthday(e.target.value)}
             className="alpha-display text-2xl md:text-3xl bg-transparent border-b pt-2 pb-3 focus:outline-none focus:border-current"
             // alpha-drift-r16-04: see components/ProfileEditor.tsx's

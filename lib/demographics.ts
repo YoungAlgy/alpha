@@ -18,8 +18,20 @@ export type ZodiacSign =
   | "aries" | "taurus" | "gemini" | "cancer" | "leo" | "virgo"
   | "libra" | "scorpio" | "sagittarius" | "capricorn" | "aquarius" | "pisces";
 
+// alpha-drift-r20-01 (found+fixed 2026-08-13): app/privacy/page.tsx promises
+// "we do not knowingly collect data from anyone under 13," but the old upper
+// bound here was a FIXED year (2014) -- not a real, live-computed minimum
+// age. A fixed year cutoff doesn't stay accurate: it was already wrong the
+// day it was written (2026 - 2014 = as young as 11-12 today), and would only
+// get MORE wrong (allowing older and older ages relative to "13") the longer
+// the code went untouched, since real time keeps moving but the hardcoded
+// year doesn't. Computed live against the actual current date instead, so
+// this stays correct indefinitely rather than needing a periodic manual bump.
+const MIN_AGE_YEARS = 13;
+
 // A birthday is stored as an ISO date string "YYYY-MM-DD". Parse leniently and
-// return null for anything that isn't a real, sane date (year 1900..now).
+// return null for anything that isn't a real, sane date (year 1900..a real
+// minimum age from today).
 export function parseBirthday(raw: string | null | undefined): { year: number; month: number; day: number } | null {
   if (!raw || typeof raw !== "string") return null;
   const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -29,10 +41,33 @@ export function parseBirthday(raw: string | null | undefined): { year: number; m
   // Reject impossible day-of-month (e.g. Feb 30) by round-tripping through Date.
   const d = new Date(Date.UTC(year, month - 1, day));
   if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return null;
-  // Sane range: a real subscriber, not a typo. (Upper bound is generous; the
-  // caller decides any minimum-age policy.)
-  if (year < 1900 || year > 2014) return null;
+  if (year < 1900) return null;
+  // Date-based (not year-only) comparison: correctly handles a reader whose
+  // birthday hasn't happened yet this calendar year (e.g. checked in August
+  // for someone born in September -- they're still under MIN_AGE_YEARS until
+  // that September date arrives, even though the plain year difference would
+  // already read as MIN_AGE_YEARS).
+  const now = new Date();
+  const cutoff = new Date(Date.UTC(now.getUTCFullYear() - MIN_AGE_YEARS, now.getUTCMonth(), now.getUTCDate()));
+  if (d.getTime() > cutoff.getTime()) return null;
   return { year, month, day };
+}
+
+// Same MIN_AGE_YEARS boundary as parseBirthday above, exposed as a ready-to-
+// use HTML date-input `max` value so the client-side native date picker's
+// own constraint stays in sync with the server-side validator instead of
+// drifting the way the old hardcoded "2014-12-31" did (see parseBirthday's
+// comment for why a fixed year doesn't stay accurate). UTC-based so a
+// server render and a client hydration compute the identical calendar date
+// regardless of the machine's local timezone -- a naive local-time
+// `new Date()` could otherwise differ by up to a day between a UTC server
+// and a client in another timezone, right at the day boundary.
+export function maxBirthdayForMinAge(): string {
+  const now = new Date();
+  const y = now.getUTCFullYear() - MIN_AGE_YEARS;
+  const mo = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const da = String(now.getUTCDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
 }
 
 // Pew generation boundaries. Anyone born 1997+ is treated as Gen Z (folds in the
