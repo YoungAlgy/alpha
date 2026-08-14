@@ -1,4 +1,4 @@
--- Found in round 25's fresh-angle audit (2026-08-15). The prior migration
+-- Found in round 25's fresh-angle audit (2026-08-14). The prior migration
 -- (20260806030000_resend_webhook_deliverability.sql) added
 -- users_bounced_at_idx / users_complained_at_idx as PARTIAL indexes --
 -- `where bounced_at is not null` / `where complained_at is not null` --
