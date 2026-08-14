@@ -1,0 +1,24 @@
+-- Found in round 25's fresh-angle audit (2026-08-15). The prior migration
+-- (20260806030000_resend_webhook_deliverability.sql) added
+-- users_bounced_at_idx / users_complained_at_idx as PARTIAL indexes --
+-- `where bounced_at is not null` / `where complained_at is not null` --
+-- with a comment saying the goal was to keep "the weekly-send query's
+-- filter cheap." But every real query in the codebase filters the OPPOSITE
+-- direction: weekly-send's subscriber fetch uses
+-- `.is("bounced_at", null).is("complained_at", null)` (an IS NULL check),
+-- and nothing anywhere -- grepped across app/ and lib/ -- ever filters
+-- `IS NOT NULL` on either column. A partial index scoped to `IS NOT NULL`
+-- rows can never be used by the planner to satisfy an `IS NULL` query,
+-- since matching rows aren't even stored in that index. weekly-send's
+-- actual cheap filtering on this column pair already comes from
+-- users_active_candidates_idx (20260806000000) narrowing to the small
+-- active-subscriber set first, before bounced_at/complained_at apply as an
+-- in-memory recheck on that already-small result -- these two indexes
+-- were never load-bearing for it. Dropping them removes write-time
+-- maintenance cost (every Resend webhook bounce/complaint write and every
+-- admin bounced_at/complained_at reset pays to update them) for indexes
+-- that have never supported a real read. If a genuine IS NOT NULL query
+-- over these columns is ever added (e.g. an admin "show suppressed users"
+-- filter), the right index for THAT query can be added then.
+drop index if exists public.users_bounced_at_idx;
+drop index if exists public.users_complained_at_idx;
