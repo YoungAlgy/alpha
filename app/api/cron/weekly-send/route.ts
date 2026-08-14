@@ -14,6 +14,7 @@ import { deepseekRateLimitedCount, deepseekCallCount } from "@/lib/engine/deepse
 import { topicBlurbPaidCallCount } from "@/lib/engine/topic-blurb";
 import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
+import { hasActiveAccess } from "@/lib/access";
 import type { UserProfile, TopicId, Issue } from "@/lib/types";
 import type { TopicBlurb } from "@/lib/engine/types";
 import { clampQuota } from "@/lib/types";
@@ -416,7 +417,18 @@ export async function GET(req: Request) {
   // NO run-level signal, only scattered per-subscriber console.warn lines
   // easy to miss in the Cloudflare log stream.
   let unsubscribedMidRunSkips = 0;
-  let unsubscribedRecheckFailures = 0;
+  // alpha-drift-r29-04 (2026-08-14): the re-check right below used to read
+  // ONLY unsubscribed_at, despite the initial snapshot filtering on
+  // cancelled_at/bounced_at/complained_at too -- a subscriber whose access
+  // ended mid-run (customer.subscription.deleted or charge.dispute.created,
+  // both of which write an IMMEDIATE cancelled_at, not a future one) or who
+  // bounced/complained mid-run still got that run's letter, real Anthropic/
+  // Brave spend and all, exactly the outcome each of those webhooks exists
+  // to prevent. Broadened into ONE query covering all 4 columns; failures
+  // renamed from unsubscribedRecheckFailures to reflect that broader scope.
+  let cancelledMidRunSkips = 0;
+  let suppressedMidRunSkips = 0;
+  let eligibilityRecheckFailures = 0;
   let persistedRetryShapeMismatches = 0;
 
   // ONE dry-topic cache shared across every subscriber in THIS run — passed
@@ -817,31 +829,49 @@ export async function GET(req: Request) {
       // get wrong.
       let claimedAt: string | null = null;
       if (!force) {
-        // Re-check unsubscribed_at RIGHT before the claim (alpha-spend-cap-
-        // adjacent finding, round 12, 2026-08-06): `rows` is a snapshot taken
-        // once at the top of the run (`.is("unsubscribed_at", null)`), but a
-        // run can span the loop's full sequential duration — a subscriber
-        // who unsubscribes after being snapshotted but before their own turn
-        // would otherwise still get sent that day's letter (including a
-        // resend of a PRIOR letter, if a backup layer below ends up covering
-        // them), minutes after explicitly opting out. Can't fold this into
-        // the atomic claim UPDATE below -- unsubscribed_at lives on `users`,
-        // that UPDATE targets `issues`, and PostgREST doesn't support a
-        // cross-table filter on an UPDATE. One extra read narrows the race
-        // window from "the whole run" to "one Supabase round trip" instead.
+        // Re-check eligibility RIGHT before the claim (alpha-spend-cap-
+        // adjacent finding, round 12, 2026-08-06; broadened alpha-drift-
+        // r29-04, 2026-08-14): `rows` is a snapshot taken once at the top of
+        // the run (filtered on subscribed_at/cancelled_at/unsubscribed_at/
+        // bounced_at/complained_at), but a run can span the loop's full
+        // sequential duration — a subscriber whose eligibility changes after
+        // being snapshotted but before their own turn would otherwise still
+        // get sent that day's letter (including a resend of a PRIOR letter,
+        // if a backup layer below ends up covering them). Originally only
+        // re-checked unsubscribed_at; a dispute or subscription-deleted
+        // webhook writes cancelled_at as an IMMEDIATE date (not a future
+        // cancel-at-period-end one -- app/api/stripe/webhook/route.ts's own
+        // comments on both those handlers say as much), and a bounce/
+        // complaint mid-run is the identical deliverability-suppression gap
+        // the initial snapshot's own bounced_at/complained_at filter exists
+        // to close -- both left open by only checking unsubscribed_at here.
+        // Can't fold this into the atomic claim UPDATE below -- these columns
+        // live on `users`, that UPDATE targets `issues`, and PostgREST
+        // doesn't support a cross-table filter on an UPDATE. One extra read
+        // (now covering all 4 columns in one round trip, not just one)
+        // narrows the race window from "the whole run" to "one Supabase
+        // round trip" instead.
         const { data: freshUser, error: freshUserErr } = await sb
           .from("users")
-          .select("unsubscribed_at")
+          .select("unsubscribed_at, cancelled_at, bounced_at, complained_at")
           .eq("id", row.id)
           .maybeSingle();
         if (freshUserErr) {
           // Fail open, same reasoning as every other best-effort guard in
           // this file: a lookup hiccup must never block a legitimate send.
-          unsubscribedRecheckFailures++;
-          console.warn(`[cron/weekly-send] unsubscribed_at re-check failed → ${row.id}: ${freshUserErr.message}`);
+          eligibilityRecheckFailures++;
+          console.warn(`[cron/weekly-send] eligibility re-check failed → ${row.id}: ${freshUserErr.message}`);
         } else if (freshUser?.unsubscribed_at) {
           unsubscribedMidRunSkips++;
           console.log(`[cron/weekly-send] skipped (unsubscribed mid-run) → ${row.id}`);
+          return;
+        } else if (freshUser && !hasActiveAccess(freshUser.cancelled_at)) {
+          cancelledMidRunSkips++;
+          console.log(`[cron/weekly-send] skipped (access ended mid-run) → ${row.id}`);
+          return;
+        } else if (freshUser?.bounced_at || freshUser?.complained_at) {
+          suppressedMidRunSkips++;
+          console.log(`[cron/weekly-send] skipped (bounced/complained mid-run) → ${row.id}`);
           return;
         }
 
@@ -1259,7 +1289,9 @@ export async function GET(req: Request) {
     // news day in this summary. Found in review 2026-08-06.
     hardFailedTopics: failedCache.size,
     unsubscribedMidRunSkips,
-    unsubscribedRecheckFailures,
+    cancelledMidRunSkips,
+    suppressedMidRunSkips,
+    eligibilityRecheckFailures,
     persistedRetryShapeMismatches,
     elapsedMs,
     failures: cappedFailures,
@@ -1294,7 +1326,7 @@ export async function GET(req: Request) {
     deepseekRateLimited > 0 ||
     deferred.length > 0 ||
     paidCallCeilingHit ||
-    unsubscribedRecheckFailures > 0
+    eligibilityRecheckFailures > 0
   ) {
     // A "failed" subscriber isn't necessarily one who got nothing anymore —
     // some were caught by a backup layer. genuinelyMissed is the real
@@ -1359,15 +1391,15 @@ export async function GET(req: Request) {
       paidCallCeilingHit
         ? `COST BRAKE TRIPPED: paid-tier calls (Haiku+Sonnet+DeepSeek) hit ${paidCallsThisRun} this run, over the ${PAID_CALL_CEILING} ceiling — stopped starting new subscribers early. Check for a systemic generation failure (every topic escalating through the full waterfall) rather than assuming this is just a busy day.`
         : "",
-      // A persistent failure here means the round-12 mid-run-unsubscribe
+      // A persistent failure here means the round-12 mid-run-eligibility
       // guard has gone inert (fails open by design) -- worth a loud signal
       // even though no subscriber is actually harmed by a single blip.
-      unsubscribedRecheckFailures > 0
-        ? `The mid-run unsubscribe re-check failed ${unsubscribedRecheckFailures} time(s) this run (fails open, so those sends still went out normally) — if this keeps happening, the guard added 2026-08-06 against mailing someone right after they unsubscribe is silently not working. Check Supabase connectivity/permissions.`
+      eligibilityRecheckFailures > 0
+        ? `The mid-run eligibility re-check failed ${eligibilityRecheckFailures} time(s) this run (fails open, so those sends still went out normally) — if this keeps happening, the guard against mailing someone right after they unsubscribe/cancel/bounce/complain (added 2026-08-06, broadened 2026-08-14) is silently not working. Check Supabase connectivity/permissions.`
         : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}${unsubscribedRecheckFailures > 0 ? `, unsub-recheck failed x${unsubscribedRecheckFailures}` : ""}`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}${eligibilityRecheckFailures > 0 ? `, eligibility-recheck failed x${eligibilityRecheckFailures}` : ""}`,
       lines.join("\n")
     );
   }
