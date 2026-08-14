@@ -515,7 +515,21 @@ function previewFromIssue(issue: Issue): string {
   const lead = issue.sections[0]?.items?.[0]?.headline;
   const others = Math.max(0, issue.sections.length - 1);
   if (lead) {
-    const trimmed = lead.length > 90 ? lead.slice(0, 87).trimEnd() + "…" : lead;
+    // alpha-drift-r26-02 (2026-08-14): was plain lead.slice(0, 87) -- raw
+    // UTF-16 code-unit slicing, the same bug class this file already fixed
+    // twice at sibling call sites (editorIntro above, the in-this-issue
+    // headline list below), both via codePointSafeTruncate. lead is
+    // unconstrained LLM output (lib/engine/topic-blurb.ts sets no hard
+    // length/character-class cap), so a cut landing inside a surrogate pair
+    // (most modern emoji) would leave a lone unpaired surrogate in this
+    // email's hidden preheader -- exactly what mail clients show as the
+    // inbox preview snippet next to the subject line. Using the returned
+    // `truncated` flag (not a .length comparison) for the ellipsis decision
+    // is the same alpha-drift-r20-08 fix the sibling call sites already
+    // apply -- .length counts UTF-16 units, so comparing it can produce a
+    // spurious (or missing) ellipsis independent of the cut itself.
+    const { text: leadCut, truncated: leadTruncated } = codePointSafeTruncate(lead, 87);
+    const trimmed = leadTruncated ? leadCut.trimEnd() + "…" : lead;
     if (others === 0) return trimmed;
     return `${trimmed}, plus ${others} more topic${others === 1 ? "" : "s"}.`;
   }
