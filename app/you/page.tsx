@@ -6,7 +6,7 @@ import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding, nextStep } from "@/lib/onboarding-state";
 import { confirm as audioConfirm, tap } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { coerceGender, demographicSummary, maxBirthdayForMinAge } from "@/lib/demographics";
+import { coerceGender, demographicSummary, maxBirthdayForMinAge, parseBirthday } from "@/lib/demographics";
 import type { Gender } from "@/lib/types";
 
 const GENDERS: { value: Gender; label: string }[] = [
@@ -45,13 +45,47 @@ export default function YouPage() {
   // Picking the Zodiac topic requires a birthday (we can't read a sign without
   // it). The topics step comes before this one, so the choice is already made.
   const zodiacPicked = (state.topics ?? []).includes("zodiac");
-  const canContinue = !zodiacPicked || birthday.length > 0;
+  // alpha-drift-r22-04 (found+fixed 2026-08-14): this used to only check
+  // birthday.length > 0 -- never that it was a real, valid date. A native
+  // <input type="date">'s min/max attributes are validity-STYLING only; they
+  // don't block .value from holding an out-of-range date typed via keyboard
+  // (e.g. a year before 1900, or under the site's own minimum-age floor).
+  // That let onboarding hand a malformed birthday to /api/generate, which
+  // validates for real via this SAME parseBirthday and rejects it with a
+  // deterministic 400 -- but only after Stripe already charged the card, and
+  // before the reader is ever signed in (sign-in happens inside a successful
+  // generate call), leaving a paid customer with no session and no way to
+  // fix the value themselves. Gating Continue on the identical rule the
+  // server enforces means this can no longer happen through normal use.
+  const birthdayValid = birthday.length === 0 || parseBirthday(birthday) !== null;
+  const canContinue = (!zodiacPicked || birthday.length > 0) && birthdayValid;
 
   function submit() {
     if (!canContinue) return;
     audioConfirm();
     update({
       birthday: birthday || undefined,
+      gender: coerceGender(gender) ?? undefined,
+    });
+    router.push(`/${nextStep("you")}` as never);
+  }
+
+  // alpha-drift-r22-06 (found+fixed 2026-08-14): Skip used to just navigate
+  // away with no update() call at all -- so a reader who typed a birthday
+  // and/or picked a gender, then clicked Skip instead of Continue (maybe
+  // just muscle memory, or they didn't realize Continue was already
+  // enabled), lost everything they'd just entered. Skip is only ever
+  // rendered when !zodiacPicked, i.e. these fields are genuinely optional
+  // here, so there's no reason to throw away a valid answer just because
+  // the reader chose the "I don't need to finish this" button rather than
+  // "Continue". Saves gender unconditionally (coerceGender can't produce a
+  // malformed value) and birthday only if it's actually valid -- an
+  // in-progress, not-yet-valid birthday is silently dropped rather than
+  // saved malformed, same rule canContinue already enforces for Continue.
+  function skip() {
+    tap();
+    update({
+      birthday: birthdayValid ? (birthday || undefined) : undefined,
       gender: coerceGender(gender) ?? undefined,
     });
     router.push(`/${nextStep("you")}` as never);
@@ -99,12 +133,14 @@ export default function YouPage() {
             // color-scheme now handles this correctly.
             style={{ color: "var(--ink)", borderColor: "var(--rule)" }}
           />
-          <p className="alpha-ui text-xs mt-2" style={{ color: zodiacPicked && !birthday ? "var(--accent-ink)" : "var(--ink-soft)" }}>
-            {zodiacPicked && !birthday
-              ? "You picked Zodiac, so add your birthday and we'll read your sign each day."
-              : summary
-                ? `${summary}. The full date also unlocks the Zodiac topic if you want it.`
-                : "The full date tunes the letter to your generation and unlocks the Zodiac topic if you want it."}
+          <p className="alpha-ui text-xs mt-2" style={{ color: (zodiacPicked && !birthday) || (birthday.length > 0 && !birthdayValid) ? "var(--accent-ink)" : "var(--ink-soft)" }}>
+            {birthday.length > 0 && !birthdayValid
+              ? "That date doesn't look right. Double check the day, month, and year."
+              : zodiacPicked && !birthday
+                ? "You picked Zodiac, so add your birthday and we'll read your sign each day."
+                : summary
+                  ? `${summary}. The full date also unlocks the Zodiac topic if you want it.`
+                  : "The full date tunes the letter to your generation and unlocks the Zodiac topic if you want it."}
           </p>
         </div>
 
@@ -169,7 +205,7 @@ export default function YouPage() {
           {!zodiacPicked && (
             <button
               type="button"
-              onClick={() => { tap(); router.push(`/${nextStep("you")}` as never); }}
+              onClick={skip}
               className="alpha-ui text-sm underline underline-offset-4"
               style={{ color: "var(--ink-soft)" }}
             >

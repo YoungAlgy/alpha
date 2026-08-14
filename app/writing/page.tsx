@@ -109,6 +109,18 @@ export default function WritingPage() {
     let cancelled = false;
     let finishTimer: ReturnType<typeof setTimeout> | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    // alpha-drift-r22-04 (found+fixed 2026-08-14): a 400 here can only mean
+    // BodySchema.parse() rejected the profile -- and for an already-charged
+    // subscriber (topics/firstName/email are already gated before checkout,
+    // so they can't be the cause), the only fields left that carry extra
+    // validation are the two demographic ones onboarding never re-checks
+    // itself: birthday and gender. /you now gates on the same rule
+    // server-side, so this should be unreachable going forward, but a stale
+    // pre-fix localStorage value could still carry a bad one in. Self-heal
+    // ONCE by dropping them and retrying, rather than stranding a paid
+    // customer -- who has no session yet, since sign-in only happens inside
+    // a SUCCESSFUL generate call -- on a 400 that will repeat forever.
+    let demographicsStripped = false;
 
     // Retry once with a backoff if the first attempt fails. The engine can
     // hiccup on Brave rate-limit / a flaky Claude call / cold Lambda starts;
@@ -116,10 +128,13 @@ export default function WritingPage() {
     // UI so the user isn't stranded staring at a writing animation.
     async function attemptGenerate(retriesLeft: number): Promise<void> {
       try {
+        const requestProfile = demographicsStripped
+          ? { ...profile, birthday: undefined, gender: undefined }
+          : profile;
         const r = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profile, sessionId }),
+          body: JSON.stringify({ profile: requestProfile, sessionId }),
         });
         if (cancelled) return;
         if (r.status === 402) {
@@ -127,6 +142,16 @@ export default function WritingPage() {
           // Send them to checkout rather than the generic retry card.
           clearInterval(stepTimer);
           router.push("/checkout" as never);
+          return;
+        }
+        if (
+          r.status === 400 &&
+          !demographicsStripped &&
+          (profile.birthday || profile.gender)
+        ) {
+          console.warn("[writing] generate 400'd, retrying once without birthday/gender");
+          demographicsStripped = true;
+          retryTimer = setTimeout(() => attemptGenerate(retriesLeft), 0);
           return;
         }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
