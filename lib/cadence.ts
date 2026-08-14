@@ -10,6 +10,19 @@
 // so at daily cadence they resolve to yesterday/tomorrow.
 export const CADENCE_UTC_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
+// alpha-drift-r33-02 (2026-08-14): the real daily-send hour, UTC (matches
+// the GitHub Actions cron trigger, "0 14 * * *"). Anything that converts a
+// send's precise UTC instant to a READER's own local calendar day
+// (components/Digest.tsx's formatDateline, app/inbox/page.tsx's
+// nextSendLabel) must anchor to THIS -- not the T12:00:00Z used elsewhere
+// in this file, which is a deliberately-different, arbitrary safe-midday
+// value for pure DATE arithmetic (previousSendIso/nextSendIso/isSendDay,
+// where only the calendar date matters, never the wall-clock hour). Digest
+// used T12:00:00Z where it should have used this, leaving a real 2-hour gap
+// that silently reintroduced the "reader sees yesterday's date" bug for
+// UTC+10/UTC+11 readers even after the localTimezone fix.
+export const SEND_HOUR_UTC = 14;
+
 // Today's UTC date as YYYY-MM-DD = this send's period key (stored in week_of).
 export function currentPeriodIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
