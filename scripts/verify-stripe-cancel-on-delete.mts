@@ -227,6 +227,55 @@ try {
   delete process.env.STRIPE_SECRET_KEY;
 }
 
+// (10) alpha-drift-r24-06 (2026-08-14): preFetchedCustomerId lets a caller
+// that already queried stripe_customer_id (app/api/admin/users/route.ts's
+// delete branch, which also needs "email" from the same row for the Resend
+// suppression cleanup) skip this function's own redundant re-lookup of the
+// identical column on the identical row.
+console.log("(10) preFetchedCustomerId provided -- skips the Supabase lookup entirely, still cancels via the passed-in id");
+process.env.STRIPE_SECRET_KEY = "sk_test_verify_script_only";
+try {
+  const svc10 = supabaseStub({ stripe_customer_id: "cus_should_not_be_queried" });
+  const stripe10 = stub([{ id: "sub_live_10", status: "active" }]);
+  await cleanUpStripeCustomerBeforeDelete(svc10 as never, "user_010", "[verify]", stripe10 as never, "cus_prefetched");
+  check("(10a) never queried Supabase at all (customerId came from the param)", svc10.queriedIds.length === 0);
+  check("(10b) cancelled subscriptions on the PRE-FETCHED customer id, not the (unused) row's id", stripe10.cancelledCalls.includes("sub_live_10"));
+  check("(10c) deleted the pre-fetched customer id", stripe10.customerDelCalls.includes("cus_prefetched"));
+} finally {
+  delete process.env.STRIPE_SECRET_KEY;
+}
+
+// (11) preFetchedCustomerId explicitly null (caller's own query found no
+// stripe_customer_id on the row) -- must be treated as "no customer, skip,"
+// NOT as "not provided, fall back to this function's own lookup." A `!==
+// undefined` check gets this right; a plain falsy/truthy check would not.
+console.log("(11) preFetchedCustomerId explicitly null -- treated as no-customer, does NOT fall back to its own lookup");
+process.env.STRIPE_SECRET_KEY = "sk_test_verify_script_only";
+try {
+  const svc11 = supabaseStub({ stripe_customer_id: "cus_should_never_be_reached" });
+  const stripe11 = stub([{ id: "sub_should_not_be_touched_11", status: "active" }]);
+  await cleanUpStripeCustomerBeforeDelete(svc11 as never, "user_011", "[verify]", stripe11 as never, null);
+  check("(11a) never queried Supabase (null was treated as a real answer, not a missing argument)", svc11.queriedIds.length === 0);
+  check("(11b) never touched Stripe at all", stripe11.cancelledCalls.length === 0 && stripe11.customerDelCalls.length === 0);
+} finally {
+  delete process.env.STRIPE_SECRET_KEY;
+}
+
+// (12) preFetchedCustomerId omitted entirely (account/delete/route.ts's real
+// call shape) -- falls back to this function's own lookup exactly as before,
+// unchanged by adding the new parameter.
+console.log("(12) preFetchedCustomerId omitted -- unchanged behavior, still does its own lookup");
+process.env.STRIPE_SECRET_KEY = "sk_test_verify_script_only";
+try {
+  const svc12 = supabaseStub({ stripe_customer_id: "cus_from_own_lookup" });
+  const stripe12 = stub([{ id: "sub_live_12", status: "active" }]);
+  await cleanUpStripeCustomerBeforeDelete(svc12 as never, "user_012", "[verify]", stripe12 as never);
+  check("(12a) did its own Supabase lookup (5th arg omitted)", svc12.queriedIds.length === 1 && svc12.queriedIds[0] === "user_012");
+  check("(12b) cancelled subscriptions on the id from its own lookup", stripe12.cancelledCalls.includes("sub_live_12"));
+} finally {
+  delete process.env.STRIPE_SECRET_KEY;
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("STRIPE CANCEL-ON-DELETE LOGIC VERIFICATION FAILED");

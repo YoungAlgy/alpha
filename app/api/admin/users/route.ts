@@ -228,9 +228,13 @@ export async function POST(req: Request) {
     // alpha-drift-r20-01 (found+fixed 2026-08-13): need the email BEFORE the
     // cascade-delete below removes it, to clear any Resend suppression-list
     // trace tied to it (see the removeResendSuppression call further down).
+    // alpha-drift-r24-06 (2026-08-14): also select stripe_customer_id here
+    // and pass it straight through to cleanUpStripeCustomerBeforeDelete --
+    // it used to re-select the same row itself for that one column, a second
+    // query for data this route was already fetching.
     const { data: targetUser } = await sb
       .from("users")
-      .select("email")
+      .select("email, stripe_customer_id")
       .eq("id", body.userId)
       .maybeSingle();
     // Cancel any Stripe subscription and delete the Customer object FIRST
@@ -238,7 +242,13 @@ export async function POST(req: Request) {
     // public.users away incl. stripe_customer_id, so a still-active sub
     // would bill forever with no way to stop it. Best-effort — a Stripe
     // hiccup must never block the admin delete.
-    await cleanUpStripeCustomerBeforeDelete(sb, body.userId, "[admin/delete]");
+    await cleanUpStripeCustomerBeforeDelete(
+      sb,
+      body.userId,
+      "[admin/delete]",
+      undefined,
+      targetUser?.stripe_customer_id
+    );
     // Same reasoning as self-serve account/delete: support_tickets.user_id is
     // ON DELETE SET NULL, not CASCADE, so skipping this would leave an
     // admin-initiated delete short of the "all associated data" promise on

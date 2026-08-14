@@ -89,21 +89,39 @@ export async function cancelCustomerSubscriptions(
 // try/catch starts, so it would call (and let a throwing) getStripeClient()
 // escape uncaught in exactly the "Stripe not configured" case the early
 // return exists to short-circuit -- caught in review, not live.
+//
+// preFetchedCustomerId (alpha-drift-r24-06, 2026-08-14): optional escape
+// hatch for a caller that already has stripe_customer_id from a query it ran
+// for its own reasons -- app/api/admin/users/route.ts's delete branch was
+// separately selecting "email" (for the Resend suppression cleanup below)
+// and this function was independently re-selecting stripe_customer_id for
+// the SAME row on the SAME request, two queries where one would do.
+// account/delete/route.ts still omits this param and gets the original
+// self-contained lookup: it never needed stripe_customer_id for anything
+// else, so there's nothing for it to pre-fetch. `=== undefined` (not a
+// falsy check) distinguishes "caller didn't pass this, do the lookup" from
+// "caller passed null, meaning their query found no stripe_customer_id" --
+// collapsing those would turn a legitimate no-Stripe-customer signal back
+// into a redundant lookup.
 export async function cleanUpStripeCustomerBeforeDelete(
   svc: SupabaseClient,
   userId: string,
   logPrefix: string,
-  stripeClient?: Stripe
+  stripeClient?: Stripe,
+  preFetchedCustomerId?: string | null
 ): Promise<void> {
   const stripeSecret = process.env.STRIPE_SECRET_KEY?.trim();
   if (!stripeSecret) return;
   try {
-    const { data: row } = await svc
-      .from("users")
-      .select("stripe_customer_id")
-      .eq("id", userId)
-      .maybeSingle();
-    const customerId = row?.stripe_customer_id;
+    let customerId = preFetchedCustomerId;
+    if (customerId === undefined) {
+      const { data: row } = await svc
+        .from("users")
+        .select("stripe_customer_id")
+        .eq("id", userId)
+        .maybeSingle();
+      customerId = row?.stripe_customer_id;
+    }
     if (!customerId) return;
     const stripe = stripeClient ?? getStripeClient();
     const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(stripe, customerId);
