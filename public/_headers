@@ -1,0 +1,8 @@
+# Content-hash-named static bundles are safe to cache forever -- the
+# filename changes whenever the content does. Without this, Cloudflare's
+# ASSETS binding was serving them with Cache-Control: max-age=0,
+# must-revalidate (2026-08-13 audit finding), so browsers/edge revalidated
+# every hashed chunk on every visit despite the filename already being
+# content-addressed and never needing revalidation.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
