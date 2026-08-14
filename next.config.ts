@@ -109,9 +109,17 @@ const nextConfig: NextConfig = {
             // network activity, not just the console. script-src covers the
             // beacon load; connect-src covers the RUM data it POSTs back to
             // cloudflareinsights.com after loading.
+            //
+            // alpha-drift-r24-04 (2026-08-14): added worker-src explicitly.
+            // public/sw.js (the offline service worker, shipped 2026-08-13)
+            // had been registering under the CSP3 script-src fallback only --
+            // works today since 'self' covers same-origin /sw.js, but was
+            // never a deliberate policy decision (the SW landed the morning
+            // after this CSP was last touched). No blob:/other Worker usage
+            // exists anywhere in the codebase, so 'self' alone is sufficient.
             key: "Content-Security-Policy",
             value:
-              `default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' ${supabaseOrigin} https://us.i.posthog.com https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`,
+              `default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' ${supabaseOrigin} https://us.i.posthog.com https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`,
           },
         ],
       },
