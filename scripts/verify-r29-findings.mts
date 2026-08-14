@@ -150,6 +150,20 @@ console.log("(3) app/settings/changelog/page.tsx + app/globals.css: TagChip them
   ];
   const oldRatio = contrastRatio(oldNewInk, oldNewBgComposited);
   check(`(3f) sanity: the OLD light-calibrated 'new' tag genuinely failed WCAG on mitch (confirms this was a real bug) -- actual ${oldRatio.toFixed(2)}:1`, oldRatio < 3);
+
+  // alpha-drift-r30-01 (2026-08-14, self-audit): this section only ever
+  // computed contrast for the 7 DARK-theme override values above -- it
+  // never checked the :root LIGHT defaults (the checks above only prove
+  // the :root token NAMES exist, not that their VALUES pass contrast on
+  // the 18 light themes that actually inherit them unchanged). Round 30's
+  // self-audit found the light set was carried forward byte-for-byte
+  // identical to the pre-r29 hardcoded literals and failed 4.5:1 on 12 of
+  // 18 light themes for 'fixed', worse on 'improved'. The corrected light
+  // ink values and the full 18-theme contrast sweep now live in
+  // scripts/verify-r30-findings.mts -- not re-duplicated here, since this
+  // script is a point-in-time record of what round 29 actually shipped
+  // (dark-theme-only verification), and round 30 is the one that closed
+  // the gap this comment names.
 }
 
 console.log("(4) app/api/cron/weekly-send/route.ts: mid-run re-check now covers cancelled_at/bounced_at/complained_at, not just unsubscribed_at");

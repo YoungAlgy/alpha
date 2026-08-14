@@ -46,13 +46,29 @@
      literals instead of a bad per-theme token value. Defined here as real
      theme tokens (light values, matching every other themed color in this
      file) with dark-appropriate overrides in each of the 7 dark
-     [data-theme] blocks below -- see the midnight block's own comment. */
+     [data-theme] blocks below -- see the midnight block's own comment.
+
+     alpha-drift-r30-01 (2026-08-14, self-audit): that fix's own contrast
+     computation only checked the 7 dark-theme override values -- it never
+     checked these LIGHT :root defaults against the 18 LIGHT themes that
+     actually inherit them unchanged. They were carried forward byte-for-
+     byte identical to the pre-r29 hardcoded literals, so whatever WCAG gap
+     the light set already had shipped right through r29 unexamined, despite
+     that round's own commit message claiming "each theme's own calibrated
+     palette applies instead of one fixed light-mode set." Computed contrast
+     for all 5 tags against all 18 light themes' real --paper: 'improved'
+     and 'fixed' failed the 4.5:1 floor on up to 12 of them (worst case:
+     downs, --paper #F4E8C1, 4.34:1 and 3.94:1 respectively) while 'new'/
+     'reliability'/'security' already cleared it. Darkened only the two
+     failing inks (same hue, lower lightness) until all 5 clear >=4.94:1
+     against the true worst-case light theme -- not just barely over 4.5:1,
+     matching the real margin the dark-theme set already has. */
   --tag-new-bg: rgba(98, 80, 168, 0.14);
   --tag-new-ink: #5947A5;
   --tag-improved-bg: rgba(60, 132, 80, 0.16);
-  --tag-improved-ink: #2F6B40;
+  --tag-improved-ink: #2B5F3A;
   --tag-fixed-bg: rgba(212, 158, 60, 0.18);
-  --tag-fixed-ink: #8A6324;
+  --tag-fixed-ink: #725520;
   --tag-reliability-bg: rgba(63, 113, 158, 0.16);
   --tag-reliability-ink: #2F587C;
   --tag-security-bg: rgba(176, 65, 65, 0.16);
