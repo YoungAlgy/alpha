@@ -4,6 +4,10 @@ import { LegalLayout } from "@/components/LegalLayout";
 // alpha-drift-r15-08/10: see app/privacy/page.tsx's comment -- same fix,
 // same reason (indexable page silently inheriting the root layout's
 // homepage openGraph/twitter/canonical).
+//
+// alpha-drift-r28-03 (2026-08-15): see app/privacy/page.tsx's comment --
+// same fix, same reason (that same replace-not-merge behavior also dropped
+// images/siteName, unnoticed for 13 rounds).
 const PATH = "/terms";
 const TITLE = "Terms";
 const DESCRIPTION =
@@ -18,11 +22,14 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     url: `https://alpha.everyday.report${PATH}`,
     type: "website",
+    siteName: "alpha.",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "alpha. your alpha" }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: `${TITLE} | alpha.`,
     description: DESCRIPTION,
+    images: ["/og-image.png"],
   },
 };
 

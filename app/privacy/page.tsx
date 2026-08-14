@@ -9,6 +9,17 @@ import { LegalLayout } from "@/components/LegalLayout";
 // live via curl). canonical was also missing -- app/page.tsx and
 // app/sample/page.tsx both set alternates.canonical deliberately; this page
 // never did.
+//
+// alpha-drift-r28-03 (2026-08-15): that same "Next doesn't merge, it
+// replaces" fact meant the openGraph/twitter objects THIS fix added also
+// silently dropped the root layout's images/siteName -- this fix's own
+// commit only verified og:title/url/description/canonical, never checked
+// whether the image survived. Confirmed live on production: no og:image,
+// no twitter:image, no og:site_name rendered for this page at all, 13
+// rounds unnoticed. Added the same og-image.png + siteName the root layout
+// (and app/sample/page.tsx) already use, and upgraded the Twitter card to
+// summary_large_image to match -- "summary" renders a 1200x630 image
+// cropped to a small square, which looks wrong for this asset.
 const PATH = "/privacy";
 const TITLE = "Privacy";
 const DESCRIPTION =
@@ -23,11 +34,14 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     url: `https://alpha.everyday.report${PATH}`,
     type: "website",
+    siteName: "alpha.",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "alpha. your alpha" }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: `${TITLE} | alpha.`,
     description: DESCRIPTION,
+    images: ["/og-image.png"],
   },
 };
 
@@ -98,6 +112,22 @@ export default function PrivacyPage() {
         <li>
           <strong>Stripe</strong> handles all payment information. We never see your
           card number.
+        </li>
+        {/* alpha-drift-r28-07 (2026-08-15): a real, disclosed gap in the
+        "irreversible" delete promise above -- your name and city go into
+        Stripe when you check out so a receipt can carry your name, and
+        Stripe's own checkout records can't be edited or scrubbed after the
+        fact by anyone, including us. Removed the one avoidable duplicate
+        copy of this (it was also being written to the Stripe subscription
+        record for no real reason) and disclosing the one that's genuinely
+        unavoidable, instead of leaving it unmentioned. */}
+        <li>
+          Your first name and city also go to Stripe at checkout, so a
+          receipt can carry your name. Deleting your account cancels the
+          subscription and deletes the Stripe customer record, but Stripe&apos;s
+          own checkout record itself can&apos;t be edited or removed afterward by
+          anyone, including us — your name and city stay on that one record
+          at Stripe, permanently, the same way a receipt would.
         </li>
         <li>
           <strong>Anthropic (Claude)</strong> writes the short editor&apos;s note at

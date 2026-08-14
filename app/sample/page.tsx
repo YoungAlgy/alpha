@@ -11,6 +11,13 @@ import { PITCH, SHARE_LEAD } from "@/lib/copy";
 // product. Rendered through the exact same <Digest> the real letters use, so
 // what a visitor sees here is what they'd get. Linked from the landing page and
 // every marketing channel.
+// alpha-drift-r28-03 (2026-08-15): added siteName -- this page already kept
+// its own openGraph.images (so og:image itself was never lost, unlike the 5
+// pages app/privacy/page.tsx's comment covers), but Next's per-page
+// openGraph object still fully replaces the root layout's rather than
+// merging into it, so og:site_name was silently dropped here too. Confirmed
+// live: this was the only one of the 6 affected pages missing JUST
+// site_name, not image+site_name both.
 export const metadata: Metadata = {
   title: "A sample issue",
   description: `See what a letter from alpha. looks like. ${PITCH}`,
@@ -21,6 +28,7 @@ export const metadata: Metadata = {
       "See what a letter from alpha. looks like before you sign up.",
     url: "https://alpha.everyday.report/sample",
     type: "article",
+    siteName: "alpha.",
     images: ["/og-image.png"],
   },
   // Sample-specific Twitter card too — otherwise X falls back to the layout's
