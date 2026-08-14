@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getStripeClient } from "@/lib/stripe";
+import { getStripeClient, describeStripeError } from "@/lib/stripe";
 import { supabaseServerClient } from "@/lib/supabase/server";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -86,8 +86,9 @@ export async function POST(req: Request) {
     // and update-quantity/route.ts's established pattern. This is reachable
     // by any signed-in user just by triggering a Stripe error; the raw SDK
     // message can leak price/product IDs or account config.
-    const msg = e instanceof Error ? e.message : "Stripe error";
-    console.error("[stripe/portal] failed:", msg);
+    //
+    // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
+    console.error("[stripe/portal] failed:", describeStripeError(e));
     // alpha-drift-r20-01 (found+fixed 2026-08-13): "Try again in a moment"
     // implied a transient blip, but the live, currently-known cause (no
     // saved Billing Portal configuration on this Stripe account -- see this

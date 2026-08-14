@@ -56,3 +56,46 @@ export function getStripeClient(): Stripe {
   });
   return _stripe;
 }
+
+// alpha-drift-r29-05 (2026-08-14): every Stripe call site in the app (7 of
+// them across checkout/portal/update-quantity/webhook/stripe-cancel) caught
+// errors identically -- `e instanceof Error ? e.message : e` -- and never
+// read the Stripe SDK's own structured error info (StripeError's
+// type/code/statusCode/requestId), unlike every OTHER provider client here:
+// lib/engine/client.ts's isAnthropicUnavailable classifies retryable vs not,
+// lib/engine/openai-compat.ts's throwCompatError and lib/brave.ts both log
+// the real HTTP status + response body. A rate limit, a rotated/revoked key,
+// a malformed request, and a genuine Stripe outage all looked identical in
+// every log line this app has ever written for a Stripe failure. These two
+// helpers mirror isAnthropicUnavailable's shape/purpose for Stripe.
+export function describeStripeError(e: unknown): string {
+  if (e instanceof Stripe.errors.StripeError) {
+    const parts = [e.type];
+    if (e.code) parts.push(`code=${e.code}`);
+    if (typeof e.statusCode === "number") parts.push(`status=${e.statusCode}`);
+    if (e.requestId) parts.push(`request=${e.requestId}`);
+    return `${parts.join(" ")}: ${e.message}`;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
+// True only for a failure a retry could plausibly fix: a network/connection
+// problem, a Stripe-side outage (5xx / StripeAPIError), or a rate limit.
+// False for anything else, INCLUDING a raw non-StripeError (e.g. a thrown
+// string, a plain object) -- an unrecognized shape shouldn't be assumed
+// transient just because it isn't provably permanent. Used specifically by
+// app/api/stripe/webhook/route.ts's charge.dispute.created handler, whose
+// charge-retrieve failure used to rethrow unconditionally (retrying for
+// Stripe's full ~3-day webhook window even on a permanent "No such charge"/
+// permission error that a retry can never fix) -- every other Stripe call
+// site here still fails a request outright rather than relying on Stripe's
+// own webhook redelivery, so this is the one place the distinction matters.
+export function isTransientStripeError(e: unknown): boolean {
+  if (e instanceof Stripe.errors.StripeConnectionError) return true;
+  if (e instanceof Stripe.errors.StripeAPIError) return true;
+  if (e instanceof Stripe.errors.StripeRateLimitError) return true;
+  if (e instanceof Stripe.errors.StripeError && typeof e.statusCode === "number") {
+    return e.statusCode >= 500;
+  }
+  return false;
+}

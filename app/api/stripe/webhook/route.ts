@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getStripeClient } from "@/lib/stripe";
+import { getStripeClient, describeStripeError, isTransientStripeError } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { checkoutUserMutation, isFirstSubscription, deriveCancelledAt, isTerminalSubscriptionStatus } from "@/lib/webhook-user-mutation";
 import { sendWelcomeEmail, resendConfigured, sendOpsAlert, removeResendSuppression } from "@/lib/email";
@@ -136,10 +136,8 @@ export async function POST(req: Request) {
                 const sub = await stripe.subscriptions.retrieve(subId);
                 subscriptionLive = sub.status === "active" || sub.status === "trialing";
               } catch (e) {
-                console.warn(
-                  "[stripe-webhook] subscription status check failed; leaving cancelled_at untouched:",
-                  e instanceof Error ? e.message : e
-                );
+                // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
+                console.warn("[stripe-webhook] subscription status check failed; leaving cancelled_at untouched:", describeStripeError(e));
               }
             }
             const mut = checkoutUserMutation(existing ?? null, {
@@ -238,10 +236,8 @@ export async function POST(req: Request) {
           const liveSub = await stripe.subscriptions.retrieve(sub.id);
           quantity = liveSub.items?.data?.[0]?.quantity ?? snapshotQuantity;
         } catch (e) {
-          console.warn(
-            "[stripe-webhook] live subscription retrieve failed; using event snapshot:",
-            e instanceof Error ? e.message : e
-          );
+          // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
+          console.warn("[stripe-webhook] live subscription retrieve failed; using event snapshot:", describeStripeError(e));
         }
         const topicQuota = clampQuota(quantity * TOPICS_PER_BUNDLE);
         // Throw on failure -> 5xx -> Stripe retries (#35). Set-to-current, so
@@ -417,6 +413,23 @@ export async function POST(req: Request) {
         // rethrows -- Algy gets the real, actionable info immediately no
         // matter how the retry turns out, and a transient failure still
         // gets its genuine shot at self-healing via Stripe's redelivery.
+        //
+        // alpha-drift-r29-02 (2026-08-14, self-audit): two more gaps in that
+        // same r28 fix. (1) This alert's key had no day-bucket suffix, unlike
+        // the outer catch's generic "webhook processing failed" alert a few
+        // dozen lines down (alpha-drift-r27-07) -- that fix exists precisely
+        // because Resend's ~24h send-idempotency window doesn't line up with
+        // Stripe's ~3-day webhook retry window, so a flat key here re-pages
+        // unreliably on the exact same multi-day-outage timeline the generic
+        // alert was fixed for. Added the same UTC day-bucket. (2) The rethrow
+        // was unconditional whenever retrieveError was set -- correct for a
+        // transient failure (a 5xx, a network blip, per this comment's own
+        // r27 reasoning above), but a PERMANENT one (StripeInvalidRequestError
+        // "No such charge", StripePermissionError) now just retries uselessly
+        // for the full 3-day window instead of stopping after the alert
+        // already went out. isTransientStripeError (lib/stripe.ts) makes that
+        // distinction explicit instead of treating every retrieve failure the
+        // same way.
         let customerId: string | null = null;
         let retrieveError: unknown = null;
         try {
@@ -424,18 +437,16 @@ export async function POST(req: Request) {
           customerId = typeof charge.customer === "string" ? charge.customer : charge.customer?.id ?? null;
         } catch (e) {
           retrieveError = e;
-          console.error(
-            `[stripe-webhook] dispute ${dispute.id}: charge retrieve failed:`,
-            e instanceof Error ? e.message : e
-          );
+          console.error(`[stripe-webhook] dispute ${dispute.id}: charge retrieve failed:`, describeStripeError(e));
         }
         if (!customerId) {
+          const dayBucket = new Date().toISOString().slice(0, 10);
           await sendOpsAlert(
             "alpha. dispute opened -- couldn't identify the subscriber",
             `Dispute ${dispute.id} on charge ${chargeId} (${dispute.reason}, $${(dispute.amount / 100).toFixed(2)}) but the charge lookup failed or had no customer attached. Access was NOT revoked -- check the Stripe dashboard directly.`,
-            `alpha-dispute-unresolved-${dispute.id}`
+            `alpha-dispute-unresolved-${dispute.id}-${dayBucket}`
           );
-          if (retrieveError) throw retrieveError;
+          if (retrieveError && isTransientStripeError(retrieveError)) throw retrieveError;
           break;
         }
         // A dispute means the customer is already contesting the charge
@@ -448,10 +459,8 @@ export async function POST(req: Request) {
         // on the same subscription). Idempotent on a Stripe-side retry:
         // cancelCustomerSubscriptions skips already-terminal subs.
         const cancelResult = await cancelCustomerSubscriptions(stripe, customerId).catch((e) => {
-          console.warn(
-            `[stripe-webhook] dispute ${dispute.id}: subscription cancel threw:`,
-            e instanceof Error ? e.message : e
-          );
+          // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
+          console.warn(`[stripe-webhook] dispute ${dispute.id}: subscription cancel threw:`, describeStripeError(e));
           return { cancelled: [] as string[], skipped: 0, errors: 1 };
         });
         // alpha-drift-r21-12 (found+fixed 2026-08-14): this write used to

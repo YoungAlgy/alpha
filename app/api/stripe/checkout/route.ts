@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { STRIPE_PRICE_ID, getStripeClient } from "@/lib/stripe";
+import { STRIPE_PRICE_ID, getStripeClient, describeStripeError } from "@/lib/stripe";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { isProfileComplete, shouldBlockDoubleSubscription } from "@/lib/checkout-guards";
@@ -199,8 +199,11 @@ export async function POST(req: Request) {
     // Log the real Stripe error server-side only. This endpoint has no auth
     // (just a rate limit), so the raw SDK message must never reach the
     // caller — it can leak price/product IDs or account config.
-    const message = e instanceof Error ? e.message : "Stripe error";
-    console.error("[stripe/checkout] failed:", message);
+    //
+    // alpha-drift-r29-05 (2026-08-14): describeStripeError (not a bare
+    // e.message) so a rate limit, an auth failure, and a genuine outage are
+    // distinguishable in logs -- see lib/stripe.ts's own comment.
+    console.error("[stripe/checkout] failed:", describeStripeError(e));
     return NextResponse.json(
       { error: "Couldn't start checkout. Try again in a moment." },
       { status: 500 }

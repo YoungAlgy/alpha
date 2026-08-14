@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getStripeClient } from "@/lib/stripe";
+import { getStripeClient, describeStripeError } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
 import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS } from "@/lib/types";
@@ -119,10 +119,8 @@ export async function POST(req: Request) {
       ? subs.data.find((s) => isLiveForManagement(s.status))
       : undefined;
   } catch (e) {
-    console.error(
-      "[update-quantity] subscriptions.list failed:",
-      e instanceof Error ? e.message : e
-    );
+    // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
+    console.error("[update-quantity] subscriptions.list failed:", describeStripeError(e));
     return NextResponse.json(
       { error: "Couldn't reach Stripe. Try again in a moment." },
       { status: 500 }
@@ -173,10 +171,8 @@ export async function POST(req: Request) {
       { idempotencyKey: idemKey }
     );
   } catch (e) {
-    console.error(
-      "[update-quantity] subscriptions.update failed:",
-      e instanceof Error ? e.message : e
-    );
+    // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
+    console.error("[update-quantity] subscriptions.update failed:", describeStripeError(e));
     return NextResponse.json(
       { error: "Couldn't reach Stripe. Try again in a moment." },
       { status: 500 }
@@ -214,10 +210,8 @@ export async function POST(req: Request) {
     // Best-effort: the update above already succeeded, so fall back to the
     // locally-computed nextQty rather than failing a request whose Stripe-
     // side mutation is already real. The webhook still reconciles later.
-    console.warn(
-      "[update-quantity] post-update retrieve failed, using locally-computed quantity:",
-      e instanceof Error ? e.message : e
-    );
+    // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
+    console.warn("[update-quantity] post-update retrieve failed, using locally-computed quantity:", describeStripeError(e));
   }
 
   // Write through to public.users immediately so the UI reflects without

@@ -95,7 +95,15 @@ console.log("(4) app/api/stripe/webhook/route.ts: dispute's charge-retrieve fail
   // check now only confirms the failure is still captured for a later throw,
   // not that it throws immediately inside the catch (which no longer holds).
   check("(4c) the retrieve failure is still captured for a later throw (now fires AFTER the alert -- see verify-r28-findings.mts for the exact corrected shape)", /retrieveError = e;/.test(block));
-  check("(4d) the genuinely-different 'retrieve succeeded but no customer on charge' alert path is untouched", /if \(!customerId\) \{\s*await sendOpsAlert\(\s*"alpha\. dispute opened -- couldn't identify the subscriber"/.test(block));
+  // alpha-drift-r29-02 (2026-08-14): round 29's self-audit added a day-bucket
+  // line inside this same `if (!customerId) {` block before the alert call
+  // (see verify-r29-findings.mts check 2c/2d for the exact corrected shape),
+  // so the tight `{\s*await sendOpsAlert(` adjacency this check used to
+  // require no longer holds. Loosened to confirm the branch and the alert's
+  // message both still exist, without asserting exact adjacency -- the same
+  // "point to the later round's script for the authoritative shape" pattern
+  // this file's own (4c) comment already established.
+  check("(4d) the genuinely-different 'retrieve succeeded but no customer on charge' alert path is untouched (exact shape now owned by verify-r29-findings.mts)", /if \(!customerId\) \{/.test(block) && /await sendOpsAlert\(\s*"alpha\. dispute opened -- couldn't identify the subscriber"/.test(block));
   check("(4e) the sibling disputeErr throw (#35 pattern) this fix now matches is still present, confirming the precedent this fix follows is real", /if \(disputeErr\) throw new Error\(`dispute access-revoke failed: \$\{disputeErr\.message\}`\);/.test(block));
 }
 

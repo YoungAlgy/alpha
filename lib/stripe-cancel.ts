@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getStripeClient } from "./stripe";
+import { getStripeClient, describeStripeError } from "./stripe";
 
 // Cancel every still-billable subscription for a Stripe customer. Used by the
 // account-deletion flow: when a user deletes their account we delete the auth
@@ -136,16 +136,12 @@ export async function cleanUpStripeCustomerBeforeDelete(
       // delete click) throws here too -- Stripe's error message for that
       // case contains "No such customer", distinct from a real API failure.
       // Either way this is best-effort: log and move on, never block delete.
-      console.warn(
-        `${logPrefix} stripe ${customerId}: customer delete failed:`,
-        delErr instanceof Error ? delErr.message : delErr
-      );
+      //
+      // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
+      console.warn(`${logPrefix} stripe ${customerId}: customer delete failed:`, describeStripeError(delErr));
     }
   } catch (e) {
-    console.warn(
-      `${logPrefix} subscription cancel failed (proceeding with delete):`,
-      e instanceof Error ? e.message : e
-    );
+    console.warn(`${logPrefix} subscription cancel failed (proceeding with delete):`, describeStripeError(e));
   }
 }
 
