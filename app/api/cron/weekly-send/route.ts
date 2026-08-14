@@ -1177,6 +1177,29 @@ export async function GET(req: Request) {
     }
   }
 
+  // alpha-drift-r22-01 (found+fixed 2026-08-14): every one of the per-
+  // subscriber email lists below used to go into the ops-alert email AND
+  // the CRON_SECRET-gated JSON response completely unbounded -- fine on an
+  // ordinary day (a handful of names), but a genuinely bad run (a systemic
+  // outage failing most of the subscriber list) could dump thousands of
+  // real subscriber email addresses into one alert email and one API
+  // response with no cap at all. `failures` already had a `.slice(0, 25)`
+  // in the JSON summary below, but even THAT wasn't shared with the alert
+  // email's own `failures.map(...).join("; ")`, which used the full,
+  // uncapped array -- two independent copies of "the same list, capped"
+  // that had already drifted apart. One shared cap + one shared set of
+  // capped slices now feeds both surfaces, so they can't drift again.
+  const EMAIL_LIST_CAP = 25;
+  const capList = (arr: string[]) => arr.slice(0, EMAIL_LIST_CAP);
+  const capListLine = (arr: string[]) =>
+    capList(arr).join(", ") + (arr.length > EMAIL_LIST_CAP ? ` (+${arr.length - EMAIL_LIST_CAP} more)` : "");
+  const cappedBackupSharedSentEmails = capList(backupSharedSentEmails);
+  const cappedBackupFreshSentEmails = capList(backupFreshSentEmails);
+  const cappedBackupStaleSentEmails = capList(backupStaleSentEmails);
+  const cappedSkippedBlankSubscribers = capList(skippedBlankSubscribers);
+  const cappedDeferred = capList(deferred);
+  const cappedFailures = failures.slice(0, EMAIL_LIST_CAP);
+
   const elapsedMs = Date.now() - startedAt;
   const braveRateLimited = braveRateLimitedCount() - braveBaseline;
   const youRateLimited = youRateLimitedCount() - youBaseline;
@@ -1191,16 +1214,21 @@ export async function GET(req: Request) {
     subscribers: rows.length,
     sent,
     backupSharedSent,
-    backupSharedSentEmails,
+    // alpha-drift-r22-01: capped to EMAIL_LIST_CAP (see that constant's
+    // comment) -- the *Sent counts above already carry the TRUE total, so
+    // capping the email list itself loses no information a reader needs.
+    backupSharedSentEmails: cappedBackupSharedSentEmails,
     backupFreshSent,
-    backupFreshSentEmails,
+    backupFreshSentEmails: cappedBackupFreshSentEmails,
     backupStaleSent,
-    backupStaleSentEmails,
+    backupStaleSentEmails: cappedBackupStaleSentEmails,
     skippedNoName,
     skippedEmptyPool,
-    skippedBlankSubscribers,
+    skippedBlankSubscribers: cappedSkippedBlankSubscribers,
+    skippedBlankSubscribersTotal: skippedBlankSubscribers.length,
     skippedAlreadyDelivered,
-    deferred,
+    deferred: cappedDeferred,
+    deferredTotal: deferred.length,
     failed,
     braveRateLimited,
     youRateLimited,
@@ -1218,7 +1246,8 @@ export async function GET(req: Request) {
     unsubscribedRecheckFailures,
     persistedRetryShapeMismatches,
     elapsedMs,
-    failures: failures.slice(0, 25),
+    failures: cappedFailures,
+    failuresTotal: failures.length,
   };
   // Log a redacted copy -- `summary` itself (with real emails) stays intact
   // below for the CRON_SECRET-gated JSON response and the ops-alert email,
@@ -1258,19 +1287,19 @@ export async function GET(req: Request) {
     const lines = [
       `weekOf=${weekOf}  sent=${sent}  backupSharedSent=${backupSharedSent}  backupFreshSent=${backupFreshSent}  backupStaleSent=${backupStaleSent}  subscribers=${rows.length}  failed=${failed}  genuinelyMissed=${genuinelyMissed}`,
       backupSharedSent > 0
-        ? `Live generation failed for ${failed} subscriber(s); ${backupSharedSent} of them got fresh, real content borrowed from a broadly-appealing topic already cached today (zero new AI calls): ${backupSharedSentEmails.join(", ")}.`
+        ? `Live generation failed for ${failed} subscriber(s); ${backupSharedSent} of them got fresh, real content borrowed from a broadly-appealing topic already cached today (zero new AI calls): ${capListLine(backupSharedSentEmails)}.`
         : "",
       backupFreshSent > 0
-        ? `${backupFreshSent} needed the next layer — a real, FRESH (shorter) letter via the small fast-fallback retry: ${backupFreshSentEmails.join(", ")}.`
+        ? `${backupFreshSent} needed the next layer — a real, FRESH (shorter) letter via the small fast-fallback retry: ${capListLine(backupFreshSentEmails)}.`
         : "",
       backupStaleSent > 0
-        ? `${backupStaleSent} subscriber(s) needed the true last resort — their most recent prior letter, resent (they were told it's a repeat): ${backupStaleSentEmails.join(", ")}. Worth a closer look if this keeps happening — it means even the cache-borrow and the fast retry are both failing, not just the full generation.`
+        ? `${backupStaleSent} subscriber(s) needed the true last resort — their most recent prior letter, resent (they were told it's a repeat): ${capListLine(backupStaleSentEmails)}. Worth a closer look if this keeps happening — it means even the cache-borrow and the fast retry are both failing, not just the full generation.`
         : "",
       skippedBlankSubscribers.length
-        ? `PAID subscribers who got NOTHING (blank name / empty topics): ${skippedBlankSubscribers.join(", ")}`
+        ? `PAID subscribers who got NOTHING (blank name / empty topics): ${capListLine(skippedBlankSubscribers)}`
         : "",
       failures.length
-        ? `Underlying generation failures (root cause, investigate this even if a backup layer covered it): ${failures.map((f) => `${f.email} (${f.error})`).join("; ")}`
+        ? `Underlying generation failures (root cause, investigate this even if a backup layer covered it): ${cappedFailures.map((f) => `${f.email} (${f.error})`).join("; ")}${failures.length > EMAIL_LIST_CAP ? ` (+${failures.length - EMAIL_LIST_CAP} more)` : ""}`
         : "",
       braveRateLimited > 0
         ? `Brave returned 429 on ${braveRateLimited} queries — monthly search quota likely exhausted; letters are degrading to filler. Fix: upgrade the Brave plan (https://api.search.brave.com), ~$5-10/mo at this volume.`
@@ -1302,7 +1331,7 @@ export async function GET(req: Request) {
         ? `DeepSeek (the uncapped backstop tier) returned 429 on ${deepseekRateLimited} calls this run — that shouldn't normally happen on a funded account. Worth checking the DeepSeek dashboard for balance/concurrency issues.`
         : "",
       deferred.length
-        ? `${paidCallCeilingHit ? "Time budget and/or the paid-call cost ceiling" : "Time budget"} exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${deferred.join(", ")}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically).${paidCallCeilingHit ? "" : " This is a scale signal — the subscriber list is big enough that the daily run is pressing against Vercel's time cap."}`
+        ? `${paidCallCeilingHit ? "Time budget and/or the paid-call cost ceiling" : "Time budget"} exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${capListLine(deferred)}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically).${paidCallCeilingHit ? "" : " This is a scale signal — the subscriber list is big enough that the daily run is pressing against Vercel's time cap."}`
         : "",
       // PAID_CALL_CEILING tripped — a materially different signal than a
       // scale-driven time-budget defer above: this means Haiku+Sonnet+
