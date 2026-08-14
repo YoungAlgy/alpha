@@ -137,9 +137,25 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
   // Escape/pick dismissal, where returning focus to the trigger is the
   // expected behavior), focus here is already moving somewhere else;
   // stealing it back would fight whatever just happened.
+  //
+  // alpha-drift-r28-01 (2026-08-15, self-audit): this used to also close on
+  // `!next` (relatedTarget === null), on the assumption a null relatedTarget
+  // meant focus left the wrapper entirely. Confirmed live in real Chrome
+  // that's WRONG: relatedTarget is ALSO null whenever a mousedown lands on
+  // any non-focusable element, even one squarely inside the wrapper (e.g.
+  // the panel's own "CHOOSE A THEME" label div, which has no tabIndex) --
+  // clicking it blurs the active option with relatedTarget null, so this
+  // backstop was closing the dropdown on a plain click INSIDE the still-open
+  // panel, contradicting the pointerdown outside-click handler below (which
+  // correctly leaves it open for that exact click, since e.target is
+  // contained in the wrapper). Tab can only blur onto another FOCUSABLE
+  // element, so a legitimate Tab-escaping-the-trap case always has a real,
+  // non-null relatedTarget -- there's no genuine "focus left the widget"
+  // scenario this fix needs the null case to catch. Only closes now when
+  // relatedTarget is a real Node outside the wrapper.
   function handleWrapperBlur(e: React.FocusEvent<HTMLDivElement>) {
     const next = e.relatedTarget as Node | null;
-    if (!next || !wrapperRef.current?.contains(next)) {
+    if (next && !wrapperRef.current?.contains(next)) {
       setOpen(false);
     }
   }

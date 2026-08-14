@@ -29,8 +29,19 @@ console.log("(1) components/ThemeSwitcher.tsx: Tab focus-trap + blur backstop");
   check("(1g) the panel's onKeyDown now uses the extracted handler (not an inline Escape-only closure)", /onKeyDown=\{handlePanelKeyDown\}/.test(src));
 
   check("(1h) handleWrapperBlur exists as a backstop close", /function handleWrapperBlur\(e: React\.FocusEvent<HTMLDivElement>\) \{/.test(src));
-  check("(1i) the blur backstop checks relatedTarget against the wrapper, not just any blur", /const next = e\.relatedTarget as Node \| null;\s*\n\s*if \(!next \|\| !wrapperRef\.current\?\.contains\(next\)\) \{/.test(src));
-  check("(1j) the blur backstop closes (setOpen(false)) WITHOUT stealing focus back to the toggle (focus is already moving elsewhere)", /if \(!next \|\| !wrapperRef\.current\?\.contains\(next\)\) \{\s*setOpen\(false\);\s*\}/.test(src));
+  // alpha-drift-r28-01 (2026-08-15): (1i)/(1j) originally asserted the
+  // `!next || ...` form shipped in round 27 -- round 28's self-audit found
+  // (and verified live in real Chrome) that treating a null relatedTarget as
+  // "focus left the wrapper" was wrong: it's ALSO null for a plain click on
+  // any non-focusable element inside the panel (e.g. the "CHOOSE A THEME"
+  // label), so that version closed the dropdown on a click that never left
+  // it. Round 28 removed the `!next` branch; the corrected shape is checked
+  // in scripts/verify-r28-findings.mts, not re-duplicated here -- this
+  // script is a point-in-time record of what round 27 shipped, and the
+  // ThemeSwitcher-specific behavioral assertions now live with the round
+  // that actually fixed the bug.
+  check("(1i) the blur backstop still checks relatedTarget against the wrapper (exact form now owned by verify-r28-findings.mts)", /const next = e\.relatedTarget as Node \| null;/.test(src));
+  check("(1j) the blur backstop closes (setOpen(false)) WITHOUT stealing focus back to the toggle (focus is already moving elsewhere)", /if \(next && !wrapperRef\.current\?\.contains\(next\)\) \{\s*setOpen\(false\);\s*\}/.test(src));
   check("(1k) the wrapper's onBlur is only attached while open (avoids listening when there's nothing to trap)", /onBlur=\{open \? handleWrapperBlur : undefined\}/.test(src));
 
   // Sanity: the outside-click (pointerdown) dismiss from a prior round is
@@ -74,7 +85,16 @@ console.log("(4) app/api/stripe/webhook/route.ts: dispute's charge-retrieve fail
   check("(4a) the charge.dispute.created case was found", !!caseMatch);
   const block = caseMatch ? caseMatch[1] : "";
   check("(4b) the retrieve failure catch still logs (observability preserved)", /console\.error\(\s*`\[stripe-webhook\] dispute \$\{dispute\.id\}: charge retrieve failed:`/.test(block));
-  check("(4c) the retrieve failure catch now rethrows instead of silently falling through", /charge retrieve failed:`,\s*e instanceof Error \? e\.message : e\s*\);\s*throw e;/.test(block));
+  // alpha-drift-r28-02 (2026-08-15): round 28's self-audit found this
+  // rethrow-immediately shape made the specific dispute alert unreachable
+  // on a PERMANENT retrieve failure -- every retry rethrew the same way
+  // before ever reaching the alert, so it was silently lost once Stripe's
+  // retry window lapsed. Round 28 moved the throw to fire AFTER the alert
+  // (captured as retrieveError, rethrown only once the alert has gone out).
+  // The exact corrected shape is checked in verify-r28-findings.mts; this
+  // check now only confirms the failure is still captured for a later throw,
+  // not that it throws immediately inside the catch (which no longer holds).
+  check("(4c) the retrieve failure is still captured for a later throw (now fires AFTER the alert -- see verify-r28-findings.mts for the exact corrected shape)", /retrieveError = e;/.test(block));
   check("(4d) the genuinely-different 'retrieve succeeded but no customer on charge' alert path is untouched", /if \(!customerId\) \{\s*await sendOpsAlert\(\s*"alpha\. dispute opened -- couldn't identify the subscriber"/.test(block));
   check("(4e) the sibling disputeErr throw (#35 pattern) this fix now matches is still present, confirming the precedent this fix follows is real", /if \(disputeErr\) throw new Error\(`dispute access-revoke failed: \$\{disputeErr\.message\}`\);/.test(block));
 }
