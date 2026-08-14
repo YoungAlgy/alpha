@@ -565,8 +565,15 @@ export default function TopicsPage() {
           </div>
         )}
 
+        {/* alpha-drift-r24-01 (found+fixed 2026-08-14, self-audit): round
+            23's own --accent-ink -> --ink contrast sweep in THIS file fixed
+            the custom-topic error and the save-error status bar below, but
+            missed this third, structurally identical warning -- same
+            failing token (fails WCAG AA 4.5:1 against --paper in 12+
+            themes), same genuinely-important copy (tells the reader why
+            part of their letter will silently be skipped, not decoration). */}
         {signedIn && picked.includes("zodiac" as TopicId) && !userBirthday && (
-          <p className="alpha-ui text-xs" role="status" aria-live="polite" style={{ color: "var(--accent-ink)" }}>
+          <p className="alpha-ui text-xs" role="status" aria-live="polite" style={{ color: "var(--ink)" }}>
             Zodiac needs your birthday to read your sign. Add it in Settings under Your details, or that section gets skipped.
           </p>
         )}

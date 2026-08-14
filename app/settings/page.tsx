@@ -299,7 +299,11 @@ export default function SettingsPage() {
                     role="status"
                     aria-live="polite"
                     className="alpha-ui text-sm mt-3"
-                    style={{ color: "var(--accent-ink)" }}
+                    // alpha-drift-r24-01 (found+fixed 2026-08-14, self-audit
+                    // follow-through): same --accent-ink WCAG contrast gap
+                    // round 23 fixed elsewhere -- closing the remaining
+                    // instances of the class in one pass.
+                    style={{ color: "var(--ink)" }}
                   >
                     {resumeErr}
                   </p>
@@ -482,7 +486,10 @@ export default function SettingsPage() {
               role="status"
               aria-live="polite"
               className="alpha-ui text-sm mb-3"
-              style={{ color: billingMsg.kind === "err" ? "var(--accent-ink)" : "var(--ink-soft)" }}
+              // alpha-drift-r24-01: same --accent-ink WCAG contrast gap
+              // round 23 fixed elsewhere -- closing the remaining
+              // instances of the class in one pass.
+              style={{ color: billingMsg.kind === "err" ? "var(--ink)" : "var(--ink-soft)" }}
             >
               {billingMsg.text}
             </p>

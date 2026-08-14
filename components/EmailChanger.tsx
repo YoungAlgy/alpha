@@ -170,7 +170,9 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
           role="status"
           aria-live="polite"
           className="alpha-ui text-sm mt-3"
-          style={{ color: "var(--accent-ink)" }}
+          // alpha-drift-r24-01: same --accent-ink WCAG contrast gap round 23
+          // fixed elsewhere -- closing the remaining instances in one pass.
+          style={{ color: "var(--ink)" }}
         >
           {err}
         </p>

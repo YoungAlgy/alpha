@@ -100,6 +100,74 @@ console.log("(4) source: --accent-ink's OWN definition is untouched -- this fix 
   check("(4) root --accent-ink is still #A88947 (unchanged)", !!rootAccentInk && rootAccentInk[1] === "#A88947");
 }
 
+console.log("(5) alpha-drift-r24-01 (found+fixed 2026-08-14, self-audit): round 23 missed several more sibling instances of the SAME class of bug -- closed here");
+{
+  const sites: Array<{ file: string; pattern: RegExp; label: string }> = [
+    { file: "app/topics/page.tsx", pattern: /Zodiac needs your birthday to read your sign[\s\S]{0,10}Add it in Settings/, label: "topics/page.tsx Zodiac-birthday-required warning (sanity: text still present)" },
+    { file: "app/settings/page.tsx", pattern: /\{resumeErr\}/, label: "settings/page.tsx resume-error (sanity: still rendered)" },
+    { file: "app/signin/page.tsx", pattern: /role="alert"\s*\n\s*className="alpha-ui text-sm mt-6"[\s\S]{0,400}style=\{\{ color: "var\(--ink\)" \}\}/, label: "signin/page.tsx err message" },
+    { file: "components/EmailChanger.tsx", pattern: /style=\{\{ color: "var\(--ink\)" \}\}/, label: "EmailChanger.tsx err message" },
+    { file: "components/ProfileEditor.tsx", pattern: /msg\.kind === "err" \? "var\(--ink\)" : "var\(--ink-soft\)"/, label: "ProfileEditor.tsx msg.kind==err" },
+  ];
+  for (const site of sites) {
+    const src = readFileSync(new URL(`../${site.file}`, import.meta.url), "utf8");
+    check(`(5) ${site.label}`, site.pattern.test(src));
+  }
+  // topics/page.tsx and settings/page.tsx each need their OWN specific
+  // color-line check (can't share a generic pattern since they're
+  // conditional expressions with different surrounding text).
+  const topicsSrc = readFileSync(new URL("../app/topics/page.tsx", import.meta.url), "utf8");
+  const zodiacIdx = topicsSrc.indexOf("Zodiac needs your birthday");
+  const zodiacRegion = zodiacIdx > -1 ? topicsSrc.slice(Math.max(0, zodiacIdx - 200), zodiacIdx) : "";
+  check("(5) topics/page.tsx Zodiac warning's own <p> uses --ink, not --accent-ink", /style=\{\{ color: "var\(--ink\)" \}\}/.test(zodiacRegion));
+
+  const settingsSrc = readFileSync(new URL("../app/settings/page.tsx", import.meta.url), "utf8");
+  check("(5) settings/page.tsx resumeErr message uses --ink", /style=\{\{ color: "var\(--ink\)" \}\}\s*\n\s*>\s*\n\s*\{resumeErr\}/.test(settingsSrc));
+  check("(5) settings/page.tsx billingMsg.kind==err uses --ink", /billingMsg\.kind === "err" \? "var\(--ink\)" : "var\(--ink-soft\)"/.test(settingsSrc));
+
+  // The comprehensive, future-proof guard: scan EVERY role=alert/role=status
+  // element app-wide for a literal --accent-ink color value. Unlike the
+  // named-site checks above (which only prove these 12 specific spots are
+  // fixed), this can't be fooled by a NEW error-text site introduced later
+  // reusing the same broken token -- it fails the whole check, not just
+  // silently missing it the way a hand-maintained site list would.
+  const { readdirSync, statSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  function walk(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      const stat = statSync(full);
+      if (stat.isDirectory()) {
+        if (entry === "node_modules" || entry === ".next" || entry === ".open-next") continue;
+        walk(full, out);
+      } else if (entry.endsWith(".tsx")) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
+  const allTsxFiles = [...walk(new URL("../app", import.meta.url).pathname.replace(/^\/([A-Za-z]):/, "$1:")), ...walk(new URL("../components", import.meta.url).pathname.replace(/^\/([A-Za-z]):/, "$1:"))];
+  let offenders: string[] = [];
+  for (const file of allTsxFiles) {
+    const src = readFileSync(file, "utf8");
+    // Look for role="alert"/role="status" followed within ~400 chars by a
+    // literal --accent-ink color value (covers both direct and ternary
+    // forms), scanning the whole file for every occurrence, not just the
+    // first.
+    const roleMatches = [...src.matchAll(/role="(alert|status)"/g)];
+    for (const m of roleMatches) {
+      const region = src.slice(m.index ?? 0, (m.index ?? 0) + 400);
+      if (/var\(--accent-ink\)/.test(region)) {
+        offenders.push(`${file.split(/[\\/]/).slice(-2).join("/")} (role="${m[1]}")`);
+      }
+    }
+  }
+  check(
+    `(5) comprehensive app-wide scan: zero role="alert"/role="status" elements anywhere still use --accent-ink for color${offenders.length ? " -- offenders: " + offenders.join(", ") : ""}`,
+    offenders.length === 0
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("ACCENT-INK-ERROR-TEXT-CONTRAST VERIFICATION FAILED");

@@ -209,7 +209,10 @@ export default function SigninPage() {
                 <p
                   role="alert"
                   className="alpha-ui text-sm mt-6"
-                  style={{ color: "var(--accent-ink)" }}
+                  // alpha-drift-r24-01: same --accent-ink WCAG contrast gap
+                  // round 23 fixed elsewhere -- closing the remaining
+                  // instances of the class in one pass.
+                  style={{ color: "var(--ink)" }}
                 >
                   {err}
                 </p>
@@ -269,7 +272,10 @@ export default function SigninPage() {
                 <p
                   role="alert"
                   className="alpha-ui text-sm mt-6"
-                  style={{ color: "var(--accent-ink)" }}
+                  // alpha-drift-r24-01: same --accent-ink WCAG contrast gap
+                  // round 23 fixed elsewhere -- closing the remaining
+                  // instances of the class in one pass.
+                  style={{ color: "var(--ink)" }}
                 >
                   {err}
                 </p>
