@@ -391,7 +391,7 @@ export default function InboxPage() {
           className="max-w-5xl mx-auto px-6 pb-3 alpha-ui text-center text-xs flex items-center justify-center gap-4"
           style={{ color: "var(--ink-soft)" }}
         >
-          <Link href="/archive" className="underline underline-offset-4 hover:opacity-80">
+          <Link href="/archive" className="underline underline-offset-4 hover:opacity-80 py-2 -my-2">
             Read past letters →
           </Link>
           <span aria-hidden style={{ opacity: 0.4 }}>·</span>
@@ -401,7 +401,7 @@ export default function InboxPage() {
             title="alpha. your alpha"
             text={`${SHARE_LEAD} Worth a look:`}
             label="Tell a friend"
-            className="underline underline-offset-4 hover:opacity-80"
+            className="underline underline-offset-4 hover:opacity-80 py-2 -my-2"
           />
         </div>
       </div>

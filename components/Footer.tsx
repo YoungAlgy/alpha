@@ -41,9 +41,9 @@ export function Footer() {
         <Wordmark /> · {year}
       </div>
       <div className="flex gap-6 alpha-ui text-xs" style={{ color: "var(--ink-soft)" }}>
-        <Link href="/privacy" className="hover:opacity-70">Privacy</Link>
-        <Link href="/terms" className="hover:opacity-70">Terms</Link>
-        <Link href="/support" className="hover:opacity-70">Support</Link>
+        <Link href="/privacy" className="hover:opacity-70 py-2 -my-2">Privacy</Link>
+        <Link href="/terms" className="hover:opacity-70 py-2 -my-2">Terms</Link>
+        <Link href="/support" className="hover:opacity-70 py-2 -my-2">Support</Link>
       </div>
     </footer>
   );

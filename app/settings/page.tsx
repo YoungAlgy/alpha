@@ -472,7 +472,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => setConfirmingTier(null)}
-                  className="alpha-ui text-sm underline underline-offset-4"
+                  className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{ color: "var(--ink-soft)" }}
                 >
                   Cancel
@@ -602,7 +602,7 @@ export default function SettingsPage() {
                 a.download = "alpha-export.json";
                 a.click();
               }}
-              className="alpha-ui text-sm underline underline-offset-4"
+              className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
               style={{ color: "var(--accent-ink)" }}
             >
               Download my data
@@ -630,7 +630,7 @@ export default function SettingsPage() {
                 localStorage.removeItem("alpha-theme");
                 window.location.href = "/welcome";
               }}
-              className="alpha-ui text-sm underline underline-offset-4"
+              className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
               style={{ color: "var(--ink-soft)" }}
             >
               Delete my account
