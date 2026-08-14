@@ -93,7 +93,11 @@ console.log("(3) UI: the button is wired, type-safe, and conditionally shown");
   check("(3) act()'s action union includes clear_suppression", /"clear_suppression"/.test(uiSrc));
   check("(3) an isSuppressed derivation exists, driven by bounced_at OR complained_at", /isSuppressed\s*=\s*!!u\.bounced_at\s*\|\|\s*!!u\.complained_at/.test(uiSrc));
   check("(3) the Clear suppression button is gated on isSuppressed, not always shown", /\{isSuppressed && \(\s*<button/.test(uiSrc));
-  check("(3) the button actually dispatches the clear_suppression action", /act\(\s*u\.id,\s*"clear_suppression"/.test(uiSrc));
+  // alpha-drift-r32-04 (2026-08-14): act()'s signature grew an `email` param
+  // (settings/accounts/page.tsx's own live-region success message needs it)
+  // right between userId and action -- this assertion's shape follows that,
+  // not a behavior change to what action clear_suppression actually dispatches.
+  check("(3) the button actually dispatches the clear_suppression action", /act\(\s*u\.id,\s*u\.email,\s*"clear_suppression"/.test(uiSrc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

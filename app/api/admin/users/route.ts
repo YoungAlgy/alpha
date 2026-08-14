@@ -398,7 +398,18 @@ export async function POST(req: Request) {
     // checkoutUserMutation clears them on -- an un-comped-then-recomped
     // reader must not stay permanently excluded from the cron's
     // `.is("bounced_at", null).is("complained_at", null)` filter.
-    const { error } = await sb
+    // alpha-drift-r32-01 (2026-08-14): the eligibility check above reads
+    // stripe_customer_id, then this UPDATE runs as a separate statement --
+    // between the two, a checkout webhook could land and set a real
+    // stripe_customer_id on this same row (this reader just paid). Without
+    // re-checking, this comp grant would still fire and un-cancel/clobber a
+    // now-real subscriber's state, exactly what isFreeGrantEligible exists to
+    // prevent. Folding the same null-check into the UPDATE's WHERE (the
+    // established compare-and-swap idiom this app already uses for the
+    // weekly-send delivered_at claim and the Stripe-webhook mirror writes)
+    // makes the eligibility check atomic with the write instead of just
+    // advisory, and .select("id") detects a lost race as a 0-row result.
+    const { error, data: updated } = await sb
       .from("users")
       .update({
         subscribed_at: new Date().toISOString(),
@@ -407,10 +418,19 @@ export async function POST(req: Request) {
         bounced_at: null,
         complained_at: null,
       })
-      .eq("id", body.userId);
+      .eq("id", body.userId)
+      .is("stripe_customer_id", null)
+      .select("id");
     if (error) {
       console.error("[admin/users] grant_free failed:", error.message);
       return NextResponse.json({ error: "Couldn't grant free access. Try again." }, { status: 500 });
+    }
+    if (!updated || updated.length === 0) {
+      console.error(`[admin/users] grant_free: lost race, stripe_customer_id was set between pre-fetch and update for ${body.userId}`);
+      return NextResponse.json(
+        { error: "This user just got a real Stripe subscription. Refresh and manage in Stripe instead." },
+        { status: 409 }
+      );
     }
     // alpha-drift-r17-06: this app's own bounced_at/complained_at columns
     // are only half the fix -- Resend maintains its own separate account-
@@ -450,13 +470,27 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    const { error } = await sb
+    // alpha-drift-r32-01 (2026-08-14): same race as grant_free above -- fold
+    // the eligibility re-check into the UPDATE's WHERE so a stripe_customer_id
+    // that lands between the pre-fetch and this write can't get silently
+    // un-comped (revoke_free would otherwise blow away a now-real paid
+    // subscription's subscribed_at). .select("id") detects the lost race.
+    const { error, data: updated } = await sb
       .from("users")
       .update({ subscribed_at: null })
-      .eq("id", body.userId);
+      .eq("id", body.userId)
+      .is("stripe_customer_id", null)
+      .select("id");
     if (error) {
       console.error("[admin/users] revoke_free failed:", error.message);
       return NextResponse.json({ error: "Couldn't revoke free access. Try again." }, { status: 500 });
+    }
+    if (!updated || updated.length === 0) {
+      console.error(`[admin/users] revoke_free: lost race, stripe_customer_id was set between pre-fetch and update for ${body.userId}`);
+      return NextResponse.json(
+        { error: "This user just got a real Stripe subscription. Refresh and manage in Stripe instead." },
+        { status: 409 }
+      );
     }
     return NextResponse.json({ ok: true });
   }
@@ -516,6 +550,39 @@ export async function POST(req: Request) {
         console.error(`[admin/users] clear_suppression: removeResendSuppression failed for ${body.userId}, leaving DB flags untouched`);
         return NextResponse.json(
           { error: "Couldn't clear the Resend suppression. Left the DB flags untouched so the cron doesn't pick this reader up while Resend is still silently dropping their mail. Try again." },
+          { status: 502 }
+        );
+      }
+    }
+    // alpha-drift-r32-02 (2026-08-14): the pre-fetch above only ever read
+    // `email` -- a fresh bounce/complaint webhook could land AFTER the
+    // removeResendSuppression call just above but BEFORE the UPDATE below
+    // commits, adding a NEW Resend-side suppression entry that call was
+    // never told about. Without this re-check, the UPDATE would still clear
+    // this app's own bounced_at/complained_at columns, making the reader
+    // cron-eligible again while Resend is still silently dropping their
+    // mail -- reintroducing, in a narrower window, the exact bug
+    // alpha-drift-r21-06 (above) already fixed once. Re-read the suppression
+    // columns immediately before the write and, if either changed since the
+    // pre-fetch, re-run removeResendSuppression before clearing the DB flags.
+    const { data: fresh, error: freshError } = await sb
+      .from("users")
+      .select("bounced_at, complained_at")
+      .eq("id", body.userId)
+      .maybeSingle();
+    if (freshError) {
+      console.error("[admin/users] clear_suppression: re-fetch failed:", freshError.message);
+      return NextResponse.json({ error: "Couldn't verify user. Try again." }, { status: 500 });
+    }
+    if (!fresh) {
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    }
+    if ((fresh.bounced_at || fresh.complained_at) && row.email) {
+      const clearedAgain = await removeResendSuppression(row.email);
+      if (!clearedAgain) {
+        console.error(`[admin/users] clear_suppression: a fresh bounce/complaint landed mid-request, follow-up removeResendSuppression failed for ${body.userId}`);
+        return NextResponse.json(
+          { error: "A new bounce/complaint just landed for this reader and clearing it failed. Left the DB flags untouched. Try again." },
           { status: 502 }
         );
       }
