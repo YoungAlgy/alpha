@@ -58,7 +58,15 @@ console.log("(2) app/api/admin/users/route.ts: clear_suppression re-checks bounc
   check("(2a) a first removeResendSuppression call exists (pre-existing r20-06 behavior, untouched)", firstSuppressionCallIdx > 0);
   check("(2b) a fresh re-select of bounced_at/complained_at happens AFTER the first suppression call", reReadIdx > firstSuppressionCallIdx);
   check("(2c) a SECOND removeResendSuppression call exists, gated on the re-select, BEFORE the final DB write", secondSuppressionCallIdx > reReadIdx && secondSuppressionCallIdx < finalUpdateIdx);
-  check("(2d) the second call is conditional on a fresh bounce/complaint, not unconditional", /if \(\(fresh\.bounced_at \|\| fresh\.complained_at\) && row\.email\) \{/.test(clearBlock));
+  // alpha-drift-r33-01 (2026-08-14): round 33's self-audit found the
+  // truthiness-only gate this assertion checks for was itself buggy -- it
+  // fired on essentially every ordinary call, not just a genuine mid-request
+  // race, since fresh.bounced_at/complained_at is already non-null on any
+  // normal invocation (that's what makes the button render at all). Now
+  // compares against a real baseline captured in the initial pre-fetch
+  // instead -- see verify-r33-findings.mts's (1a)-(1h) for the corrected
+  // shape's own coverage.
+  check("(2d) the second call is conditional on the suppression state actually changing (not just being non-null), per r33-01's real-baseline fix", /if \(suppressionChangedMidRequest && row\.email\) \{/.test(clearBlock));
   check("(2e) a failed follow-up suppression clear leaves the DB flags untouched (502, not a silent proceed)", /clearing it failed\. Left the DB flags untouched/.test(clearBlock));
 }
 

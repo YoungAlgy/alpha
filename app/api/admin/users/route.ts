@@ -532,9 +532,18 @@ export async function POST(req: Request) {
     // actually reads -- once that's confirmed to have actually worked.
     // alpha-drift-r26-01 (2026-08-14): check error before checking !row, same
     // reasoning as grant_free/revoke_free above.
+    // alpha-drift-r33-01 (2026-08-14, self-audit): also select bounced_at/
+    // complained_at here as a BASELINE -- the re-check below used to compare
+    // the fresh re-select against nothing, just testing truthiness, which is
+    // true on essentially every normal call to this action (that's what
+    // makes the "Clear suppression" button render in the first place). That
+    // fired a second, redundant removeResendSuppression call on every
+    // ordinary invocation, and any transient Resend hiccup on that redundant
+    // call failed the whole action with a misleading "a new bounce/complaint
+    // just landed" 502 even though the first call already fully cleared it.
     const { data: row, error: rowError } = await sb
       .from("users")
-      .select("email")
+      .select("email, bounced_at, complained_at")
       .eq("id", body.userId)
       .maybeSingle();
     if (rowError) {
@@ -563,8 +572,10 @@ export async function POST(req: Request) {
     // cron-eligible again while Resend is still silently dropping their
     // mail -- reintroducing, in a narrower window, the exact bug
     // alpha-drift-r21-06 (above) already fixed once. Re-read the suppression
-    // columns immediately before the write and, if either changed since the
-    // pre-fetch, re-run removeResendSuppression before clearing the DB flags.
+    // columns immediately before the write and, if either CHANGED since the
+    // pre-fetch (alpha-drift-r33-01: compared against the real baseline now,
+    // not just truthiness), re-run removeResendSuppression before clearing
+    // the DB flags.
     const { data: fresh, error: freshError } = await sb
       .from("users")
       .select("bounced_at, complained_at")
@@ -577,7 +588,9 @@ export async function POST(req: Request) {
     if (!fresh) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
-    if ((fresh.bounced_at || fresh.complained_at) && row.email) {
+    const suppressionChangedMidRequest =
+      fresh.bounced_at !== row.bounced_at || fresh.complained_at !== row.complained_at;
+    if (suppressionChangedMidRequest && row.email) {
       const clearedAgain = await removeResendSuppression(row.email);
       if (!clearedAgain) {
         console.error(`[admin/users] clear_suppression: a fresh bounce/complaint landed mid-request, follow-up removeResendSuppression failed for ${body.userId}`);
