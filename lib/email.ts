@@ -343,11 +343,17 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
   // Apple Mail / Outlook to surface a one-click unsubscribe button. The Post
   // variant tells them they can use POST without navigating away from the inbox.
   const resendFrom = process.env.RESEND_FROM?.trim() || "\"alpha.\" <alpha@everyday.report>";
+  // alpha-drift-r21-01: issue.id is built elsewhere (lib/engine/assemble.ts,
+  // app/api/cron/weekly-send/route.ts) from raw firstName.toLowerCase() --
+  // sanitizeDisplayName applied here at the actual header sink, rather than
+  // chasing every place issue.id gets constructed. Safe even though it also
+  // strips characters an id wouldn't legitimately contain anyway.
+  const safeIssueId = sanitizeDisplayName(params.issue.id);
   const resendHeaders: Record<string, string> = {
     // Unique per (subscriber, issue): issue.id alone is firstName+weekOf, which
     // collides across same-named subscribers. Prefix with the user id when we
     // have it so delivery tracing by this header is unambiguous.
-    "X-Alpha-Issue-Id": params.userId ? `${params.userId}:${params.issue.id}` : params.issue.id,
+    "X-Alpha-Issue-Id": params.userId ? `${params.userId}:${safeIssueId}` : safeIssueId,
   };
   if (unsubUrl) {
     resendHeaders["List-Unsubscribe"] = `<${unsubUrl}>`;
@@ -483,8 +489,17 @@ async function sendOpsAlertViaWebhook(subject: string, body: string): Promise<bo
 // reads like a recurring publication the reader opted into. The brand is
 // carried by the From name ("alpha."); the subject earns the open. Exported
 // for testing.
+//
+// alpha-drift-r21-01 (found+fixed 2026-08-14): firstName is user-controlled
+// (onboarding writes it via lib/user-sync.ts with only .trim(), and the daily
+// cron reads the DB column back completely raw) and reaches Resend's `subject`
+// field here with no character restriction -- unlike sanitizeDisplayName just
+// above, built for exactly this class of risk (CR/LF header injection) but
+// never applied to firstName. Sanitized here, at the actual sink, rather than
+// chasing every write path.
 export function subjectLine(firstName: string, issueNumber?: number, weekOf?: string): string {
-  const who = firstName?.trim() ? `${firstName.trim()}'s` : "Your";
+  const safeFirstName = sanitizeDisplayName(firstName ?? "");
+  const who = safeFirstName ? `${safeFirstName}'s` : "Your";
   if (typeof issueNumber === "number" && issueNumber > 0) {
     return `${who} newsletter · Issue ${issueNumber}`;
   }

@@ -6,7 +6,8 @@
 // address groups); a name containing CR/LF is the classic raw-header-
 // injection vector. sanitizeDisplayName() closes this.
 // Run: npx tsx scripts/verify-sanitize-display-name.mts
-const { sanitizeDisplayName } = await import("../lib/email.ts");
+import { readFileSync } from "node:fs";
+const { sanitizeDisplayName, subjectLine } = await import("../lib/email.ts");
 
 let pass = 0,
   fail = 0;
@@ -66,6 +67,29 @@ console.log("(9) alpha-drift-r20-01: the actual attack this fix closes -- a comp
   const commaCount = (compound.match(/,/g) || []).length;
   check("(9) zero commas in the final compound string -- can't be parsed as an address list with a second entry", commaCount === 0);
   check("(9) exactly the real submitter's address remains a valid, unambiguous mailbox", compound === "attacker@evil.com Foo <realsubmitter@example.com>");
+}
+
+console.log("(10) alpha-drift-r21-01 (found+fixed 2026-08-14): subjectLine() now sanitizes firstName -- the actual sink this round's audit found unprotected");
+{
+  const clean = subjectLine("Jane", 5, "2026-08-14");
+  check("(10) an ordinary first name is unaffected", clean === "Jane's newsletter · Issue 5");
+
+  const attack = subjectLine("Jane\r\nBcc: attacker@evil.com", 5, "2026-08-14");
+  check("(10) CR/LF stripped from the subject line, no raw newline survives", !attack.includes("\r") && !attack.includes("\n"));
+  // sanitizeDisplayName REMOVES \r\n (not replace-with-space), so "Jane" and
+  // "Bcc: ..." concatenate directly with no separator -- garbled but inert,
+  // single-line, no header break, matching test (2)'s established pattern.
+  check("(10) the malicious text is present but INERT (single-line, no header break)", attack.includes("Bcc: attacker@evil.com") && attack === "JaneBcc: attacker@evil.com's newsletter · Issue 5");
+
+  check("(10) firstName that's entirely unsafe chars falls back to the 'Your newsletter' default, same as empty/undefined firstName", subjectLine("<>", 5) === "Your newsletter · Issue 5");
+  check("(10) undefined firstName still works (existing behavior preserved)", subjectLine(undefined, 5) === "Your newsletter · Issue 5");
+}
+
+console.log("(11) alpha-drift-r21-01: the X-Alpha-Issue-Id header build -- sourced code inspection, since building it requires a full sendLetterNotification call");
+{
+  const src = readFileSync(new URL("../lib/email.ts", import.meta.url), "utf8");
+  check("(11) the header value is built from a sanitizeDisplayName-cleaned issue id, not the raw params.issue.id", /const safeIssueId = sanitizeDisplayName\(params\.issue\.id\)/.test(src));
+  check("(11) the header assignment actually uses the sanitized variable, not the raw field", /"X-Alpha-Issue-Id": params\.userId \? `\$\{params\.userId\}:\$\{safeIssueId\}` : safeIssueId/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -73,9 +73,11 @@ export default function PrivacyPage() {
       <H2>How we use it</H2>
       <p>
         We use your data only to (a) generate and deliver your letters,
-        (b) bill your subscription, and (c) improve alpha. We don&apos;t use it to
-        train external machine-learning models, and we don&apos;t share it with
-        advertisers.
+        (b) bill your subscription, and (c) improve alpha. We don&apos;t share it
+        with advertisers. Our primary AI provider, Anthropic, runs on a paid
+        tier that doesn&apos;t use your data to train their models. The free
+        backup providers we fall back to (see below) don&apos;t carry that
+        same guarantee.
       </p>
 
       <H2>Third-party processors</H2>
@@ -86,24 +88,32 @@ export default function PrivacyPage() {
           card number.
         </li>
         <li>
-          <strong>Anthropic (Claude)</strong> generates the content of your letter
-          from publicly-sourced material. Your name, city, topic prefs, gender,
-          a generation label derived from your birthday (like &quot;Millennial,&quot;
-          never the exact date), and any optional job/project/fun context you
-          shared are included in the generation request so the letter feels
-          written for you; Anthropic does not retain that data for training.
+          <strong>Anthropic (Claude)</strong> writes the short editor&apos;s note at
+          the top of your letter, and also writes each topic section when our
+          free-tier writers below can&apos;t. Your name, city, topic prefs,
+          gender, a generation label derived from your birthday (like
+          &quot;Millennial,&quot; never the exact date), and any optional
+          job/project/fun context you shared are included in the generation
+          request so the letter feels written for you; Anthropic runs on a
+          paid tier that does not retain that data for training.
         </li>
         <li>
-          <strong>Google (Gemini), Groq, and DeepSeek</strong> are backup writers.
-          If Anthropic is down or unavailable, we automatically fall back to one
-          of these so your letter still arrives. They see the same fields
-          Anthropic does, only when a fallback actually fires.
+          <strong>Google (Gemini), Groq, and DeepSeek</strong> write each day&apos;s
+          topic sections first, cheapest-tier first, with Anthropic stepping in
+          only if all three come up short. Anthropic still writes your editor&apos;s
+          note directly, falling back to these three only if it&apos;s briefly
+          down. Whichever one writes a section sees the same fields Anthropic
+          does. We use Google&apos;s free Gemini API tier for this, and Google&apos;s
+          own terms for that free tier allow them to use what we send to
+          improve their products — unlike Anthropic&apos;s paid-tier guarantee
+          above, we can&apos;t promise Google won&apos;t.
         </li>
         <li>
           <strong>Brave Search</strong>, with <strong>Google (Gemini)</strong> and{" "}
           <strong>You.com</strong> as backups, finds the sources your letter links
           to. Your topic picks go out as search queries; nothing else about you
-          does.
+          does — except the Zodiac topic, whose query is built from the sun
+          sign your birthday puts you in (never the date itself).
         </li>
         <li>
           <strong>Resend</strong> delivers letters and account emails.
@@ -126,14 +136,15 @@ export default function PrivacyPage() {
 
       <H2>Cookies</H2>
       <p>
-        We use the cookies needed to keep you logged in and remember your
-        theme. No advertising cookies. If we&apos;ve turned on product
-        analytics for the app, that tool sets its own first-party cookie too,
-        just to tell your visits apart from someone else&apos;s — same rules
-        as the analytics itself: never sold, off by default. Source links in
-        your letters show a small site icon loaded from Google&apos;s public
-        favicon service, which sees the domain of the article but nothing
-        else about you.
+        We use the cookies needed to keep you logged in. Your theme choice is
+        remembered in your browser&apos;s local storage instead (and in your
+        account, once you&apos;re signed in) — not a cookie. No advertising
+        cookies. If we&apos;ve turned on product analytics for the app, that
+        tool sets its own first-party cookie too, just to tell your visits
+        apart from someone else&apos;s — same rules as the analytics itself:
+        never sold, off by default. Source links in your letters show a small
+        site icon loaded from Google&apos;s public favicon service, which
+        sees the domain of the article but nothing else about you.
       </p>
 
       <H2>Children</H2>

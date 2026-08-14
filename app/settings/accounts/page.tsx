@@ -132,6 +132,17 @@ export default function AdminAccountsPage() {
     }
   }
 
+  // alpha-drift-r21-02 (found+fixed 2026-08-14): this whole page used to color
+  // its status labels/badges/action buttons with var(--accent-ink), which
+  // fails WCAG AA's 4.5:1 normal-text contrast against var(--paper) in 11 of
+  // this app's 25 themes -- including root/forest, the literal default a
+  // fresh signup renders with no theme chosen yet (2.88:1, worse than the
+  // 3:1 floor even for large text). Computed every theme's real hex values
+  // in app/globals.css to confirm: var(--ink) clears 4.5:1 in EVERY theme
+  // (lowest is sunset at 7.97:1), so it's a safe universal swap for text on
+  // this admin-only page -- not a fix to the shared accent-ink token itself,
+  // which is used for non-text accents elsewhere in the app and is a bigger,
+  // deliberate design-system question outside this page's scope.
   function statusLabel(u: AdminUserRow): { label: string; color: string } {
     if (u.unsubscribed_at) return { label: "Unsubscribed", color: "var(--ink-soft)" };
     // "Cancelled" = actually churned (cancel date in the PAST). A FUTURE
@@ -140,8 +151,8 @@ export default function AdminAccountsPage() {
     // hasActiveAccess, the single source of truth the cron + access gates use
     // (and the same rule gatherStats applies to the stat tile above).
     if (u.cancelled_at && !hasActiveAccess(u.cancelled_at)) return { label: "Cancelled", color: "var(--ink-soft)" };
-    if (u.subscribed_at && u.stripe_customer_id) return { label: "Paying", color: "var(--accent-ink)" };
-    if (u.subscribed_at && !u.stripe_customer_id) return { label: "Free (granted)", color: "var(--accent-ink)" };
+    if (u.subscribed_at && u.stripe_customer_id) return { label: "Paying", color: "var(--ink)" };
+    if (u.subscribed_at && !u.stripe_customer_id) return { label: "Free (granted)", color: "var(--ink)" };
     return { label: "Not subscribed", color: "var(--ink-soft)" };
   }
 
@@ -191,7 +202,7 @@ export default function AdminAccountsPage() {
           <button
             type="submit"
             className="alpha-ui text-sm px-4 py-2 underline underline-offset-4"
-            style={{ color: "var(--accent-ink)" }}
+            style={{ color: "var(--ink)" }}
           >
             Search
           </button>
@@ -216,7 +227,7 @@ export default function AdminAccountsPage() {
               background: "var(--paper-deep)",
             }}
           >
-            <div className="alpha-mono mb-4" style={{ color: "var(--accent-ink)" }}>
+            <div className="alpha-mono mb-4" style={{ color: "var(--ink)" }}>
               OPERATIONAL STATE
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -249,7 +260,7 @@ export default function AdminAccountsPage() {
         )}
 
         {err && (
-          <p role="alert" className="alpha-ui text-sm mb-6" style={{ color: "var(--accent-ink)" }}>
+          <p role="alert" className="alpha-ui text-sm mb-6" style={{ color: "var(--ink)" }}>
             {err}
           </p>
         )}
@@ -319,7 +330,7 @@ export default function AdminAccountsPage() {
                       {isSuppressed && (
                         <span
                           className="alpha-mono text-xs"
-                          style={{ color: "var(--accent-ink)" }}
+                          style={{ color: "var(--ink)" }}
                           title={u.bounced_at ? `Bounced ${new Date(u.bounced_at).toLocaleDateString()}` : `Complained ${new Date(u.complained_at!).toLocaleDateString()}`}
                         >
                           SUPPRESSED
@@ -365,7 +376,7 @@ export default function AdminAccountsPage() {
                         }
                         className="alpha-ui text-xs underline underline-offset-4"
                         style={{
-                          color: "var(--accent-ink)",
+                          color: "var(--ink)",
                           opacity: isBusy ? 0.4 : 1,
                         }}
                       >
@@ -401,7 +412,7 @@ export default function AdminAccountsPage() {
                           )
                         }
                         className="alpha-ui text-xs underline underline-offset-4"
-                        style={{ color: "var(--accent-ink)", opacity: isBusy ? 0.4 : 1 }}
+                        style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
                       >
                         Clear suppression
                       </button>
@@ -417,7 +428,7 @@ export default function AdminAccountsPage() {
                         )
                       }
                       className="alpha-ui text-xs underline underline-offset-4"
-                      style={{ color: "var(--accent-ink)", opacity: isBusy ? 0.4 : 1 }}
+                      style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
                     >
                       Delete
                     </button>
@@ -436,7 +447,7 @@ export default function AdminAccountsPage() {
             disabled={loadingMore}
             onClick={loadMore}
             className="alpha-ui text-sm mt-6 underline underline-offset-4"
-            style={{ color: "var(--accent-ink)", opacity: loadingMore ? 0.4 : 1 }}
+            style={{ color: "var(--ink)", opacity: loadingMore ? 0.4 : 1 }}
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>
