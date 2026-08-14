@@ -523,13 +523,20 @@ function previewFromIssue(issue: Issue): string {
     // length/character-class cap), so a cut landing inside a surrogate pair
     // (most modern emoji) would leave a lone unpaired surrogate in this
     // email's hidden preheader -- exactly what mail clients show as the
-    // inbox preview snippet next to the subject line. Using the returned
-    // `truncated` flag (not a .length comparison) for the ellipsis decision
-    // is the same alpha-drift-r20-08 fix the sibling call sites already
-    // apply -- .length counts UTF-16 units, so comparing it can produce a
-    // spurious (or missing) ellipsis independent of the cut itself.
-    const { text: leadCut, truncated: leadTruncated } = codePointSafeTruncate(lead, 87);
-    const trimmed = leadTruncated ? leadCut.trimEnd() + "…" : lead;
+    // inbox preview snippet next to the subject line.
+    //
+    // alpha-drift-r27-02 (2026-08-14, self-audit): the original code had a
+    // 90-vs-87 buffer -- only trigger truncation once the headline is
+    // OVER 90, cutting to 87 -- so a headline landing at 88, 89, or 90
+    // passed through untouched. Routing straight through
+    // codePointSafeTruncate(lead, 87) silently collapsed that to a single
+    // threshold (anything over 87 gets cut), narrowing the preview text
+    // for that 3-code-point range with no functional reason to. Restored
+    // the original 90/87 buffer, computed by code point (not .length,
+    // which counts UTF-16 units) so the trigger check itself can't be
+    // fooled by a surrogate pair either.
+    const leadCodePoints = Array.from(lead);
+    const trimmed = leadCodePoints.length > 90 ? leadCodePoints.slice(0, 87).join("").trimEnd() + "…" : lead;
     if (others === 0) return trimmed;
     return `${trimmed}, plus ${others} more topic${others === 1 ? "" : "s"}.`;
   }

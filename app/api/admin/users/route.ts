@@ -7,6 +7,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
 import { removeResendSuppression } from "@/lib/email";
+import { isValidCalendarDate } from "@/lib/demographics";
 
 export const runtime = "nodejs";
 
@@ -148,8 +149,25 @@ export async function GET(req: Request) {
   // frontend always round-trips a genuine created_at value it already got
   // back from this same route), but a real gap on an otherwise carefully-
   // validated route -- and a clean error is cheap here regardless.
-  if (before && Number.isNaN(new Date(before).getTime())) {
-    return NextResponse.json({ error: "Invalid 'before' cursor." }, { status: 400 });
+  //
+  // alpha-drift-r27-01 (2026-08-14, self-audit): the NaN check alone was
+  // the exact weak pattern this SAME round's own weekOf fix (lib/
+  // demographics.ts's isValidCalendarDate) diagnosed and closed elsewhere --
+  // JS's Date parser silently ROLLS OVER an impossible calendar date
+  // instead of producing NaN, so "2026-04-31T00:00:00.000Z" passed this
+  // guard (rolls over to May 1, a valid getTime()) and still reached
+  // Postgres as an out-of-range literal, reproducing the exact bare-500
+  // this fix was meant to prevent. `before` is a full timestamp, not the
+  // bare "YYYY-MM-DD" shape isValidCalendarDateString expects, so this
+  // pulls just the date prefix out and validates that against the same
+  // isValidCalendarDate the weekOf fix uses, on top of the original NaN
+  // check (which still catches shape-invalid input like "not-a-date").
+  if (before) {
+    const beforeDateMatch = before.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const beforeCalendarValid = !beforeDateMatch || isValidCalendarDate(+beforeDateMatch[1], +beforeDateMatch[2], +beforeDateMatch[3]);
+    if (Number.isNaN(new Date(before).getTime()) || !beforeCalendarValid) {
+      return NextResponse.json({ error: "Invalid 'before' cursor." }, { status: 400 });
+    }
   }
 
   // alpha-drift-r26-08 (2026-08-14): `q` used to interpolate straight into

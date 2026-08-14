@@ -54,7 +54,7 @@ console.log("(1) app/api/admin/users/route.ts: all 4 maybeSingle() reads now che
   check("(1f) all 4 new error branches log via console.error (not silent)", errorLogCount === 4);
 }
 
-console.log("(2) lib/email.ts: previewFromIssue uses codePointSafeTruncate, not raw .slice()");
+console.log("(2) lib/email.ts: previewFromIssue is UTF-16-safe AND preserves the original 90-vs-87 buffer");
 {
   const src = readFileSync(new URL("../lib/email.ts", import.meta.url), "utf8");
   const fnMatch = src.match(/function previewFromIssue\(issue: Issue\): string \{([\s\S]*?)\n\}/);
@@ -66,8 +66,28 @@ console.log("(2) lib/email.ts: previewFromIssue uses codePointSafeTruncate, not 
   // exact ORIGINAL executable expression instead, which the comment
   // deliberately doesn't reproduce verbatim.
   check("(2b) no longer uses the original raw lead.slice(0, 87).trimEnd() expression as real code", !/lead\.slice\(0, 87\)\.trimEnd\(\)/.test(fn));
-  check("(2c) uses codePointSafeTruncate(lead, 87)", /codePointSafeTruncate\(lead, 87\)/.test(fn));
-  check("(2d) derives the ellipsis decision from the returned `truncated` flag, not a .length comparison (the same alpha-drift-r20-08 pattern the sibling call sites use)", /leadTruncated \? leadCut\.trimEnd\(\) \+ "…" : lead/.test(fn));
+  // alpha-drift-r27-02 (2026-08-14, self-audit): round 26's fix
+  // (codePointSafeTruncate(lead, 87)) was itself UTF-16-safe but silently
+  // collapsed the ORIGINAL 90-vs-87 trigger/cut buffer into a single
+  // threshold -- narrowing the preview text for any 88-90-code-point
+  // headline that used to pass through untouched. Round 27 restored the
+  // buffer via a direct code-point array, so this section now checks for
+  // THAT shape instead of the round-26 codePointSafeTruncate call.
+  check("(2c) computes code points via Array.from (not raw .slice/.length) for both the trigger check and the cut", /const leadCodePoints = Array\.from\(lead\);/.test(fn));
+  check("(2d) trigger threshold is still >90 code points (the original buffer, not collapsed to 87)", /leadCodePoints\.length > 90/.test(fn));
+  check("(2e) cut point is still 87 code points when triggered", /leadCodePoints\.slice\(0, 87\)\.join\(""\)\.trimEnd\(\) \+ "…"/.test(fn));
+
+  // Behavioral proof: reimplement the exact expression and confirm the
+  // 88-90 code-point range is genuinely left untouched (the bug round 27
+  // found), while >90 still truncates and <=87 was never affected either way.
+  const preview = (lead: string) => {
+    const cp = Array.from(lead);
+    return cp.length > 90 ? cp.slice(0, 87).join("").trimEnd() + "…" : lead;
+  };
+  const mk = (n: number) => "a".repeat(n);
+  check("(2f) behavioral: an 89-code-point headline (round 27's regression range) passes through UNTRUNCATED", preview(mk(89)) === mk(89));
+  check("(2g) behavioral: a 90-code-point headline (the exact old trigger boundary) still passes through untouched", preview(mk(90)) === mk(90));
+  check("(2h) behavioral: a 91-code-point headline DOES truncate, to 87 + ellipsis", preview(mk(91)) === mk(87) + "…");
 }
 
 console.log("(3) app/inbox/page.tsx: clearAndGo takes an opts param, 'I'm new, start fresh' skips signOut, the 2 signed-in call sites don't");
@@ -155,7 +175,32 @@ console.log("(8) src/worker-entry.ts: CSRF endpoint count corrected to 9, matchi
 console.log("(9) app/api/admin/users/route.ts: `before` cursor validated, `q` ILIKE wildcards escaped");
 {
   const src = readFileSync(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8");
-  check("(9a) before is checked for a parseable date before use, with a clean 400 on failure", /if \(before && Number\.isNaN\(new Date\(before\)\.getTime\(\)\)\) \{\s*return NextResponse\.json\(\{ error: "Invalid 'before' cursor\." \}, \{ status: 400 \}\);/.test(src));
+  // alpha-drift-r27-01 (2026-08-14): the original (9a) check only matched
+  // the source text of the Number.isNaN guard -- round 27's self-audit
+  // found that guard alone doesn't catch a JS-Date-rollover value like
+  // "2026-04-31T...Z" (silently normalizes to a valid, non-NaN date), the
+  // exact gap this round's own weekOf fix closed elsewhere. Updated to
+  // check for the added isValidCalendarDate cross-check AND to actually
+  // exercise both branches behaviorally, not just confirm the source text
+  // is present -- the false-negative round 27 itself flagged in this exact
+  // spot last round.
+  check("(9a) before's NaN check is still present (catches shape-invalid input like \"not-a-date\")", /Number\.isNaN\(new Date\(before\)\.getTime\(\)\)/.test(src));
+  check("(9a-2) before is ALSO cross-checked against isValidCalendarDate (catches shape-valid-but-impossible input like a rolled-over date)", /isValidCalendarDate\(\+beforeDateMatch\[1\], \+beforeDateMatch\[2\], \+beforeDateMatch\[3\]\)/.test(src));
+  check("(9a-3) isValidCalendarDate is imported from lib/demographics", /import \{ isValidCalendarDate \} from "@\/lib\/demographics";/.test(src));
+
+  // Behavioral proof: mirror the route's exact validation expression against
+  // real inputs, not just confirm the source text exists.
+  const { isValidCalendarDate } = await import("../lib/demographics.ts");
+  const validateBefore = (before: string) => {
+    const m = before.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const calendarValid = !m || isValidCalendarDate(+m[1], +m[2], +m[3]);
+    return !(Number.isNaN(new Date(before).getTime()) || !calendarValid);
+  };
+  check("(9a-4) behavioral: a genuine created_at timestamp is accepted", validateBefore("2026-08-14T10:30:00.000Z") === true);
+  check("(9a-5) behavioral: shape-invalid garbage is rejected", validateBefore("not-a-date") === false);
+  check("(9a-6) behavioral: the JS-Date-rollover case (2026-04-31, silently becomes May 1) is now correctly rejected -- this is the exact input round 27's self-audit found slipping through the old NaN-only check", validateBefore("2026-04-31T00:00:00.000Z") === false);
+  check("(9a-7) behavioral: another rollover case (2026-02-30, no such day) is rejected", validateBefore("2026-02-30T00:00:00.000Z") === false);
+
   check("(9b) escapedQ is derived from q with wildcard escaping", /const escapedQ = q\?\.replace\(\/\[\\\\%_\]\/g, "\\\\\$&"\);/.test(src));
   check("(9c) the ilike call now uses escapedQ, not the raw q", /usersQuery = usersQuery\.ilike\("email", `%\$\{escapedQ\}%`\);/.test(src));
   check("(9d) no remaining raw, unescaped `%${q}%` interpolation", !/ilike\("email", `%\$\{q\}%`\)/.test(src));
