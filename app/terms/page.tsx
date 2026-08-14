@@ -53,7 +53,9 @@ export default function TermsPage() {
           (up to 25 topics, $25/mo) from Settings → Billing.</li>
         <li>Your subscription auto-renews each month until you cancel.</li>
         <li>You can cancel any time from Settings → Billing. Cancellation takes
-          effect at the end of the current billing cycle. You keep access until then.</li>
+          effect at the end of the current billing cycle. You keep access until then.
+          If that button doesn&apos;t work for you, email us and we&apos;ll cancel or
+          update your card by hand, same day.</li>
         <li>We don&apos;t prorate partial-month refunds, but if something has gone
           materially wrong on our end, email us and we&apos;ll make it right.</li>
       </ul>

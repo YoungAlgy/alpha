@@ -88,6 +88,18 @@ export async function POST(req: Request) {
     // message can leak price/product IDs or account config.
     const msg = e instanceof Error ? e.message : "Stripe error";
     console.error("[stripe/portal] failed:", msg);
-    return NextResponse.json({ error: "Couldn't open billing portal. Try again in a moment." }, { status: 500 });
+    // alpha-drift-r20-01 (found+fixed 2026-08-13): "Try again in a moment"
+    // implied a transient blip, but the live, currently-known cause (no
+    // saved Billing Portal configuration on this Stripe account -- see this
+    // file's own top-of-file comment) is NOT transient; retrying changes
+    // nothing until that one-time dashboard action happens. Since this is
+    // the app's ONLY self-serve cancel/card-update path, leaving a user
+    // with a dead-end "try again" message and no real next step is worse
+    // than being upfront and pointing them at the one path that actually
+    // works today.
+    return NextResponse.json(
+      { error: "Couldn't open billing portal right now. Email youngalgy@gmail.com and we'll update your card or cancel for you." },
+      { status: 500 }
+    );
   }
 }
