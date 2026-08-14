@@ -62,10 +62,11 @@ export async function GET() {
   // The delete path (lib/stripe-cancel.ts's deleteSupportTicketsBeforeDelete)
   // treats a subscriber's support tickets as their data to remove -- this
   // export must agree on what "the user's data" means, matching the same
-  // privacy-page promise. Note: only tickets submitted while signed in ever
-  // carry a real user_id (app/api/support/route.ts, fixed 2026-08-06) --
-  // anonymous submissions and anything filed before that fix won't appear
-  // here even though they exist in the table.
+  // privacy-page promise. Only tickets submitted while signed in ever carry
+  // a real user_id (app/api/support/route.ts, fixed 2026-08-06); the
+  // orphaned-by-email query below (alpha-drift-r28-08) closes the gap this
+  // comment used to just flag -- a signed-out submission under this same
+  // email is caught too now, not silently missing from the export.
   // alpha-drift-r18-01 (found+fixed 2026-08-07): the sibling issues query
   // above already guards against PostgREST's silent 1,000-row select cap
   // with an explicit .limit() well past any realistic count -- this query
@@ -84,6 +85,33 @@ export async function GET() {
   if (supportErr) {
     console.error("[account/export] support_tickets fetch failed:", supportErr.message);
     return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
+  }
+
+  // alpha-drift-r28-08 (2026-08-15): the comment two blocks up already named
+  // this exact gap ("anonymous submissions... won't appear here") without
+  // closing it -- a ticket filed signed-out with this same email has
+  // user_id permanently NULL (app/api/support/route.ts only links it when
+  // the submitter happens to be signed in at that moment), so the query
+  // above misses it even though it's genuinely this reader's own data.
+  // Scoped to user_id IS NULL specifically so this can never surface
+  // another real account's own already-linked ticket. Case-insensitive via
+  // ilike on a wildcard-escaped value, same as the matching delete-side fix
+  // in lib/stripe-cancel.ts's deleteSupportTicketsBeforeDelete.
+  let orphanedSupportTickets: typeof supportTickets = [];
+  if (user.email) {
+    const escapedEmail = user.email.replace(/[\\%_]/g, "\\$&");
+    const { data: orphaned, error: orphanedErr } = await svc
+      .from("support_tickets")
+      .select("*")
+      .is("user_id", null)
+      .ilike("email", escapedEmail)
+      .order("created_at", { ascending: true })
+      .limit(5000);
+    if (orphanedErr) {
+      console.error("[account/export] orphaned support_tickets fetch failed:", orphanedErr.message);
+      return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
+    }
+    orphanedSupportTickets = orphaned;
   }
 
   return NextResponse.json({
@@ -109,6 +137,10 @@ export async function GET() {
     },
     profile,
     issues,
-    support_tickets: supportTickets,
+    // Merged: tickets linked by id, plus any signed-out submission under
+    // this same email that was never linked (see the comment above).
+    // user_id IS NULL on the second set and this account's own id on the
+    // first, so the two queries can never overlap -- no dedup needed.
+    support_tickets: [...supportTickets, ...orphanedSupportTickets],
   });
 }

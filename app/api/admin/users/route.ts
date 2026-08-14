@@ -323,7 +323,10 @@ export async function POST(req: Request) {
     // ON DELETE SET NULL, not CASCADE, so skipping this would leave an
     // admin-initiated delete short of the "all associated data" promise on
     // the privacy page while self-serve deletes correctly clear it.
-    await deleteSupportTicketsBeforeDelete(sb, body.userId, "[admin/delete]");
+    // alpha-drift-r28-08 (2026-08-15): also passes the pre-fetched email, so
+    // an orphaned (signed-out-when-filed) support ticket matching this
+    // account's own email is caught too, not just tickets already linked by id.
+    await deleteSupportTicketsBeforeDelete(sb, body.userId, "[admin/delete]", targetUser?.email);
     // Same reasoning as self-serve account/delete: a real third-party
     // suppression record can outlive every Supabase trace otherwise.
     if (targetUser?.email) {

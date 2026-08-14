@@ -159,13 +159,42 @@ export async function cleanUpStripeCustomerBeforeDelete(
 // initiated deletes silently short of the "all associated data" promise on
 // the privacy page. Best-effort + swallows its own errors, same as the
 // Stripe step: a failure here must never block either delete flow.
+//
+// alpha-drift-r28-08 (2026-08-15): user_id-only deletion has always missed
+// a real, genuinely-identifiable population -- app/api/support/route.ts
+// only attaches user_id when the submitter happens to be signed in at the
+// moment they file a ticket; a ticket filed signed-out (using the same
+// email later used to sign up), or anything filed before the 2026-08-06
+// user_id fix, has user_id permanently NULL and was never linked to any
+// account. app/api/account/export/route.ts's own comment already flagged
+// this exact gap for the export side; the delete side had the identical
+// gap with nobody having named it. `email`, when the caller has it, deletes
+// those specific orphaned rows too -- scoped to `user_id is null` so this
+// can NEVER touch another real account's own already-linked tickets, even
+// in the (shouldn't-happen, given email uniqueness) case they share an
+// email. Case-insensitive (support_tickets.email is stored exactly as
+// typed, no normalization on insert) via ilike on a wildcard-escaped value
+// (% and _ are ILIKE metacharacters -- escaped so a literal one in a real
+// email can't be misread as a pattern).
 export async function deleteSupportTicketsBeforeDelete(
   svc: SupabaseClient,
   userId: string,
-  logPrefix: string
+  logPrefix: string,
+  email?: string | null
 ): Promise<void> {
   const { error } = await svc.from("support_tickets").delete().eq("user_id", userId);
   if (error) {
     console.error(`${logPrefix} failed to delete support_tickets:`, error.message);
+  }
+  if (email) {
+    const escapedEmail = email.replace(/[\\%_]/g, "\\$&");
+    const { error: orphanErr } = await svc
+      .from("support_tickets")
+      .delete()
+      .is("user_id", null)
+      .ilike("email", escapedEmail);
+    if (orphanErr) {
+      console.error(`${logPrefix} failed to delete orphaned (signed-out) support_tickets:`, orphanErr.message);
+    }
   }
 }

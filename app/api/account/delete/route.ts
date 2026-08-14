@@ -66,7 +66,10 @@ export async function POST() {
   // cascade just null out user_id — see deleteSupportTicketsBeforeDelete's
   // own comment for why. Best-effort, like the Stripe step above: a failure
   // here must not block the user's right to delete their account.
-  await deleteSupportTicketsBeforeDelete(svc, user.id, "[account/delete]");
+  // alpha-drift-r28-08 (2026-08-15): pass the confirmed auth email too, so
+  // a support ticket filed signed-out with this same address (user_id
+  // permanently NULL) is caught, not just tickets already linked by id.
+  await deleteSupportTicketsBeforeDelete(svc, user.id, "[account/delete]", user.email);
 
   // alpha-drift-r20-01 (found+fixed 2026-08-13): if this reader ever hard-
   // bounced or complained, Resend keeps that as its own account-level
