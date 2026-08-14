@@ -37,13 +37,34 @@ fi
 echo "==> Syncing WSL checkout to origin/master..."
 git fetch origin master --quiet
 before="$(git rev-parse HEAD)"
+lockfile_before="$(md5sum package-lock.json 2>/dev/null | cut -d' ' -f1)"
 git reset --hard origin/master --quiet
 after="$(git rev-parse HEAD)"
+lockfile_after="$(md5sum package-lock.json 2>/dev/null | cut -d' ' -f1)"
 
 if [ "$before" != "$after" ]; then
   echo "    Updated $before -> $after"
 else
   echo "    Already up to date at $after"
+fi
+
+# alpha-drift-r22-01 (found+fixed 2026-08-14): this script hard-resets the
+# CODE to match origin/master but never touched node_modules -- fine on an
+# ordinary code-only deploy, but a commit that bumps package-lock.json (a
+# dependency update, exactly what round 22 did) left this WSL checkout's
+# node_modules silently stale relative to the code it now had to build.
+# First real occurrence: lib/stripe.ts's pinned apiVersion literal type
+# came from the NEW stripe package version, but the OLD stripe package was
+# still installed here -- typecheck:worker failed mid-deploy with a type
+# error that had already passed clean on the Windows side, purely because
+# this checkout's dependencies hadn't caught up. Only reinstalls when the
+# lockfile actually changed (or node_modules doesn't exist yet at all) --
+# same "only announce/act when something changed" discipline as the reset
+# check above, so an ordinary deploy doesn't pay a ~30s npm ci tax for no
+# reason.
+if [ "$lockfile_before" != "$lockfile_after" ] || [ ! -d node_modules ]; then
+  echo "==> package-lock.json changed -- syncing node_modules (npm ci)..."
+  npm ci
 fi
 
 echo "==> Deploying (npm run cf:deploy)..."
