@@ -123,9 +123,19 @@ const nextConfig: NextConfig = {
             // console.log/error listener), only through a direct
             // securitypolicyviolation-style check -- same lesson as the
             // gstatic redirect above: verify CSP changes against real
-            // network activity, not just the console. script-src covers the
-            // beacon load; connect-src covers the RUM data it POSTs back to
-            // cloudflareinsights.com after loading.
+            // network activity, not just the console. script-src covers
+            // the beacon load.
+            //
+            // alpha-drift-r34-03 (2026-08-14): the line above ORIGINALLY
+            // also said "connect-src covers the RUM data it POSTs back to
+            // cloudflareinsights.com after loading" -- re-checked live via
+            // real Chrome network capture and that's not what actually
+            // happens. The beacon posts its RUM data to THIS origin's own
+            // /cdn-cgi/rum (a same-origin path Cloudflare intercepts at the
+            // edge), not to the bare cloudflareinsights.com host -- already
+            // covered by 'self', so the explicit connect-src allowance
+            // below was dead config, silently widening the policy for
+            // nothing. Removed.
             //
             // alpha-drift-r24-04 (2026-08-14): added worker-src explicitly.
             // public/sw.js (the offline service worker, shipped 2026-08-13)
@@ -136,7 +146,7 @@ const nextConfig: NextConfig = {
             // exists anywhere in the codebase, so 'self' alone is sufficient.
             key: "Content-Security-Policy",
             value:
-              `default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' ${supabaseOrigin} https://us.i.posthog.com https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`,
+              `default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://*.gstatic.com; font-src 'self'; connect-src 'self' ${supabaseOrigin} https://us.i.posthog.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`,
           },
         ],
       },
