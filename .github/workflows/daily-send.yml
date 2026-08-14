@@ -438,6 +438,19 @@ jobs:
           # trusting anything else in the payload, and separately asserts
           # every non-skipped subscriber was actually covered by sent or one
           # of the three backup tiers, not merely that `failed` looks small.
+          #
+          # alpha-drift-r26-05 (2026-08-14): skippedBlankSubscribers and
+          # deferred are both capped to EMAIL_LIST_CAP (25) in the route's
+          # own response (alpha-drift-r22-01) -- the route added
+          # skippedBlankSubscribersTotal/deferredTotal fields specifically so
+          # a capped array's .length couldn't understate the real count, but
+          # this check was never updated to read them. A capped .length can
+          # only be <= the true total, so on a day with >25 legitimately
+          # excused or deferred subscribers this inflated `uncovered` above
+          # 0 and failed the job on an otherwise fully-successful run. Falls
+          # back to .length when the *Total field is absent (an older
+          # deploy, or a response shape from before this fix) so this stays
+          # correct either way.
           COVERAGE=$(echo "${RESPONSE}" | node -e "
             let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
               try {
@@ -447,9 +460,14 @@ jobs:
                   return;
                 }
                 const covered = (s.sent||0) + (s.backupSharedSent||0) + (s.backupFreshSent||0) + (s.backupStaleSent||0);
-                const excused = (s.skippedBlankSubscribers ? s.skippedBlankSubscribers.length : 0) + (s.skippedAlreadyDelivered||0);
+                const blankCount = typeof s.skippedBlankSubscribersTotal === 'number'
+                  ? s.skippedBlankSubscribersTotal
+                  : (s.skippedBlankSubscribers ? s.skippedBlankSubscribers.length : 0);
+                const excused = blankCount + (s.skippedAlreadyDelivered||0);
                 const uncovered = s.subscribers - excused - covered;
-                const deferredCount = s.deferred ? s.deferred.length : 0;
+                const deferredCount = typeof s.deferredTotal === 'number'
+                  ? s.deferredTotal
+                  : (s.deferred ? s.deferred.length : 0);
                 process.stdout.write(String(Math.max(uncovered, deferredCount, 0)));
               } catch (e) { process.stdout.write('SHAPE_INVALID'); }
             });
