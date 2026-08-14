@@ -232,7 +232,15 @@
   --paper: #FAEBD7;
   --paper-deep: #F5D9B5;
   --ink: #5E3B5A;
-  --ink-soft: #8C6587;
+  /* alpha-drift-r21-10 (found+fixed 2026-08-14): the original #8C6587 only
+     cleared 4.14:1 against --paper, under the WCAG AA 4.5:1 normal-text
+     minimum -- ink-soft is this app's secondary/meta-text color, used
+     everywhere (dates, city, byline info), so every theme's own value needs
+     to clear that bar on its own, not just this theme's headline colors.
+     Darkened along the same hue (same mauve/purple direction, just less
+     light) to #7B5977, which computes to 5.07:1 -- comfortable margin, not
+     just barely over the line. */
+  --ink-soft: #7B5977;
   --rule: #E8C8AA;
   --accent: #E87C3E;
   --accent-ink: #C8612A;

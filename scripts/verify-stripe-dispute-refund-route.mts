@@ -13,6 +13,7 @@
 // not a dedicated unit test -- this script matches that existing bar, not a
 // lower one.
 // Run: npx tsx scripts/verify-stripe-dispute-refund-route.mts
+import { readFileSync } from "node:fs";
 import { loadEnvLocal } from "./_load-env.mts";
 loadEnvLocal();
 
@@ -153,6 +154,27 @@ try {
   check("(5) first delivery: 200", first.status === 200);
   const second = await POST(signedRequest(fakeDispute(dedupEventId, "ch_also_does_not_exist")));
   check("(5) redelivered event still returns 200 (ack'd via the dedup short-circuit, not reprocessed)", second.status === 200);
+
+  // --- (6) alpha-drift-r21-12 (found+fixed 2026-08-14): the access-revoke
+  // write's 0-row detection, source-level. Exercising this live end-to-end
+  // needs a dispute whose charge resolves (via a REAL stripe.charges.retrieve
+  // call) to a customerId that matches no users row -- i.e. a genuinely real
+  // charge on a genuinely deleted account. This account is live-mode only
+  // (this file's own header comment already explains why the dispute
+  // SUCCESS path in general can't be safely live-tested here: it would need
+  // a real charge id from live production data), so there's no safe way to
+  // manufacture that exact combination without touching real account data.
+  // Source-level regression guard instead, matching the round's established
+  // pattern for the same constraint elsewhere this session.
+  console.log("(6) the 0-row access-revoke detection is actually wired (source-level, see comment above for why not live-driven)");
+  const routeSrc = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
+  const disputeBranchStart = routeSrc.indexOf('case "charge.dispute.created"');
+  const disputeBranchEnd = routeSrc.indexOf('case "charge.dispute.closed"');
+  const disputeBranch = disputeBranchStart > -1 && disputeBranchEnd > -1 ? routeSrc.slice(disputeBranchStart, disputeBranchEnd) : "";
+  check("(6) branch was actually extracted", disputeBranch.length > 200);
+  check("(6) the access-revoke UPDATE now selects rows back, like its two subscription-mirror siblings", /\.update\(\{ cancelled_at: new Date\(\)\.toISOString\(\) \}\)\s*\.eq\("stripe_customer_id", customerId\)\s*\.select\("id"\)/.test(disputeBranch));
+  check("(6) a genuine 0-row match is detected and logged, not silently ignored", /accountAlreadyGone/.test(disputeBranch) && /account already deleted\?/.test(disputeBranch));
+  check("(6) the ops alert message itself changes when nothing was actually revoked -- not a misleading 'access revoked' every time", /account already deleted, nothing to revoke/.test(disputeBranch));
 } finally {
   if (userId) {
     const { error: delErr } = await admin.auth.admin.deleteUser(userId);

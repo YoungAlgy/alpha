@@ -196,6 +196,12 @@ export default function AdminAccountsPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search by email…"
+            // alpha-drift-r21-11 (found+fixed 2026-08-14): placeholder text
+            // is not an accessible name -- it disappears once the field has
+            // a value, and most screen readers don't announce it reliably
+            // as a label in the first place. aria-label gives this field a
+            // real accessible name without changing the visual layout.
+            aria-label="Search by email"
             className="alpha-ui text-sm flex-1 px-3 py-2 border"
             style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)", background: "var(--paper)" }}
           />
@@ -331,7 +337,18 @@ export default function AdminAccountsPage() {
                         <span
                           className="alpha-mono text-xs"
                           style={{ color: "var(--ink)" }}
-                          title={u.bounced_at ? `Bounced ${new Date(u.bounced_at).toLocaleDateString()}` : `Complained ${new Date(u.complained_at!).toLocaleDateString()}`}
+                          // alpha-drift-r21-09 (found+fixed 2026-08-14):
+                          // bounced_at/complained_at are independent,
+                          // non-exclusive flags (isSuppressed is an OR of
+                          // both), but this tooltip was an if/else keyed
+                          // only on bounced_at -- a reader with BOTH set had
+                          // the complaint reason/date silently dropped, with
+                          // no indication a second suppression cause even
+                          // existed. Joins whichever ones are actually set.
+                          title={[
+                            u.bounced_at ? `Bounced ${new Date(u.bounced_at).toLocaleDateString()}` : null,
+                            u.complained_at ? `Complained ${new Date(u.complained_at).toLocaleDateString()}` : null,
+                          ].filter(Boolean).join(" · ")}
                         >
                           SUPPRESSED
                         </span>

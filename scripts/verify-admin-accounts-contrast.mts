@@ -83,6 +83,40 @@ console.log("(3) source-level regression guard: the admin accounts page no longe
   check("(3) statusLabel's Paying/Free-granted colors use var(--ink) now", /label: "Paying", color: "var\(--ink\)"/.test(src) && /label: "Free \(granted\)", color: "var\(--ink\)"/.test(src));
 }
 
+console.log("(4) alpha-drift-r21-10 (found+fixed 2026-08-14): --ink-soft (this app's secondary/meta-text color, used everywhere -- dates, city, byline info, not just this admin page) now clears 4.5:1 AA in EVERY theme");
+{
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const blocks = css.split(/(?=\[data-theme=|^:root)/m);
+  const inkSoftResults: Array<{ name: string; contrast: number }> = [];
+  for (const b of blocks) {
+    const nameMatch = b.match(/\[data-theme="([^"]+)"\]|^:root/);
+    if (!nameMatch) continue;
+    const name = nameMatch[1] || "root";
+    const paper = b.match(/--paper:\s*(#[0-9A-Fa-f]{6})/);
+    const inkSoft = b.match(/--ink-soft:\s*(#[0-9A-Fa-f]{6})/);
+    if (!paper || !inkSoft) continue;
+    inkSoftResults.push({ name, contrast: contrastRatio(inkSoft[1], paper[1]) });
+  }
+  check("(4) parsed a real, non-trivial number of themes for ink-soft too", inkSoftResults.length >= 20);
+  const failingInkSoft = inkSoftResults.filter((r) => r.contrast < 4.5);
+  for (const r of failingInkSoft) console.log(`    XX theme "${r.name}": ink-soft/paper = ${r.contrast.toFixed(2)}:1 (below 4.5:1)`);
+  check("(4) --ink-soft on --paper clears 4.5:1 AA normal-text contrast in EVERY theme", failingInkSoft.length === 0);
+
+  const sunset = inkSoftResults.find((r) => r.name === "sunset");
+  check("(4) sanity: sunset was found and its real current value is what's being checked", !!sunset);
+  check("(4) sunset specifically clears 4.5:1 with real margin (was 4.14:1, the exact finding this closes)", !!sunset && sunset.contrast >= 4.5 && sunset.contrast < 6);
+}
+
+console.log("(5) alpha-drift-r21-11 (found+fixed 2026-08-14): the admin search input has a real accessible name, not just placeholder text");
+{
+  const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
+  const placeholderIdx = src.indexOf('placeholder="Search by email…"');
+  // Wide enough to clear the fix's own multi-line explanatory comment that
+  // sits between the placeholder and the real aria-label attribute.
+  const ariaLabelBlock = placeholderIdx > -1 ? src.slice(placeholderIdx, placeholderIdx + 700) : "";
+  check("(5) the search input carries aria-label near its placeholder", ariaLabelBlock.includes('aria-label="Search by email"'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {
   console.error("ADMIN-ACCOUNTS-CONTRAST VERIFICATION FAILED");

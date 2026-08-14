@@ -424,17 +424,39 @@ export async function POST(req: Request) {
           );
           return { cancelled: [] as string[], skipped: 0, errors: 1 };
         });
-        const { error: disputeErr } = await sb
+        // alpha-drift-r21-12 (found+fixed 2026-08-14): this write used to
+        // have no .select()/row-count check at all, unlike its two siblings
+        // just above (customer.subscription.updated, .deleted), which both
+        // explicitly detect and log a 0-row match. Past Charges persist
+        // under an orphaned stripe_customer_id even after the account (and
+        // Stripe Customer object) is deleted -- see lib/stripe-cancel.ts's
+        // own comment -- so a dispute on an old charge for an
+        // already-deleted account is a real, reachable case: the UPDATE
+        // silently matches 0 rows (Supabase doesn't error on that), and
+        // this handler used to go straight to a misleading "access revoked"
+        // ops alert with nothing actually revoked.
+        const { data: disputeRows, error: disputeErr } = await sb
           .from("users")
           .update({ cancelled_at: new Date().toISOString() })
-          .eq("stripe_customer_id", customerId);
+          .eq("stripe_customer_id", customerId)
+          .select("id");
         // Throw so Stripe retries (#35 pattern) -- a failed access-revoke
         // here means real ongoing spend on a disputed subscriber, the exact
         // outcome this handler exists to prevent.
         if (disputeErr) throw new Error(`dispute access-revoke failed: ${disputeErr.message}`);
+        const accountAlreadyGone = (disputeRows?.length ?? 0) === 0;
+        if (accountAlreadyGone) {
+          console.warn(
+            `[stripe-webhook] dispute ${dispute.id}: access-revoke matched 0 rows for customer ${customerId} (account already deleted?) — no-op`
+          );
+        }
         await sendOpsAlert(
-          "alpha. dispute opened -- access revoked",
-          `Dispute ${dispute.id} on charge ${chargeId} for customer ${customerId} (${dispute.reason}, $${(dispute.amount / 100).toFixed(2)}). Access revoked immediately. Subscription cancel: ${cancelResult.cancelled.length} cancelled, ${cancelResult.skipped} skipped, ${cancelResult.errors} errors. Review in the Stripe dashboard.`,
+          accountAlreadyGone
+            ? "alpha. dispute opened -- account already deleted, nothing to revoke"
+            : "alpha. dispute opened -- access revoked",
+          accountAlreadyGone
+            ? `Dispute ${dispute.id} on charge ${chargeId} for customer ${customerId} (${dispute.reason}, $${(dispute.amount / 100).toFixed(2)}). No matching account -- it was likely already self-deleted before this dispute landed, so there was no access left to revoke. Subscription cancel: ${cancelResult.cancelled.length} cancelled, ${cancelResult.skipped} skipped, ${cancelResult.errors} errors. Review in the Stripe dashboard.`
+            : `Dispute ${dispute.id} on charge ${chargeId} for customer ${customerId} (${dispute.reason}, $${(dispute.amount / 100).toFixed(2)}). Access revoked immediately. Subscription cancel: ${cancelResult.cancelled.length} cancelled, ${cancelResult.skipped} skipped, ${cancelResult.errors} errors. Review in the Stripe dashboard.`,
           `alpha-dispute-${dispute.id}`
         );
         break;
