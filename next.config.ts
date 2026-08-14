@@ -57,6 +57,23 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-DNS-Prefetch-Control", value: "on" },
+          // alpha-drift-r31-01 (2026-08-14): every OTHER header in this list
+          // exists as defense-in-depth for a threat class that isn't
+          // concretely exploited today (this repo-wide grep confirmed zero
+          // existing HSTS anywhere -- no code-level evidence Cloudflare's
+          // zone-level dashboard toggle is relied on instead, since that
+          // isn't checked into this repo and can't be verified from source).
+          // The app is HTTPS-only on alpha.everyday.report with no HTTP
+          // fallback path, so HSTS fits the same "cheap, no functional
+          // downside" rationale as the rest of this list. Deliberately no
+          // `preload` directive: wrangler.jsonc's routes cover the whole
+          // everyday.report apex (everyday.report/*, www.everyday.report/*,
+          // alpha.everyday.report/*), and `includeSubDomains` + `preload`
+          // would commit every one of those hosts to browsers' hardcoded
+          // preload list -- slow and hard to reverse, needs Algy to confirm
+          // every host under that apex is HTTPS-only first, not something to
+          // ship unilaterally inside an audit-round fix.
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
