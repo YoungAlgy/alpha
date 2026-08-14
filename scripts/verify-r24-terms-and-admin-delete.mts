@@ -60,13 +60,32 @@ console.log("(4) app/api/admin/users/route.ts: delete branch selects stripe_cust
   check("(4b) the delete branch itself was found", !!deleteBlockMatch);
   const deleteBlock = deleteBlockMatch ? deleteBlockMatch[1] : "";
   check("(4c) delete branch no longer selects email alone", !/select\("email"\)/.test(deleteBlock));
-  check("(4d) cleanUpStripeCustomerBeforeDelete is called with the pre-fetched id as the 5th argument", /cleanUpStripeCustomerBeforeDelete\(\s*sb,\s*body\.userId,\s*"\[admin\/delete\]",\s*undefined,\s*targetUser\?\.stripe_customer_id\s*\)/.test(deleteBlock));
+  // alpha-drift-r25-02 (2026-08-14): round 24 passed targetUser?.stripe_customer_id
+  // as the 5th arg -- optional chaining on a null targetUser collapses to
+  // undefined, the SAME value used to mean "argument omitted," so a delete
+  // racing an already-gone row fell through to cleanUpStripeCustomerBeforeDelete's
+  // own internal re-lookup, defeating the whole point of round 24's dedup fix.
+  // Round 25 replaced it with an explicit ternary so a missing row passes a
+  // real `null` instead of the ambiguous `undefined`.
+  check("(4d) NOT the old ambiguous optional-chain form (fixed in round 25)", !/cleanUpStripeCustomerBeforeDelete\(\s*sb,\s*body\.userId,\s*"\[admin\/delete\]",\s*undefined,\s*targetUser\?\.stripe_customer_id\s*\)/.test(deleteBlock));
+  check("(4e) cleanUpStripeCustomerBeforeDelete is called with the explicit ternary that distinguishes a missing row from an omitted argument", /cleanUpStripeCustomerBeforeDelete\(\s*sb,\s*body\.userId,\s*"\[admin\/delete\]",\s*undefined,\s*targetUser \? targetUser\.stripe_customer_id : null\s*\)/.test(deleteBlock));
 }
 
 console.log("(5) sanity: account/delete/route.ts is UNCHANGED -- still omits the new param, still relies on its own internal lookup");
 {
   const src = readFileSync(new URL("../app/api/account/delete/route.ts", import.meta.url), "utf8");
   check("(5a) still calls with exactly 3 arguments (no pre-fetch to pass -- it never needed stripe_customer_id for anything else)", /cleanUpStripeCustomerBeforeDelete\(svc, user\.id, "\[account\/delete\]"\);/.test(src));
+}
+
+console.log("(6) alpha-drift-r25-02: the ternary itself computes the right value for all 3 real shapes of targetUser");
+{
+  // Mirrors app/api/admin/users/route.ts's exact expression:
+  //   targetUser ? targetUser.stripe_customer_id : null
+  const compute = (targetUser: { stripe_customer_id: string | null } | null) =>
+    targetUser ? targetUser.stripe_customer_id : null;
+  check("(6a) row exists with a customer id -> passes that id through", compute({ stripe_customer_id: "cus_123" }) === "cus_123");
+  check("(6b) row exists with no customer id -> passes null (a real answer, not ambiguous)", compute({ stripe_customer_id: null }) === null);
+  check("(6c) row is entirely gone (the r17-02 race) -> ALSO passes null, never undefined", compute(null) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

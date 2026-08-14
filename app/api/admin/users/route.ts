@@ -242,12 +242,24 @@ export async function POST(req: Request) {
     // public.users away incl. stripe_customer_id, so a still-active sub
     // would bill forever with no way to stop it. Best-effort — a Stripe
     // hiccup must never block the admin delete.
+    //
+    // alpha-drift-r25-02 (2026-08-14): `targetUser?.stripe_customer_id`
+    // collapsed TWO different situations to the same `undefined` value --
+    // "the row has no stripe_customer_id" (a real answer) and "targetUser
+    // itself is null because the row is already gone" (also a real answer,
+    // per this SAME file's own alpha-drift-r17-02 comment: a stale admin
+    // tab or a race with the user's own self-delete). Both should skip
+    // cleanUpStripeCustomerBeforeDelete's internal re-lookup -- only a
+    // genuinely omitted argument should trigger it. The ternary below makes
+    // that explicit: a missing row passes `null` (a real "already checked,
+    // nothing there" answer), never `undefined` (which reads as "caller
+    // didn't pre-fetch this").
     await cleanUpStripeCustomerBeforeDelete(
       sb,
       body.userId,
       "[admin/delete]",
       undefined,
-      targetUser?.stripe_customer_id
+      targetUser ? targetUser.stripe_customer_id : null
     );
     // Same reasoning as self-serve account/delete: support_tickets.user_id is
     // ON DELETE SET NULL, not CASCADE, so skipping this would leave an
