@@ -28,13 +28,19 @@ interface DigestProps {
   // fixed UTC anchor -- alpha-drift-r14-05 (review 2026-08-06): without
   // this, a subscriber roughly UTC+10 and above (Australia east coast, NZ,
   // Fiji, Tonga) sees YESTERDAY's date on the dateline even once it's
-  // unambiguously today for them (they read the letter at ~8am local, but
-  // it landed at 14:00 UTC = 2-3am local the following calendar day, once
-  // their offset is >= 24 - SEND_HOUR_UTC). alpha-drift-r33-02: that
-  // affected-range figure was originally computed against the wrong anchor
-  // (a plain noon UTC formatDateline used to parse against, not the real
-  // 14:00Z send hour) -- corrected here to UTC+10 and above, now that
-  // formatDateline actually anchors to SEND_HOUR_UTC. Only meaningful where
+  // unambiguously today for them -- the letter landed at SEND_HOUR_UTC
+  // (14:00 UTC) and their local calendar has already crossed into the next
+  // day by the time they read it, once their offset is >= 24 - SEND_HOUR_UTC.
+  // alpha-drift-r33-02: that affected-range figure was originally computed
+  // against the wrong anchor (a plain noon UTC formatDateline used to parse
+  // against, not the real 14:00Z send hour) -- corrected here to UTC+10 and
+  // above, now that formatDateline actually anchors to SEND_HOUR_UTC.
+  // alpha-drift-r34-04 (2026-08-14, self-audit): dropped the single "2-3am"
+  // example clock time that survived the r33-02 edit -- it only held for the
+  // narrow NZ/Tonga end (UTC+12/+13) of this now-widened range; at UTC+10
+  // the send instant actually lands at local midnight, and at UTC+11 it's
+  // 1am. The range spans local midnight (UTC+10) through ~4am (UTC+14), not
+  // one fixed hour. Only meaningful where
   // Digest actually renders in the reader's own browser (the /inbox and
   // /inbox/[id] pages, both client components) -- the /letter page renders
   // server-side with no reliable reader-timezone signal at all, so it
