@@ -339,9 +339,21 @@ export default function InboxPage() {
           >
             <Wordmark />
           </Link>
+          {/* alpha-drift-r24-02 (found+fixed 2026-08-14): ThemeSwitcher's
+              own doc comment (components/ThemeSwitcher.tsx:9-22) says
+              align="right" (the default, used here) is only safe when
+              ThemeSwitcher is "the last item in a right-aligned
+              justify-between header" -- true on /inbox/[issueId] (no
+              Settings button there), but the Settings gear used to sit
+              AFTER ThemeSwitcher here, so its dropdown anchored ~50px
+              short of the true right edge and overflowed off the left
+              side of the viewport on narrow phones (iPhone SE/mini).
+              Reordered so ThemeSwitcher is genuinely last, matching the
+              precondition its own default already assumes -- simpler and
+              lower-risk than adding new positioning logic to a component
+              every theme-switcher call site in the app shares. */}
           <div className="flex items-center gap-2">
             <AudioToggle />
-            <ThemeSwitcher />
             <button
               type="button"
               onClick={() => router.push("/settings" as never)}
@@ -351,6 +363,7 @@ export default function InboxPage() {
             >
               ⚙
             </button>
+            <ThemeSwitcher />
           </div>
         </div>
         <div
