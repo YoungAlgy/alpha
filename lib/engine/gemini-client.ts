@@ -95,8 +95,26 @@ export async function geminiGenerateText(
   // A truncated response can still parse as valid (if unbalanced-brace luck
   // runs out) or worse, as valid-but-SHORTENED JSON — check BEFORE the text
   // is trusted, same reasoning as Claude's stop_reason==="max_tokens" guard.
-  if (candidate?.finishReason === "MAX_TOKENS") {
-    throw new GeminiTruncatedError(`Gemini hit its ${maxOutputTokens}-token ceiling`);
+  //
+  // alpha-drift-r28-10 (2026-08-15): this used to only special-case
+  // finishReason==="MAX_TOKENS" -- any OTHER non-clean finish (SAFETY,
+  // RECITATION, PROHIBITED_CONTENT, OTHER, SPII, BLOCKLIST, LANGUAGE) fell
+  // straight through and got trusted as if generation finished normally,
+  // inconsistent with this file's own geminiGroundedSearch below, which
+  // correctly whitelists ONLY "STOP" (undefined and "STOP" are the only
+  // clean finishes) rather than blacklisting one specific bad value. Fixed
+  // to match: any present, non-STOP finish reason throws. Reusing
+  // GeminiTruncatedError (not a new class) is deliberate, not just
+  // convenient -- topic-blurb.ts's tryGemini() catches it specifically to
+  // SKIP the retry-once and escalate straight to Groq, on the reasoning
+  // that a truncation is deterministic (an immediate retry hits the same
+  // wall). The same reasoning holds for SAFETY/RECITATION/etc: they trip on
+  // the SAME input a retry would resend, so treating them identically
+  // (skip the wasted retry, escalate immediately) is correct, not just
+  // reused for convenience.
+  const finish = candidate?.finishReason;
+  if (finish && finish !== "STOP") {
+    throw new GeminiTruncatedError(`Gemini finished with reason "${finish}" (not STOP) at a ${maxOutputTokens}-token ceiling`);
   }
   const text = candidate?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
   if (!text.trim()) throw new Error("Gemini returned no text");

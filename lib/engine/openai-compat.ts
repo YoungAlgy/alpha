@@ -40,6 +40,22 @@ export async function throwCompatError(
 // its output ceiling ("length" is OpenAI-schema's truncation signal, mirrors
 // Claude's stop_reason==="max_tokens" and Gemini's finishReason==="MAX_TOKENS")
 // — never trust a cut-off response as if it finished cleanly.
+//
+// alpha-drift-r28-10 (2026-08-15): this used to only special-case
+// finish_reason==="length" -- the OpenAI-compatible schema this function
+// deliberately mirrors also defines "content_filter" (a moderation-
+// triggered early stop) as a real non-"stop" value, which fell straight
+// through and got trusted as a complete response. Fixed to whitelist
+// "stop" (and an absent finish_reason, same tolerance the sibling
+// gemini-client.ts fix applies for a response shape that can legitimately
+// omit it) rather than blacklisting one specific bad value, matching
+// gemini-client.ts's geminiGenerateText/geminiGroundedSearch. Reusing
+// TruncatedErrorCtor (not a new error class) for a content_filter stop is
+// deliberate: topic-blurb.ts's tryGroq()/tryDeepSeek() catch
+// GroqTruncatedError/DeepSeekTruncatedError specifically to skip the
+// retry-once and escalate immediately, on the reasoning that the failure
+// is deterministic for the same input -- true for a token ceiling AND for
+// a moderation trip, both of which a same-input retry would reproduce.
 export function extractCompatText(
   data: CompatResponse,
   providerLabel: string,
@@ -47,8 +63,11 @@ export function extractCompatText(
   TruncatedErrorCtor: new (message: string) => Error
 ): string {
   const choice = data.choices?.[0];
-  if (choice?.finish_reason === "length") {
-    throw new TruncatedErrorCtor(`${providerLabel} hit its ${maxOutputTokens}-token output ceiling`);
+  const finish = choice?.finish_reason;
+  if (finish && finish !== "stop") {
+    throw new TruncatedErrorCtor(
+      `${providerLabel} finished with reason "${finish}" (not "stop") at a ${maxOutputTokens}-token output ceiling`
+    );
   }
   const text = choice?.message?.content ?? "";
   if (!text.trim()) throw new Error(`${providerLabel} returned no text`);
