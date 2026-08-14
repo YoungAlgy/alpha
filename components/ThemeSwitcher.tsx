@@ -162,11 +162,23 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
 
   return (
     <div className="relative" ref={wrapperRef} onBlur={open ? handleWrapperBlur : undefined}>
+      {/* alpha-drift-r34-01 (2026-08-14): no whitespace-nowrap meant a long
+          label ("Neon Nights", "After Hours") could wrap onto a 2nd line
+          inside this rounded-full pill -- fine in isolation, but this button
+          sits in a plain flex row with no flex-wrap on /inbox and
+          /inbox/[issueId] (the compact prop this component already exposes
+          is never actually passed at any call site), so on real ~375px-wide
+          phones the pill visibly deformed. whitespace-nowrap alone would
+          just push the row wider instead, so min-w-0 (lets this flex item
+          shrink below its own content's min-width, which a flex item can't
+          do by default) + overflow-hidden + text-ellipsis truncate the
+          label instead, while its fixed-size siblings (Wordmark, the
+          Settings/Audio icon buttons) keep their full size. */}
       <button
         ref={toggleRef}
         type="button"
         onClick={toggleOpen}
-        className="alpha-ui text-sm font-medium px-3 py-2.5 rounded-full border"
+        className="alpha-ui text-sm font-medium px-3 py-2.5 rounded-full border whitespace-nowrap overflow-hidden text-ellipsis min-w-0"
         style={{ borderColor: "var(--rule)", color: "var(--ink-soft)" }}
         aria-haspopup="listbox"
         aria-expanded={open}
