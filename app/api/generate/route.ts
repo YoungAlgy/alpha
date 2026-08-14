@@ -249,6 +249,34 @@ export async function POST(req: Request) {
         { status: 429, headers: { "Retry-After": String(userLimited.retryAfterSec) } }
       );
     }
+  } else if (body.sessionId) {
+    // alpha-drift-r28-04 (2026-08-15): the r18-01 fix above only closed the
+    // gap for the AUTHENTICATED branch (an existing subscriber re-generating).
+    // The first-time/not-signed-in sessionId branch never sets verifiedUserId
+    // at all, so it had NO per-session or per-payment cap whatsoever -- just
+    // the IP-keyed limit above, trivially defeated by rotating source IPs
+    // (a fresh IP gets a fresh 3/hour allowance). Stripe Checkout Sessions
+    // stay retrievable with payment_status:"paid" forever once paid, and
+    // nothing anywhere (this route, persist.ts, letter-delivery.ts) dedupes
+    // or caps usage by sessionId -- so a single $5 payment's sessionId could
+    // be replayed indefinitely for real, separately-billed AI generations.
+    // Keyed on the sessionId itself (not IP, not a user id -- there isn't
+    // one yet) so every attempt against the SAME payment shares one bucket
+    // regardless of which IP it comes from. 5/hour, not 3: a genuine
+    // first-time caller can hit this path multiple times via /writing's own
+    // client-side retry-on-failure behavior, and unlike the recurring
+    // per-user cap above, this session is spent after one real letter, so
+    // there's no legitimate reason for repeat traffic beyond retries.
+    const sessionLimited = rateLimit(`generate-session:${body.sessionId}`, {
+      limit: 5,
+      windowMs: 60 * 60 * 1000,
+    });
+    if (!sessionLimited.ok) {
+      return NextResponse.json(
+        { error: `Too many requests. Try again in ${Math.ceil(sessionLimited.retryAfterSec / 60)} minutes.` },
+        { status: 429, headers: { "Retry-After": String(sessionLimited.retryAfterSec) } }
+      );
+    }
   }
 
   try {

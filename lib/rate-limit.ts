@@ -1,6 +1,34 @@
 // Tiny in-memory rate limiter for serverless Next.js. Resets on cold start
 // (per-instance), which is fine as a casual-abuse deterrent. V1 will swap
 // this for a Supabase-backed counter so caps survive deploys.
+//
+// alpha-drift-r28-05 (2026-08-15): "resets on cold start" describes a
+// TEMPORAL gap (an isolate being evicted/respawned). It undersells a
+// separate, more consequential gap this comment never named: Cloudflare
+// Workers routinely runs MULTIPLE isolates for this same Worker script
+// CONCURRENTLY (across edge colos for geographically distributed callers,
+// and even within one colo under a concurrent request burst) -- this app
+// has no Durable Object or other coordination primitive in the API request
+// path (wrangler.jsonc's only durable_objects binding, NEXT_CACHE_DO_QUEUE,
+// is OpenNext's ISR/tag-cache revalidation queue, unrelated to rate
+// limiting). Each concurrently-warm isolate holds its OWN independent
+// `buckets` Map below with zero shared state -- Cloudflare's own guidance
+// is that in-Worker global variables aren't a global store for exactly this
+// reason (hence Durable Objects / KV / a dedicated Rate Limiting API for
+// real global counters). Every "N per hour" cap enforced through
+// rateLimit() in this app -- most critically /api/generate's real-money AI-
+// cost limiters -- is actually "N per hour per isolate that happens to
+// serve this key's traffic," not a true global cap: a determined caller
+// spreading requests across enough concurrent isolates (geographically
+// distributed source IPs, or simply enough parallel connections at once)
+// can exceed the intended ceiling by roughly (limit x isolate count).
+// Fixing this for real needs an actual distributed store (a Durable
+// Object, KV, or Cloudflare's Rate Limiting API binding) -- a genuine
+// infrastructure decision (new binding, wrangler.jsonc change, possible
+// added per-request latency) big enough to need Algy's sign-off, not
+// something to build and ship unilaterally inside an audit-round fix. This
+// comment exists so that decision is made knowingly, not because the risk
+// went unnoticed.
 
 interface Bucket {
   count: number;

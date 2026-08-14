@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { withDeadline } from "@/lib/with-deadline";
+import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 
 // Lightweight uptime check. Returns 200 if the app is alive + key env vars
 // are configured. Doesn't reach external services (Stripe, etc.) to keep the
@@ -45,7 +46,31 @@ async function checkSupabase(): Promise<boolean> {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  // alpha-drift-r28-06 (2026-08-15): this route runs a real checkSupabase()
+  // round-trip on EVERY call (force-dynamic + no-store above deliberately
+  // guarantee that -- see this file's own 2026-08-05 stale-cache comment),
+  // fully public, unauthenticated -- unlike every other Supabase/third-
+  // party-touching route in this app, which all call rateLimit(). Generous
+  // on purpose: this route has real legitimate periodic callers (the
+  // watchdog crons read checks.* straight from it, plus any external uptime
+  // monitor), so the goal here is only to stop a genuine sustained flood,
+  // not to interfere with normal polling at any reasonable interval.
+  const ip = clientKeyFromRequest(req);
+  const limited = rateLimit(`health:${ip}`, { limit: 60, windowMs: 60 * 1000 });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(limited.retryAfterSec),
+          "Cache-Control": "no-store, must-revalidate",
+        },
+      }
+    );
+  }
+
   const checks = {
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     resend: !!process.env.RESEND_API_KEY,
