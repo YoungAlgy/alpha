@@ -46,7 +46,16 @@ export async function fetchArticleText(
     const cleaned = sanitizeContent(raw);
     if (cleaned.length < MIN_USABLE_CHARS || !looksLikeProse(cleaned)) return null;
     return cleaned;
-  } catch {
+  } catch (e) {
+    // alpha-drift-r34-01 (2026-08-14): this was the only provider client in
+    // lib/engine/ with a fully silent catch -- every sibling (brave.ts,
+    // you-search.ts, gemini-client.ts, groq-client.ts, deepseek-client.ts,
+    // gemini-search.ts) logs a warning on failure. A caller degrading to the
+    // snippet is fine (that's the whole point of "best-effort"), but a
+    // systemic failure (an expired JINA_API_KEY, a Jina outage, a response-
+    // shape change) had zero trace anywhere -- an operator would only ever
+    // notice via reading individual subscriber letters.
+    console.warn(`[fetch-content] deep-read failed for ${url}:`, e instanceof Error ? e.message : e);
     return null;
   } finally {
     clearTimeout(timer);
