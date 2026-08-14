@@ -2,7 +2,7 @@ import { anthropicClient, anthropicConfigured, EDITOR_NOTE_MODEL, isAnthropicUna
 import { geminiConfigured, geminiGenerateText } from "./gemini-client";
 import { groqConfigured, groqGenerateText } from "./groq-client";
 import { deepseekConfigured, deepseekGenerateText } from "./deepseek-client";
-import { sanitizeVoice, containsMetaLeak } from "./voice-guard";
+import { sanitizeVoice, containsMetaLeak, findLexicalTells } from "./voice-guard";
 import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
 import { BLURB_CAPS } from "@/lib/types";
@@ -192,6 +192,10 @@ Write the editor's note for this reader's letter today.`;
 
   let note: string | undefined;
   let anthropicErr: unknown;
+  // Tracks whether `note` came from callClaude() specifically — needed below
+  // to decide whether a lexical-tell slip is worth a fresh Claude retry (only
+  // makes sense for the tier that actually produced the text we're checking).
+  let usedClaude = false;
   // Anthropic not even configured (2026-07-29: Algy may deliberately not be
   // funding it) is treated the SAME as Anthropic being unavailable mid-call —
   // both mean "fall through to the free tiers below," not "throw
@@ -203,6 +207,7 @@ Write the editor's note for this reader's letter today.`;
   if (anthropicConfigured()) {
     try {
       note = await callClaude();
+      usedClaude = true;
     } catch (e) {
       // ClaudeContentUnusableError (empty text / max_tokens, thrown inside
       // callClaude above) is just as fallback-eligible as an outage — the
@@ -235,7 +240,7 @@ Write the editor's note for this reader's letter today.`;
 
   // Deterministic voice guard: strip any em/en dash, semicolon, or curly quote
   // the model slipped in despite the prompt (cheap models did so more than Sonnet; kept as defense in depth).
-  const clean = sanitizeVoice(note);
+  let clean = sanitizeVoice(note);
 
   // Meta-leak backstop, symmetric with topic-blurb. The note is a single string,
   // so a leak cannot be "dropped" like one item among several. Throw instead, and
@@ -244,6 +249,43 @@ Write the editor's note for this reader's letter today.`;
   if (containsMetaLeak(clean)) {
     console.warn("[editor-note] meta-leak detected, throwing to use fallback intro");
     throw new Error("editor note contained a meta-leak");
+  }
+
+  // alpha-drift-r20-03 (found+fixed 2026-08-13): the SYSTEM_PROMPT above bans
+  // the exact same AI-tell word list topic-blurb.ts's prompt bans (leverage,
+  // robust, optimize, ...), but nothing in code ever checked for a slip here
+  // the way topic-blurb.ts's cost-tiering does via findLexicalTells — a bare
+  // banned word could ship in the one part of the letter written directly to
+  // the reader, with zero observability into how often it happens. Claude is
+  // this file's top/first-tried tier (unlike topic-blurb.ts, where cheap
+  // tiers escalate UP to Sonnet), so there is no better tier to escalate to —
+  // the same situation topic-blurb.ts's own Sonnet call is in at the end of
+  // its ladder, which it handles with exactly one fresh retry rather than
+  // shipping the slip unconditionally or looping. Mirrored here: retry once,
+  // ONLY when Claude produced the text (a free-tier note retrying itself
+  // is not worth the extra latency/cost — those tiers are the last resort
+  // already, and verified to slip more often than Claude in the first place).
+  let tells = findLexicalTells(clean);
+  if (tells.length > 0 && usedClaude) {
+    console.warn(`[editor-note] Claude note slipped a banned word (${tells.join(", ")}), retrying once`);
+    try {
+      const retryClean = sanitizeVoice(await callClaude());
+      if (containsMetaLeak(retryClean)) {
+        console.warn("[editor-note] retry produced a meta-leak, keeping the original despite the word slip");
+      } else {
+        clean = retryClean;
+        tells = findLexicalTells(clean);
+      }
+    } catch (e) {
+      console.warn(`[editor-note] retry failed (${e instanceof Error ? e.message : e}), keeping the original despite the word slip`);
+    }
+  }
+  if (tells.length > 0) {
+    // A persistent single-word slip is a real but minor voice imperfection —
+    // logged for visibility, same as topic-blurb.ts, but not worth dropping
+    // the whole note over (unlike a meta-leak, this doesn't reveal the
+    // letter is machine-written).
+    console.warn(`[editor-note] shipping note with a banned word still present: ${tells.join(", ")}`);
   }
   return clean;
 }
