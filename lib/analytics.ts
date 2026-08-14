@@ -48,6 +48,22 @@ const ISSUE_URL_PATTERN = /\/inbox\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 // a form field.
 const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
+// alpha-drift-r32-03 (2026-08-14): redactValue only ever stripped the two
+// patterns above -- it had no coverage for sensitive QUERY-STRING params,
+// and autocapture attaches $current_url (via posthog-js's own href-reading,
+// same mechanism the $elements comment above documents) to every click it
+// captures. Two live leak paths: app/writing/page.tsx reads `session_id`
+// from the URL -- this app's own proof-of-payment token, used to rate-limit
+// /api/generate -- and renders buttons while it's still in the URL; and
+// app/auth/callback/page.tsx's PKCE `code` param (lib/supabase/client.ts
+// confirms the PKCE/query-string flow is live) persists through the
+// exchange. Anchored to `?`/`&`/string-start so this can't false-positive
+// on a LONGER param name that merely ends in "code" or "session_id" (e.g.
+// promo_code, zip_code) -- those have neither a `?`/`&` nor the string
+// start immediately before the literal "code="/"session_id=".
+const SESSION_ID_PARAM_PATTERN = /([?&]|^)session_id=[^&#]*/gi;
+const AUTH_CODE_PARAM_PATTERN = /([?&]|^)code=[^&#]*/gi;
+
 // alpha-drift-r20-01 (found+fixed 2026-08-13, self-audit of the fix above):
 // the original version only checked `typeof value === "string"` on the
 // TOP-LEVEL properties -- but PostHog's autocapture emits $elements as an
@@ -65,6 +81,8 @@ function redactValue(value: unknown): unknown {
   if (typeof value === "string") {
     let v = value.includes("/inbox/") ? value.replace(ISSUE_URL_PATTERN, "/inbox/[id]") : value;
     if (v.includes("@")) v = v.replace(EMAIL_PATTERN, "[email]");
+    if (v.includes("session_id=")) v = v.replace(SESSION_ID_PARAM_PATTERN, "$1session_id=[redacted]");
+    if (v.includes("code=")) v = v.replace(AUTH_CODE_PARAM_PATTERN, "$1code=[redacted]");
     return v;
   }
   if (Array.isArray(value)) {

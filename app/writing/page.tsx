@@ -96,6 +96,21 @@ export default function WritingPage() {
 
     // Stripe Checkout drops the user here as /writing?session_id=cs_... — pass
     // it to the generate API so it can confirm the first letter was paid for.
+    //
+    // alpha-drift-r32-03 (2026-08-14, considered + rejected a URL-bar scrub
+    // here): unlike auth/callback's `code`, this page's "Try again" button
+    // (below) calls window.location.reload() -- a REAL navigation that
+    // re-reads session_id from window.location.search on the fresh load, not
+    // just from this closure. Scrubbing the query string the way
+    // auth/callback does would make that reload lose session_id entirely,
+    // and for the first-time/not-yet-signed-in purchaser this page exists
+    // for, that's the ONLY thing that gets them past /api/generate's payment
+    // gate (verifyPaid in app/api/generate/route.ts 402s with no sessionId
+    // and no active session) -- "Try again" would wrongly bounce an
+    // already-paid customer to /checkout. Fixed at the redaction layer
+    // instead (lib/analytics.ts's redactValue now strips session_id= from
+    // any captured property, including autocapture's $current_url), which
+    // closes the actual leak-to-PostHog without touching page behavior.
     const sessionId =
       typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("session_id") || undefined

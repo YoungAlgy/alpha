@@ -59,6 +59,20 @@ function Inner() {
     const hasHashSession =
       typeof window !== "undefined" && window.location.hash.includes("access_token=");
 
+    // alpha-drift-r32-03 (2026-08-14): the hash-flow success path below
+    // already scrubs the URL bar after a successful exchange (line ~90) --
+    // the PKCE `code` param had no equivalent. On a FAILED exchange this
+    // page sits on /auth/callback?code=xxx for up to 1.5s (the error
+    // setTimeout below) before redirecting, during which PostHog's
+    // autocapture (enabled app-wide) can attach the live $current_url --
+    // code and all -- to any event it captures on this page. `code` is
+    // already read into the const above, so it's safe to strip from the
+    // visible URL immediately, before the exchange even starts, rather than
+    // only on the specific paths that happen to redirect elsewhere after.
+    if (code && typeof window !== "undefined") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
     // Guards every router/setState call below against firing after this
     // effect's cleanup has run (a fast successive navigation off this page) —
     // the error path's 1.5s setTimeout in particular was untracked.
