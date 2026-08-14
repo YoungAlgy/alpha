@@ -399,23 +399,35 @@ export async function POST(req: Request) {
         // this handler throws specifically to get Stripe's automatic retry
         // (the #35 pattern -- see this SAME case block's disputeErr throw
         // ~40 lines below, guarding the identical access-revocation this
-        // retrieve blocks) -- this was the one call that didn't. Rethrowing
-        // routes it through the outer catch's existing retry/alert
-        // machinery instead of silently forgoing a retry here. The
-        // `if (!customerId)` alert below still covers the genuinely
-        // different case where the retrieve SUCCEEDS but the charge simply
-        // has no customer attached -- nothing to retry there, so that path
-        // is untouched.
+        // retrieve blocks) -- this was the one call that didn't.
+        //
+        // alpha-drift-r28-02 (2026-08-15, self-audit): that fix rethrew
+        // BEFORE the specific, actionable "couldn't identify the subscriber"
+        // alert (dispute id/reason/amount, "check the dashboard" CTA) ever
+        // ran -- routing straight to the outer catch's generic, day-bucketed
+        // "webhook processing failed" alert instead, which carries none of
+        // that context. Fine for a transient failure that Stripe's retry
+        // then fixes, but on a genuinely PERMANENT retrieve failure, the
+        // specific alert became unreachable entirely: every retry rethrows
+        // the same way, and once Stripe's ~3-day retry window lapses,
+        // nothing fires again -- the one alert this handler exists to
+        // guarantee was silently lost for exactly the failure class it was
+        // built to cover. Now sends the specific alert FIRST (still
+        // deduplicated across retries by dispute.id, same as before), THEN
+        // rethrows -- Algy gets the real, actionable info immediately no
+        // matter how the retry turns out, and a transient failure still
+        // gets its genuine shot at self-healing via Stripe's redelivery.
         let customerId: string | null = null;
+        let retrieveError: unknown = null;
         try {
           const charge = await stripe.charges.retrieve(chargeId);
           customerId = typeof charge.customer === "string" ? charge.customer : charge.customer?.id ?? null;
         } catch (e) {
+          retrieveError = e;
           console.error(
             `[stripe-webhook] dispute ${dispute.id}: charge retrieve failed:`,
             e instanceof Error ? e.message : e
           );
-          throw e;
         }
         if (!customerId) {
           await sendOpsAlert(
@@ -423,6 +435,7 @@ export async function POST(req: Request) {
             `Dispute ${dispute.id} on charge ${chargeId} (${dispute.reason}, $${(dispute.amount / 100).toFixed(2)}) but the charge lookup failed or had no customer attached. Access was NOT revoked -- check the Stripe dashboard directly.`,
             `alpha-dispute-unresolved-${dispute.id}`
           );
+          if (retrieveError) throw retrieveError;
           break;
         }
         // A dispute means the customer is already contesting the charge
