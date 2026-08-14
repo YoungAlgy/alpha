@@ -25,6 +25,13 @@ on:
   push:
     branches: [master]
   workflow_dispatch: {}
+  # alpha-drift-r22-01 (found+fixed 2026-08-14): a weekly schedule for the
+  # audit job below, since a new CVE against an already-installed dependency
+  # can get disclosed on any day regardless of whether this repo pushes that
+  # week -- push:master alone would leave that gap silent until the next
+  # unrelated commit happened to trigger it.
+  schedule:
+    - cron: '0 13 * * 1' # Monday 13:00 UTC -- arbitrary weekly slot, clear of daily-send.yml's 14:00/15:00/18:00 UTC windows
   # No pull_request trigger: this repo has never used PRs (verified via `gh
   # api repos/YoungAlgy/alpha/pulls?state=all` -> [] and zero merge commits
   # in history) -- push:master already covers every commit that could
@@ -264,3 +271,35 @@ jobs:
           done
           echo "::error::Build failed 3/3 attempts."
           exit 1
+
+  # alpha-drift-r22-01 (found+fixed 2026-08-14): this repo had no CI step
+  # anywhere that ran `npm audit` or any other dependency-vulnerability
+  # scanner -- a newly-disclosed CVE against an already-installed package
+  # (payments, auth, email, and LLM SDKs all live in package.json) would sit
+  # silent indefinitely with nothing surfacing it short of someone manually
+  # running `npm audit` in this repo, which nothing prompts anyone to do.
+  # `--audit-level=high` (not moderate/low): moderate/low findings in npm's
+  # advisory DB are frequently unfixable transitive-dependency noise with no
+  # real exploit path for a server-side Next.js app, and a gate that cries
+  # wolf on those trains everyone to ignore it -- reserving hard CI failure
+  # for high/critical keeps this actionable. Runs on both push (catches a
+  # newly-added vulnerable dependency immediately) and the weekly schedule
+  # above (catches a CVE disclosed against something already installed,
+  # which push alone would never re-check).
+  dependency-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit (fail on high/critical)
+        run: npm audit --audit-level=high

@@ -40,8 +40,16 @@ export function getStripeClient(): Stripe {
   // ~700ms) against the identical call through the deployed Worker (hangs
   // ~15-30s then fails) with the exact same verified-good API key --
   // confirmed the failure was httpClient-specific, not a bad key.
+  // alpha-drift-r22-01 (found+fixed 2026-08-14): bumped from 2026-04-22 to
+  // match the stripe npm package's own pinned type after an in-range `npm
+  // update`. Both are monthly releases within the same "dahlia" train --
+  // per Stripe's own versioning policy (docs.stripe.com/sdks/versioning),
+  // every monthly release within a train is backward-compatible by
+  // guarantee; only a new NAMED train (e.g. dahlia -> the next codename)
+  // carries breaking changes. Confirmed before bumping, not assumed --
+  // this pins live production billing.
   _stripe = new Stripe(secret, {
-    apiVersion: "2026-04-22.dahlia",
+    apiVersion: "2026-07-29.dahlia",
     httpClient: Stripe.createFetchHttpClient(),
     timeout: 20_000,
     maxNetworkRetries: 1,
