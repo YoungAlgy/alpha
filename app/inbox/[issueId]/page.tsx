@@ -191,7 +191,7 @@ export default function IssuePage() {
           <div className="flex items-center gap-2">
             <Link
               href="/archive"
-              className="alpha-ui text-sm"
+              className="alpha-ui text-sm py-3 -my-3"
               style={{ color: "var(--ink-soft)" }}
             >
               ← Archive

@@ -141,15 +141,18 @@ export default async function LetterPage({
           </span>
           <Link
             href="/signin"
-            className="alpha-ui text-sm"
+            className="alpha-ui text-sm py-3 -my-3"
             style={{ color: "var(--ink-soft)" }}
           >
             Sign in →
           </Link>
         </div>
+        {/* alpha-drift-r25-04: --accent-ink fails WCAG AA 4.5:1 vs --paper in most
+        themes; this banner is plain informational text, so it needs --ink-soft
+        (passes 4.5:1 in all 26 themes), not --accent-ink. */}
         <div
           className="max-w-5xl mx-auto px-6 pb-3 alpha-mono text-center"
-          style={{ color: "var(--accent-ink)" }}
+          style={{ color: "var(--ink-soft)" }}
         >
           YOUR LETTER · SIGN IN TO CHANGE TOPICS OR READ PAST ISSUES
         </div>

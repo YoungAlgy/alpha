@@ -417,7 +417,7 @@ export default function ChangelogPage() {
         </Link>
         <Link
           href="/settings"
-          className="alpha-ui text-sm"
+          className="alpha-ui text-sm py-3 -my-3"
           style={{ color: "var(--ink-soft)" }}
         >
           ← Back to settings

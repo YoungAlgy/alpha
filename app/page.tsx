@@ -66,7 +66,7 @@ export default function Landing() {
         </span>
         <Link
           href="/signin"
-          className="alpha-ui text-sm"
+          className="alpha-ui text-sm py-3 -my-3"
           style={{ color: "var(--ink-soft)" }}
         >
           Sign in →
