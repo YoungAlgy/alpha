@@ -26,6 +26,7 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
   const toggleRef = useRef<HTMLButtonElement>(null);
   const activeOptionRef = useRef<HTMLButtonElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Focus choreography for the dropdown: move focus into the listbox (onto
   // the active option) when it opens, since neither toggleOpen nor pick()
@@ -98,8 +99,53 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
     toggleRef.current?.focus();
   }
 
+  // alpha-drift-r27-08 (2026-08-14): the panel's onKeyDown used to intercept
+  // ONLY Escape -- there was no Tab handling anywhere in this component (or
+  // anywhere in the app), so a keyboard user who Tabbed from the last option
+  // moved straight past the listbox into whatever comes next in DOM order,
+  // while the panel (open state never flips false) kept rendering on top of
+  // the page. The pointerdown-based outside-click dismiss below doesn't fire
+  // for keyboard-only Tab-out either, since no click/mousedown occurs. Traps
+  // Tab within the panel's own option buttons (its only focusable content):
+  // Tab past the last option wraps to the first, Shift+Tab past the first
+  // wraps to the last -- the standard listbox/menu focus-trap shape.
+  function handlePanelKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      close();
+      return;
+    }
+    if (e.key !== "Tab" || !panelRef.current) return;
+    const options = Array.from(panelRef.current.querySelectorAll<HTMLButtonElement>('[role="option"]'));
+    if (options.length === 0) return;
+    const first = options[0];
+    const last = options[options.length - 1];
+    if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    }
+  }
+
+  // Backstop for the trap above: if focus ever ends up outside the wrapper
+  // while open anyway (a path the Tab-trap doesn't cover, e.g. a
+  // programmatic focus change elsewhere on the page), close rather than
+  // leave a stale panel floating over content the user's focus has already
+  // left. Doesn't refocus the toggle -- unlike close() (an explicit
+  // Escape/pick dismissal, where returning focus to the trigger is the
+  // expected behavior), focus here is already moving somewhere else;
+  // stealing it back would fight whatever just happened.
+  function handleWrapperBlur(e: React.FocusEvent<HTMLDivElement>) {
+    const next = e.relatedTarget as Node | null;
+    if (!next || !wrapperRef.current?.contains(next)) {
+      setOpen(false);
+    }
+  }
+
   return (
-    <div className="relative" ref={wrapperRef}>
+    <div className="relative" ref={wrapperRef} onBlur={open ? handleWrapperBlur : undefined}>
       <button
         ref={toggleRef}
         type="button"
@@ -113,14 +159,10 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
       </button>
       {open && (
         <div
+          ref={panelRef}
           className={`absolute ${align === "left" ? "left-0" : "right-0"} mt-2 w-64 z-50 alpha-card overflow-hidden`}
           style={{ background: "var(--paper)" }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.stopPropagation();
-              close();
-            }
-          }}
+          onKeyDown={handlePanelKeyDown}
         >
           <div id="theme-switcher-label" className="alpha-mono px-4 py-3 border-b" style={{ borderColor: "var(--rule)" }}>
             CHOOSE A THEME
