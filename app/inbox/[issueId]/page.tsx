@@ -42,7 +42,7 @@ export default function IssuePage() {
           const { data: { session } } = await sb.auth.getSession();
           if (cancelled) return;
           if (session && issueId) {
-            const [{ data, error }, { data: userRow }] = await Promise.all([
+            const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
               sb
                 .from("issues")
                 .select("week_of, volume, number, editor_intro, sections")
@@ -59,6 +59,16 @@ export default function IssuePage() {
             // alpha-drift-r16-15: same app-level defense-in-depth as
             // /inbox -- see that file's comment for why this can't wait
             // on the pending RLS migration.
+            //
+            // alpha-drift-r20-05: same deleted-account gap as /inbox --
+            // see that file's comment. A cascade-deleted `users` row makes
+            // userRow null, which hasActiveAccess(undefined) misreads as
+            // "active." !userError && !userRow is a genuine zero-row
+            // result, not a query failure.
+            if (!userError && !userRow) {
+              setAccessEnded(true);
+              return;
+            }
             if (!hasActiveAccess(userRow?.cancelled_at)) {
               setAccessEnded(true);
               return;

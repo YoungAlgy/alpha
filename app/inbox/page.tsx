@@ -48,7 +48,7 @@ export default function InboxPage() {
             // Independent queries — run them in parallel (same pattern as
             // /letter) instead of two sequential round trips on the app's
             // most-visited page.
-            const [{ data, error }, { data: userRow }] = await Promise.all([
+            const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
               sb
                 .from("issues")
                 .select("week_of, volume, number, editor_intro, sections")
@@ -69,6 +69,22 @@ export default function InboxPage() {
             // the migration lands -- defense in depth, matches the pattern
             // app/letter/page.tsx already uses (RLS can't reach that route
             // at all, since it's a service-role client).
+            //
+            // alpha-drift-r20-05 (found+fixed 2026-08-13): getSession() only
+            // decodes the LOCAL cached JWT -- no live check against
+            // auth.users -- so a signed-in tab on another device can still
+            // "work" well after the account itself was deleted elsewhere. A
+            // deleted account's cascade-deleted `users` row makes userRow
+            // null, and hasActiveAccess(undefined) reads that as "never
+            // cancelled" i.e. active -- the opposite of what a missing row
+            // means. .maybeSingle() returns error:null on a genuine
+            // zero-row result (that's its whole purpose vs .single()), so
+            // "!userError && !userRow" is a real "this account is gone"
+            // signal, not a network/RLS hiccup misread as deletion.
+            if (!userError && !userRow) {
+              setAccessEnded(true);
+              return;
+            }
             if (!hasActiveAccess(userRow?.cancelled_at)) {
               setAccessEnded(true);
               return;

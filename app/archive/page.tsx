@@ -68,7 +68,7 @@ export default function ArchivePage() {
         if (!mountedRef.current) return;
         if (session) {
           // RLS scopes issues to auth.uid() = user_id — no explicit filter needed.
-          const [{ data, error }, { data: userRow }] = await Promise.all([
+          const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
             sb
               .from("issues")
               .select("id, week_of, editor_intro")
@@ -80,6 +80,17 @@ export default function ArchivePage() {
           // alpha-drift-r16-15: same app-level defense-in-depth as /inbox
           // and /inbox/[issueId] -- see /inbox's comment for why this
           // can't wait on the pending RLS migration.
+          //
+          // alpha-drift-r20-05: same deleted-account gap as /inbox -- see
+          // that file's comment. A cascade-deleted `users` row makes
+          // userRow null, which hasActiveAccess(undefined) misreads as
+          // "active." !userError && !userRow is a genuine zero-row
+          // result, not a query failure (that's handled below by the
+          // separate `error` check on the issues query).
+          if (!userError && !userRow) {
+            setState("ended");
+            return;
+          }
           if (!hasActiveAccess(userRow?.cancelled_at)) {
             setState("ended");
             return;
@@ -138,7 +149,7 @@ export default function ArchivePage() {
       // they have this page open with more pages available, "Load more"
       // fetched additional issues with no re-check. Re-check every time,
       // not just at mount.
-      const [{ data, error }, { data: userRow }] = await Promise.all([
+      const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
         sb
           .from("issues")
           .select("id, week_of, editor_intro")
@@ -147,6 +158,12 @@ export default function ArchivePage() {
         sb.from("users").select("cancelled_at").eq("id", session.user.id).maybeSingle(),
       ]);
       if (!mountedRef.current) return;
+      // alpha-drift-r20-05: same deleted-account gap as load() above.
+      if (!userError && !userRow) {
+        setState("ended");
+        setItems([]);
+        return;
+      }
       if (!hasActiveAccess(userRow?.cancelled_at)) {
         setState("ended");
         setItems([]);
