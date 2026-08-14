@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { coerceGender, demographicSummary, maxBirthdayForMinAge } from "@/lib/demographics";
+import { coerceGender, demographicSummary, maxBirthdayForMinAge, parseBirthday } from "@/lib/demographics";
 import { BLURB_CAPS } from "@/lib/types";
 import type { Gender } from "@/lib/types";
 
@@ -108,7 +108,17 @@ export function ProfileEditor() {
     form.gender !== saved.gender;
 
   const requiredFilled = form.firstName.trim().length > 0 && form.city.trim().length > 0;
-  const canSave = dirty && requiredFilled && !busy;
+  // alpha-drift-r34-02 (2026-08-14): this used to only require firstName/city
+  // -- birthday had NO validity gate at all, unlike app/you/page.tsx's
+  // alpha-drift-r22-04 fix for the identical input. A native <input
+  // type="date">'s min/max are validity-STYLING only; they don't block
+  // .value from holding an out-of-range date typed via keyboard. Without
+  // this, a reader could type a malformed birthday, click Save, and get a
+  // false "Saved" success message while app/api/account/profile/route.ts
+  // silently coerced the bad value to null server-side -- the Zodiac
+  // section would then quietly stop working with zero indication why.
+  const birthdayValid = form.birthday.length === 0 || parseBirthday(form.birthday) !== null;
+  const canSave = dirty && requiredFilled && birthdayValid && !busy;
 
   async function save() {
     if (!canSave || saveInFlight.current) return;
@@ -235,12 +245,27 @@ export function ProfileEditor() {
             // own [data-theme] blocks, which correctly cascades down to
             // this element without needing a per-input override at all.
             style={{ color: "var(--ink)", borderColor: "var(--rule)" }}
+            // alpha-drift-r34-02: aria wiring mirrors app/you/page.tsx's
+            // r23-07 fix -- aria-describedby always points at the hint
+            // (whichever of its states is showing), aria-invalid reflects
+            // the same format-validity check birthdayValid/canSave gate on.
+            aria-describedby="profile-birthday-hint"
+            aria-invalid={form.birthday.length > 0 && !birthdayValid}
           />
           <span
+            id="profile-birthday-hint"
+            role="status"
+            aria-live="polite"
             className="alpha-ui text-xs block mt-1"
-            style={{ color: hasZodiac && !form.birthday ? "var(--accent-ink)" : "var(--ink-soft)", opacity: hasZodiac && !form.birthday ? 1 : 0.8 }}
+            style={{
+              color: (form.birthday.length > 0 && !birthdayValid) ? "var(--ink)" : hasZodiac && !form.birthday ? "var(--accent-ink)" : "var(--ink-soft)",
+              opacity: (form.birthday.length > 0 && !birthdayValid) || (hasZodiac && !form.birthday) ? 1 : 0.8,
+            }}
           >
             {(() => {
+              if (form.birthday.length > 0 && !birthdayValid) {
+                return "That date doesn't look right. Double check the day, month, and year.";
+              }
               if (hasZodiac && !form.birthday) {
                 return "You have the Zodiac topic. Add your birthday or that section gets skipped each day.";
               }
