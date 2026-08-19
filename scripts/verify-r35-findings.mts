@@ -124,7 +124,11 @@ console.log("(5) Copy-voice fixes: house style violations removed, wording match
   check("(5e) delete-account confirm no longer tells the reader to verify something not yet true", !/To be safe you can confirm it's gone in \\"Manage subscription\\" above first/.test(settingsSrc));
   check("(5f) delete-account confirm states the billing guarantee plainly", /Your \$\$\{monthlyDollars\}\/mo subscription is cancelled too, so billing stops\./.test(settingsSrc));
   check("(5g) em dash removed from the export-failure alert (both call sites)", (settingsSrc.match(/Couldn't reach the server for your full data\. Downloading what's saved on this device instead\./g) ?? []).length === 2);
-  check("(5h) 'lands tomorrow' replaced with a day-agnostic promise", !/Your next letter lands tomorrow\./.test(settingsSrc) && /Your next daily letter is already on the way\./.test(settingsSrc));
+  // alpha-drift-r36-02 (2026-08-14, self-audit): r35-07's own replacement
+  // ("already on the way") was itself an overpromise for a reader resuming
+  // shortly AFTER that day's send -- corrected again, see verify-r36-findings.mts
+  // section (2) for the current shape and reasoning.
+  check("(5h) 'lands tomorrow' replaced with a day-agnostic promise (superseded again by r36-02 -- checks the ORIGINAL r35 replacement is gone, not the current copy)", !/Your next letter lands tomorrow\./.test(settingsSrc) && !/Your next daily letter is already on the way\./.test(settingsSrc));
 
   const youSrc = readFileSync(new URL("../app/you/page.tsx", import.meta.url), "utf8");
   check("(5i) semicolon removed from the /you step subtitle", !/Gender is optional; birthday isn't/.test(youSrc) && /Gender is optional\. Birthday isn't, since you picked Zodiac\./.test(youSrc));
@@ -144,10 +148,20 @@ console.log("(6) lib/email.ts: the teaser paragraph now has the same overflow-wr
 
 console.log("(7) components/EmailChanger.tsx: focus returns to the trigger on Cancel, moves into the panel on success");
 {
+  // alpha-drift-r36-01 (2026-08-14, self-audit): (7a)-(7c) below asserted the
+  // ORIGINAL r35-15 shape, which self-audit-r36 found was dead code -- the
+  // captured e.currentTarget node is permanently detached by the time Cancel
+  // needs it (React mounts a brand new button on remount, never reuses the
+  // old one), so `.isConnected` was always false and `.focus()` never fired.
+  // Corrected to a `ref=` prop (React reassigns it on every mount, so it's
+  // never stale) -- full corrected coverage, including the live-DOM
+  // measurements that proved the old shape genuinely didn't work, lives in
+  // verify-r36-findings.mts section (1). (7d) is untouched by the r36 fix
+  // and still checks the real current shape.
   const src = readFileSync(new URL("../components/EmailChanger.tsx", import.meta.url), "utf8");
-  check("(7a) returnFocusRef + confirmHeadingRef declared", /const returnFocusRef = useRef<HTMLElement \| null>\(null\);/.test(src) && /const confirmHeadingRef = useRef<HTMLParagraphElement>\(null\);/.test(src));
-  check("(7b) an effect keyed on [editing, sentTo] moves focus appropriately", /useEffect\(\(\) => \{\s*\n\s*if \(sentTo\) \{\s*\n\s*confirmHeadingRef\.current\?\.focus\(\);\s*\n\s*\} else if \(!editing && returnFocusRef\.current\?\.isConnected\) \{\s*\n\s*returnFocusRef\.current\.focus\(\);\s*\n\s*\}\s*\n\s*\}, \[editing, sentTo\]\);/.test(src));
-  check("(7c) the trigger button captures itself into returnFocusRef on click", /returnFocusRef\.current = e\.currentTarget;\s*\n\s*setEditing\(true\);/.test(src));
+  check("(7a) closedTriggerRef + confirmHeadingRef declared (r36-01 shape: a typed button ref, not the old HTMLElement capture-target)", /const closedTriggerRef = useRef<HTMLButtonElement>\(null\);/.test(src) && /const confirmHeadingRef = useRef<HTMLParagraphElement>\(null\);/.test(src));
+  check("(7b) an effect keyed on [editing, sentTo] moves focus appropriately (r36-01 shape: panelWasOpenRef-gated, not an isConnected check on a captured node)", /if \(panelWasOpenRef\.current\) \{\s*\n\s*closedTriggerRef\.current\?\.focus\(\);/.test(src));
+  check("(7c) the trigger button attaches the ref via JSX ref= (r36-01 shape, not an e.currentTarget capture in onClick)", /ref=\{closedTriggerRef\}\s*\n\s*type="button"/.test(src));
   check("(7d) the confirmation paragraph is a valid focus target (tabIndex=-1 + ref)", /ref=\{confirmHeadingRef\}\s*\n\s*tabIndex=\{-1\}/.test(src));
 }
 

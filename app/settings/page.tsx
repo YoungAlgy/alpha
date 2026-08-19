@@ -50,13 +50,33 @@ export default function SettingsPage() {
   // from the DOM the same render the panel appears (and vice versa on
   // cancel/confirm), so the browser drops focus to <body> with no signal to
   // a keyboard/screen-reader user that a billing confirmation appeared.
+  //
+  // alpha-drift-r36-01 (2026-08-14, self-audit found this via its EmailChanger
+  // copy): tierReturnFocusRef used to be populated by capturing e.currentTarget
+  // on whichever trigger button ("Add 5 more topics" / "Drop 5 topics") was
+  // clicked -- but that whole `{!confirmingTier && (...)}` block unmounts the
+  // instant confirmingTier is set, permanently detaching the captured node
+  // (React mounts a brand-new button when the block reappears, never reusing
+  // the old one), so `.isConnected` was always false and `.focus()` never
+  // fired. Worse than EmailChanger's version: there are TWO possible triggers,
+  // and which ones are even available (canAdd/canRemove) can flip after a
+  // successful tier change, so a specific-button ref can't reliably be right
+  // even if it weren't stale. Fixed by returning focus to the price display
+  // above the buttons instead (billingHeadingRef) -- always rendered once
+  // quotaLoaded (a precondition for confirmingTier to ever be set at all),
+  // and contextually correct either way ("here's your plan now").
   const confirmHeadingRef = useRef<HTMLParagraphElement>(null);
-  const tierReturnFocusRef = useRef<HTMLElement | null>(null);
+  const billingHeadingRef = useRef<HTMLParagraphElement>(null);
+  const tierPanelWasOpenRef = useRef(false);
   useEffect(() => {
     if (confirmingTier) {
       confirmHeadingRef.current?.focus();
-    } else if (tierReturnFocusRef.current?.isConnected) {
-      tierReturnFocusRef.current.focus();
+      tierPanelWasOpenRef.current = true;
+      return;
+    }
+    if (tierPanelWasOpenRef.current) {
+      billingHeadingRef.current?.focus();
+      tierPanelWasOpenRef.current = false;
     }
   }, [confirmingTier]);
   // After a successful add, surface a "pick your new topics" CTA so the flow
@@ -280,10 +300,16 @@ export default function SettingsPage() {
                 undersold by a day for a real slice of resumes. Dropped
                 the specific day rather than duplicating the inbox's own
                 nextSendLabel() UTC-anchor logic here for a settings-page
-                confirmation line. */}
+                confirmation line.
+                alpha-drift-r36-02 (2026-08-14, self-audit): r35-07's own
+                replacement ("already on the way") swapped one timing
+                overpromise for another -- a reader resuming shortly AFTER
+                that day's 14:00 UTC send is up to ~24h out, for whom
+                "already on the way" is equally inaccurate. Reworded to make
+                no claim about how soon at all. */}
             {resumed ? (
               <p className="alpha-ui text-sm" role="status" style={{ color: "var(--ink-soft)" }}>
-                You&apos;re back on. Your next daily letter is already on the way.
+                You&apos;re back on. Your daily letters start up again from here.
               </p>
             ) : (
               <>
@@ -398,7 +424,7 @@ export default function SettingsPage() {
         <Section title="Billing">
           {quotaLoaded ? (
             <>
-              <p className="alpha-display text-base mb-1">
+              <p ref={billingHeadingRef} tabIndex={-1} className="alpha-display text-base mb-1" style={{ outline: "none" }}>
                 alpha. · ${monthlyDollars} / month
               </p>
               <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
@@ -416,10 +442,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   disabled={busyTier !== null}
-                  onClick={(e) => {
-                    tierReturnFocusRef.current = e.currentTarget;
-                    requestTier("up");
-                  }}
+                  onClick={() => requestTier("up")}
                   className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{
                     color: "var(--accent-ink)",
@@ -433,10 +456,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   disabled={busyTier !== null}
-                  onClick={(e) => {
-                    tierReturnFocusRef.current = e.currentTarget;
-                    requestTier("down");
-                  }}
+                  onClick={() => requestTier("down")}
                   className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{
                     color: "var(--ink-soft)",

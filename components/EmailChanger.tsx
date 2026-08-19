@@ -19,19 +19,42 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
   const [busy, setBusy] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // alpha-drift-r35-15 (2026-08-14): each of the 3 branches below (closed,
-  // editing, sentTo) is a fully different element tree -- opening/closing/
-  // succeeding unmounts whatever was focused with nothing focused in its
-  // place, dropping a keyboard user's focus to <body> silently. Mirrors
-  // app/settings/page.tsx's tierReturnFocusRef/confirmHeadingRef pattern for
-  // the identical "trigger removed the same render the panel appears" shape.
-  const returnFocusRef = useRef<HTMLElement | null>(null);
+  // alpha-drift-r36-01 (2026-08-14, self-audit): r35-15's own fix (below,
+  // history kept in the comment for the next round) was dead code -- it
+  // captured the CLOSED view's trigger button into returnFocusRef via
+  // e.currentTarget at click time, but that whole branch unmounts the
+  // instant setEditing(true) commits (it's a `{!editing ? (...) : (...)}`
+  // ternary, not a toggled className), so the captured DOM node is
+  // permanently detached by the time Cancel needs it. React mounts a BRAND
+  // NEW button object when the closed view reappears -- it never reuses
+  // the old one -- so `returnFocusRef.current` stayed pointed at a dead
+  // node forever, `.isConnected` was always false, and `.focus()` never
+  // fired. Verified this is the SAME bug in app/settings/page.tsx's own
+  // tierReturnFocusRef (the pattern this was copied from) and fixed that
+  // one too, same round.
+  //
+  // Fix: attach the ref directly via JSX `ref=` to the trigger button, so
+  // React repoints it at whatever's actually live every time that button
+  // remounts (ref attachment happens during commit, before this effect
+  // runs) -- no captured node to go stale. panelWasOpenRef distinguishes
+  // "just closed a panel, focus should return" from "this is the initial
+  // mount, don't steal focus."
+  const closedTriggerRef = useRef<HTMLButtonElement>(null);
   const confirmHeadingRef = useRef<HTMLParagraphElement>(null);
+  const panelWasOpenRef = useRef(false);
   useEffect(() => {
     if (sentTo) {
       confirmHeadingRef.current?.focus();
-    } else if (!editing && returnFocusRef.current?.isConnected) {
-      returnFocusRef.current.focus();
+      panelWasOpenRef.current = true;
+      return;
+    }
+    if (editing) {
+      panelWasOpenRef.current = true;
+      return;
+    }
+    if (panelWasOpenRef.current) {
+      closedTriggerRef.current?.focus();
+      panelWasOpenRef.current = false;
     }
   }, [editing, sentTo]);
 
@@ -110,9 +133,9 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
             Your letters and sign-in code go here.
           </p>
           <button
+            ref={closedTriggerRef}
             type="button"
-            onClick={(e) => {
-              returnFocusRef.current = e.currentTarget;
+            onClick={() => {
               setEditing(true);
               setErr(null);
             }}
