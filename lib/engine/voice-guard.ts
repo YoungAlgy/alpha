@@ -64,8 +64,19 @@ export function containsMetaLeak(s: string | undefined | null): boolean {
 // auto-rewrite these (a clumsy swap reads worse than the word, which defeats the
 // goal), but findLexicalTells surfaces them so the rate is observable in logs and
 // we can tighten the prompt or escalate if it climbs. Detection only.
+// alpha-drift-r37-05 (2026-08-14, self-audit): this list was missing several
+// words/inflections the prompts themselves ban (topic-blurb.ts's own
+// "DO NOT EMIT" list is the fullest source of truth) -- a cheap-tier draft
+// using "ensure," "game-changer," "unprecedented," or an unlisted inflection
+// like "navigates"/"fostered"/"delves"/"tailor" slipped this detector
+// entirely, meaning it never tripped the cost-tiering escalation a draft
+// using an already-caught word correctly triggers. crucial/vital/critical
+// are included too since the prompts explicitly ban them, but these three
+// carry real false-positive risk in ordinary usage ("critical mass,"
+// "vital signs") -- detection-only here (no auto-rewrite), so a false hit
+// just costs an extra escalation/retry rather than corrupting output.
 const BANNED_LEXICAL: RegExp[] = [
-  /\b(leverage|leverages|leveraging|utilize|utilizes|utilizing|navigate|navigating|elevate|foster|fostering|tailored|tailoring|robust|seamless|seamlessly|delve|delving|comprehensive|landscape|realm|testament|optimize|optimizes|optimizing|optimization|calibrate|calibrating|synergy)\b/gi,
+  /\b(leverage|leverages|leveraging|utilize|utilizes|utilizing|navigate|navigates|navigating|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive|landscape|realm|testament|optimize|optimizes|optimizing|optimization|calibrate|calibrates|calibrating|synergy|crucial|vital|critical|game-changer|unprecedented)\b/gi,
   /\bthis matters because\b/gi,
   /\bmatters because\b/gi,
   /\bthe insight here\b/gi,

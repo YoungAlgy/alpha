@@ -159,7 +159,7 @@ BAD item body (templated, hype, no payload):
 "Most media coverage of housing focuses on what is broken. The insight here is that price appreciation is not the only way to win. This creates an immediate advantage most investors are not exploiting yet. The real opportunity window closes once this gets picked up by mainstream attention. The practical move: calibrate your offer strategy and position yourself ahead of the crowd."
 
 GOOD item body (plain, specific, lands and stops):
-"Homes are sitting longer. The latest figures in the report show median days on market up to ROUGHLY_NN, with sellers offering concessions they would have laughed off a year ago. That gives a buyer real room to negotiate. The piece walks through how to read where your own market sits on that scale. Nobody knows which way the Fed goes next, so treat the soft pricing as a fact you can use, not a countdown."
+"Homes are sitting longer. The latest figures in the report show median days on market up to ROUGHLY_NN, with sellers offering concessions they would have laughed off a year ago. That gives a buyer real room to negotiate. The piece walks through how to read where your own market sits on that scale. Nobody knows which way the Fed goes next, so treat the soft pricing as a fact you can use today."
 
 Notice: the good one opens on a short flat fact, states the actual number from the signal, never labels its turn, never tells the reader they are early, and ends on an honest read instead of a do-this. ROUGHLY_NN stands in for a number from the signal. Never write the literal token ROUGHLY_NN and never invent a number to fill it. If the signal has the number, use it. If it does not, drop the claim.
 
