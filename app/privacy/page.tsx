@@ -63,9 +63,9 @@ export default function PrivacyPage() {
         <li>
           <strong>Optional personalization:</strong> your birthday and gender, if
           you choose to share them. Both are optional and only tune the letter
-          (which topics unlock, how it&apos;s voiced) — birthday unlocks the daily
-          Zodiac topic and, as a broad generation label like &quot;Millennial&quot;
-          (never the exact date), shapes tone.
+          (which topics unlock, how it&apos;s voiced). Your birthday unlocks the
+          daily Zodiac topic. It also shapes tone, but only as a broad
+          generation label like &quot;Millennial&quot; (never the exact date).
         </li>
         <li>
           <strong>Your interests:</strong> the topics you picked (5-25 depending on
@@ -97,17 +97,26 @@ export default function PrivacyPage() {
       claim about Groq or DeepSeek specifically, only Gemini's (see the
       Third-party processors section below, which already gets this right).
       Narrowed the caveat to the one backup it's actually substantiated for. */}
+      {/* alpha-drift-r36-03 (2026-08-14): "(a)... (b)... (c)" is contract
+      formatting nowhere else on either legal page, and "generate" is the
+      codebase's own internal word for it -- the rest of the app and this
+      same page elsewhere say a letter is "written." Also drops the em
+      dash (house style: never in reader-facing text). */}
       <p>
-        We use your data only to (a) generate and deliver your letters,
-        (b) bill your subscription, and (c) improve alpha. We don&apos;t share it
-        with advertisers. Our primary AI provider, Anthropic, runs on a paid
+        We use your data only to write and deliver your letters, bill your
+        subscription, and improve alpha. We don&apos;t share it with
+        advertisers. Our primary AI provider, Anthropic, runs on a paid
         tier that doesn&apos;t use your data to train their models. Google&apos;s
         free Gemini tier, one of our backups, doesn&apos;t carry that same
-        guarantee — see below for what that means in practice.
+        guarantee. See below for what that means in practice.
       </p>
 
       <H2>Third-party processors</H2>
-      <p>We rely on a small set of trusted services:</p>
+      {/* alpha-drift-r36-04 (2026-08-14): "trusted" is a self-compliment
+      that carries no information (no company lists its untrusted vendors)
+      -- this page's credibility elsewhere comes from specifics ("We never
+      see your card number"), not adjectives. */}
+      <p>We use a handful of outside services:</p>
       <ul>
         <li>
           <strong>Stripe</strong> handles all payment information. We never see your
@@ -126,48 +135,55 @@ export default function PrivacyPage() {
           receipt can carry your name. Deleting your account cancels the
           subscription and deletes the Stripe customer record, but Stripe&apos;s
           own checkout record itself can&apos;t be edited or removed afterward by
-          anyone, including us — your name and city stay on that one record
+          anyone, including us. Your name and city stay on that one record
           at Stripe, permanently, the same way a receipt would.
         </li>
+        {/* alpha-drift-r36-05 (2026-08-14): both bullets were marathon
+        sentences with 3+ nested parentheticals, an em dash, and a
+        semicolon splice -- broken into short declaratives, same facts in
+        the same order, no meaning changed. Also drops "job/project/fun"
+        slash-speak and "derived from" (developer vocabulary) in favor of
+        plain phrasing. */}
         <li>
           <strong>Anthropic (Claude)</strong> writes the short editor&apos;s note at
-          the top of your letter — the one part of the letter built from your
-          name, city, topic prefs, gender, a generation label derived from
-          your birthday (like &quot;Millennial,&quot; never the exact date),
-          and any optional job/project/fun context you shared, so the note
-          feels written for you. Anthropic runs on a paid tier that does not
-          retain that data for training. Anthropic can also write a topic
-          section itself, as the last-resort tier if the writers below all
-          come up short for that topic — in that role it never sees your
+          the top of your letter. That note is the one part built from your
+          profile: your name, city, topic prefs, gender, a generation label
+          from your birthday (like &quot;Millennial,&quot; never the exact
+          date), and any optional job, project, or fun context you shared.
+          That&apos;s what makes it feel written for you. Anthropic runs on
+          a paid tier that does not retain that data for training. Anthropic
+          can also write a topic section itself, as the last resort if the
+          writers below all come up short. In that role it never sees your
           profile, only the topic and that day&apos;s research, same as the
           writers below.
         </li>
         <li>
           <strong>Google (Gemini), Groq, and DeepSeek</strong> write each day&apos;s
-          topic sections first, cheapest-tier first, with Anthropic stepping in
-          only if all three come up short. None of the four ever see your
-          profile when writing a topic section — only the topic itself and
-          that day&apos;s research. Gemini, Groq, and DeepSeek also back up the
-          editor&apos;s note if Anthropic is briefly down; in that specific
-          role, whichever one steps in sees the same profile fields
-          Anthropic&apos;s own editor&apos;s note does. We use Google&apos;s free Gemini
-          API tier for this, and Google&apos;s own terms for that free tier allow
-          them to use what we send to improve their products — unlike
-          Anthropic&apos;s paid-tier guarantee above, we can&apos;t promise Google
-          won&apos;t.
+          topic sections first, cheapest tier first. Anthropic steps in only
+          if all three come up short. None of the four ever see your
+          profile when writing a topic section. They see only the topic
+          itself and that day&apos;s research. Gemini, Groq, and DeepSeek also
+          back up the editor&apos;s note if Anthropic is briefly down. In that
+          specific role, whichever one steps in sees the same profile
+          fields Anthropic&apos;s own editor&apos;s note does. We use Google&apos;s
+          free Gemini API tier for this, and Google&apos;s own terms for that
+          free tier allow them to use what we send to improve their
+          products. Unlike Anthropic&apos;s paid-tier guarantee above, we
+          can&apos;t promise Google won&apos;t.
         </li>
         <li>
           <strong>Brave Search</strong>, with <strong>Google (Gemini)</strong> and{" "}
           <strong>You.com</strong> as backups, finds the sources your letter links
-          to. Your topic picks go out as search queries; nothing else about you
-          does — except the Zodiac topic, whose query is built from the sun
-          sign your birthday puts you in (never the date itself).
+          to. Your topic picks go out as search queries, and nothing else
+          about you does. The one exception is the Zodiac topic, whose
+          query is built from the sun sign your birthday puts you in (never
+          the date itself).
         </li>
         <li>
           <strong>Resend</strong> delivers letters and account emails.
         </li>
         <li>
-          <strong>Supabase</strong> stores your account and letter history securely.
+          <strong>Supabase</strong> stores your account and letter history.
         </li>
         <li>
           <strong>Cloudflare</strong> hosts the web app.
@@ -199,10 +215,10 @@ export default function PrivacyPage() {
       <p>
         We use the cookies needed to keep you logged in. Your theme choice is
         remembered in your browser&apos;s local storage instead (and in your
-        account, once you&apos;re signed in) — not a cookie. No advertising
+        account, once you&apos;re signed in), not a cookie. No advertising
         cookies. If we&apos;ve turned on product analytics for the app, that
         tool sets its own first-party cookie too, just to tell your visits
-        apart from someone else&apos;s — same rules as the analytics itself:
+        apart from someone else&apos;s. Same rules as the analytics itself:
         never sold, off by default. Source links in your letters show a small
         site icon loaded from Google&apos;s public favicon service, which
         sees the domain of the article but nothing else about you.
@@ -224,10 +240,14 @@ export default function PrivacyPage() {
       </p>
 
       <hr className="opacity-30 my-8" />
+      {/* alpha-drift-r36-06 (2026-08-14): "does not constitute" / "We
+      recommend reviewing" are stock legal-page filler -- compare the terms
+      page's own footer, which is direct ("They have not been reviewed by
+      an attorney yet."). Same disclaimers, plainer register. */}
       <p className="text-sm italic" style={{ color: "var(--ink-soft)" }}>
         This policy is a plain-English description of how alpha. handles your
-        information. It does not constitute legal advice. We recommend reviewing
-        the Terms of Service for the full agreement.
+        information. It is not legal advice. The full agreement is in the
+        Terms of Service.
       </p>
     </LegalLayout>
   );
