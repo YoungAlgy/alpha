@@ -436,7 +436,17 @@ export default function SettingsPage() {
               Loading your plan…
             </p>
           )}
-          {!confirmingTier && (
+          {/* alpha-drift-r37-02 (2026-08-14, self-audit): the r36 focus-fix
+              comment above (billingHeadingRef) claims quotaLoaded is "a
+              precondition for confirmingTier to ever be set at all," but
+              that was never actually enforced here -- these triggers were
+              gated only on !confirmingTier, so a reader who double-clicks
+              fast (or has requestTier's async Supabase read resolve slowly)
+              could set confirmingTier before quotaLoaded flips true, leaving
+              billingHeadingRef.current null when the focus effect fires.
+              Gating on quotaLoaded too makes the comment's claim actually
+              true. */}
+          {!confirmingTier && quotaLoaded && (
             <div className="flex flex-wrap gap-4 mb-3">
               {canAdd && (
                 <button
