@@ -273,9 +273,13 @@ export default function TopicsPage() {
             className="alpha-ui text-sm md:text-base"
             style={{ color: "var(--ink-soft)" }}
           >
+            {/* alpha-drift-r35-12 (2026-08-14): "later" and "anytime" said
+                the same thing stacked together -- every other reassurance
+                in this flow is single-beat ("Change anytime.", "Never
+                shared."). */}
             {signedIn
               ? `Your top ${quota} fill your letter each day. Add backups below them. We swap one in when a favorite has no fresh news that day.`
-              : "You can swap any of these later, anytime."}
+              : "You can swap any of these anytime."}
           </p>
         </div>
 
@@ -549,11 +553,26 @@ export default function TopicsPage() {
                           gets a min-w/min-h-[40px] hit area so a mistap can't remove a
                           paid pick while trying to reorder it -- the glyph stays small,
                           only the tappable box grows. */}
+                      {/* alpha-drift-r35-04 (2026-08-14): these used the native
+                          `disabled` attribute at the boundary -- setting
+                          `disabled` on a FOCUSED control immediately blurs it
+                          and pulls it out of the tab order, with no visible
+                          indicator of where focus went. A keyboard user
+                          promoting a topic to the very top (or bottom) hit
+                          Enter, the button they were on disabled itself, and
+                          their next keypress silently did nothing. move()
+                          already no-ops safely at the boundary (`to < 0 ||
+                          to >= picked.length`), so `disabled` was never load-
+                          bearing for correctness here -- switched to
+                          aria-disabled, which keeps the same dimmed/
+                          default-cursor styling and announces the state to
+                          assistive tech without ever removing the control
+                          from the tab order or stealing focus mid-interaction. */}
                       <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={() => move(i, -1)}
-                          disabled={i === 0}
+                          aria-disabled={i === 0}
                           aria-label={`Move ${topicLabel(id)} up`}
                           className="alpha-mono text-sm leading-none min-w-[40px] min-h-[40px] flex items-center justify-center"
                           style={{ color: "var(--ink-soft)", opacity: i === 0 ? 0.25 : 1, cursor: i === 0 ? "default" : "pointer" }}
@@ -563,7 +582,7 @@ export default function TopicsPage() {
                         <button
                           type="button"
                           onClick={() => move(i, 1)}
-                          disabled={i === picked.length - 1}
+                          aria-disabled={i === picked.length - 1}
                           aria-label={`Move ${topicLabel(id)} down`}
                           className="alpha-mono text-sm leading-none min-w-[40px] min-h-[40px] flex items-center justify-center"
                           style={{ color: "var(--ink-soft)", opacity: i === picked.length - 1 ? 0.25 : 1, cursor: i === picked.length - 1 ? "default" : "pointer" }}
