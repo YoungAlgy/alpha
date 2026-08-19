@@ -104,24 +104,34 @@ console.log("(4) app/support/page.tsx + app/terms/page.tsx: remaining voice-pass
 
 console.log("(5) lib/onboarding-state.ts: a stale email no longer survives to lock a stranger into Stripe checkout");
 {
+  // alpha-drift-r37-01 (2026-08-14, self-audit): this block's own (5d) and
+  // (5b describes the pre-r37 shape too) assertions covered a REAL bug --
+  // savedAt was a whole-blob timestamp stamped on every write, so any
+  // unrelated field update (topics, birthday) silently refreshed a stale
+  // stranger's email back to "fresh." Renamed to emailSavedAt and narrowed
+  // to stamp only when a patch actually sets/changes email. (5a)/(5c)/(5d)
+  // below are updated in place to match the new field name and conditional-
+  // stamp shape; the staleness-window math itself (5e-5i) is unchanged and
+  // still correct. See scripts/verify-r37-findings.mts section (1) for the
+  // full regression coverage of the actual bug and its fix.
   const src = readFileSync(new URL("../lib/onboarding-state.ts", import.meta.url), "utf8");
-  check("(5a) savedAt added to OnboardingState", /savedAt\?: number;/.test(src));
+  check("(5a) emailSavedAt added to OnboardingState (renamed from savedAt in r37)", /emailSavedAt\?: number;/.test(src));
   check("(5b) EMAIL_STALE_AFTER_MS is a real 24h threshold", /const EMAIL_STALE_AFTER_MS = 24 \* 60 \* 60 \* 1000;/.test(src));
-  check("(5c) read() strips a stale email based on savedAt", /if \(parsed\.email && \(!parsed\.savedAt \|\| Date\.now\(\) - parsed\.savedAt > EMAIL_STALE_AFTER_MS\)\) \{/.test(src));
-  check("(5d) update() stamps savedAt on every write", /const next = \{ \.\.\.read\(\), \.\.\.patch, savedAt: Date\.now\(\) \};/.test(src));
+  check("(5c) read() strips a stale email based on emailSavedAt", /if \(parsed\.email && \(!parsed\.emailSavedAt \|\| Date\.now\(\) - parsed\.emailSavedAt > EMAIL_STALE_AFTER_MS\)\) \{/.test(src));
+  check("(5d) update() stamps emailSavedAt only when the patch includes email (r37 fix -- was unconditional on every write)", /\.\.\.\("email" in patch \? \{ emailSavedAt: Date\.now\(\) \} : \{\}\),/.test(src));
 
   // Behavioral proof against the real read()/write() logic, replicated
   // exactly since they're module-private (not exported) -- mirrors this
   // session's established pattern for testing unexported localStorage logic.
   const EMAIL_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
-  function staleCheck(email: string | undefined, savedAt: number | undefined, now: number): boolean {
-    return !!(email && (!savedAt || now - savedAt > EMAIL_STALE_AFTER_MS));
+  function staleCheck(email: string | undefined, emailSavedAt: number | undefined, now: number): boolean {
+    return !!(email && (!emailSavedAt || now - emailSavedAt > EMAIL_STALE_AFTER_MS));
   }
   const now = 1_000_000_000_000; // arbitrary fixed epoch for deterministic math
   check("(5e) behavioral: an email saved 1 hour ago is NOT stale (survives, normal same-session case)", staleCheck("a@b.com", now - 60 * 60 * 1000, now) === false);
   check("(5f) behavioral: an email saved 23 hours ago is NOT stale (still within the 24h window)", staleCheck("a@b.com", now - 23 * 60 * 60 * 1000, now) === false);
   check("(5g) behavioral: an email saved 25 hours ago IS stale (past the window -- this is the exact abandoned-shared-computer case the finding describes)", staleCheck("a@b.com", now - 25 * 60 * 60 * 1000, now) === true);
-  check("(5h) behavioral: an email with NO savedAt at all (a pre-fix blob, or corrupted state) is treated as stale -- fails closed, not open", staleCheck("a@b.com", undefined, now) === true);
+  check("(5h) behavioral: an email with NO emailSavedAt at all (a pre-fix blob, or corrupted state) is treated as stale -- fails closed, not open", staleCheck("a@b.com", undefined, now) === true);
   check("(5i) behavioral: no email present at all is trivially not stale (nothing to strip)", staleCheck(undefined, now - 100 * 60 * 60 * 1000, now) === false);
 }
 
