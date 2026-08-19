@@ -49,7 +49,15 @@ export function LetterTOC({ issue }: LetterTOCProps) {
 
   function jump(topicId: string, index: number) {
     const el = document.getElementById(topicAnchor(topicId, index));
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // alpha-drift-r35-16 (2026-08-14): this is a JS-driven onClick, not a
+    // native <a href="#anchor">, so the browser never moves focus on its
+    // own the way it would for a real anchor link -- without this, the view
+    // scrolls but a keyboard user's Tab position (and a screen reader's
+    // reading cursor) stays back at the TOC button. components/Digest.tsx's
+    // section element now carries tabIndex={-1} to make it a valid target.
+    el.focus({ preventScroll: true });
   }
 
   return (

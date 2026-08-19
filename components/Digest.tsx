@@ -134,7 +134,15 @@ export function Digest({ issue, localTimezone = false }: DigestProps) {
         const disclaimer = sectionDisclaimer(section.topicId);
         return (
         <ScrollFadeIn key={section.topicId} className="mb-16">
-        <section id={topicAnchor(section.topicId, i)}>
+        {/* alpha-drift-r35-16 (2026-08-14): tabIndex={-1} makes this a valid
+            PROGRAMMATIC focus target -- components/LetterTOC.tsx's jump()
+            scrolls here via a JS onClick (not a native <a href="#anchor">,
+            so the browser's built-in "activating an anchor moves focus"
+            never fires) and now also calls .focus() on this same element
+            right after scrollIntoView, so a keyboard user's next Tab
+            continues from the section that's now on screen, and a screen
+            reader's cursor actually repositions to match the visual jump. */}
+        <section id={topicAnchor(section.topicId, i)} tabIndex={-1} style={{ outline: "none" }}>
           <div
             className="border-t mb-10"
             style={{ borderColor: "var(--rule)" }}

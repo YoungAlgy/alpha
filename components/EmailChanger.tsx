@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { isValidEmail } from "@/lib/validate-email";
@@ -19,6 +19,21 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
   const [busy, setBusy] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // alpha-drift-r35-15 (2026-08-14): each of the 3 branches below (closed,
+  // editing, sentTo) is a fully different element tree -- opening/closing/
+  // succeeding unmounts whatever was focused with nothing focused in its
+  // place, dropping a keyboard user's focus to <body> silently. Mirrors
+  // app/settings/page.tsx's tierReturnFocusRef/confirmHeadingRef pattern for
+  // the identical "trigger removed the same render the panel appears" shape.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const confirmHeadingRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (sentTo) {
+      confirmHeadingRef.current?.focus();
+    } else if (!editing && returnFocusRef.current?.isConnected) {
+      returnFocusRef.current.focus();
+    }
+  }, [editing, sentTo]);
 
   async function submit() {
     const next = value.trim().toLowerCase();
@@ -62,10 +77,12 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
       <div>
         <p className="alpha-display text-base mb-2">{currentEmail || "—"}</p>
         <p
+          ref={confirmHeadingRef}
+          tabIndex={-1}
           role="status"
           aria-live="polite"
           className="alpha-ui text-sm"
-          style={{ color: "var(--ink-soft)" }}
+          style={{ color: "var(--ink-soft)", outline: "none" }}
         >
           We sent a confirmation link to <strong>{sentTo}</strong> and to your
           current address. Open both and click to confirm the change. Check spam
@@ -94,7 +111,8 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
           </p>
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              returnFocusRef.current = e.currentTarget;
               setEditing(true);
               setErr(null);
             }}
