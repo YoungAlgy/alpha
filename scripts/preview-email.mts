@@ -17,8 +17,11 @@ const OUT_DIR = process.env.ALPHA_PREVIEW_DIR || ".";
 // renderHTML itself, so this script -- which calls renderHTML directly --
 // bypasses it on purpose to prove the CSS fallback alone is sufficient).
 const LONG_HEADLINE = "A".repeat(180);
+// alpha-drift-r38-02: matches lib/email.ts's real sectionList joiner (a
+// colon, not an em dash, as of r38) so this preview stays honest about the
+// real contract, same discipline as the truncation-ellipsis note below.
 const sectionListWithLongHeadline = [
-  `• ${SAMPLE_ISSUE.sections[0]?.topicLabel ?? "Topic"} — ${LONG_HEADLINE}`,
+  `• ${SAMPLE_ISSUE.sections[0]?.topicLabel ?? "Topic"}: ${LONG_HEADLINE}`,
   ...SAMPLE_ISSUE.sections.slice(1).map((s) => `• ${s.topicLabel}`),
 ].join("\n");
 

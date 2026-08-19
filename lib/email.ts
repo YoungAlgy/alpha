@@ -307,7 +307,13 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
       // r19-01 note (nearby) referenced but never actually fixed.
       const leadCut = rawLead ? codePointSafeTruncate(rawLead, MAX_HEADLINE_LEN - 1) : null;
       const lead = leadCut?.truncated ? `${leadCut.text.trim()}…` : rawLead;
-      return lead ? `• ${s.topicLabel} — ${lead}` : `• ${s.topicLabel}`;
+      // alpha-drift-r38-02 (2026-08-19): this em dash shipped in the
+      // "IN THIS ISSUE" list of literally every daily letter that has a
+      // lead headline (nearly all of them) -- the single most repeated
+      // instance of the house voice guide's #1 banned character across the
+      // whole subscriber-facing surface. A colon reads as a plain
+      // label:content pairing without needing the long dash.
+      return lead ? `• ${s.topicLabel}: ${lead}` : `• ${s.topicLabel}`;
     })
     .join("\n");
 
