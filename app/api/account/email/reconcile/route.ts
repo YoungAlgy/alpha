@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getStripeClient } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { sendOpsAlert } from "@/lib/email";
@@ -62,10 +62,20 @@ export async function POST() {
     .maybeSingle();
   if (rowError) {
     console.error("[account/email/reconcile] mirror read failed:", rowError.message);
-    sendOpsAlert(
-      "alpha: email mirror read failed",
-      `Reconcile couldn't read public.users for user ${user.id} before comparing it to their confirmed auth email. Their mirror may be stale with nothing recorded here to show it. DB error: ${rowError.message}`
-    ).catch(() => {});
+    // alpha-drift-r35-03 (2026-08-14): a bare unawaited sendOpsAlert() (the
+    // old code here) has no guarantee of completing on Cloudflare Workers --
+    // the runtime can tear down this isolate the instant the Response below
+    // is returned, since nothing kept it alive. after() registers the alert
+    // with the Workers runtime's ctx.waitUntil (via OpenNext's cloudflare-node
+    // wrapper) so it's actually given a chance to finish, matching every
+    // other fire-and-forget background op this codebase already treats this
+    // way (lib/engine/persist.ts, app/api/cron/weekly-send/route.ts).
+    after(
+      sendOpsAlert(
+        "alpha: email mirror read failed",
+        `Reconcile couldn't read public.users for user ${user.id} before comparing it to their confirmed auth email. Their mirror may be stale with nothing recorded here to show it. DB error: ${rowError.message}`
+      ).catch(() => {})
+    );
     return NextResponse.json({ error: "Couldn't sync. Try again." }, { status: 500 });
   }
 
@@ -84,10 +94,13 @@ export async function POST() {
     // address with no signal — the same silent-drop class the cron already
     // alarms on, so surface it. A unique violation (23505) means the target
     // email already sits on another row, which needs a human (not a retry).
-    sendOpsAlert(
-      "alpha: email mirror sync failed",
-      `Reconcile could not set public.users.email for user ${user.id} to their confirmed auth email. Their letters may keep going to the old address. DB error: ${error.message}`
-    ).catch(() => {});
+    // alpha-drift-r35-03 (2026-08-14): after(), see the matching comment above.
+    after(
+      sendOpsAlert(
+        "alpha: email mirror sync failed",
+        `Reconcile could not set public.users.email for user ${user.id} to their confirmed auth email. Their letters may keep going to the old address. DB error: ${error.message}`
+      ).catch(() => {})
+    );
     const conflict = (error as { code?: string }).code === "23505";
     return NextResponse.json(
       { error: conflict ? "That email is already on another account." : "Couldn't sync. Try again." },
