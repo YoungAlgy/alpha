@@ -364,7 +364,14 @@ export default function InboxPage() {
               precondition its own default already assumes -- simpler and
               lower-risk than adding new positioning logic to a component
               every theme-switcher call site in the app shares. */}
-          <div className="flex items-center gap-2">
+          {/* alpha-drift-r35-01 (2026-08-14): min-w-0 here is load-bearing
+              for ThemeSwitcher's own truncation fix -- a flex item's shrink
+              floor is governed by its whole ancestor chain, not just its
+              own min-w-0, so ThemeSwitcher's wrapper couldn't actually
+              shrink below its label's natural width without this too.
+              Verified live in Chrome: without it, the header row overflows
+              sideways at 320-375px instead of the button truncating. */}
+          <div className="flex items-center gap-2 min-w-0">
             <AudioToggle />
             <button
               type="button"

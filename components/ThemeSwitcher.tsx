@@ -161,24 +161,40 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
   }
 
   return (
-    <div className="relative" ref={wrapperRef} onBlur={open ? handleWrapperBlur : undefined}>
-      {/* alpha-drift-r34-01 (2026-08-14): no whitespace-nowrap meant a long
-          label ("Neon Nights", "After Hours") could wrap onto a 2nd line
-          inside this rounded-full pill -- fine in isolation, but this button
-          sits in a plain flex row with no flex-wrap on /inbox and
-          /inbox/[issueId] (the compact prop this component already exposes
-          is never actually passed at any call site), so on real ~375px-wide
-          phones the pill visibly deformed. whitespace-nowrap alone would
-          just push the row wider instead, so min-w-0 (lets this flex item
-          shrink below its own content's min-width, which a flex item can't
-          do by default) + overflow-hidden + text-ellipsis truncate the
-          label instead, while its fixed-size siblings (Wordmark, the
-          Settings/Audio icon buttons) keep their full size. */}
+    <div className="relative min-w-0 max-w-[13rem]" ref={wrapperRef} onBlur={open ? handleWrapperBlur : undefined}>
+      {/* alpha-drift-r35-01 (2026-08-14, self-audit): r34-01 (below, kept for
+          history) put min-w-0/overflow-hidden/text-ellipsis on the BUTTON,
+          but the button was never the actual flex item -- THIS wrapper div
+          is (it's the direct child of each call site's "flex items-center
+          gap-2" row). min-width:0 on a plain block child does nothing; the
+          wrapper just grew to the button's full natural width regardless,
+          so the whole header ROW overflowed sideways on real 320-375px
+          phones instead of the button wrapping -- worse than the original
+          bug. Verified live in real Chrome, byte-for-byte replica of the
+          real nested DOM at 320/375px with the app's actual longest labels
+          ("Greenhouse" measures wider than "Neon Nights" with the real
+          Inter font/classes): min-w-0 + max-w-[13rem] belongs on THIS
+          wrapper (the real flex item), with the button below now w-full so
+          it exactly fills whatever width flexbox resolves the wrapper to.
+          That alone still wasn't enough -- min-w-0 also had to reach the
+          call sites' own "flex items-center gap-2" container (added there,
+          see app/inbox/page.tsx and app/inbox/[issueId]/page.tsx), since a
+          flex item's shrink floor is governed by its own ancestor chain,
+          not just this one link in it. Confirmed responsive, not just a
+          fixed truncation: at 375px+ the fullest real label renders
+          untruncated; only at genuinely tight widths (~320px) does it
+          truncate, and the header row never overflows at any width tested.
+          app/settings/page.tsx's ThemeSwitcher row already has its own
+          flex-wrap and doesn't need this -- wrapping to a new line there is
+          fine (it's page body, not a cramped sticky header). */}
+      {/* alpha-drift-r34-01 (2026-08-14, superseded by r35-01 above): the
+          original attempt -- kept only so a future round can see what was
+          tried and why it looked right in isolation but wasn't. */}
       <button
         ref={toggleRef}
         type="button"
         onClick={toggleOpen}
-        className="alpha-ui text-sm font-medium px-3 py-2.5 rounded-full border whitespace-nowrap overflow-hidden text-ellipsis min-w-0"
+        className="alpha-ui text-sm font-medium px-3 py-2.5 rounded-full border whitespace-nowrap overflow-hidden text-ellipsis w-full"
         style={{ borderColor: "var(--rule)", color: "var(--ink-soft)" }}
         aria-haspopup="listbox"
         aria-expanded={open}

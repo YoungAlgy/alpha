@@ -26,8 +26,19 @@ const check = (label: string, cond: boolean) => {
 
 console.log("(1) components/ThemeSwitcher.tsx: the toggle button truncates instead of wrapping on narrow viewports");
 {
+  // alpha-drift-r35-01 (2026-08-14, self-audit): this whole section's own
+  // "behavioral proof" below was itself wrong -- it tested a simplified DOM
+  // where the button was the DIRECT flex item, which is NOT how the real
+  // component nests (ThemeSwitcher's root .relative div is the actual flex
+  // item; the button is just a normal block child inside it). min-w-0 on
+  // the button did nothing there, and the real bug this "fix" shipped was
+  // WORSE than the original: the header ROW overflowed sideways on real
+  // 320-375px phones instead of the pill wrapping. (1a) below is corrected
+  // to the r35-01 shape (min-w-0 moved to the wrapper, button is w-full);
+  // full corrected coverage, including the real live-Chrome measurements,
+  // lives in verify-r35-findings.mts section (1).
   const src = readFileSync(new URL("../components/ThemeSwitcher.tsx", import.meta.url), "utf8");
-  check("(1a) the toggle button carries whitespace-nowrap", /className="alpha-ui text-sm font-medium px-3 py-2\.5 rounded-full border whitespace-nowrap overflow-hidden text-ellipsis min-w-0"/.test(src));
+  check("(1a) the toggle button carries whitespace-nowrap (r35-01 shape: w-full, not the button-level min-w-0 this round shipped)", /className="alpha-ui text-sm font-medium px-3 py-2\.5 rounded-full border whitespace-nowrap overflow-hidden text-ellipsis w-full"/.test(src));
   check("(1b) the old unconstrained className is gone", !/className="alpha-ui text-sm font-medium px-3 py-2\.5 rounded-full border"/.test(src));
   check("(1c) the compact prop's default and usage are untouched by this fix", /compact = false/.test(src) && /\{compact \? "Theme" : `Theme: \$\{labelFor\(active\)\}`\}/.test(src));
 

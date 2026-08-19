@@ -188,7 +188,10 @@ export default function IssuePage() {
           >
             <Wordmark />
           </Link>
-          <div className="flex items-center gap-2">
+          {/* alpha-drift-r35-01 (2026-08-14): min-w-0 here is load-bearing
+              for ThemeSwitcher's own truncation fix -- see the matching
+              comment in app/inbox/page.tsx for why. */}
+          <div className="flex items-center gap-2 min-w-0">
             <Link
               href="/archive"
               className="alpha-ui text-sm py-3 -my-3"
