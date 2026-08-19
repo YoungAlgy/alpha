@@ -57,12 +57,20 @@ try {
   // active subscribers toward uncovered_count, so an arbitrary (possibly
   // cancelled/unsubscribed) borrowed row would never move the number no
   // matter what we do to its issues.
+  //
+  // alpha-drift-r38-04 (2026-08-19): also excludes bounced_at/complained_at
+  // now, matching the RPC's own r38 fix (it previously counted a suppressed
+  // subscriber as active, which this test's borrowed row could have been --
+  // silently making the test's assertions pass or fail for the wrong reason
+  // if it happened to borrow one).
   const { data: anyUser, error: userErr } = await sb
     .from("users")
     .select("id")
     .not("subscribed_at", "is", null)
     .is("unsubscribed_at", null)
     .is("cancelled_at", null)
+    .is("bounced_at", null)
+    .is("complained_at", null)
     .limit(1)
     .maybeSingle();
   if (userErr || !anyUser) {
