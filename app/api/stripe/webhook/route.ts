@@ -232,8 +232,14 @@ export async function POST(req: Request) {
         // Best-effort: on a retrieve failure, fall back to this event's own
         // snapshot rather than dropping the mirror entirely.
         let quantity = snapshotQuantity;
+        // alpha-drift-r38-03 (2026-08-19): hoisted out of the try block (was
+        // previously `const liveSub` declared INSIDE it, so it fell out of
+        // scope by the time cancelledAt was derived below) -- see that
+        // derivation's own comment for why reading the live subscription
+        // matters there too, not just for quantity.
+        let liveSub: Stripe.Subscription | undefined;
         try {
-          const liveSub = await stripe.subscriptions.retrieve(sub.id);
+          liveSub = await stripe.subscriptions.retrieve(sub.id);
           quantity = liveSub.items?.data?.[0]?.quantity ?? snapshotQuantity;
         } catch (e) {
           // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
@@ -280,7 +286,20 @@ export async function POST(req: Request) {
         // Once a sub is in a terminal status, this handler must agree with
         // subscription.deleted, not undo it. See deriveCancelledAt's own
         // comment for the full reasoning (pulled out for testability).
-        const cancelledAt = deriveCancelledAt(sub.status, sub.cancel_at);
+        //
+        // alpha-drift-r38-03 (2026-08-19): this used to derive from `sub`
+        // (the webhook event's OWN embedded snapshot) instead of `liveSub`
+        // (re-read above for exactly this reason with quantity). Stripe's
+        // at-least-once, out-of-order delivery means an EARLIER non-terminal
+        // event can be retried and processed AFTER a genuinely later
+        // terminal event already set cancelled_at=now() -- that retry still
+        // reaches this handler (a different event.id, so the dedup table
+        // doesn't skip it), and deriving from its stale embedded status/
+        // cancel_at would write cancelled_at back to null, silently
+        // resurrecting a churned subscriber's paid access indefinitely.
+        // Deriving from liveSub converges on Stripe's actual current state
+        // regardless of delivery order, same as quantity two lines above.
+        const cancelledAt = deriveCancelledAt(liveSub?.status ?? sub.status, liveSub?.cancel_at ?? sub.cancel_at);
         const { data: subRows, error: subErr } = await sb
           .from("users")
           .update({
