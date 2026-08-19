@@ -86,11 +86,20 @@ console.log("(4) lib/engine/topic-blurb.ts: GOOD exemplar no longer closes on th
 
 console.log("(5) lib/engine/voice-guard.ts: BANNED_LEXICAL now catches the words/inflections the prompts ban that it previously missed");
 {
+  // alpha-drift-r38-01 (2026-08-19, self-audit): round 38 extended this same
+  // regex further -- (5b) and (5d) below asserted exact substrings that no
+  // longer appear contiguously now that "game-changing" sits between
+  // "game-changer" and "unprecedented" (r38 also added -ed forms for
+  // leverage/utilize/navigate/optimize/calibrate, see verify-r38-findings.mts
+  // section (1) for that regression's own full coverage). Loosened to check
+  // presence rather than an exact adjacent-substring match, so a future
+  // extension in between two already-checked words doesn't break this
+  // assertion again for the same non-reason.
   const src = readFileSync(new URL("../lib/engine/voice-guard.ts", import.meta.url), "utf8");
   check("(5a) 'ensure' and its inflections are now in the regex (previously absent entirely)", /\bensure\|ensures\|ensuring\|ensured\b/.test(src));
-  check("(5b) 'game-changer' and 'unprecedented' are now in the regex (previously absent entirely)", /game-changer\|unprecedented/.test(src));
+  check("(5b) 'game-changer' and 'unprecedented' are both in the regex (previously absent entirely; r38 added 'game-changing' between them too)", /game-changer/.test(src) && /unprecedented/.test(src));
   check("(5c) missing inflections added: navigates, elevates/elevating/elevated, fosters/fostered, delves/delved, bare tailor/tailors, calibrates", /navigates/.test(src) && /elevates\|elevating\|elevated/.test(src) && /fosters\|fostering\|fostered/.test(src) && /delves\|delving\|delved/.test(src) && /\btailor\|tailors\|tailored\|tailoring\b/.test(src) && /calibrates/.test(src));
-  check("(5d) crucial/vital/critical added as general bare-word detection (previously only matched inside one specific phrase)", /synergy\|crucial\|vital\|critical\|game-changer\|unprecedented/.test(src));
+  check("(5d) crucial/vital/critical added as general bare-word detection (previously only matched inside one specific phrase)", /synergy\|crucial\|vital\|critical/.test(src) && /game-changer/.test(src) && /unprecedented/.test(src));
 
   // Behavioral proof against the REAL exported findLexicalTells, not a
   // reimplementation.
