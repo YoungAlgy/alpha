@@ -662,7 +662,18 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
                 <h1 class="alpha-ink" style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;overflow-wrap:anywhere;word-break:break-word;">
                   Hi ${escapeHtml(firstName)},
                 </h1>
-                <p class="alpha-ink" style="font-size:18px;line-height:1.6;margin:0 0 32px;">
+                <!-- alpha-drift-r35-14 (2026-08-14): same overflow-wrap/
+                     word-break gap as the h1 (firstName) and pre
+                     (sectionList) above/below -- teaser is derived from
+                     editorIntro, which can carry a long unbroken subscriber-
+                     controlled token two ways: the profile free-text fields
+                     (city/jobBlurb/etc.) reaching the generation prompt
+                     near-verbatim, or the all-tiers-failed fallback branch
+                     in lib/engine/assemble.ts, which embeds a custom topic's
+                     raw label (up to MAX_CUSTOM_TOPIC_LEN=80 chars, no
+                     whitespace required) mid-sentence. Comfortably under the
+                     320-char truncation cap, so it ships unmodified. -->
+                <p class="alpha-ink" style="font-size:18px;line-height:1.6;margin:0 0 32px;overflow-wrap:anywhere;word-break:break-word;">
                   ${escapeHtml(teaser)}
                 </p>
                 <p class="alpha-ink-soft" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:0.15em;color:#4A5F50;margin:0 0 8px;">
