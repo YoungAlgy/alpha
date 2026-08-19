@@ -19,7 +19,18 @@ export interface OnboardingState {
   email?: string;
   completedAt?: string;
   paid?: boolean;
-  savedAt?: number; // epoch ms of the most recent write -- see read()'s email staleness check below
+  // alpha-drift-r37-01 (2026-08-14, self-audit): this used to be a whole-
+  // blob `savedAt` stamped on EVERY write regardless of which field the
+  // patch touched -- so any unrelated update() call (saving topics,
+  // birthday, whatever) silently refreshed a stale email's timestamp back
+  // to "fresh," as long as some field got touched inside each rolling 24h
+  // window. That defeated the whole point of the staleness check: a
+  // stranger's abandoned email could stay "not stale" indefinitely on a
+  // shared computer where a SECOND visitor's own onboarding activity (never
+  // touching email themselves) kept resetting the clock. Narrowed to a
+  // field-specific timestamp, stamped only when a patch actually sets/
+  // changes email -- see update() below.
+  emailSavedAt?: number;
 }
 
 const EMPTY: OnboardingState = {};
@@ -45,7 +56,7 @@ function read(): OnboardingState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return EMPTY;
     const parsed = JSON.parse(raw) as OnboardingState;
-    if (parsed.email && (!parsed.savedAt || Date.now() - parsed.savedAt > EMAIL_STALE_AFTER_MS)) {
+    if (parsed.email && (!parsed.emailSavedAt || Date.now() - parsed.emailSavedAt > EMAIL_STALE_AFTER_MS)) {
       const { email: _stale, ...rest } = parsed;
       return rest;
     }
@@ -80,9 +91,18 @@ export function useOnboarding() {
     // `state` -- another tab may have written since this tab last hydrated,
     // and a merge onto stale in-memory state would silently overwrite
     // whatever that other tab just saved.
-    // alpha-drift-r36-12: savedAt stamped on every write so read()'s email
-    // staleness check has a real timestamp to compare against.
-    const next = { ...read(), ...patch, savedAt: Date.now() };
+    // alpha-drift-r37-01: emailSavedAt is stamped ONLY when this patch
+    // actually sets/changes email -- NOT on every write. Stamping it
+    // unconditionally (the original r36 approach) meant any unrelated field
+    // write (topics, birthday, whatever) silently refreshed a stale
+    // stranger's email back to "fresh" as long as something touched the
+    // state within each rolling 24h window, defeating the staleness check
+    // entirely.
+    const next = {
+      ...read(),
+      ...patch,
+      ...("email" in patch ? { emailSavedAt: Date.now() } : {}),
+    };
     write(next);
     // Fire-and-forget Supabase sync if user is authed. Errors are swallowed
     // inside syncUserProfile — never blocks the UI.
