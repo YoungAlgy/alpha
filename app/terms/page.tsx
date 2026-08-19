@@ -96,8 +96,12 @@ export default function TermsPage() {
 
       <H2>What we don&apos;t do</H2>
       <p>
+        {/* alpha-drift-r36-08 (2026-08-14): "professional counsel" is
+        thesaurus-legal after three plain items in the same list -- nobody
+        says it out loud, and the sentence right after this one is some of
+        the plainest writing on the page. */}
         alpha. is informational. It is not financial advice, medical advice, legal
-        advice, or professional counsel. Items in your letter come from public
+        advice, or any other kind of professional advice. Items in your letter come from public
         sources and we work hard to source carefully, but we can&apos;t guarantee
         that every fact, link, or recommendation is current or correct. Verify
         anything important before acting on it.
@@ -136,9 +140,13 @@ export default function TermsPage() {
       </p>
 
       <H2>Changes to these terms</H2>
+      {/* alpha-drift-r36-09 (2026-08-14): matched to app/privacy/page.tsx's
+      sibling wording for the identical promise ("we'll email you before
+      the change takes effect") -- was phrased two different ways for the
+      same thing across the two pages. */}
       <p>
-        If we change these terms in a material way, we&apos;ll email you in advance
-        of the change. Continued use after a change means you accept the new terms.
+        If we change these terms in a material way, we&apos;ll email you before
+        the change takes effect. Continued use after a change means you accept the new terms.
       </p>
 
       <H2>Governing law</H2>

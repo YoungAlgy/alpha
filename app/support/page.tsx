@@ -52,11 +52,14 @@ export default function SupportPage() {
         <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight mb-3">
           Support
         </h1>
+        {/* alpha-drift-r36-07 (2026-08-14): "Reply within 24 hours." has no
+        subject, so it first reads as a command aimed at the visitor,
+        instead of a promise about when they'll hear back. */}
         <p
           className="alpha-display text-lg md:text-xl mb-12"
           style={{ color: "var(--ink-soft)" }}
         >
-          We read every one. Reply within 24 hours.
+          We read every one and reply within 24 hours.
         </p>
         <SupportForm />
         <p
