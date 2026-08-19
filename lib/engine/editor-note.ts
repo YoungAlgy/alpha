@@ -138,8 +138,20 @@ export async function generateEditorNote(
   // once enough time has already elapsed that the caller almost certainly
   // gave up -- see the guard right before the retry call below.
   const startedAt = Date.now();
+  // alpha-drift-r36-10 (2026-08-14): b.intro is raw LLM output derived from
+  // live, attacker-reachable web content (topic-blurb.ts's <signal> block
+  // is built from Brave/You.com search results + deep-read article text --
+  // untrusted, which is exactly why THAT block gets stripPromptFenceChars()
+  // at the point it's spliced into topic-blurb.ts's own prompt). But
+  // finalizeBlurb() only runs sanitizeVoice() (punctuation-glyph swaps) and
+  // containsMetaLeak() (a phrase-match list) before returning intro --
+  // neither touches angle brackets. Every OTHER field reaching THIS
+  // function's <topic-sections> fence goes through clamp() a few lines
+  // below, which does call stripPromptFenceChars() -- b.intro/b.topicLabel
+  // were the one gap on this exact signal -> blurb -> editor-note chain.
+  // stripPromptFenceChars is already imported for clamp() below.
   const blurbSummaries = blurbs
-    .map((b) => `• ${b.topicLabel}${fallbackTopicIds.has(b.topicId) ? " (stand-in topic)" : ""}: ${b.intro}`)
+    .map((b) => `• ${stripPromptFenceChars(b.topicLabel)}${fallbackTopicIds.has(b.topicId) ? " (stand-in topic)" : ""}: ${stripPromptFenceChars(b.intro)}`)
     .join("\n");
 
   const profileLines = [
