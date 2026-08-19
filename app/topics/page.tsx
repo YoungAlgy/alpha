@@ -117,6 +117,24 @@ export default function TopicsPage() {
     };
   }, []);
 
+  // alpha-drift-r36-11 (2026-08-14): components/onboarding/QuestionStep.tsx
+  // (every other step past /name) bounces to /welcome when firstName is
+  // missing, since a URL a browser will happily load with empty/partial
+  // localStorage means the visitor never went through /name at all. /topics
+  // sits at step 7 of the same funnel with no equivalent check -- an
+  // unsigned visitor reaching it directly could pick and save a full topic
+  // pool onto onboarding state already known to be incomplete, only caught
+  // by the NEXT step downstream. Gated on topicsHydrated (so this doesn't
+  // fire before we know whether the reader is actually a signed-in editor,
+  // who legitimately has no firstName in LOCAL onboarding state at all) and
+  // !signedIn (a signed-in editor's session IS their completeness signal,
+  // same exception QuestionStep/app/you already carve out).
+  useEffect(() => {
+    if (topicsHydrated && !signedIn && loaded && !state.firstName) {
+      router.replace("/welcome" as never);
+    }
+  }, [topicsHydrated, signedIn, loaded, state.firstName, router]);
+
   // The pool a reader may build. Signed-in users rank a deeper pool: the top
   // `target` are favorites (they fill the letter), the rest are free backups
   // that get swapped in when a favorite has no fresh news. Onboarding stays a

@@ -42,6 +42,19 @@ export default function YouPage() {
     })();
   }, [router]);
 
+  // alpha-drift-r36-11 (2026-08-14): this page's own comment above claimed
+  // to mirror "the QuestionStep guard," but only ported the SESSION half --
+  // components/onboarding/QuestionStep.tsx's real guard is two checks (an
+  // active session bounces to /inbox, a missing firstName bounces to
+  // /welcome), and this page never had the second one. A visitor who reaches
+  // /you directly (bookmark, shared link, back-button history) with a
+  // completely empty alpha-onboarding state could save a birthday/gender
+  // into state already known to be incomplete -- only caught by the NEXT
+  // step downstream, by which point real personal data was already written.
+  useEffect(() => {
+    if (loaded && !state.firstName) router.replace("/welcome" as never);
+  }, [loaded, state.firstName, router]);
+
   // Picking the Zodiac topic requires a birthday (we can't read a sign without
   // it). The topics step comes before this one, so the choice is already made.
   const zodiacPicked = (state.topics ?? []).includes("zodiac");
