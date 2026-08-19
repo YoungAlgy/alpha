@@ -108,9 +108,12 @@ export default function YouPage() {
               helper text under the input actually said so. The static
               claim right above the form was left contradicting the form
               itself. */}
+          {/* alpha-drift-r35-11 (2026-08-14): semicolons are a hard no in
+              reader-facing copy per house style -- this was the only one
+              in the whole onboarding flow. */}
           <p className="alpha-ui text-sm md:text-base" style={{ color: "var(--ink-soft)" }}>
             {zodiacPicked
-              ? "This tunes the letter so it reads like it was written for you. Gender is optional; birthday isn't, since you picked Zodiac. Never shared."
+              ? "This tunes the letter so it reads like it was written for you. Gender is optional. Birthday isn't, since you picked Zodiac. Never shared."
               : "This tunes the letter so it reads like it was written for you. Both are optional, and never shared."}
           </p>
         </div>

@@ -306,8 +306,11 @@ export function ProfileEditor() {
               );
             })}
           </div>
+          {/* alpha-drift-r35-13 (2026-08-14): "unset" is a programmer's word
+              (unset variable/flag) -- the onboarding version of this same
+              question already uses the human phrasing, "Prefer not to say." */}
           <span className="alpha-ui text-xs block mt-1" style={{ color: "var(--ink-soft)", opacity: 0.8 }}>
-            Optional. Lets the letter talk to you naturally. Leave both off to keep it unset.
+            Optional. Lets the letter talk to you naturally. Leave both off if you&apos;d rather not say.
           </span>
         </div>
         <Field

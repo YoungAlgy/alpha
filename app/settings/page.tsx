@@ -274,9 +274,16 @@ export default function SettingsPage() {
 
         {(showResume || resumed) && (
           <Section title="Letters">
+            {/* alpha-drift-r35-07 (2026-08-14): the daily send fires at
+                14:00 UTC (SEND_HOUR_UTC) -- a reader resuming any morning
+                before ~10am ET is back in TODAY's send, so "tomorrow"
+                undersold by a day for a real slice of resumes. Dropped
+                the specific day rather than duplicating the inbox's own
+                nextSendLabel() UTC-anchor logic here for a settings-page
+                confirmation line. */}
             {resumed ? (
               <p className="alpha-ui text-sm" role="status" style={{ color: "var(--ink-soft)" }}>
-                You&apos;re back on. Your next letter lands tomorrow.
+                You&apos;re back on. Your next daily letter is already on the way.
               </p>
             ) : (
               <>
@@ -456,8 +463,13 @@ export default function SettingsPage() {
                 {confirmingTier === "up" ? "Add 5 topics?" : "Drop 5 topics?"}
               </p>
               <p className="alpha-ui text-sm mb-4" style={{ color: "var(--ink-soft)" }}>
+                {/* alpha-drift-r35-08 (2026-08-14): reordered so the thing a
+                    reader scanning a money confirmation actually cares about
+                    -- nothing is charged today -- comes first and plainly,
+                    instead of after a comma-spliced run of billing jargon
+                    ("prorated extra ... this cycle ... invoice"). */}
                 {confirmingTier === "up"
-                  ? `You'll move to ${pendingQuota} topics at $${pendingDollars}/mo. The prorated extra for the rest of this cycle is added to your next invoice along with the new rate, nothing is charged today. Then you'll pick the new ones.`
+                  ? `You'll move to ${pendingQuota} topics at $${pendingDollars}/mo. Nothing is charged today. The extra for the rest of this month just shows up on your next bill. Then you'll pick your new topics.`
                   : `You'll move to ${pendingQuota} topics at $${pendingDollars}/mo, $5 less. Your letter covers 5 fewer, and any extra picks become free backups.`}
               </p>
               <div className="flex items-center gap-4">
@@ -586,11 +598,13 @@ export default function SettingsPage() {
                       if (res.ok) {
                         exportData = await res.json();
                       } else {
-                        alert("Couldn't reach the server for your full data — downloading what's saved on this device instead.");
+                        // alpha-drift-r35-09 (2026-08-14): em dash is a hard
+                        // no in reader-facing copy per house style.
+                        alert("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
                       }
                     }
                   } catch {
-                    alert("Couldn't reach the server for your full data — downloading what's saved on this device instead.");
+                    alert("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
                   }
                 }
                 const blob = new Blob([JSON.stringify(exportData, null, 2)], {
@@ -615,8 +629,15 @@ export default function SettingsPage() {
                 // subscription before removing the account (best-effort), so we
                 // tell them it's handled and offer the portal as a double-check
                 // rather than the old "we won't cancel, you'll keep paying" warning.
+                // alpha-drift-r35-10 (2026-08-14): the old aside told the
+                // reader to "confirm it's gone in Manage subscription
+                // first" -- but the subscription isn't gone yet (it's
+                // cancelled AS PART OF this delete), so there's nothing to
+                // confirm beforehand, and the native confirm() dialog
+                // blocks the page anyway so "above" isn't even clickable.
+                // State the guarantee plainly instead.
                 const confirmMsg = hasPaidSub
-                  ? `Delete your alpha. account?\n\nThis removes your letters and profile and can't be undone. We cancel your $${monthlyDollars}/mo subscription as part of this. To be safe you can confirm it's gone in "Manage subscription" above first.\n\nDelete anyway?`
+                  ? `Delete your alpha. account?\n\nThis removes your letters and profile and can't be undone. Your $${monthlyDollars}/mo subscription is cancelled too, so billing stops.\n\nDelete anyway?`
                   : "Delete your alpha. account? This removes your saved letters and profile. Can't be undone.";
                 if (!confirm(confirmMsg)) return;
                 if (deleteInFlight.current) return;

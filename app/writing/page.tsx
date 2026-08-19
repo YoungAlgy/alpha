@@ -366,14 +366,19 @@ export default function WritingPage() {
             <p className="alpha-display text-base font-semibold">
               Hiccup writing your first letter.
             </p>
+            {/* alpha-drift-r35-05 (2026-08-14): "the engine" is internal
+                machinery talk -- the funnel around this card personifies a
+                writer ("Writing your letter…", "Drafting your editor's
+                note"), and "the engine" reads like a log line that leaked
+                into the UI at the exact moment (right after a real charge)
+                a reader's trust matters most. Kept the human frame. */}
             <p
               className="alpha-ui text-sm leading-relaxed"
               style={{ color: "var(--ink-soft)" }}
             >
               Your subscription is active. Stripe got the payment fine. The
-              engine just stumbled. You can try again now, or jump to your
-              inbox and it'll show up there once the engine recovers (usually
-              within a few minutes).
+              writing just hit a snag. Try again now, or head to your inbox
+              and it'll show up there in a few minutes.
             </p>
             <p
               className="alpha-ui text-xs leading-relaxed"
@@ -412,7 +417,11 @@ export default function WritingPage() {
             className="alpha-ui text-sm space-y-2"
             style={{ color: "var(--ink-soft)" }}
           >
-            <p>Taking longer than usual. The engine is still working in the background. Your letter will appear on /inbox when it's ready.</p>
+            {/* alpha-drift-r35-05/06 (2026-08-14): same voice fix as the
+                error card above, plus "/inbox" (a route path) was reading as
+                a word in reader-facing prose -- no other copy in the app
+                does this. */}
+            <p>Taking longer than usual. We're still writing it in the background. Your letter will land in your inbox when it's ready.</p>
             <button
               type="button"
               onClick={() => router.push("/inbox" as never)}
