@@ -19,15 +19,37 @@ export interface OnboardingState {
   email?: string;
   completedAt?: string;
   paid?: boolean;
+  savedAt?: number; // epoch ms of the most recent write -- see read()'s email staleness check below
 }
 
 const EMPTY: OnboardingState = {};
+
+// alpha-drift-r36-12 (2026-08-14): email is the one field in this state that
+// becomes the account's actual identity -- app/checkout/page.tsx's
+// subscribe() POSTs it unchanged as Stripe's customer_email, and Stripe
+// LOCKS that field on the hosted checkout page (uneditable). Every other
+// field here (name/city/blurbs) only degrades personalization if it's
+// stale; a stale email silently checks a stranger out under a stranger's
+// identity on a shared/library/kiosk computer whose prior visitor abandoned
+// onboarding partway. app/signin/page.tsx already refuses to trust this
+// same STORAGE_KEY for its own, lower-stakes REMEMBERED_EMAIL_KEY prefill
+// fallback for exactly this reason -- this TTL brings the higher-stakes
+// email field here up to that same bar without forcing a full re-onboard
+// for the overwhelmingly common case (finishing onboarding started earlier
+// the same day).
+const EMAIL_STALE_AFTER_MS = 24 * 60 * 60 * 1000; // 24h
 
 function read(): OnboardingState {
   if (typeof window === "undefined") return EMPTY;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : EMPTY;
+    if (!raw) return EMPTY;
+    const parsed = JSON.parse(raw) as OnboardingState;
+    if (parsed.email && (!parsed.savedAt || Date.now() - parsed.savedAt > EMAIL_STALE_AFTER_MS)) {
+      const { email: _stale, ...rest } = parsed;
+      return rest;
+    }
+    return parsed;
   } catch {
     return EMPTY;
   }
@@ -58,7 +80,9 @@ export function useOnboarding() {
     // `state` -- another tab may have written since this tab last hydrated,
     // and a merge onto stale in-memory state would silently overwrite
     // whatever that other tab just saved.
-    const next = { ...read(), ...patch };
+    // alpha-drift-r36-12: savedAt stamped on every write so read()'s email
+    // staleness check has a real timestamp to compare against.
+    const next = { ...read(), ...patch, savedAt: Date.now() };
     write(next);
     // Fire-and-forget Supabase sync if user is authed. Errors are swallowed
     // inside syncUserProfile — never blocks the UI.
