@@ -75,8 +75,17 @@ export function containsMetaLeak(s: string | undefined | null): boolean {
 // carry real false-positive risk in ordinary usage ("critical mass,"
 // "vital signs") -- detection-only here (no auto-rewrite), so a false hit
 // just costs an extra escalation/retry rather than corrupting output.
+// alpha-drift-r38-01 (2026-08-19, self-audit): the r37 pass gave elevate,
+// foster, tailor, delve, and ensure their -ed forms but missed the SAME
+// past-tense gap on leverage, utilize, navigate, and optimize/calibrate --
+// an ordinary sentence using "leveraged," "utilized," "navigated,"
+// "optimized," or "calibrated" shipped past this detector undetected, the
+// identical failure mode this whole comment describes fixing, just for
+// forms r37's own verify script never exercised. Also added "game-changing"
+// alongside the existing "game-changer" (the adjectival form is at least as
+// common as the noun).
 const BANNED_LEXICAL: RegExp[] = [
-  /\b(leverage|leverages|leveraging|utilize|utilizes|utilizing|navigate|navigates|navigating|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive|landscape|realm|testament|optimize|optimizes|optimizing|optimization|calibrate|calibrates|calibrating|synergy|crucial|vital|critical|game-changer|unprecedented)\b/gi,
+  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive|landscape|realm|testament|optimize|optimizes|optimizing|optimized|optimization|calibrate|calibrates|calibrating|calibrated|synergy|crucial|vital|critical|game-changer|game-changing|unprecedented)\b/gi,
   /\bthis matters because\b/gi,
   /\bmatters because\b/gi,
   /\bthe insight here\b/gi,
