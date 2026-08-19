@@ -8,6 +8,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { confirm as audioConfirm } from "@/lib/audio";
 import { isValidEmail } from "@/lib/validate-email";
+import { isAuthRateLimitError, isInvalidOrExpiredOtpError } from "@/lib/gotrue-errors";
 
 const REMEMBERED_EMAIL_KEY = "alpha-signin-email";
 
@@ -124,7 +125,16 @@ export default function SigninPage() {
       setCooldown(RESEND_COOLDOWN_S);
       if (isResend) setResent(true);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't send the code. Try again?");
+      // alpha-drift-r35-02 (2026-08-14): never show GoTrue's raw vendor
+      // wording -- see lib/gotrue-errors.ts's isAuthRateLimitError comment.
+      // Real message kept in the console for debugging.
+      console.warn("[signin] sendCode failed:", e instanceof Error ? e.message : e);
+      const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
+      setErr(
+        isAuthRateLimitError(shape)
+          ? "Too many codes too fast. Give it a minute, then try Resend."
+          : "Couldn't send the code. Try again?"
+      );
     } finally {
       setBusy(false);
     }
@@ -151,7 +161,16 @@ export default function SigninPage() {
       audioConfirm();
       router.push("/inbox" as never);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "That code didn't work. Try again.");
+      // alpha-drift-r35-02 (2026-08-14): never show GoTrue's raw vendor
+      // wording ("Token has expired or is invalid.") -- see
+      // lib/gotrue-errors.ts's isInvalidOrExpiredOtpError comment.
+      console.warn("[signin] verifyCode failed:", e instanceof Error ? e.message : e);
+      const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
+      setErr(
+        isInvalidOrExpiredOtpError(shape)
+          ? "That code didn't work. It may have expired. Double-check it, or hit Resend for a fresh one."
+          : "Couldn't sign you in. Try again."
+      );
       setBusy(false);
     }
   }

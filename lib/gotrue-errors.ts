@@ -14,3 +14,26 @@ export function isUserNotFoundError(e: { status?: unknown; code?: unknown; messa
   const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
   return code.includes("not_found") || message.includes("not found") || message.includes("not_found");
 }
+
+// alpha-drift-r35-02 (2026-08-14): a wrong/expired 6-digit sign-in code is
+// GoTrue's OWN raw wording ("Token has expired or is invalid.") reaching a
+// subscriber verbatim -- app/signin/page.tsx's `e instanceof Error ?
+// e.message : "friendly fallback"` never actually falls back, since every
+// real Supabase auth error IS an Error instance. Checked defensively (code
+// substring OR the token+expired/invalid message shape) rather than pinned
+// to GoTrue's exact current code string, matching isUserNotFoundError's own
+// reasoning above -- this isn't a documented stable contract either.
+export function isInvalidOrExpiredOtpError(e: { status?: unknown; code?: unknown; message?: unknown }): boolean {
+  const code = typeof e.code === "string" ? e.code.toLowerCase() : "";
+  const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
+  return code.includes("otp") || (message.includes("token") && (message.includes("expired") || message.includes("invalid")));
+}
+
+// alpha-drift-r35-02: same problem, for a rate-limited OTP resend ("For
+// security purposes, you can only request this after N seconds.").
+export function isAuthRateLimitError(e: { status?: unknown; code?: unknown; message?: unknown }): boolean {
+  if (e.status === 429) return true;
+  const code = typeof e.code === "string" ? e.code.toLowerCase() : "";
+  const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
+  return code.includes("rate_limit") || message.includes("security purposes");
+}
