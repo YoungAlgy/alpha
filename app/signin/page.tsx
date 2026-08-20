@@ -67,6 +67,17 @@ export default function SigninPage() {
   // If a Supabase session is already active (e.g., implicit-flow magic link
   // tokens landed in the URL hash and the client picked them up), skip the
   // sign-in form and go straight to /inbox.
+  // alpha-drift-r56-04 (2026-08-20, duplicate-code-audit-r6): this
+  // getSession()-then-router.replace("/inbox") shape is the same one
+  // already guarded on components/onboarding/QuestionStep.tsx (round 48),
+  // app/you/page.tsx, and app/welcome/page.tsx (both round 55) -- this was
+  // the 4th and last unguarded instance. The Wordmark and "Start fresh"
+  // links (both -> /welcome) render throughout this effect's 80ms-delay-
+  // plus-network window, so a click on either before it resolves could get
+  // silently yanked back to /inbox on top of wherever the visitor
+  // navigated. Reuses the cancelledRef already declared above for
+  // sendCode/verifyCode -- the guard infrastructure already existed in
+  // this file, it just wasn't wired into this third effect.
   useEffect(() => {
     if (!supabaseConfigured()) return;
     (async () => {
@@ -75,6 +86,7 @@ export default function SigninPage() {
         // Tiny delay so the client's auto-detectSessionInUrl has a chance to run.
         await new Promise((r) => setTimeout(r, 80));
         const { data: { session } } = await sb.auth.getSession();
+        if (cancelledRef.current) return;
         if (session) {
           if (typeof window !== "undefined" && window.location.hash) {
             window.history.replaceState(null, "", window.location.pathname);
