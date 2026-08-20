@@ -26,6 +26,23 @@ export default function SigninPage() {
   const codeInputRef = useRef<HTMLInputElement>(null);
   const stubTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(stubTimer.current), []);
+  // alpha-drift-r47-03 (2026-08-20): this was the one page in the funnel
+  // with two async operations ending in a state change or router.push
+  // (sendCode, verifyCode) and no cancellation guard at all -- every
+  // sibling that does this (app/checkout/page.tsx's subscribe(),
+  // app/writing/page.tsx's attemptGenerate(), app/topics/page.tsx's
+  // submit()) has one. The Wordmark and "Start fresh" links (both -> /welcome)
+  // stay live throughout, so a reader could click Sign in or Resend, then
+  // navigate away before the awaited signInWithOtp/verifyOtp resolved --
+  // the earlier call's late success still fired router.push("/inbox") (or
+  // re-armed the code step) on top of wherever they'd since gone. Reset in
+  // the effect body on mount (not just set on cleanup), matching the
+  // already-fixed mountedRef/cancelledRef pattern elsewhere in the app.
+  const cancelledRef = useRef(false);
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => { cancelledRef.current = true; };
+  }, []);
 
   // Tick the resend cooldown down to zero.
   useEffect(() => {
@@ -114,6 +131,11 @@ export default function SigninPage() {
         email: addr,
         options: { shouldCreateUser: true },
       });
+      // alpha-drift-r47-03: bail before any of the setStep/setCooldown/
+      // setResent calls below if the reader has since navigated away (e.g.
+      // via the Wordmark or "Start fresh" links) -- a late success here
+      // must not silently snap them back to the code step.
+      if (cancelledRef.current) return;
       if (error) throw error;
       try {
         localStorage.setItem(REMEMBERED_EMAIL_KEY, addr);
@@ -129,6 +151,7 @@ export default function SigninPage() {
       // wording -- see lib/gotrue-errors.ts's isAuthRateLimitError comment.
       // Real message kept in the console for debugging.
       console.warn("[signin] sendCode failed:", e instanceof Error ? e.message : e);
+      if (cancelledRef.current) return;
       const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
       setErr(
         isAuthRateLimitError(shape)
@@ -157,6 +180,10 @@ export default function SigninPage() {
         token,
         type: "email",
       });
+      // alpha-drift-r47-03: bail before router.push if the reader has since
+      // navigated away -- a late verify success must not forcibly redirect
+      // them to /inbox on top of wherever they've since gone.
+      if (cancelledRef.current) return;
       if (error) throw error;
       audioConfirm();
       router.push("/inbox" as never);
@@ -165,6 +192,7 @@ export default function SigninPage() {
       // wording ("Token has expired or is invalid.") -- see
       // lib/gotrue-errors.ts's isInvalidOrExpiredOtpError comment.
       console.warn("[signin] verifyCode failed:", e instanceof Error ? e.message : e);
+      if (cancelledRef.current) return;
       const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
       setErr(
         isInvalidOrExpiredOtpError(shape)
