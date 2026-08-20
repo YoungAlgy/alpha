@@ -84,7 +84,15 @@ export function LetterTOC({ issue }: LetterTOCProps) {
                 // through the TOC had no way to tell which section, if any,
                 // matched their current reading position.
                 aria-current={isActive ? "true" : undefined}
-                className="alpha-ui text-left flex items-center gap-2 text-sm hover:opacity-70"
+                // alpha-drift-r55-03 (2026-08-20, accessibility-resweep-
+                // newer-code-round-3): live-measured at well under the WCAG
+                // 2.5.8 24x24 minimum -- just the ~20px line-height of the
+                // text-sm content. py-2/-my-2 grows the tap target into the
+                // surrounding space-y-2 gap without shifting the visual row
+                // height or spacing between items, same pattern already
+                // used on InstallPrompt.tsx, QuestionStep.tsx, you/page.tsx,
+                // and settings/accounts/page.tsx.
+                className="alpha-ui text-left flex items-center gap-2 text-sm hover:opacity-70 py-2 -my-2"
                 style={{
                   color: isActive ? "var(--ink)" : "var(--ink-soft)",
                   fontWeight: isActive ? 600 : 400,

@@ -29,17 +29,28 @@ export default function YouPage() {
 
   // New-user onboarding only. A signed-in reader (or a returning one on a fresh
   // device) gets bounced to their inbox instead of re-running onboarding.
-  // Mirrors the QuestionStep guard.
+  // alpha-drift-r55-06 (2026-08-20, duplicate-code-audit-r5): this comment
+  // used to just say "Mirrors the QuestionStep guard" -- true when written
+  // (round 36), but QuestionStep.tsx's own guard was upgraded with a
+  // cancellation flag in round 48 and this page was never revisited, so the
+  // claim silently went stale. Without it, a late-resolving getSession()
+  // still force-redirected to /inbox on top of wherever the visitor had
+  // since navigated (Back, a link) -- the same stale-async-navigation class
+  // already fixed for QuestionStep and app/welcome/page.tsx (this same
+  // round). Now actually matches QuestionStep's real, current shape.
   useEffect(() => {
     if (!supabaseConfigured()) return;
+    let cancelled = false;
     (async () => {
       try {
         const { data: { session } } = await supabaseClient().auth.getSession();
+        if (cancelled) return;
         if (session) router.replace("/inbox" as never);
       } catch {
         // ignore — show the step
       }
     })();
+    return () => { cancelled = true; };
   }, [router]);
 
   // alpha-drift-r36-11 (2026-08-14): this page's own comment above claimed

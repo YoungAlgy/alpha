@@ -20,15 +20,30 @@ export default function WelcomePage() {
     // briefly before this effect resolves and redirects -- a one-time page
     // flash, not a functional bug, per that same comment.
     if (!supabaseConfigured()) return;
+    // alpha-drift-r55-06 (2026-08-20, duplicate-code-audit-r5): this is the
+    // app's single highest-traffic entry point, and was the one page in
+    // this exact getSession()-then-router.replace("/inbox") family with no
+    // cancellation guard -- components/onboarding/QuestionStep.tsx (round
+    // 48) and app/you/page.tsx (fixed this same round, see its own comment)
+    // both got one for the identical shape: a late-resolving session check
+    // firing router.replace after the visitor already navigated away (e.g.
+    // clicked "Sign in" or "Let's get to know you" during the round trip)
+    // would silently redirect them again, out from under wherever they'd
+    // already gone.
+    let cancelled = false;
     (async () => {
       try {
         const sb = supabaseClient();
         const { data: { session } } = await sb.auth.getSession();
+        if (cancelled) return;
         if (session) router.replace("/inbox" as never);
       } catch {
         // ignore — show the welcome page as a fallback
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return (
