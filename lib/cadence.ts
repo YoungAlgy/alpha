@@ -53,10 +53,32 @@ export function sinceLastSendWindow(periodIso: string): `${string}to${string}` {
   return `${previousSendIso(periodIso)}to${periodIso}`;
 }
 
-// The next scheduled send STRICTLY after `now` (at daily cadence: tomorrow), as
+// The next scheduled send STRICTLY after `now` (at daily cadence: tomorrow,
+// unless today's own send hasn't fired yet -- see r41-02 below), as
 // YYYY-MM-DD. Drives the reader-facing "next one ships ..." label.
+//
+// alpha-drift-r41-02 (2026-08-19, self-audit): this used to unconditionally
+// walk forward at least one day before checking CADENCE_UTC_DAYS, so it
+// could never return today's date no matter what time `now` was. At daily
+// cadence that loop always breaks on its first iteration, so this always
+// said "tomorrow" -- even at, say, 08:00 UTC, six hours BEFORE today's real
+// 14:00 UTC (SEND_HOUR_UTC) send has fired, when today genuinely is the
+// next send. app/inbox/page.tsx's nextSendLabel() renders this
+// unconditionally in the sticky header ("NEXT ONE SHIPS ..."), so every
+// reader who opened /inbox between 00:00 and 14:00 UTC -- the entire US
+// morning/overnight and a large slice of the day for Europe/Asia -- saw a
+// date one full day later than the truth. The exact same root cause
+// r35-07/r36-02 worked around on the settings page's resume copy (by
+// dropping the specific-day claim entirely) rather than fixing here, on the
+// mistaken assumption this function was already correct. Now checks
+// whether today is still ahead of its own send instant first.
 export function nextSendIso(now: Date = new Date()): string {
-  const d = new Date(`${now.toISOString().slice(0, 10)}T12:00:00Z`);
+  const todayIso = now.toISOString().slice(0, 10);
+  const todaysSendInstant = new Date(`${todayIso}T${String(SEND_HOUR_UTC).padStart(2, "0")}:00:00Z`);
+  if (isSendDay(todayIso) && now.getTime() < todaysSendInstant.getTime()) {
+    return todayIso;
+  }
+  const d = new Date(`${todayIso}T12:00:00Z`);
   for (let i = 0; i < 7; i++) {
     d.setUTCDate(d.getUTCDate() + 1);
     if (CADENCE_UTC_DAYS.includes(d.getUTCDay())) break;

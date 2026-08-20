@@ -68,7 +68,15 @@ console.log("(2) lib/cadence.ts / components/Digest.tsx / app/inbox/page.tsx: da
   // also mentions "T12:00:00Z" in prose while explaining the distinction.)
   check("(2b-isSendDay) still uses its own T12:00:00Z arithmetic anchor, untouched", /CADENCE_UTC_DAYS\.includes\(new Date\(`\$\{periodIso\}T12:00:00Z`\)\.getUTCDay\(\)\)/.test(cadenceSrc));
   check("(2b-previousSendIso) still uses its own T12:00:00Z arithmetic anchor, untouched", /const d = new Date\(`\$\{periodIso\}T12:00:00Z`\);/.test(cadenceSrc));
-  check("(2b-nextSendIso) still uses its own T12:00:00Z arithmetic anchor, untouched", /const d = new Date\(`\$\{now\.toISOString\(\)\.slice\(0, 10\)\}T12:00:00Z`\);/.test(cadenceSrc));
+  // alpha-drift-r41-02: round 41 gave nextSendIso() a real fix (it used to
+  // always report "tomorrow" even when today's own send hadn't fired yet),
+  // which refactored the inline `now.toISOString().slice(0, 10)` into a
+  // named `todayIso` variable reused by both the new early-return and the
+  // still-present forward-walk loop. The T12:00:00Z arithmetic anchor
+  // itself is unchanged (still present, still noon-anchored) -- only the
+  // exact literal expression producing today's date moved. Loosened to
+  // check the anchor's presence via the new variable name.
+  check("(2b-nextSendIso) still uses its own T12:00:00Z arithmetic anchor, untouched", /const d = new Date\(`\$\{todayIso\}T12:00:00Z`\);/.test(cadenceSrc));
 
   const digestSrc = readFileSync(new URL("../components/Digest.tsx", import.meta.url), "utf8");
   check("(2c) Digest.tsx imports SEND_HOUR_UTC from lib/cadence", /import \{ SEND_HOUR_UTC \} from "@\/lib\/cadence";/.test(digestSrc));
