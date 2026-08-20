@@ -46,7 +46,10 @@ console.log("(3) lib/stripe-cancel.ts: cleanUpStripeCustomerBeforeDelete accepts
   const src = readFileSync(new URL("../lib/stripe-cancel.ts", import.meta.url), "utf8");
   check("(3a) new 5th parameter exists", /preFetchedCustomerId\?:\s*string\s*\|\s*null/.test(src));
   check("(3b) uses a strict undefined check (not a falsy check) to distinguish omitted from explicit null", /customerId === undefined/.test(src));
-  check("(3c) the Supabase lookup is now conditional, not unconditional", /if \(customerId === undefined\) \{[\s\S]{0,200}from\("users"\)/.test(src));
+  // alpha-drift-r60-06 added a lengthy explanatory comment inside this same
+  // `if` block (see verify-r60-findings.mts's (5)) -- widened the char
+  // budget to still reach the real .from("users") call past it.
+  check("(3c) the Supabase lookup is now conditional, not unconditional", /if \(customerId === undefined\) \{[\s\S]{0,2000}from\("users"\)/.test(src));
 }
 
 console.log("(4) app/api/admin/users/route.ts: delete branch selects stripe_customer_id in the SAME query as email, passes it through");

@@ -107,7 +107,9 @@ console.log("(4) app/signin/page.tsx: \"Use different email\" is now disabled du
 {
   const src = readFileSync(new URL("../app/signin/page.tsx", import.meta.url), "utf8");
   check("(4a) the button now has disabled={busy}", /disabled=\{busy\}\s*\n\s*onClick=\{\(\) => \{\s*\n\s*setStep\("email"\);/.test(src));
-  check("(4b) it dims to match the busy styling used on the Resend button", /className="underline underline-offset-4"\s*\n\s*style=\{\{ opacity: busy \? 0\.5 : 1, cursor: busy \? "default" : "pointer" \}\}\s*\n\s*>\s*\n\s*Use different email/.test(src));
+  // alpha-drift-r60-05 added py-2 -my-2 (touch-target padding) to this same
+  // className -- loosened to allow it.
+  check("(4b) it dims to match the busy styling used on the Resend button", /className="underline underline-offset-4(?: py-2 -my-2)?"\s*\n\s*style=\{\{ opacity: busy \? 0\.5 : 1, cursor: busy \? "default" : "pointer" \}\}\s*\n\s*>\s*\n\s*Use different email/.test(src));
 }
 
 console.log("(5) app/api/account/delete/route.ts: deleteUser() now runs before the Stripe/ticket/suppression cleanup, not after");
