@@ -16,7 +16,12 @@ import { isInvalidOrExpiredOtpError, isInvalidOrExpiredPkceError } from "@/lib/g
 // the implicit-flow tokens and sets the cookie.
 //
 // When successful we router.replace to `next` (default /inbox).
-// When neither code nor hash is present we fall back to /signin.
+// When neither code nor hash is present (a bare visit to this page) we fall
+// back to /signin quietly. When a code or hash WAS present but produced no
+// session (alpha-drift-r64-03, 2026-08-21) -- an expired/already-used link,
+// or the first click of Supabase's double-confirm email change -- we show
+// the same friendly "that link didn't work" copy the exchange-failure catch
+// below already uses, instead of silently bouncing.
 export default function AuthCallbackPage() {
   return (
     <Suspense fallback={<CallbackShell message="Signing you in…" />}>
@@ -97,8 +102,13 @@ function Inner() {
           // session. Wait one tick for that to settle, then verify.
           await new Promise((r) => setTimeout(r, 50));
           if (cancelled) return;
-          const { data: { session } } = await sb.auth.getSession();
+          // alpha-drift-r64-03 (2026-08-21, form-validation-consistency-
+          // audit-r9): used to discard `error` -- getSession() resolves
+          // rather than throws, so a genuine failure here used to look
+          // identical to "no session, fall through quietly" below.
+          const { data: { session }, error: sessionErr } = await sb.auth.getSession();
           if (cancelled) return;
+          if (sessionErr) console.warn("[auth/callback] getSession failed:", sessionErr.message);
           if (session) {
             // Strip the hash so it doesn't linger in the URL bar
             if (typeof window !== "undefined") {
@@ -109,8 +119,22 @@ function Inner() {
           }
         }
 
-        // Neither path produced a session
-        router.replace("/signin?error=no_session" as never);
+        // alpha-drift-r64-03: this used to be a silent redirect to
+        // /signin carrying a dead error param -- app/signin/page.tsx has
+        // no useSearchParams call at all, so that param was written and
+        // read nowhere. A reader whose magic-link/email-
+        // change confirm link had expired or was already used got an
+        // instant, unexplained bounce with zero indication anything failed
+        // -- unlike the catch block below, which already shows friendly
+        // copy for the exchangeCodeForSession throw case. Only show that
+        // copy here when the reader actually attempted a flow (a code or a
+        // hash session was present) and it didn't produce a session --
+        // a genuinely bare visit to this page (no code, no hash) keeps the
+        // original quiet fallback, per this file's own header comment.
+        if (code || hasHashSession) {
+          throw new Error("no_session");
+        }
+        router.replace("/signin" as never);
       } catch (e) {
         if (cancelled) return;
         // alpha-drift-r42-05 (2026-08-19): never show GoTrue's raw vendor
@@ -132,8 +156,14 @@ function Inner() {
         // path ever changes.
         console.warn("[auth/callback] sign-in failed:", e instanceof Error ? e.message : e);
         const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
+        // alpha-drift-r64-03: the synthetic "no_session" thrown above (a
+        // code or hash was present but produced no session, e.g. an
+        // already-used implicit-flow link or a failed second-factor of
+        // Supabase's double-confirm email change) gets the same "expired
+        // or already used" copy as the OTP/PKCE cases -- it's the same
+        // reader-facing situation, just a different failure shape.
         setErr(
-          isInvalidOrExpiredOtpError(shape) || isInvalidOrExpiredPkceError(shape)
+          isInvalidOrExpiredOtpError(shape) || isInvalidOrExpiredPkceError(shape) || (e instanceof Error && e.message === "no_session")
             ? "That link didn't work. It may have expired or already been used. Request a new one from the sign-in page."
             : "Sign-in failed. Try again from the sign-in page."
         );
