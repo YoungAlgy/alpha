@@ -250,7 +250,7 @@ export default function WritingPage() {
       <div className="w-full max-w-md text-center space-y-12 relative z-10">
         <div className="flex justify-center">
           <span
-            className="alpha-display text-7xl md:text-8xl font-bold inline-block"
+            className="alpha-display alpha-writing-mark text-7xl md:text-8xl font-bold inline-block"
             style={{
               color: "var(--accent-ink)",
               animation: done
@@ -457,6 +457,17 @@ export default function WritingPage() {
           0%   { transform: scale(1.08); opacity: 1; }
           60%  { transform: scale(1.18); opacity: 1; }
           100% { transform: scale(1); opacity: 1; }
+        }
+        /* alpha-drift-r63-03 (2026-08-21, accessibility-resweep-newer-
+           code-r11): an infinite scale+rotate animation on a text-7xl/8xl
+           glyph running the entire ~45s generation wait -- flagged
+           alongside FirstLetterCelebration.tsx's identical-class fix as an
+           arguably worse offender (infinite + rotation + longer duration).
+           !important is needed here because the animation is set via an
+           inline style (React re-renders it on \`done\` toggling), which a
+           plain stylesheet rule can't otherwise override. */
+        @media (prefers-reduced-motion: reduce) {
+          .alpha-writing-mark { animation: none !important; }
         }
       `}</style>
     </main>

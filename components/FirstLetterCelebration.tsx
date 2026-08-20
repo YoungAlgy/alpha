@@ -10,6 +10,15 @@ export function FirstLetterCelebration({ active }: { active: boolean }) {
 
   useEffect(() => {
     if (!active) return;
+    // alpha-drift-r63-03 (2026-08-21, accessibility-resweep-newer-code-
+    // r11): this is a full-viewport scale(0.6)->scale(1.3) animation on a
+    // glyph up to ~18rem, the same shape as the app-open intro veil, which
+    // already skips under reduced-motion (app/layout.tsx's INTRO_SCRIPT +
+    // globals.css's alpha-intro-active media block). This component shipped
+    // a month before that convention existed and was never revisited --
+    // matching it here rather than leaving the one remaining large-
+    // amplitude full-screen animation ungated.
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     setVisible(true);
     const t = setTimeout(() => setVisible(false), 2400);
     return () => clearTimeout(t);
