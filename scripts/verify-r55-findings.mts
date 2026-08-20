@@ -109,7 +109,9 @@ console.log("(5) components/ThemeApplier.tsx + lib/theme.ts: a live theme pick n
   check("(5b) the tracker module has zero imports (stays bundle-neutral for ThemeApplier)", !/^import /m.test(tracker));
 
   const themeApplier = readFileSync(new URL("../components/ThemeApplier.tsx", import.meta.url), "utf8");
-  check("(5c) ThemeApplier imports themeEditedThisLoad", /import \{ themeEditedThisLoad \} from "@\/lib\/theme-edit-tracker";/.test(themeApplier));
+  // alpha-drift-r56-01 loosened this to allow markThemeEditedThisLoad
+  // joining the same import line (round 56 wired it into onStorage too).
+  check("(5c) ThemeApplier imports themeEditedThisLoad", /import \{ themeEditedThisLoad(?:, markThemeEditedThisLoad)? \} from "@\/lib\/theme-edit-tracker";/.test(themeApplier));
   check("(5d) the hydrate's set(dbTheme) is gated behind !themeEditedThisLoad()", /if \(dbTheme && !themeEditedThisLoad\(\)\) set\(dbTheme\);/.test(themeApplier));
 
   const themeTs = readFileSync(new URL("../lib/theme.ts", import.meta.url), "utf8");
