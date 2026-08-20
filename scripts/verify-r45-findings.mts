@@ -62,9 +62,13 @@ console.log("(2) app/api/admin/users/route.ts: grant_free now reports a Resend s
 console.log("(3) app/topics/page.tsx: a failed save's error is now cleared by every action a reader would take to fix it");
 {
   const src = readFileSync(new URL("../app/topics/page.tsx", import.meta.url), "utf8");
-  check("(3a) toggle() clears saveError", /function toggle\(id: TopicId\) \{\s*\n\s*if \(saveError\) setSaveError\(null\);/.test(src));
-  check("(3b) removeAt() clears saveError", /function removeAt\(id: TopicId\) \{\s*\n\s*if \(saveError\) setSaveError\(null\);/.test(src));
-  check("(3c) move() clears saveError", /if \(to < 0 \|\| to >= picked\.length\) return;\s*\n\s*if \(saveError\) setSaveError\(null\);/.test(src));
+  // alpha-drift-r54-02 (2026-08-20) prepended `userEditedRef.current = true;`
+  // as the literal first statement in toggle()/removeAt()/move() -- these
+  // regexes loosened to allow that new line before the saveError clear,
+  // same relative order otherwise.
+  check("(3a) toggle() clears saveError", /function toggle\(id: TopicId\) \{\s*\n(?:\s*userEditedRef\.current = true;\s*\n)?\s*if \(saveError\) setSaveError\(null\);/.test(src));
+  check("(3b) removeAt() clears saveError", /function removeAt\(id: TopicId\) \{\s*\n(?:\s*userEditedRef\.current = true;\s*\n)?\s*if \(saveError\) setSaveError\(null\);/.test(src));
+  check("(3c) move() clears saveError", /if \(to < 0 \|\| to >= picked\.length\) return;\s*\n(?:\s*userEditedRef\.current = true;\s*\n)?\s*if \(saveError\) setSaveError\(null\);/.test(src));
   check("(3d) addCustom()'s success path clears saveError", /setCustomText\(""\);\s*\n\s*setCustomErr\(null\);\s*\n\s*if \(saveError\) setSaveError\(null\);/.test(src));
 }
 
