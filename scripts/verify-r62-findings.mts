@@ -76,7 +76,12 @@ console.log("(1) app/settings/accounts/page.tsx: a stats-only load failure is no
   check("(1b) load() sets statsStale false on a real stats payload", /if \(data\.stats\) \{\s*\n\s*setStats\(data\.stats\);\s*\n\s*setStatsStale\(false\);/.test(src));
   check("(1c) load() sets statsStale true when stats is missing", /\} else \{\s*\n[\s\S]{0,250}setStatsStale\(true\);\s*\n\s*\}/.test(src));
   check("(1d) the header count annotates staleness", /\$\{stats\.totalUsers\}\$\{statsStale \? " \(unverified\)" : ""\}/.test(src));
-  check("(1e) the OPERATIONAL STATE card dims and annotates on stale stats", /opacity: statsStale \? 0\.6 : 1,/.test(src) && /statsStale && \(/.test(src));
+  // alpha-drift-r63-01 (2026-08-21, self-audit-r62) found the opacity dim
+  // itself was a real WCAG contrast regression (group opacity composites
+  // the --ink-soft text too, dropping it below 4.5:1 in all 26 themes) --
+  // replaced with a border-color-only cue. Loosened to allow either shape.
+  // See verify-r63-findings.mts's (1).
+  check("(1e) the OPERATIONAL STATE card carries a visible staleness cue and annotates on stale stats", (/opacity: statsStale \? 0\.6 : 1,/.test(src) || /borderColor: statsStale \? "var\(--ink-soft\)" : "var\(--rule\)",/.test(src)) && /statsStale && \(/.test(src));
 }
 
 console.log("(2) app/topics/page.tsx: the focus-restoration comment now cites the real (renamed) sibling identifier");

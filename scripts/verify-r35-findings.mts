@@ -123,7 +123,12 @@ console.log("(5) Copy-voice fixes: house style violations removed, wording match
   check("(5d) add-topics confirm panel: 'nothing is charged today' now leads, comma splice gone", /Nothing is charged today\. The extra for the rest of this month just shows up on your next bill\./.test(settingsSrc));
   check("(5e) delete-account confirm no longer tells the reader to verify something not yet true", !/To be safe you can confirm it's gone in \\"Manage subscription\\" above first/.test(settingsSrc));
   check("(5f) delete-account confirm states the billing guarantee plainly", /Your \$\$\{monthlyDollars\}\/mo subscription is cancelled too, so billing stops\./.test(settingsSrc));
-  check("(5g) em dash removed from the export-failure alert (both call sites)", (settingsSrc.match(/Couldn't reach the server for your full data\. Downloading what's saved on this device instead\./g) ?? []).length === 2);
+  // alpha-drift-r63-05 (2026-08-21, silent-catch-audit-r9) added a THIRD
+  // call site with the identical message (a genuine getSession() failure
+  // now alerts the same way the !res.ok branch already did) -- loosened
+  // from an exact count of 2 to "at least 2, none with an em dash". See
+  // verify-r63-findings.mts's (5e).
+  check("(5g) em dash removed from the export-failure alert (all call sites)", (settingsSrc.match(/Couldn't reach the server for your full data\. Downloading what's saved on this device instead\./g) ?? []).length >= 2 && !/Couldn't reach the server for your full data—/.test(settingsSrc));
   // alpha-drift-r36-02 (2026-08-14, self-audit): r35-07's own replacement
   // ("already on the way") was itself an overpromise for a reader resuming
   // shortly AFTER that day's send -- corrected again, see verify-r36-findings.mts
