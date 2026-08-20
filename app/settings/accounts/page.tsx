@@ -57,6 +57,21 @@ export default function AdminAccountsPage() {
   // disabled state independently.
   const busyRowsRef = useRef<Set<string>>(new Set());
   const [busyRows, setBusyRows] = useState<Set<string>>(new Set());
+  // alpha-drift-r53-04 (2026-08-20, duplicate-code-audit): a successful
+  // delete removes the acted-on row (and its just-clicked, focused Delete
+  // button) from the DOM via the finally block's load() -- with nothing
+  // else claiming it, the browser drops focus to <body>, silently losing a
+  // keyboard admin's position in the list. Mirrors app/settings/page.tsx's
+  // own confirmHeadingRef/billingHeadingRef convention: a monotonic counter
+  // (not a boolean, so two deletes in a row both trigger the effect even
+  // though the "true" value wouldn't visibly change) plus a useEffect keyed
+  // on it, so focus moves only once React has actually committed the
+  // row's removal, not synchronously inside act() before the DOM updates.
+  const [deleteCount, setDeleteCount] = useState(0);
+  const accountsHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (deleteCount > 0) accountsHeadingRef.current?.focus();
+  }, [deleteCount]);
   // alpha-drift-r32-04 (2026-08-14): act() only ever alert()'d on FAILURE --
   // a successful grant/revoke/clear/delete gave a sighted admin the visual
   // row-list reload as feedback, but a screen reader user got no
@@ -205,6 +220,7 @@ export default function AdminAccountsPage() {
           ? "Revoked free access from"
           : "Cleared delivery suppression for";
       setActionMsg(`${verb} ${email}.`);
+      if (action === "delete") setDeleteCount((c) => c + 1);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Action failed.");
     } finally {
@@ -269,7 +285,12 @@ export default function AdminAccountsPage() {
 
       <section className="flex-1 max-w-5xl mx-auto px-6 py-10 w-full">
         <div className="flex items-baseline justify-between mb-2">
-          <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight">
+          <h1
+            ref={accountsHeadingRef}
+            tabIndex={-1}
+            className="alpha-display text-4xl md:text-5xl font-bold tracking-tight"
+            style={{ outline: "none" }}
+          >
             Accounts
           </h1>
           {users && (
@@ -480,6 +501,16 @@ export default function AdminAccountsPage() {
                       {topics}
                     </div>
                   )}
+                  {/* alpha-drift-r53-03 (2026-08-20, accessibility-resweep-
+                      newer-code): these 4 buttons carried zero touch-target
+                      padding -- under the WCAG 2.5.8 24px minimum, unlike
+                      the Search/Clear controls above (which have real px-4
+                      py-2 padding) and every other underline-only action
+                      button already fixed for this exact gap elsewhere in
+                      the app (InstallPrompt.tsx, QuestionStep.tsx, topics/
+                      page.tsx, you/page.tsx). py-2 -my-2 (vertical-only, not
+                      p-2 -m-2) deliberately avoids colliding with this row's
+                      own gap-3 horizontal spacing. */}
                   <div className="flex gap-3 mt-3">
                     {!u.subscribed_at && (
                       <button
@@ -493,7 +524,7 @@ export default function AdminAccountsPage() {
                             `Grant ${u.email} a free alpha. subscription?`
                           )
                         }
-                        className="alpha-ui text-xs underline underline-offset-4"
+                        className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
                         style={{
                           color: "var(--ink)",
                           opacity: isBusy ? 0.4 : 1,
@@ -514,7 +545,7 @@ export default function AdminAccountsPage() {
                             `Revoke ${u.email}'s free subscription?`
                           )
                         }
-                        className="alpha-ui text-xs underline underline-offset-4"
+                        className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
                         style={{ color: "var(--ink-soft)", opacity: isBusy ? 0.4 : 1 }}
                       >
                         Revoke free
@@ -532,7 +563,7 @@ export default function AdminAccountsPage() {
                             `Clear delivery suppression for ${u.email}? Their next send will go through normally.`
                           )
                         }
-                        className="alpha-ui text-xs underline underline-offset-4"
+                        className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
                         style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
                       >
                         Clear suppression
@@ -549,7 +580,7 @@ export default function AdminAccountsPage() {
                           `Permanently delete ${u.email}? This removes auth + their letters. Cannot be undone.`
                         )
                       }
-                      className="alpha-ui text-xs underline underline-offset-4"
+                      className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
                       style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
                     >
                       Delete
@@ -568,7 +599,7 @@ export default function AdminAccountsPage() {
             type="button"
             disabled={loadingMore}
             onClick={loadMore}
-            className="alpha-ui text-sm mt-6 underline underline-offset-4"
+            className="alpha-ui text-sm mt-6 underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--ink)", opacity: loadingMore ? 0.4 : 1 }}
           >
             {loadingMore ? "Loading…" : "Load more"}
