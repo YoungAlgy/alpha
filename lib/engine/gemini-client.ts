@@ -1,8 +1,24 @@
 // Thin client over the Gemini API (raw REST, no SDK dependency needed for the
 // two calls this app makes). A genuinely separate vendor from Anthropic/Brave,
-// used ONLY as a fallback in two narrow roles (see gemini-search.ts and the
-// fallback branch inside topic-blurb.ts/editor-note.ts's callAndParse) — never
-// the primary path. Free tier via AI Studio (youngalgy@gmail.com).
+// with two DISTINCT roles depending on the caller.
+//
+// alpha-drift-r47-05 (2026-08-20): this comment used to say Gemini is "used
+// ONLY as a fallback... never the primary path" -- true before the
+// 2026-07-23 cost-tiering flip (commit a88a0e7), wrong since. Round 46
+// already fixed the identical stale claim in 3 other places (app/api/health/
+// route.ts, README.md's Stack table, README.md's directory listing) but
+// missed this file, the client those descriptions actually point at.
+//
+// Real roles: (1) PRIMARY generation tier for topic blurbs -- topic-blurb.ts's
+// tryGemini() is called FIRST for every blurb, unconditionally (gated only on
+// geminiConfigured(), not on Anthropic's status); Claude only escalates when
+// Gemini's own draft fails the quality guards. (2) a genuine FALLBACK in
+// editor-note.ts (tried only after Claude fails/is unconfigured) and in
+// gemini-search.ts (tried only after Brave signals quota exhaustion) -- the
+// "fallback path off a primary provider" framing on callGemini's own comment
+// below only describes these two call sites, not topic-blurb.ts's.
+//
+// Free tier via AI Studio (youngalgy@gmail.com).
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -49,9 +65,10 @@ interface GeminiResponse {
 // treats a truncated Claude response: never silently ship a cut-off result.
 export class GeminiTruncatedError extends Error {}
 
-// Bounded fetch (20s attempt, no retry — callers are themselves a fallback
-// path off a primary provider, so a slow Gemini call should fail fast into
-// whatever last resort follows it, not stack more wait time on top).
+// Bounded fetch (20s attempt, no retry — a slow Gemini call should fail fast
+// into whatever comes next, not stack more wait time on top. For
+// editor-note.ts/gemini-search.ts this "next" is a fallback off a primary
+// provider; for topic-blurb.ts, where Gemini is tried FIRST, it's Groq).
 async function callGemini(
   model: string,
   body: Record<string, unknown>
@@ -75,10 +92,11 @@ async function callGemini(
   return data.candidates?.[0];
 }
 
-// Plain text generation (used for the topic-blurb / editor-note WRITING
-// fallback — Anthropic itself unavailable). No grounding tool: by the time
-// this runs, the caller already has real signal to write from and just needs
-// a model to turn it into prose.
+// Plain text generation, used by two callers with opposite tier order:
+// topic-blurb.ts calls this FIRST, before Anthropic; editor-note.ts calls it
+// only as a fallback once Anthropic fails or is unconfigured. No grounding
+// tool: by the time this runs, the caller already has real signal to write
+// from and just needs a model to turn it into prose.
 export async function geminiGenerateText(
   systemPrompt: string,
   userPrompt: string,
