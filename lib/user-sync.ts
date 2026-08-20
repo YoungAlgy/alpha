@@ -54,21 +54,50 @@ export async function syncUserProfile(state: OnboardingState, patch: Partial<Onb
     // source of truth on a fresh device — never overwrite a present value with
     // an empty one. Clearing an optional blurb intentionally is not supported
     // through this path, which is an acceptable trade for not wiping a profile.
+    // alpha-drift-r62-10 (2026-08-20, form-validation-consistency-audit-r7):
+    // the 7 fields below used to read straight off `state` with no `patch`
+    // gate -- the exact bug class r60-10 above fixed for `topics` alone.
+    // `state` is the full merged-onto-localStorage snapshot, which can hold
+    // values from a stale device: e.g. a reader edits city/birthday/gender
+    // via Settings on one browser, then later opens Settings > Topics on a
+    // SECOND device whose localStorage still has the pre-edit values --
+    // that device's topics-only patch used to silently push its whole stale
+    // snapshot back over the just-edited fields, with no error and no UI
+    // signal. Gating each field on "did THIS call's patch actually intend
+    // to touch it" (same two-part condition as topics: `"field" in patch`
+    // AND the value is real) closes that without changing any real caller:
+    // components/ProfileEditor.tsx's save() always sends all 7 keys, and
+    // the pre-signup onboarding call sites never reach this branch at all
+    // (no session yet).
     const updates: Record<string, string | string[]> = {};
-    const fn = state.firstName?.trim();
-    if (fn) updates.first_name = fn;
-    const city = state.city?.trim();
-    if (city) updates.city = city;
-    const jobBlurb = state.jobBlurb?.trim();
-    if (jobBlurb) updates.job_blurb = jobBlurb;
-    const projectBlurb = state.projectBlurb?.trim();
-    if (projectBlurb) updates.project_blurb = projectBlurb;
-    const funBlurb = state.funBlurb?.trim();
-    if (funBlurb) updates.fun_blurb = funBlurb;
-    const birthday = state.birthday?.trim();
-    if (birthday && parseBirthday(birthday)) updates.birthday = birthday;
-    const gender = coerceGender(state.gender);
-    if (gender) updates.gender = gender;
+    if ("firstName" in patch) {
+      const fn = state.firstName?.trim();
+      if (fn) updates.first_name = fn;
+    }
+    if ("city" in patch) {
+      const city = state.city?.trim();
+      if (city) updates.city = city;
+    }
+    if ("jobBlurb" in patch) {
+      const jobBlurb = state.jobBlurb?.trim();
+      if (jobBlurb) updates.job_blurb = jobBlurb;
+    }
+    if ("projectBlurb" in patch) {
+      const projectBlurb = state.projectBlurb?.trim();
+      if (projectBlurb) updates.project_blurb = projectBlurb;
+    }
+    if ("funBlurb" in patch) {
+      const funBlurb = state.funBlurb?.trim();
+      if (funBlurb) updates.fun_blurb = funBlurb;
+    }
+    if ("birthday" in patch) {
+      const birthday = state.birthday?.trim();
+      if (birthday && parseBirthday(birthday)) updates.birthday = birthday;
+    }
+    if ("gender" in patch) {
+      const gender = coerceGender(state.gender);
+      if (gender) updates.gender = gender;
+    }
     if ("topics" in patch && Array.isArray(state.topics) && state.topics.length > 0) {
       // Filter through isValidTopicId: this write goes straight through the
       // browser's own RLS-scoped client (not the validated /api/account/topics
