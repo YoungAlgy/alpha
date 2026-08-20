@@ -112,7 +112,15 @@ console.log("(4) app/api/account/email/reconcile/route.ts: the mirror read now c
 {
   const src = normalize(readFileSync(new URL("../app/api/account/email/reconcile/route.ts", import.meta.url), "utf8"));
   check("(4a) destructures error from the row read", /const \{ data: row, error: rowError \} = await svc/.test(src));
-  check("(4b) checks rowError and returns 500 before the !row check", /if \(rowError\) \{ console\.error\("\[account\/email\/reconcile\] mirror read failed:", rowError\.message\); sendOpsAlert\(/.test(src));
+  // alpha-drift-r46-supersedes-r26 (2026-08-19, found while running the full
+  // regression suite during round 46 -- unrelated to round 46's own fixes):
+  // round 35's alpha-drift-r35-03 wrapped the bare sendOpsAlert() call in
+  // after(...) (for Workers isolate-teardown safety) and added an
+  // explanatory comment in between, so sendOpsAlert( no longer sits
+  // immediately after rowError.message); on the normalized single-line
+  // string. Widened to allow anything in between, still anchored on the
+  // same rowError-before-!row ordering this assertion exists to prove.
+  check("(4b) checks rowError and returns 500 before the !row check", /if \(rowError\) \{ console\.error\("\[account\/email\/reconcile\] mirror read failed:", rowError\.message\);[\s\S]{0,500}?sendOpsAlert\(/.test(src));
   check("(4c) the original !row-or-synced 200 short-circuit is still intact for the real no-op case", /if \(!row \|\| \(row\.email \?\? ""\)\.toLowerCase\(\) === authEmail\) \{ return NextResponse\.json\(\{ ok: true, changed: false \}\); \}/.test(src));
 }
 

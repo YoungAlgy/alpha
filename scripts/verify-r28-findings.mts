@@ -122,11 +122,19 @@ console.log("(7) app/api/stripe/checkout/route.ts + app/privacy/page.tsx: Subscr
   check("(7b) the Checkout Session's own top-level metadata (the one field the SDK actually supports updating -- it doesn't) is still present", /metadata: \{\s*alpha_first_name: body\.firstName \?\? "",\s*alpha_city: body\.city \?\? "",\s*\},/.test(checkoutSrc));
 
   const privacySrc = readFileSync(new URL("../app/privacy/page.tsx", import.meta.url), "utf8");
+  // alpha-drift-r46-supersedes-r28 (2026-08-19, found while running the full
+  // regression suite during round 46 -- unrelated to round 46's own fixes):
+  // a later copy pass (round 36's sentence-splitting cleanup) capitalized
+  // "Your name and city stay..." as its own sentence, where this assertion
+  // still expected the lowercase mid-sentence "your" from round 28's
+  // original wording. Case-insensitive match on that clause closes the gap
+  // without losing what the assertion actually proves (the disclosure text
+  // is present and intact).
   check(
     "(7c) privacy policy discloses that name/city sent to Stripe at checkout survive on the Stripe checkout record permanently, even after account deletion",
     /Your first name and city also go to Stripe at checkout/.test(privacySrc) &&
       /own checkout record itself can&apos;t be edited or removed afterward/.test(privacySrc) &&
-      /your name and city stay on that one record\s*\n\s*at Stripe, permanently/.test(privacySrc)
+      /your name and city stay on that one record\s*\n\s*at Stripe, permanently/i.test(privacySrc)
   );
 }
 

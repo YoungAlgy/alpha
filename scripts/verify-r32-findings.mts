@@ -106,7 +106,12 @@ console.log("(4) 3 touch-target gaps closed with the app's own py-2 -my-2 idiom"
   const settingsSrc = readFileSync(new URL("../app/settings/page.tsx", import.meta.url), "utf8");
   check("(4a) billing-panel Cancel button", /onClick=\{\(\) => setConfirmingTier\(null\)\}\s*\n\s*className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"/.test(settingsSrc));
   check("(4b) Download my data button", /className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"\s*\n\s*style=\{\{ color: "var\(--accent-ink\)" \}\}\s*\n\s*>\s*\n\s*Download my data/.test(settingsSrc));
-  check("(4c) Delete my account button", /className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"\s*\n\s*style=\{\{ color: "var\(--ink-soft\)" \}\}\s*\n\s*>\s*\n\s*Delete my account/.test(settingsSrc));
+  // alpha-drift-r46-supersedes-r32 (2026-08-19): round 46's alpha-drift-r46-04
+  // added a busy-state style/label to this same button (opacity: deleting ?
+  // 0.5 : 1, and the text now swaps to "Deleting…") -- the py-2 -my-2
+  // touch-target className this assertion actually proves is untouched and
+  // still present, so just loosened the style/text match to allow for it.
+  check("(4c) Delete my account button", /className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"\s*\n\s*style=\{\{ color: "var\(--ink-soft\)", opacity: deleting \? 0\.5 : 1 \}\}\s*\n\s*>\s*\n\s*\{deleting \? "Deleting…" : "Delete my account"\}/.test(settingsSrc));
 
   const footerSrc = readFileSync(new URL("../components/Footer.tsx", import.meta.url), "utf8");
   check("(4d) Footer's 3 nav links (Privacy/Terms/Support) all got py-2 -my-2", (footerSrc.match(/hover:opacity-70 py-2 -my-2/g) ?? []).length === 3);
