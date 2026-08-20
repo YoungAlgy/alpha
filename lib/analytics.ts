@@ -13,12 +13,23 @@
 // PostHogProvider calls initAnalytics() then capturePageview() in the same
 // mount) are queued and flushed once posthog is ready, rather than dropped.
 //
-// alpha-drift-r49-07 (2026-08-20, docs-code-drift-round-5): this said "in
-// Vercel env" -- this app hasn't run on Vercel since 2026-08-05, so there's
-// no Vercel env to set it in. To activate: set NEXT_PUBLIC_POSTHOG_KEY (and
-// optionally NEXT_PUBLIC_POSTHOG_HOST, defaults to PostHog US cloud) via
-// .env.local for local dev and `npx wrangler secret put
-// NEXT_PUBLIC_POSTHOG_KEY` for production (see docs/SECRETS.md).
+// alpha-drift-r50-01 (2026-08-20, self-audit-r49): round 49's own fix here
+// (alpha-drift-r49-07) correctly dropped the dead "Vercel env" claim but
+// replaced it with an equally wrong one -- `wrangler secret put` only
+// creates a Cloudflare Worker RUNTIME binding, and this "use client" module
+// only ever reads process.env.NEXT_PUBLIC_POSTHOG_KEY in the browser, where
+// Next.js has already inlined it at BUILD TIME (same @next/env resolution
+// scripts/verify-build-env.mjs itself documents: ".env.production.local >
+// .env.local > .env.production > .env", resolved on the WSL checkout when
+// `npm run cf:deploy` runs `next build"). A Wrangler secret set after that
+// build has zero effect on the already-built client bundle -- exactly the
+// failure mode verify-build-env.mjs's own header comment was written to
+// prevent for the two Supabase vars, just not caught here at the time.
+// To activate: set NEXT_PUBLIC_POSTHOG_KEY (and optionally
+// NEXT_PUBLIC_POSTHOG_HOST, defaults to PostHog US cloud) in .env.local for
+// local dev, and in the WSL deploy checkout's own build-time env file
+// (same mechanism as NEXT_PUBLIC_SUPABASE_URL) before running `npm run
+// cf:deploy` -- see docs/SECRETS.md and scripts/verify-build-env.mjs.
 
 let started = false;
 let posthog: typeof import("posthog-js").default | null = null;
