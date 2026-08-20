@@ -355,8 +355,17 @@ export default function SettingsPage() {
                 </button>
                 {resumeErr && (
                   <p
-                    role="status"
-                    aria-live="polite"
+                    // alpha-drift-r56-03 (2026-08-20, accessibility-resweep-
+                    // newer-code-round-4): resumeErr is exclusively failure
+                    // copy (a success flips `resumed` instead, rendered by a
+                    // separate, correctly role="status" heading below) --
+                    // role="alert" is this app's established convention for
+                    // single-purpose, action-failure-only text, matching its
+                    // twin on components/EmailChanger.tsx's err (same fix,
+                    // same round). Does NOT apply to the resumed heading or
+                    // billingMsg below -- both legitimately carry non-error/
+                    // shared success-and-failure copy through the same node.
+                    role="alert"
                     className="alpha-ui text-sm mt-3"
                     // alpha-drift-r24-01 (found+fixed 2026-08-14, self-audit
                     // follow-through): same --accent-ink WCAG contrast gap

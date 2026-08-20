@@ -233,8 +233,16 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
       )}
       {err && (
         <p
-          role="status"
-          aria-live="polite"
+          // alpha-drift-r56-02 (2026-08-20, accessibility-resweep-newer-
+          // code-round-4): err is exclusively error copy here (a success
+          // routes to the separate sentTo view instead) -- role="alert" is
+          // this app's established convention for single-purpose,
+          // action-failure-only text (checkout/settings-accounts/signin/
+          // SupportForm/topics/writing/QuestionStep all use it), unlike a
+          // shared success-and-failure bar which legitimately stays
+          // role="status". aria-live is dropped as redundant: role="alert"
+          // is an implicit assertive live region.
+          role="alert"
           className="alpha-ui text-sm mt-3"
           // alpha-drift-r24-01: same --accent-ink WCAG contrast gap round 23
           // fixed elsewhere -- closing the remaining instances in one pass.
