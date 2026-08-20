@@ -42,7 +42,12 @@ export default function GlobalError({
           <div style={{ fontSize: "5rem", fontWeight: 700, lineHeight: 1, marginBottom: 16, opacity: 0.85 }}>
             α!
           </div>
-          <h1 style={{ fontSize: "1.75rem", fontWeight: 700, margin: "0 0 16px" }}>
+          {/* alpha-drift-r58-03 (2026-08-20, accessibility-resweep-newer-
+              code-round-6): same role="alert" fix as app/error.tsx's
+              sibling heading -- a bare HTML attribute, doesn't touch the
+              ThemeApplier/font/CSS-token systems this file deliberately
+              avoids importing (see the file-header comment). */}
+          <h1 style={{ fontSize: "1.75rem", fontWeight: 700, margin: "0 0 16px" }} role="alert">
             Something hiccuped.
           </h1>
           <p style={{ fontSize: "1.05rem", lineHeight: 1.6, margin: "0 0 24px", opacity: 0.75 }}>

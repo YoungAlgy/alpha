@@ -27,7 +27,16 @@ export default function Error({
         >
           α<span style={{ color: "var(--ink-soft)" }}>!</span>
         </div>
-        <h1 className="alpha-display text-3xl md:text-4xl font-bold tracking-tight">
+        {/* alpha-drift-r58-03 (2026-08-20, accessibility-resweep-newer-
+            code-round-6): this is a React error boundary -- it can swap
+            already-rendered page content in place on a render-phase throw
+            mid-session, with no browser navigation event to cue assistive
+            tech, the same no-navigation content-swap this app already
+            marks role="alert" on elsewhere (archive/inbox/inbox-issueId's
+            loadError blocks). role="alert" alone is treated as an implicit
+            assertive live region app-wide (see components/EmailChanger.tsx's
+            r56-02 comment), so no separate aria-live is needed. */}
+        <h1 className="alpha-display text-3xl md:text-4xl font-bold tracking-tight" role="alert">
           Something hiccuped.
         </h1>
         <p
