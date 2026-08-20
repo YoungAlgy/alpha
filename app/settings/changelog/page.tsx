@@ -455,9 +455,15 @@ export default function ChangelogPage() {
 
         {Array.from(grouped.entries()).map(([month, entries]) => (
           <section key={month} className="mb-12">
+            {/* alpha-drift-r57-04 (2026-08-20, accessibility-resweep-newer-
+                code-round-5): plain informational text (a month-group
+                heading), not a link/CTA or decoration -- --accent-ink fails
+                WCAG AA 4.5:1 against --paper in 12-18+ themes, the same
+                repeatedly-fixed failure class this file's own R29-03
+                comment above already documents for the entry-date labels. */}
             <h2
               className="alpha-mono mb-4"
-              style={{ color: "var(--accent-ink)" }}
+              style={{ color: "var(--ink-soft)" }}
             >
               {month.toUpperCase()}
             </h2>

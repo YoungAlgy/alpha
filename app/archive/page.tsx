@@ -266,7 +266,12 @@ export default function ArchivePage() {
         )}
 
         {state === "error" && (
-          <div role="status" aria-live="polite" className="space-y-4">
+          // alpha-drift-r57-03 (2026-08-20, accessibility-resweep-newer-
+          // code-round-5): third sibling of the same fix -- this block only
+          // ever renders on state === "error", exclusively failure copy,
+          // so role="alert" (not role="status") is the app's established
+          // convention here.
+          <div role="alert" className="space-y-4">
             <p className="alpha-display text-lg" style={{ color: "var(--ink)" }}>
               Couldn&apos;t load your letters.
             </p>

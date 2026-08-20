@@ -163,14 +163,35 @@ function CallbackShell({ message }: { message: string }) {
           α
         </div>
         {/* alpha-drift-r53-05 (2026-08-20, accessibility-resweep-newer-code):
-            had no role/aria-live, unlike every sibling "here's what
-            happened" status text elsewhere in the app (app/inbox/page.tsx's
-            loadError h1, app/checkout/page.tsx's stripeErr, app/signin/
-            page.tsx's err, components/EmailChanger.tsx's err). Highest
-            stakes of any of them: on failure this page silently redirects
-            to /signin after 1.5s (see the timeout above), so a screen
-            reader user needs the announcement immediately, not on next
-            focus. */}
+            had no role/aria-live at all -- fixed below. On failure this page
+            silently redirects to /signin after 1.5s (see the timeout
+            above), so a screen reader user needs the announcement
+            immediately, not on next focus.
+
+            alpha-drift-r57-06 (2026-08-20, duplicate-code-audit): the
+            paragraph above listed app/checkout/page.tsx's stripeErr and
+            app/signin/page.tsx's err as role="status" siblings -- wrong
+            from the moment it was written. Both have been role="alert"
+            since round 23/24 (single-purpose, error-only text gets
+            role="alert" app-wide; see components/EmailChanger.tsx's own
+            r56-02 comment for that convention). components/EmailChanger.tsx's
+            err WAS a genuine role="status" sibling when this comment was
+            written, but was itself fixed to role="alert" in round 56, so
+            that citation is now stale too. This element correctly stays
+            role="status" for a different reason than any of those three:
+            `message` is a SHARED region that renders either the loading
+            text ("Signing you in...") or the failure text, never
+            error-only -- the "shared success-and-failure bar... legitimately
+            stays role='status'" case EmailChanger's own comment describes.
+            alpha-drift-r57-03 (same round): the inbox/archive loadError
+            headings cited above as the one genuine role="status" sibling
+            were themselves flipped to role="alert" this same round --
+            those are exclusively-failure blocks (only ever rendered on
+            their own error branch), not shared loading-or-error regions
+            like this one, so they were never actually the same shape. This
+            element currently has no true sibling in the app; if one shows
+            up, it should share this exact genuinely-shared-region
+            reasoning, not just a superficial "also role=status" match. */}
         <p
           role="status"
           aria-live="polite"

@@ -259,7 +259,14 @@ export default function InboxPage() {
           >
             α
           </div>
-          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight" role="status" aria-live="polite">
+          {/* alpha-drift-r57-03 (2026-08-20, accessibility-resweep-newer-
+              code-round-5): this block only ever renders on the loadError
+              branch above -- exclusively failure copy, never shared with a
+              success/loading state -- so it belongs to this app's
+              established role="alert" convention for single-purpose
+              action-failure text, not role="status". aria-live dropped as
+              redundant (role="alert" implies assertive). */}
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight" role="alert">
             Couldn&apos;t load your letters.
           </h1>
           <p className="alpha-display text-base md:text-lg leading-relaxed" style={{ color: "var(--ink-soft)" }}>

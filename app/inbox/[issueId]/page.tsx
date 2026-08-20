@@ -179,7 +179,11 @@ export default function IssuePage() {
           >
             α
           </div>
-          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight" role="status" aria-live="polite">
+          {/* alpha-drift-r57-03 (2026-08-20, accessibility-resweep-newer-
+              code-round-5): sibling of app/inbox/page.tsx's loadError fix --
+              exclusively failure copy, belongs to role="alert", not
+              role="status". */}
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight" role="alert">
             Couldn&apos;t load that letter.
           </h1>
           <p
