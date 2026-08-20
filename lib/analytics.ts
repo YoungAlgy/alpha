@@ -21,7 +21,7 @@
 // Next.js has already inlined it at BUILD TIME (same @next/env resolution
 // scripts/verify-build-env.mjs itself documents: ".env.production.local >
 // .env.local > .env.production > .env", resolved on the WSL checkout when
-// `npm run cf:deploy` runs `next build"). A Wrangler secret set after that
+// `npm run cf:deploy` runs `next build`). A Wrangler secret set after that
 // build has zero effect on the already-built client bundle -- exactly the
 // failure mode verify-build-env.mjs's own header comment was written to
 // prevent for the two Supabase vars, just not caught here at the time.
