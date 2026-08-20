@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useEffect, useRef, useState, FormEvent } from "react";
 
 export function SupportForm() {
   const [name, setName] = useState("");
@@ -8,6 +8,16 @@ export function SupportForm() {
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  // alpha-drift-r39-06 (2026-08-19): status==="sent" early-returns a whole
+  // new subtree, unmounting the focused Send button (and the entire form)
+  // with no ref/focus management -- role="status"+aria-live covers screen
+  // readers, but a sighted keyboard user's focus silently drops to <body>.
+  // Same unmount-without-focus-restore class already fixed elsewhere in
+  // this app (EmailChanger.tsx, app/settings/page.tsx).
+  const sentHeadingRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (status === "sent") sentHeadingRef.current?.focus();
+  }, [status]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -48,7 +58,7 @@ export function SupportForm() {
           borderRadius: "var(--radius-card)",
         }}
       >
-        <p className="alpha-display text-xl font-semibold">Got it.</p>
+        <p ref={sentHeadingRef} tabIndex={-1} className="alpha-display text-xl font-semibold" style={{ outline: "none" }}>Got it.</p>
         <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
           You&apos;ll hear back from us within 24 hours.
         </p>

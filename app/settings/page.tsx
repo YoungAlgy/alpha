@@ -103,6 +103,15 @@ export default function SettingsPage() {
   const [resumed, setResumed] = useState(false);
   const [resumeBusy, setResumeBusy] = useState(false);
   const [resumeErr, setResumeErr] = useState<string | null>(null);
+  // alpha-drift-r39-05 (2026-08-19): a third unmount-without-focus-restore
+  // transition in this same file -- the focused "Resume my letters" button
+  // unmounts the instant resumeLetters() succeeds, replaced by a bare
+  // status paragraph with no ref/tabIndex, dropping a keyboard user's focus
+  // to <body>. Same pattern as confirmHeadingRef/billingHeadingRef above.
+  const resumedHeadingRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (resumed) resumedHeadingRef.current?.focus();
+  }, [resumed]);
   // Same re-entrancy latch as confirmInFlight above and ProfileEditor's
   // saveInFlight -- resumeBusy is React state, so a sub-16ms double-click
   // can invoke resumeLetters twice before the state flush disables the
@@ -308,7 +317,13 @@ export default function SettingsPage() {
                 "already on the way" is equally inaccurate. Reworded to make
                 no claim about how soon at all. */}
             {resumed ? (
-              <p className="alpha-ui text-sm" role="status" style={{ color: "var(--ink-soft)" }}>
+              <p
+                ref={resumedHeadingRef}
+                tabIndex={-1}
+                className="alpha-ui text-sm"
+                role="status"
+                style={{ color: "var(--ink-soft)", outline: "none" }}
+              >
                 You&apos;re back on. Your daily letters start up again from here.
               </p>
             ) : (

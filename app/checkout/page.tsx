@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
@@ -17,6 +17,17 @@ export default function CheckoutPage() {
   const [subscribing, setSubscribing] = useState(false);
   const [stripeErr, setStripeErr] = useState<string | null>(null);
   const [alreadySubscribed, setAlreadySubscribed] = useState(false);
+  // alpha-drift-r39-04 (2026-08-19): a 409 unmounts the focused Subscribe
+  // button (the ternary swaps its whole branch) and replaces it with this
+  // "already subscribed" block -- with no ref/focus management, the browser
+  // drops focus to <body> with zero signal to a keyboard user on the
+  // highest-stakes page in the funnel. Same unmount-without-focus-restore
+  // class already fixed for EmailChanger.tsx and app/settings/page.tsx's
+  // confirmHeadingRef/billingHeadingRef.
+  const alreadySubscribedHeadingRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (alreadySubscribed) alreadySubscribedHeadingRef.current?.focus();
+  }, [alreadySubscribed]);
 
   // Same completeness gate /api/stripe/checkout itself enforces server-side
   // (lib/checkout-guards.ts's isProfileComplete) — checked here too so a
@@ -202,8 +213,10 @@ export default function CheckoutPage() {
           {alreadySubscribed ? (
             <div className="space-y-3" role="status">
               <p
+                ref={alreadySubscribedHeadingRef}
+                tabIndex={-1}
                 className="alpha-ui text-sm text-center"
-                style={{ color: "var(--ink)" }}
+                style={{ color: "var(--ink)", outline: "none" }}
               >
                 You&apos;re already subscribed. No need to pay again.
               </p>
