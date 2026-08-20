@@ -74,7 +74,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "Data-driven writing that fixes how you think about saving",
           body:
-            "Nick Maggiulli's Of Dollars And Data is unusually good at replacing money-anxiety with evidence: when to buy, why time-in-market beats timing, how wealth actually compounds. Quietly one of the best financial blogs going.",
+            "Nick Maggiulli's Of Dollars And Data is unusually good at replacing money-anxiety with evidence. Real numbers on why time-in-market beats timing and how wealth actually compounds. Quietly one of the best financial blogs going.",
           primaryRef: {
             label: "Of Dollars And Data",
             url: "https://ofdollarsanddata.com",
@@ -160,7 +160,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "The clearest strategic thinker on tech and business",
           body:
-            "Ben Thompson's Stratechery is the reference for understanding why tech companies do what they do: platforms, aggregation, who actually holds the power. Dense, but it changes how you see the whole board.",
+            "Ben Thompson's Stratechery is the reference for understanding why tech companies do what they do, especially who actually holds the power and why. Dense, but it changes how you see the whole board.",
           primaryRef: {
             label: "Stratechery",
             url: "https://stratechery.com",
@@ -170,7 +170,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "Product and growth, from someone who ran it",
           body:
-            "Lenny Rachitsky's newsletter is the operator's handbook for product, growth, and go-to-market: concrete frameworks pressure-tested by practitioners, not theory.",
+            "Lenny Rachitsky's newsletter is the operator's handbook for product, growth, and go-to-market. Concrete frameworks, pressure-tested by people who actually ran the playbooks.",
           primaryRef: {
             label: "Lenny's Newsletter",
             url: "https://www.lennysnewsletter.com",
@@ -188,7 +188,7 @@ export const SAMPLE_ISSUE: Issue = {
           kind: "read",
           headline: "An economist's relentless reading list",
           body:
-            "Tyler Cowen reads more than anyone and shares what's worth it on Marginal Revolution. His book recommendations skew curious and wide-ranging: history, fiction, the genuinely obscure.",
+            "Tyler Cowen reads more than anyone and shares what's worth it on Marginal Revolution. His book recommendations skew curious and wide-ranging, plenty of history and fiction, plus whatever obscure thing he's currently into.",
           primaryRef: {
             label: "Marginal Revolution",
             url: "https://marginalrevolution.com",

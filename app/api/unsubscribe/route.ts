@@ -84,7 +84,7 @@ export async function GET(req: Request) {
   return new NextResponse(
     htmlPage(
       "Unsubscribe from alpha. letters?",
-      `<p>Confirm below and we'll stop sending letters to this address. Your Stripe subscription is separate and unaffected — manage or cancel billing separately from settings if you also want to stop paying.</p>
+      `<p>Confirm below and we'll stop sending letters to this address. Your Stripe subscription is separate and unaffected. Manage or cancel billing separately from settings if you also want to stop paying.</p>
       <form method="POST" action="${actionUrl}" style="margin: 24px 0 0;">
         <input type="hidden" name="source" value="confirm-page">
         <button type="submit" style="font: inherit; font-size: 16px; font-weight: 700; background: #1F3D2E; color: #F4EFE0; border: none; border-radius: 8px; padding: 12px 28px; cursor: pointer;">Yes, stop my letters</button>
