@@ -76,13 +76,29 @@ console.log("(4) stale 'Vercel' platform references reworded to the actual curre
   check("(4a) lib/email.ts's idempotency-key comment no longer says 'a Vercel cron retry'", !/a Vercel cron retry racing the scheduled run/.test(emailSrc) && /GitHub Actions retry cron/.test(emailSrc));
 
   const braveSrc = readFileSync(new URL("../lib/brave.ts", import.meta.url), "utf8");
-  check("(4b) lib/brave.ts's monotonic-counter comment no longer says 'the same warm lambda (a Vercel retry'", !/the same warm lambda \(a Vercel/.test(braveSrc) && /GitHub Actions retry cron racing the 14:00 UTC primary run/.test(braveSrc));
+  // alpha-drift-r49-supersedes-r48 (2026-08-20): round 49's self-audit-r48
+  // found round 48's OWN rewrite here was itself wrong (it cited a GitHub
+  // Actions overlapping-run race that the workflow's own concurrency group
+  // already prevents) -- rewritten again to lead with the real, always-true
+  // reason (concurrent per-topic calls within one invocation). The point
+  // THIS assertion actually proves -- no more Vercel/lambda framing -- still
+  // holds; just no longer asserting round 48's own specific (superseded)
+  // replacement wording.
+  check("(4b) lib/brave.ts's monotonic-counter comment no longer says 'the same warm lambda (a Vercel retry'", !/the same warm lambda \(a Vercel/.test(braveSrc) && !/warm lambda/.test(braveSrc));
 
   const generateSrc = readFileSync(new URL("../app/api/generate/route.ts", import.meta.url), "utf8");
   check("(4c) app/api/generate/route.ts no longer says \"waiting for Vercel's hard 504\"", !/waiting for Vercel's hard 504/.test(generateSrc) && /Cloudflare Workers' own hard timeout/.test(generateSrc));
 
   const weeklySendSrc = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
-  check("(4d) weekly-send's after() comment no longer says 'Vercel is told to keep this invocation's lambda alive'", !/so Vercel is told to keep this invocation's lambda alive/.test(weeklySendSrc) && /ctx\.waitUntil/.test(weeklySendSrc) && /this route runs on Cloudflare Workers, not\s*\n\s*\/\/ Vercel/.test(weeklySendSrc));
+  // alpha-drift-r49-supersedes-r48 (2026-08-20): round 49's self-audit-r48
+  // found round 48's OWN rewrite here was itself wrong -- it claimed this
+  // route runs on Cloudflare Workers via ctx.waitUntil, when this file's
+  // own maxDuration comment (a few lines up) already says the send runs via
+  // `next start` on a GitHub Actions runner, a plain long-running Node.js
+  // process, never Cloudflare Workers. Rewritten again to attribute the
+  // mechanism correctly. The point THIS assertion actually proves -- no
+  // more "Vercel"/"lambda" framing -- still holds.
+  check("(4d) weekly-send's after() comment no longer says 'Vercel is told to keep this invocation's lambda alive'", !/so Vercel is told to keep this invocation's lambda alive/.test(weeklySendSrc) && /this plain Node\.js process is kept alive/.test(weeklySendSrc));
 }
 
 console.log("(5) sanity: the refuted app/you/page.tsx and app/signin/page.tsx findings were deliberately left unchanged (differentiated verdicts, not misses)");
