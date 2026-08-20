@@ -79,7 +79,10 @@ console.log("(1) components/ProfileEditor.tsx + app/api/account/profile/route.ts
   const editor = readFileSync(new URL("../components/ProfileEditor.tsx", import.meta.url), "utf8");
   check("(1a) requiredFilled no longer checks city", /const requiredFilled = form\.firstName\.trim\(\)\.length > 0;/.test(editor));
   check("(1b) Field accepts a required prop", /required\?: boolean;/.test(editor));
-  check("(1c) the required asterisk renders when required is true", /\{required && <span style=\{\{ color: "var\(--accent-ink\)" \}\}> \*<\/span>\}/.test(editor));
+  // alpha-drift-r58-02 recolored this from --accent-ink (WCAG-failing) to
+  // --ink -- loosened to allow either, this assertion only cares that the
+  // asterisk itself renders.
+  check("(1c) the required asterisk renders when required is true", /\{required && <span style=\{\{ color: "var\(--(?:accent-ink|ink)\)" \}\}> \*<\/span>\}/.test(editor));
   check("(1d) First name is marked required", /label="First name"[\s\S]{0,200}?required/.test(editor));
 
   const route = readFileSync(new URL("../app/api/account/profile/route.ts", import.meta.url), "utf8");
