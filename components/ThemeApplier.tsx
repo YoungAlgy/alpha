@@ -72,11 +72,21 @@ export function ThemeApplier() {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
         if (!user) return;
-        const { data } = await sb
+        // alpha-drift-r62-08 (2026-08-20, silent-catch-audit-r8): this used
+        // to discard `error` -- a genuine read failure was indistinguishable
+        // from "no row," which silently skipped the DB-theme override below
+        // AND fired a spurious reconcile POST (data?.email falls back to ""
+        // on error, which never matches authLc). The outer catch's own
+        // r57-08 comment claims "logged, not silent," but supabase-js
+        // resolves rather than throws on a query error, so it never saw
+        // this. Logged only -- both effects already self-correct on the
+        // next successful page load.
+        const { data, error: rowErr } = await sb
           .from("users")
           .select("theme, email")
           .eq("id", user.id)
           .maybeSingle();
+        if (rowErr) console.warn("[ThemeApplier] signed-in hydrate row fetch failed:", rowErr.message);
         const dbTheme = coerceThemeId(data?.theme);
         // alpha-drift-r55-04 (2026-08-20, hydrate-vs-live-edit-race-audit):
         // this SELECT is a real, unsequenced network round trip started at

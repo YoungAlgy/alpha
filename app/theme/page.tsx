@@ -74,11 +74,18 @@ export default function ThemePage() {
         // the moment they tap a tile or Continue (pickTheme/submit call
         // setTheme(picked)). Same empty/default-overwrites-real-DB class as
         // the user-sync.ts fix; this closes the sibling write-path.
-        const { data: row } = await sb
+        // alpha-drift-r62-06: this destructure used to discard `error` --
+        // supabase-js resolves rather than throws on a query error, so the
+        // catch below (whose own comment claims "logged, not silent") was
+        // structurally blind to the exact failure mode it exists to catch.
+        // Logged only -- doesn't itself stop the clobber described above,
+        // just makes a silent one visible.
+        const { data: row, error: rowErr } = await sb
           .from("users")
           .select("theme")
           .eq("id", session.user.id)
           .maybeSingle();
+        if (rowErr) console.warn("[theme] signed-in hydrate row fetch failed:", rowErr.message);
         if (cancelled) return;
         const dbTheme = row?.theme as ThemeId | null | undefined;
         // alpha-drift-r54-03: don't let a late-resolving hydrate revert a

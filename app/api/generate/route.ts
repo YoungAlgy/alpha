@@ -132,11 +132,23 @@ async function verifyPaid(
     } = await sb.auth.getUser();
     if (user) {
       const svc = await supabaseServiceClient();
-      const { data } = await svc
+      // alpha-drift-r62-09 (2026-08-20, silent-catch-audit-r8): used to
+      // discard `error` -- supabase-js resolves rather than throws on a
+      // query error, so the catch below (its own comment: "fall through to
+      // session check") was structurally blind to this exact failure mode.
+      // On a blip, this branch silently skipped rather than throwing, and a
+      // signed-in subscriber with no sessionId (the reload/Try-Again path,
+      // which deliberately preserves it -- see r32-03) got a false 402 with
+      // zero trace, unlike the Stripe-side equivalent 60 lines below which
+      // already logs "stripe verify blip, failing closed." Logged only --
+      // this already fails closed by design (see this function's own header
+      // comment), so no behavior change.
+      const { data, error: subErr } = await svc
         .from("users")
         .select("subscribed_at, cancelled_at")
         .eq("id", user.id)
         .maybeSingle();
+      if (subErr) console.warn("[generate] verifyPaid subscription lookup failed:", subErr.message);
       // Access runs through the paid period — a future cancelled_at (cancel-
       // at-period-end) still counts as active. See lib/access.hasActiveAccess.
       if (data?.subscribed_at && hasActiveAccess(data.cancelled_at)) {
@@ -153,8 +165,11 @@ async function verifyPaid(
         };
       }
     }
-  } catch {
-    // ignore — fall through to session check
+  } catch (e) {
+    // alpha-drift-r62-09: logged, not silent -- a thrown failure here (e.g.
+    // supabaseServerClient() throwing on missing env vars) used to leave
+    // zero trace before falling through to the sessionId check below.
+    console.warn("[generate] verifyPaid already-subscribed check threw, falling through to session check:", e instanceof Error ? e.message : e);
   }
 
   if (!sessionId) {
@@ -408,12 +423,19 @@ export async function POST(req: Request) {
         try {
           // Issue number = prior DELIVERED letters (weeks before this one) + 1.
           // delivered_at NOT NULL so a generated-but-unsent row doesn't inflate it.
-          const { count } = await sb
+          // alpha-drift-r62-09: `error` used to be discarded here too -- the
+          // catch above only fires on a THROWN failure, but supabase-js
+          // resolves rather than throws on a query error, so a genuine
+          // failure silently left issueNumber at its default of 1 (a wrong
+          // "Issue 1" subject line for an existing reader) with the exact
+          // console.warn below never actually firing for that failure mode.
+          const { count, error: countErr } = await sb
             .from("issues")
             .select("*", { count: "exact", head: true })
             .eq("user_id", persistence.userId)
             .lt("week_of", weekOf)
             .not("delivered_at", "is", null);
+          if (countErr) throw countErr;
           issueNumber = (count ?? 0) + 1;
         } catch (e) {
           console.warn(
