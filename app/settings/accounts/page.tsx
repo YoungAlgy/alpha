@@ -41,6 +41,17 @@ interface Stats {
 export default function AdminAccountsPage() {
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  // alpha-drift-r62-01 (2026-08-20, self-audit-r61): r61's Promise.allSettled
+  // fix in the API route (fcc95a6) lets a stats-only failure return a real
+  // 200 with `stats: null`, but this page's own `if (data.stats)` no-op'd on
+  // null with no else -- so any reload AFTER the first (act()'s own finally
+  // block fires one after every admin action, plus search/clear) left the
+  // PRIOR stats object rendered under a green "action succeeded" message,
+  // indistinguishable from fresh. This flag makes that staleness visible
+  // instead of either hiding it (a fix that would ALSO undo r61: `stats:
+  // null` is a real, accepted, self-healing degraded response shape, not an
+  // error to react to by blanking the whole card again) or leaving it silent.
+  const [statsStale, setStatsStale] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // alpha-drift-r48-02 (2026-08-20): this used to be a single `busy: string
   // | null` slot -- disabling was scoped to whichever ONE userId was in it,
@@ -159,7 +170,14 @@ export default function AdminAccountsPage() {
       if (isStale()) return;
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setUsers((prev) => (opts?.append && prev ? [...prev, ...data.users] : data.users));
-      if (data.stats) setStats(data.stats);
+      if (data.stats) {
+        setStats(data.stats);
+        setStatsStale(false);
+      } else {
+        // Keep showing the last good numbers rather than blanking the card
+        // (see statsStale's own comment) -- just flag them as unverified.
+        setStatsStale(true);
+      }
       // The API caps every response at 200 rows — fewer than that back means
       // we've hit the end of the table (or, for a search, all the matches).
       setHasMore(data.users.length === 200);
@@ -307,7 +325,7 @@ export default function AdminAccountsPage() {
           </h1>
           {users && (
             <span className="alpha-mono" style={{ color: "var(--ink-soft)" }}>
-              {users.length} SHOWN{stats ? ` OF ${stats.totalUsers}` : ""}
+              {users.length} SHOWN{stats ? ` OF ${stats.totalUsers}${statsStale ? " (unverified)" : ""}` : ""}
             </span>
           )}
         </div>
@@ -359,10 +377,17 @@ export default function AdminAccountsPage() {
               borderColor: "var(--rule)",
               borderRadius: "var(--radius-card)",
               background: "var(--paper-deep)",
+              opacity: statsStale ? 0.6 : 1,
             }}
           >
             <div className="alpha-mono mb-4" style={{ color: "var(--ink)" }}>
               OPERATIONAL STATE
+              {statsStale && (
+                <span role="status" style={{ color: "var(--ink-soft)" }}>
+                  {" "}
+                  -- couldn&apos;t refresh, showing the last known numbers
+                </span>
+              )}
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               <Stat label="Paying" value={stats.paying} />

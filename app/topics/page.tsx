@@ -91,7 +91,7 @@ export default function TopicsPage() {
   // 9): removeAt() unmounts the just-clicked "remove" button (a custom-
   // topic chip, or a ranked-pick row) with no focus restoration -- the
   // browser drops focus to <body>, forcing a full re-Tab from the top of
-  // the page. Mirrors the accountsHeadingRef/deleteCount convention already
+  // the page. Mirrors the accountsHeadingRef/actionCount convention already
   // used in app/settings/accounts/page.tsx for the identical "a focused
   // list-item control just unmounted" problem: a monotonic counter (not a
   // boolean, so two removals in a row both re-trigger the effect even
@@ -118,14 +118,28 @@ export default function TopicsPage() {
     (async () => {
       try {
         const sb = supabaseClient();
-        const { data: { session } } = await sb.auth.getSession();
+        // alpha-drift-r62-05: both destructures below used to discard their
+        // Supabase error and rely on a try/catch that can't see it --
+        // supabase-js resolves rather than throws on a query/auth error, so
+        // the catch below was structurally blind to this exact failure mode
+        // (same lesson already applied at stripe/portal, stripe/webhook,
+        // theme/page.tsx, ProfileEditor.tsx, and ThemeApplier.tsx). A
+        // getSession() failure used to silently look like "signed out" here
+        // (submit() then skips the DB save on a real signed-in subscriber);
+        // a row-read failure used to silently look like "no saved pool"
+        // (submit() then clobbers a real, larger DB pool with onboarding
+        // localStorage's smaller one). Logged only -- the page's existing
+        // fail-open UX is unchanged, this just makes the failure visible.
+        const { data: { session }, error: sessionErr } = await sb.auth.getSession();
+        if (sessionErr) console.warn("[topics] signed-in hydrate getSession failed:", sessionErr.message);
         if (cancelled) return;
         if (!session) return;
-        const { data: row } = await sb
+        const { data: row, error: rowErr } = await sb
           .from("users")
           .select("topic_quota, topics, birthday")
           .eq("id", session.user.id)
           .maybeSingle();
+        if (rowErr) console.warn("[topics] signed-in hydrate row fetch failed:", rowErr.message);
         if (cancelled) return;
         // Flip signedIn in the same batch as the row's picked/target values below
         // (not right after getSession) so submit()'s signedIn check never sees a
