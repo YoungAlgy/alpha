@@ -115,13 +115,26 @@ export default function AdminAccountsPage() {
     load();
   }, []);
 
+  // alpha-drift-r47-01 (2026-08-20): these had no busy guard at all, unlike
+  // every per-row action button on this page (disabled={isBusy}) -- act()'s
+  // own finally block (alpha-drift-r46-01) always reloads the row list via
+  // load(), so an admin could act on a row, then immediately run a NEW
+  // search or hit Clear before that reload resolved. Neither request is
+  // sequenced, so whichever response landed last silently won the
+  // setUsers/setStats write regardless of which was issued more recently,
+  // leaving the admin looking at stale data with no indication anything
+  // was wrong. The early-return here is defense in depth on top of the
+  // controls themselves being disabled below (Enter can still submit a
+  // form whose submit button is disabled, if the input itself isn't).
   function runSearch(e: React.FormEvent) {
     e.preventDefault();
+    if (busy !== null) return;
     setActiveSearch(q);
     load({ search: q });
   }
 
   function clearSearch() {
+    if (busy !== null) return;
     setQ("");
     setActiveSearch("");
     load();
@@ -246,22 +259,25 @@ export default function AdminAccountsPage() {
             // as a label in the first place. aria-label gives this field a
             // real accessible name without changing the visual layout.
             aria-label="Search by email"
+            disabled={busy !== null}
             className="alpha-ui text-sm flex-1 px-3 py-2 border"
-            style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)", background: "var(--paper)" }}
+            style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)", background: "var(--paper)", opacity: busy !== null ? 0.6 : 1 }}
           />
           <button
             type="submit"
+            disabled={busy !== null}
             className="alpha-ui text-sm px-4 py-2 underline underline-offset-4"
-            style={{ color: "var(--ink)" }}
+            style={{ color: "var(--ink)", opacity: busy !== null ? 0.4 : 1 }}
           >
             Search
           </button>
           {activeSearch && (
             <button
               type="button"
+              disabled={busy !== null}
               onClick={clearSearch}
               className="alpha-ui text-sm px-4 py-2 underline underline-offset-4"
-              style={{ color: "var(--ink-soft)" }}
+              style={{ color: "var(--ink-soft)", opacity: busy !== null ? 0.4 : 1 }}
             >
               Clear
             </button>
