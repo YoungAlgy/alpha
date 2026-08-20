@@ -76,9 +76,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "direction must be 'up' or 'down'" }, { status: 400 });
   }
 
-  // Look up the user's Stripe customer + topic_quota via service role
-  // (RLS-bypassing — public.users isn't reachable directly with the user's
-  // JWT on the server because we set policy to self-read only).
+  // alpha-drift-r55-05 (2026-08-20, rls-migration-drift-audit-r4): service
+  // role, not the session client -- and not because the SELECT itself is
+  // unreachable. public.users DOES have a working self-read/self-update
+  // policy scoped to auth.uid() (relied on daily by lib/theme.ts's
+  // setTheme() and lib/user-sync.ts's syncUserProfile() -- see round 51's
+  // rls-migration-drift-audit finding on app/api/resume/route.ts for the
+  // same correction). The real reason: this handler later writes
+  // topic_quota (line ~237), one of the columns
+  // protect_user_privileged_columns_trg (20260524000000_security_user_
+  // column_lock.sql) pins back to its old value for any non-service_role
+  // caller. Using the service role for both the read and the write keeps
+  // one client for the whole round trip.
   const svc = await supabaseServiceClient();
   const { data: row, error: rowErr } = await svc
     .from("users")
