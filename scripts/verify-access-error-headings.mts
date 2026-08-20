@@ -32,7 +32,16 @@ function h1Count(src: string): number {
 console.log("(1) app/inbox/page.tsx: both error/empty states now render a real <h1>");
 {
   const src = readFileSync(new URL("../app/inbox/page.tsx", import.meta.url), "utf8");
-  check("(1) exactly 2 <h1> tags (accessEnded + no-letter-on-device states)", h1Count(src) === 2);
+  // alpha-drift-r58-04 (2026-08-20, duplicate-code-audit-r8): round 42
+  // (fbc1bf5) legitimately added a THIRD, distinct <h1> here (the loadError
+  // state, a genuine query-failure state -- see verify-r42-findings.mts's
+  // (5)) -- this round-21 script's own bare count assertion was never
+  // updated to match and has been silently failing on correct code since.
+  // Bumped to 3 and given its own explicit text/role check, matching the
+  // pattern already used for the other 2 headings below, so the guard can
+  // actually catch a future regression instead of only ever failing.
+  check("(1) exactly 3 <h1> tags (loadError + accessEnded + no-letter-on-device states)", h1Count(src) === 3);
+  check("(1) the loadError headline is an <h1> with role=\"alert\"", /<h1[^>]*role="alert">\s*\n\s*Couldn&apos;t load your letters\./.test(src));
   check("(1) the accessEnded headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*Your subscription has ended\.\s*<\/h1>/.test(src));
   check("(1) the no-letter-on-device headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*No letter on this device yet\.\s*<\/h1>/.test(src));
   check("(1) no dangling styled-<p> pretending to be these headlines anymore", !/<p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">\s*(Your subscription has ended|No letter on this device yet)/.test(src));
@@ -41,7 +50,10 @@ console.log("(1) app/inbox/page.tsx: both error/empty states now render a real <
 console.log("(2) app/inbox/[issueId]/page.tsx: both error/empty states now render a real <h1>");
 {
   const src = readFileSync(new URL("../app/inbox/[issueId]/page.tsx", import.meta.url), "utf8");
-  check("(2) exactly 2 <h1> tags (accessEnded + missing states)", h1Count(src) === 2);
+  // alpha-drift-r58-04: same fix as (1) above -- the identical loadError
+  // <h1> round 42 added here too, never reflected in this script's count.
+  check("(2) exactly 3 <h1> tags (accessEnded + loadError + missing states)", h1Count(src) === 3);
+  check("(2) the loadError headline is an <h1> with role=\"alert\"", /<h1[^>]*role="alert">\s*\n\s*Couldn&apos;t load that letter\./.test(src));
   check("(2) the accessEnded headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*Your subscription has ended\.\s*<\/h1>/.test(src));
   check("(2) the missing-letter headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*Can&apos;t find that letter\.\s*<\/h1>/.test(src));
 }

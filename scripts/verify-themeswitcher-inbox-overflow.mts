@@ -23,7 +23,13 @@ const check = (label: string, cond: boolean) => {
 console.log("(1) app/inbox/page.tsx: ThemeSwitcher is now the LAST icon in its header row, matching its own align=right precondition");
 {
   const src = readFileSync(new URL("../app/inbox/page.tsx", import.meta.url), "utf8");
-  const rowMatch = src.match(/<div className="flex items-center gap-2">([\s\S]*?)<\/div>/);
+  // alpha-drift-r58-04 (2026-08-20, duplicate-code-audit-r8): round 35
+  // (1a8c39f) legitimately appended " min-w-0" to this same row's
+  // className (a real, unrelated ThemeSwitcher-truncation fix, 11 rounds
+  // after this script was written) -- the exact-literal regex here never
+  // absorbed it and has been unable to match this row (or its
+  // [issueId] sibling below) since. Loosened to tolerate trailing classes.
+  const rowMatch = src.match(/<div className="flex items-center gap-2[^"]*">([\s\S]*?)<\/div>/);
   check("(1a) the icon-group row was found", !!rowMatch);
   const row = rowMatch ? rowMatch[1] : "";
   const audioIdx = row.indexOf("<AudioToggle");
@@ -39,7 +45,8 @@ console.log("(2) sanity: the other 2 ThemeSwitcher call sites already satisfy th
 {
   const issueIdSrc = readFileSync(new URL("../app/inbox/[issueId]/page.tsx", import.meta.url), "utf8");
   check("(2a) /inbox/[issueId]: ThemeSwitcher is still the last element in its row (no Settings button there)", (() => {
-    const rowMatch = issueIdSrc.match(/<div className="flex items-center gap-2">([\s\S]*?)<\/div>/);
+    // alpha-drift-r58-04: same trailing-class loosening as (1) above.
+    const rowMatch = issueIdSrc.match(/<div className="flex items-center gap-2[^"]*">([\s\S]*?)<\/div>/);
     if (!rowMatch) return false;
     const row = rowMatch[1];
     return row.trimEnd().endsWith("<ThemeSwitcher />");
