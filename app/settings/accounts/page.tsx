@@ -42,7 +42,21 @@ export default function AdminAccountsPage() {
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  // alpha-drift-r48-02 (2026-08-20): this used to be a single `busy: string
+  // | null` slot -- disabling was scoped to whichever ONE userId was in it,
+  // so acting on a SECOND row overwrote the shared slot and silently
+  // un-disabled the FIRST row's button while its own request was still in
+  // flight. Worse, there was no synchronous ref-based re-entrancy latch
+  // either, unlike every other mutating action in this codebase
+  // (ProfileEditor's saveInFlight, settings/page.tsx's confirmInFlight/
+  // resumeInFlight/deleteInFlight) -- a second click on that still-in-flight
+  // row (now looking normal again) could fire a real second concurrent
+  // request, including for the irreversible delete action. busyRowsRef is
+  // the synchronous guard (checked before any async work starts); busyRows
+  // mirrors it into React state purely for rendering each row's own
+  // disabled state independently.
+  const busyRowsRef = useRef<Set<string>>(new Set());
+  const [busyRows, setBusyRows] = useState<Set<string>>(new Set());
   // alpha-drift-r32-04 (2026-08-14): act() only ever alert()'d on FAILURE --
   // a successful grant/revoke/clear/delete gave a sighted admin the visual
   // row-list reload as feedback, but a screen reader user got no
@@ -128,13 +142,13 @@ export default function AdminAccountsPage() {
   // form whose submit button is disabled, if the input itself isn't).
   function runSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (busy !== null) return;
+    if (busyRowsRef.current.size > 0) return;
     setActiveSearch(q);
     load({ search: q });
   }
 
   function clearSearch() {
-    if (busy !== null) return;
+    if (busyRowsRef.current.size > 0) return;
     setQ("");
     setActiveSearch("");
     load();
@@ -152,7 +166,9 @@ export default function AdminAccountsPage() {
 
   async function act(userId: string, email: string, action: "delete" | "grant_free" | "revoke_free" | "clear_suppression", confirmMsg?: string) {
     if (confirmMsg && !confirm(confirmMsg)) return;
-    setBusy(userId);
+    if (busyRowsRef.current.has(userId)) return;
+    busyRowsRef.current.add(userId);
+    setBusyRows(new Set(busyRowsRef.current));
     setActionMsg(null);
     try {
       const res = await fetch("/api/admin/users", {
@@ -185,7 +201,8 @@ export default function AdminAccountsPage() {
       // window doesn't bounce the admin back to page one -- regardless of
       // whether this action's own response was a full success.
       await load(activeSearch ? { search: activeSearch } : undefined);
-      setBusy(null);
+      busyRowsRef.current.delete(userId);
+      setBusyRows(new Set(busyRowsRef.current));
     }
   }
 
@@ -259,25 +276,25 @@ export default function AdminAccountsPage() {
             // as a label in the first place. aria-label gives this field a
             // real accessible name without changing the visual layout.
             aria-label="Search by email"
-            disabled={busy !== null}
+            disabled={busyRows.size > 0}
             className="alpha-ui text-sm flex-1 px-3 py-2 border"
-            style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)", background: "var(--paper)", opacity: busy !== null ? 0.6 : 1 }}
+            style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)", background: "var(--paper)", opacity: busyRows.size > 0 ? 0.6 : 1 }}
           />
           <button
             type="submit"
-            disabled={busy !== null}
+            disabled={busyRows.size > 0}
             className="alpha-ui text-sm px-4 py-2 underline underline-offset-4"
-            style={{ color: "var(--ink)", opacity: busy !== null ? 0.4 : 1 }}
+            style={{ color: "var(--ink)", opacity: busyRows.size > 0 ? 0.4 : 1 }}
           >
             Search
           </button>
           {activeSearch && (
             <button
               type="button"
-              disabled={busy !== null}
+              disabled={busyRows.size > 0}
               onClick={clearSearch}
               className="alpha-ui text-sm px-4 py-2 underline underline-offset-4"
-              style={{ color: "var(--ink-soft)", opacity: busy !== null ? 0.4 : 1 }}
+              style={{ color: "var(--ink-soft)", opacity: busyRows.size > 0 ? 0.4 : 1 }}
             >
               Clear
             </button>
@@ -374,7 +391,7 @@ export default function AdminAccountsPage() {
                 .join(" · ");
               const created = new Date(u.created_at).toLocaleDateString();
               const isGranted = !!u.subscribed_at && !u.stripe_customer_id;
-              const isBusy = busy === u.id;
+              const isBusy = busyRows.has(u.id);
               // alpha-drift-r20-06: deliverability suppression is orthogonal
               // to billing status (statusLabel above) -- a Paying subscriber
               // can be silently bounce-suppressed too, so this is its own
