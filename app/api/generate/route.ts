@@ -530,12 +530,28 @@ function deliveryStoreFor(
         .select("user_id");
       if (error) throw new Error(error.message);
       if ((claimRows?.length ?? 0) > 0) return { won: true, exists: true };
-      const { data: check } = await sb
+      const { data: check, error: checkError } = await sb
         .from("issues")
         .select("delivered_at")
         .eq("user_id", userId)
         .eq("week_of", weekOf)
         .maybeSingle();
+      // alpha-drift-r58-05 (2026-08-20, silent-catch-audit-r4): this read's
+      // own `error` used to be discarded entirely, unlike this function's
+      // other two Supabase calls (both throw on error). A genuine read
+      // failure here is NOT the double-send risk the comment below
+      // describes, though -- personally traced deliverLetterOnce
+      // (lib/letter-delivery.ts): its "no-row" branch (what a swallowed
+      // error here falls into today) and its "claim-error" branch (what
+      // throwing here would route into via the outer catch) both call the
+      // identical trySend() and fail open by explicit design ("never block
+      // [the paid first letter] on an infra hiccup") -- so a thrown error
+      // here changes NEITHER path's send behavior, only observability
+      // (onError fires, the returned `reason` is the more accurate
+      // "claim-error" instead of a misleading "no-row"). Logged, not
+      // thrown, to keep that observability gain without claiming a
+      // correctness fix this read genuinely doesn't provide.
+      if (checkError) console.warn("[generate] claim() disambiguation read failed:", checkError.message);
       // exists keys on ROW PRESENCE, not on delivered_at being set, on purpose.
       // If a concurrent run claimed this row then released it (its send failed)
       // in the sliver between our UPDATE and this read, we treat the present row
