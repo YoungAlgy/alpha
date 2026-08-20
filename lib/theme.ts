@@ -60,7 +60,17 @@ export function setTheme(id: ThemeId): void {
       try {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
-        if (user) await sb.from("users").update({ theme: id }).eq("id", user.id);
+        if (user) {
+          // alpha-drift-r57-07 (2026-08-20, silent-catch-audit-r3): the
+          // catch below's own comment claims a persist failure is "Logged,
+          // not silent" -- true only for a THROWN failure. Supabase's
+          // `.update()` resolves rather than throws on a write error
+          // (returns `{ data: null, error }`), which this line discarded
+          // by not destructuring it -- the actual default failure mode
+          // never reached the catch, and was never logged anywhere.
+          const { error } = await sb.from("users").update({ theme: id }).eq("id", user.id);
+          if (error) console.warn("[setTheme] DB persist failed:", error.message);
+        }
       } catch (e) {
         // Logged, not silent: the DB row is the highest-authority source of
         // truth for a signed-in user (see the comment above) -- a

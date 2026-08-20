@@ -115,8 +115,17 @@ export function ThemeApplier() {
             console.warn("[ThemeApplier] email reconcile failed:", e instanceof Error ? e.message : e)
           );
         }
-      } catch {
-        // ignore — fall back to local
+      } catch (e) {
+        // alpha-drift-r57-08 (2026-08-20, silent-catch-audit-r3): this
+        // block is also this file's only trigger for the email-mirror
+        // reconcile above -- a genuinely thrown failure here (a dynamic-
+        // import/chunk-load failure, or a non-AuthError throw from
+        // getUser()) silently skipped that reconcile check too, with the
+        // same zero-trace class round 56 fixed for the fetch call one
+        // level in, just not for the code that decides whether to make
+        // that fetch at all. Falling back to the local theme is still
+        // correct behavior -- just no longer silent about why.
+        console.warn("[ThemeApplier] signed-in hydrate failed:", e instanceof Error ? e.message : e);
       }
     })();
 
@@ -135,11 +144,24 @@ export function ThemeApplier() {
     // SELECT resolved with the pre-pick value. Since editedThisLoad is a
     // per-tab module flag (not shared across tabs), a cross-tab pick has to
     // arm THIS tab's own copy explicitly, the same way an in-tab pick does.
+    //
+    // alpha-drift-r57-02 (2026-08-20, self-audit-r56): that fix keyed off
+    // `e.key` alone, but ONBOARDING_KEY is the same localStorage blob
+    // lib/onboarding-state.ts's update() rewrites on EVERY onboarding-state
+    // patch, not just a theme change -- components/ProfileEditor.tsx's Save
+    // and app/topics/page.tsx's topic edits both write it too, and neither
+    // touches theme. Marking the flag unconditionally on any write to that
+    // key meant an unrelated cross-tab profile/topics save could wrongly
+    // suppress the DB-authoritative theme hydrate for the rest of this
+    // tab's life. Only arm the flag (and only repaint) when the resolved
+    // theme actually differs from what's currently applied.
     function onStorage(e: StorageEvent) {
       if (e.key === ONBOARDING_KEY || e.key === FALLBACK_KEY) {
-        markThemeEditedThisLoad();
         const next = readLocalTheme();
-        if (next) set(next);
+        if (next && next !== document.documentElement.getAttribute("data-theme")) {
+          markThemeEditedThisLoad();
+          set(next);
+        }
       }
     }
 
