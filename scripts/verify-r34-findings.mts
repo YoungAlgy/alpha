@@ -71,7 +71,11 @@ console.log("(3) components/ProfileEditor.tsx: birthday gets the same validity g
   const src = readFileSync(new URL("../components/ProfileEditor.tsx", import.meta.url), "utf8");
   check("(3a) parseBirthday imported from lib/demographics", /import \{ coerceGender, demographicSummary, maxBirthdayForMinAge, parseBirthday \} from "@\/lib\/demographics";/.test(src));
   check("(3b) birthdayValid computed with the same rule as app/you/page.tsx", /const birthdayValid = form\.birthday\.length === 0 \|\| parseBirthday\(form\.birthday\) !== null;/.test(src));
-  check("(3c) canSave is gated on birthdayValid", /const canSave = dirty && requiredFilled && birthdayValid && !busy;/.test(src));
+  // alpha-drift-r62-07 (2026-08-20, silent-catch-audit-r8) appended
+  // `&& !hydrateFailed` to this same condition, to block Save when the
+  // hydrate itself failed (a separate, later fix) -- loosened to allow
+  // either shape. See verify-r62-findings.mts's (7c).
+  check("(3c) canSave is gated on birthdayValid", /const canSave = dirty && requiredFilled && birthdayValid && !busy(?: && !hydrateFailed)?;/.test(src));
   check("(3d) the input carries aria-invalid reflecting the same validity check", /aria-invalid=\{form\.birthday\.length > 0 && !birthdayValid\}/.test(src));
   check("(3e) the input carries aria-describedby pointing at the hint", /aria-describedby="profile-birthday-hint"/.test(src));
   check("(3f) the hint has a matching id + live-region wiring", /id="profile-birthday-hint"[\s\S]{0,40}role="status"[\s\S]{0,40}aria-live="polite"/.test(src));

@@ -79,8 +79,18 @@ try {
 // --- 2) topic-blurb.ts's real escalation reaches DeepSeek -------------------
 // Gemini AND Groq forced down (invalid key / invalid key); Anthropic already
 // forced down from the top of this script. A real blurb can ONLY come from
-// DeepSeek in this state.
-console.log("(2) topic-blurb.ts escalation: Gemini down, Groq down, Anthropic down -> DeepSeek produces the blurb");
+// DeepSeek in this state -- EXCEPT this is a genuinely harder bar than
+// production ever faces (alpha-drift-r62-04, 2026-08-20, duplicate-code-
+// audit-r12, same lesson verify-groq-fallback.mts's section 3 already
+// carries): topic-blurb.ts runs DeepSeek's own draft through the
+// findLexicalTells voice-guard, and if it slips a banned phrase, it
+// escalates FURTHER to Haiku then Sonnet -- both forced down here too, so a
+// failure below means DeepSeek's draft needed the (deliberately disabled)
+// Anthropic rescue tier that production always has funded, not that
+// DeepSeek itself is broken. Reproduced live: DeepSeek generated real
+// content, voice-guard caught a slip, escalated to Haiku, and both Haiku
+// and Sonnet then hit the forced 401 -- a false failure, not a regression.
+console.log("(2) topic-blurb.ts escalation: Gemini down, Groq down, Anthropic down -> DeepSeek produces the blurb (or this run legitimately hit the harder-than-production case where DeepSeek's own draft also needed the disabled Anthropic rescue tier)");
 const realGeminiKey = process.env.GEMINI_API_KEY;
 const realGroqKey = process.env.GROQ_API_KEY;
 process.env.GEMINI_API_KEY = "NOT-A-REAL-KEY-forced-failure-test";
