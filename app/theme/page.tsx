@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
@@ -29,6 +29,19 @@ export default function ThemePage() {
   // (supabaseConfigured() false — this is a pure onboarding-localStorage
   // flow with nothing async to race).
   const [themeHydrated, setThemeHydrated] = useState(!supabaseConfigured());
+  // alpha-drift-r54-03 (2026-08-20, accessibility-resweep-newer-code-round-2):
+  // pickTheme() applies a tap immediately and unconditionally (localStorage,
+  // DOM data-theme, an async DB write) with no gate on themeHydrated. The
+  // signed-in hydrate effect below is a separate, independent network round
+  // trip already in flight from mount -- if it resolves AFTER a user's tap,
+  // its own unconditional setPicked(dbTheme) silently reverted the tapped
+  // selection back to the stale saved theme in React state (even though the
+  // page had already visually repainted to the new pick), and a subsequent
+  // Continue click would re-persist the stale reverted value. Set true the
+  // first time the user taps a tile; the hydrate effect then skips its own
+  // setPicked() once this is set, so a live tap always wins over a
+  // same-mount hydrate response that merely started before it.
+  const userPickedRef = useRef(false);
 
   useEffect(() => {
     if (loaded && state.theme) {
@@ -68,7 +81,10 @@ export default function ThemePage() {
           .maybeSingle();
         if (cancelled) return;
         const dbTheme = row?.theme as ThemeId | null | undefined;
-        if (dbTheme && dbTheme in SWATCHES) setPicked(dbTheme);
+        // alpha-drift-r54-03: don't let a late-resolving hydrate revert a
+        // pick the user already made this session -- see userPickedRef's
+        // own comment.
+        if (dbTheme && dbTheme in SWATCHES && !userPickedRef.current) setPicked(dbTheme);
       } catch (e) {
         // Logged, not silent: this hydrate exists specifically to stop a
         // returning subscriber's real saved theme from getting clobbered
@@ -88,6 +104,7 @@ export default function ThemePage() {
   }, []);
 
   function pickTheme(id: ThemeId) {
+    userPickedRef.current = true;
     setPicked(id);
     // Apply + persist (account + localStorage) + broadcast immediately, so the
     // pick sticks the moment you tap it — no "Continue" required to save.

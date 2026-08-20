@@ -60,6 +60,21 @@ export default function TopicsPage() {
   // concurrent POST /api/account/topics requests before React flushes the
   // disabled prop. A synchronous ref latch closes the window state can't.
   const saveInFlight = useRef(false);
+  // alpha-drift-r54-02 (2026-08-20, accessibility-resweep-newer-code-round-2):
+  // the topic-card grid is fully interactive from first paint -- toggle()/
+  // removeAt()/move()/addCustom() aren't gated behind topicsHydrated at all.
+  // The signed-in hydrate effect below does an unconditional setPicked()/
+  // setTarget() the moment its own network round trip resolves, with no
+  // check for whether the user already changed `picked` locally since
+  // mount. A signed-in subscriber tapping cards during that window (a real
+  // PostgREST request, not a cached read) had every tap silently discarded
+  // and replaced by the OLD saved list the instant the fetch resolved, with
+  // zero indication anything happened -- and a subsequent Save would
+  // re-persist the stale list, losing their real edits. Set true the first
+  // time the user changes the pool; the hydrate effect then skips its own
+  // writes once this is set, so a live edit always wins over a same-mount
+  // hydrate response that merely started before it.
+  const userEditedRef = useRef(false);
 
   useEffect(() => {
     if (loaded && state.topics) setPicked(state.topics);
@@ -89,13 +104,19 @@ export default function TopicsPage() {
         // save from another device.
         setSignedIn(true);
         setUserBirthday(row?.birthday ?? null);
-        if (row?.topic_quota && typeof row.topic_quota === "number") {
-          setTarget(clampQuota(row.topic_quota));
-        }
-        // Prefer the DB's saved order (the user's ranking) over whatever
-        // onboarding localStorage happens to hold on this device.
-        if (Array.isArray(row?.topics) && row.topics.length > 0) {
-          setPicked(row.topics as TopicId[]);
+        // alpha-drift-r54-02: skip the pool/quota writes below once the user
+        // has already made a live edit this mount -- see userEditedRef's
+        // own comment. signedIn/birthday above are unaffected by picking,
+        // so they stay unconditional.
+        if (!userEditedRef.current) {
+          if (row?.topic_quota && typeof row.topic_quota === "number") {
+            setTarget(clampQuota(row.topic_quota));
+          }
+          // Prefer the DB's saved order (the user's ranking) over whatever
+          // onboarding localStorage happens to hold on this device.
+          if (Array.isArray(row?.topics) && row.topics.length > 0) {
+            setPicked(row.topics as TopicId[]);
+          }
         }
       } catch (e) {
         // Logged, not silent: if this throws, signedIn never flips true, so
@@ -154,6 +175,7 @@ export default function TopicsPage() {
   // addCustom's success path, matching how customErr is already cleared on
   // the custom-topic input's own onChange.
   function toggle(id: TopicId) {
+    userEditedRef.current = true;
     if (saveError) setSaveError(null);
     setPicked((prev) => {
       if (prev.includes(id)) {
@@ -167,6 +189,7 @@ export default function TopicsPage() {
   }
 
   function addCustom() {
+    userEditedRef.current = true;
     const id = makeCustomTopic(customText);
     if (!id) {
       setCustomErr("Give it a couple of words. The more specific, the better.");
@@ -196,6 +219,7 @@ export default function TopicsPage() {
   }
 
   function removeAt(id: TopicId) {
+    userEditedRef.current = true;
     if (saveError) setSaveError(null);
     unselect();
     setAnnouncement(`${topicLabel(id)} removed from your lineup.`);
@@ -207,6 +231,7 @@ export default function TopicsPage() {
   function move(from: number, dir: -1 | 1) {
     const to = from + dir;
     if (to < 0 || to >= picked.length) return;
+    userEditedRef.current = true;
     if (saveError) setSaveError(null);
     // alpha-drift-r32-02: computed from the closure's own `picked`/`quota`
     // (both already in scope every render) rather than inside the setPicked
