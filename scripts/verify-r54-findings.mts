@@ -60,9 +60,17 @@ console.log("(2) app/topics/page.tsx: a live user edit now always wins over a sa
 {
   const src = readFileSync(new URL("../app/topics/page.tsx", import.meta.url), "utf8");
   check("(2a) userEditedRef is declared", /const userEditedRef = useRef\(false\);/.test(src));
-  check("(2b) the hydrate effect's setTarget\\/setPicked are gated behind it", /if \(!userEditedRef\.current\) \{\s*\n\s*if \(row\?\.topic_quota && typeof row\.topic_quota === "number"\) \{\s*\n\s*setTarget\(clampQuota\(row\.topic_quota\)\);\s*\n\s*\}/.test(src));
+  // alpha-drift-r55-02 (2026-08-20, self-audit-r54) split this gate:
+  // setTarget was found to be wrongly bundled under the same latch as
+  // setPicked (target/quota is never user-edited state on this page) and
+  // now runs unconditionally -- only setPicked(row.topics) is still gated.
+  // See scripts/verify-r55-findings.mts's own (2b)/(2c) for the current shape.
+  check("(2b) the hydrate effect's setPicked is gated behind it (setTarget no longer is, see r55-02)", /if \(!userEditedRef\.current\) \{\s*\n(?:[^\n]*\n){0,4}?\s*setPicked\(row\.topics as TopicId\[\]\);/.test(src));
   check("(2c) toggle() sets the ref", /function toggle\(id: TopicId\) \{\s*\n\s*userEditedRef\.current = true;/.test(src));
-  check("(2d) addCustom() sets the ref", /function addCustom\(\) \{\s*\n\s*userEditedRef\.current = true;/.test(src));
+  // alpha-drift-r55-01 (2026-08-20, self-audit-r54) moved addCustom()'s ref
+  // assignment past its own validation returns, so a no-op Add attempt
+  // doesn't spuriously arm the latch -- see verify-r55-findings.mts's (3).
+  check("(2d) addCustom() sets the ref immediately before its real setPicked call (moved past validation, see r55-01)", /userEditedRef\.current = true;\s*\n\s*tap\(\);\s*\n\s*setPicked\(\(prev\) => \[\.\.\.prev, id\]\);/.test(src));
   check("(2e) removeAt() sets the ref", /function removeAt\(id: TopicId\) \{\s*\n\s*userEditedRef\.current = true;/.test(src));
   check("(2f) move() sets the ref", /if \(to < 0 \|\| to >= picked\.length\) return;\s*\n\s*userEditedRef\.current = true;/.test(src));
 }
