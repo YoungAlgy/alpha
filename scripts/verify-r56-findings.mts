@@ -41,7 +41,11 @@ console.log("(1) components/ThemeApplier.tsx: a cross-tab theme change now arms 
 {
   const src = readFileSync(new URL("../components/ThemeApplier.tsx", import.meta.url), "utf8");
   check("(1a) markThemeEditedThisLoad is imported alongside themeEditedThisLoad", /import \{ themeEditedThisLoad, markThemeEditedThisLoad \} from "@\/lib\/theme-edit-tracker";/.test(src));
-  check("(1b) onStorage calls markThemeEditedThisLoad() before reading/applying the cross-tab theme", /function onStorage\(e: StorageEvent\) \{\s*\n\s*if \(e\.key === ONBOARDING_KEY \|\| e\.key === FALLBACK_KEY\) \{\s*\n\s*markThemeEditedThisLoad\(\);\s*\n\s*const next = readLocalTheme\(\);/.test(src));
+  // alpha-drift-r57-02 (2026-08-20, self-audit-r56) scoped this further --
+  // it used to mark unconditionally on any write to the key; now only when
+  // the resolved theme actually differs from what's applied. Loosened to
+  // match the current shape. See verify-r57-findings.mts's (2).
+  check("(1b) onStorage calls markThemeEditedThisLoad() when applying a genuine cross-tab theme change", /function onStorage\(e: StorageEvent\) \{\s*\n\s*if \(e\.key === ONBOARDING_KEY \|\| e\.key === FALLBACK_KEY\) \{\s*\n\s*const next = readLocalTheme\(\);\s*\n\s*if \(next && next !== document\.documentElement\.getAttribute\("data-theme"\)\) \{\s*\n\s*markThemeEditedThisLoad\(\);/.test(src));
 }
 
 console.log("(2) components/ThemeApplier.tsx: the email-reconcile fetch's catch is no longer silent");

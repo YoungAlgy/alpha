@@ -120,7 +120,10 @@ console.log("(6) app/support/SupportForm.tsx: now pre-checks email validity like
 {
   const src = readFileSync(new URL("../app/support/SupportForm.tsx", import.meta.url), "utf8");
   check("(6a) imports isValidEmail", /import \{ isValidEmail \} from "@\/lib\/validate-email";/.test(src));
-  check("(6b) submit() checks it before ever hitting the network", /if \(!isValidEmail\(email\.trim\(\)\)\) \{\s*\n\s*setStatus\("error"\);\s*\n\s*setError\("That doesn't look like an email\. Check for a typo\."\);/.test(src));
+  // alpha-drift-r57-09 hoisted email.trim() into a named `cleanEmail` (also
+  // used for the fetch body, not just this check) -- loosened to allow
+  // either shape.
+  check("(6b) submit() checks it before ever hitting the network", /if \(!isValidEmail\((?:email\.trim\(\)|cleanEmail)\)\) \{\s*\n\s*setStatus\("error"\);\s*\n\s*setError\("That doesn't look like an email\. Check for a typo\."\);/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

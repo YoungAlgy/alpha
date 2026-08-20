@@ -87,7 +87,11 @@ console.log("(4) app/api/account/profile/route.ts: the comment now correctly say
 {
   const src = readFileSync(new URL("../app/api/account/profile/route.ts", import.meta.url), "utf8");
   check("(4a) no longer groups city with the clearable blurbs", !/city \+ the three blurbs are personalization: editable and clearable\./.test(src));
-  check("(4b) now says first_name AND city are the two load-bearing fields", /first_name AND city are the two load-bearing fields/.test(src));
+  // alpha-drift-r57-01 (2026-08-20, form-validation-consistency-audit-r2)
+  // loosened city back to optional (matching the rest of the app), which
+  // superseded round 54's own "first_name AND city are load-bearing" fix --
+  // now only first_name is required here. See verify-r57-findings.mts's (1).
+  check("(4b) city is no longer described as load-bearing here (superseded by r57-01)", !/first_name AND city are the two load-bearing fields/.test(src));
 }
 
 console.log("(5) app/checkout/page.tsx: the theme\\/topics\\/city\\/email summary is now gated on loaded");
