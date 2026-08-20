@@ -84,9 +84,15 @@ const check = (label: string, cond: boolean) => {
 console.log("(1) components/ScrollFadeIn.tsx: reads prefers-reduced-motion at useState-init time, before the effect ever runs");
 {
   const src = readFileSync(new URL("../components/ScrollFadeIn.tsx", import.meta.url), "utf8");
-  check("(1a) prefersReducedMotion is computed before useState", /const prefersReducedMotion =\s*\n\s*typeof window !== "undefined" && window\.matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)\.matches;/.test(src));
-  check("(1b) shown is initialized from it, not a bare false", /const \[shown, setShown\] = useState\(prefersReducedMotion\);/.test(src));
-  check("(1c) the effect early-returns under reduced motion before touching the observer", /if \(prefersReducedMotion\) return;/.test(src));
+  // alpha-drift-r65-01 (2026-08-21, self-audit-r64): this exact
+  // useState-init-time shape was the round-64 REGRESSION self-audit
+  // caught -- it diverged SSR (always false) from client hydration (true
+  // for a reduced-motion visitor), permanently hiding letter content on
+  // app/letter + app/sample for that population. Replaced with
+  // useState(false) for SSR/client parity plus a matchMedia check inside
+  // the effect (which never runs during SSR, so there's no divergence) --
+  // loosened to the corrected shape. See verify-r65-findings.mts's (1).
+  check("(1a-c) reduced-motion is now read inside the effect (SSR-safe), not at useState-init time", /const \[shown, setShown\] = useState\(false\);/.test(src) && /if \(window\.matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)\.matches\) \{/.test(src));
 }
 
 console.log("(2) app/globals.css: the app's only :focus-visible rules use --ink, not the WCAG-failing --accent or the design-decision-pending --accent-ink");
