@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { isInvalidOrExpiredOtpError } from "@/lib/gotrue-errors";
+import { isInvalidOrExpiredOtpError, isInvalidOrExpiredPkceError } from "@/lib/gotrue-errors";
 
 // Handles the magic-link callback for BOTH Supabase flow types:
 //   - PKCE flow: `?code=xxx` in the query — exchangeCodeForSession
@@ -120,10 +120,20 @@ function Inner() {
         // opening the link in a different browser than it was requested
         // in), the same class app/signin/page.tsx already fixed in round
         // 35. Real message kept in the console for debugging.
+        //
+        // alpha-drift-r43-01 (2026-08-19, self-audit): the r42 fix only
+        // checked isInvalidOrExpiredOtpError, whose shape was built for
+        // verifyOtp's error (used by signin/page.tsx), not
+        // exchangeCodeForSession's real PKCE error shapes -- so it never
+        // actually matched anything this catch block sees, and the
+        // friendly copy below silently never fired. Added
+        // isInvalidOrExpiredPkceError (lib/gotrue-errors.ts) alongside it;
+        // kept the OTP check too as defense-in-depth in case this code
+        // path ever changes.
         console.warn("[auth/callback] sign-in failed:", e instanceof Error ? e.message : e);
         const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
         setErr(
-          isInvalidOrExpiredOtpError(shape)
+          isInvalidOrExpiredOtpError(shape) || isInvalidOrExpiredPkceError(shape)
             ? "That link didn't work. It may have expired or already been used. Request a new one from the sign-in page."
             : "Sign-in failed. Try again from the sign-in page."
         );

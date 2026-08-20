@@ -89,7 +89,13 @@ console.log("(3) app/api/cron/weekly-send/route.ts: stale Vercel-platform commen
 console.log("(4) app/auth/callback/page.tsx: no longer shows GoTrue's raw vendor error text");
 {
   const src = readFileSync(new URL("../app/auth/callback/page.tsx", import.meta.url), "utf8");
-  check("(4a) imports isInvalidOrExpiredOtpError from the shared helper", /import \{ isInvalidOrExpiredOtpError \} from "@\/lib\/gotrue-errors";/.test(src));
+  // alpha-drift-r43-01: round 43 added a second import (isInvalidOrExpiredPkceError)
+  // on the same line, since the OTP classifier alone never matched this
+  // page's real exchangeCodeForSession error shapes -- see
+  // verify-r43-findings.mts section (1) for that fix's own coverage.
+  // Loosened to check the OTP import is present, not the exact single-name
+  // import line.
+  check("(4a) imports isInvalidOrExpiredOtpError from the shared helper", /import \{ isInvalidOrExpiredOtpError,? ?[^}]*\} from "@\/lib\/gotrue-errors";/.test(src));
   check("(4b) the old raw e.message passthrough is gone", !/setErr\(e instanceof Error \? e\.message : "Sign-in failed"\);/.test(src));
   check("(4c) friendly copy is used instead, classified via the shared helper", /isInvalidOrExpiredOtpError\(shape\)/.test(src) && /That link didn't work/.test(src));
   check("(4d) the real error is still logged for debugging", /console\.warn\("\[auth\/callback\] sign-in failed:"/.test(src));

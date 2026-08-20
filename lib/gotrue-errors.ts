@@ -37,3 +37,32 @@ export function isAuthRateLimitError(e: { status?: unknown; code?: unknown; mess
   const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
   return code.includes("rate_limit") || message.includes("security purposes");
 }
+
+// alpha-drift-r43-01 (2026-08-19, self-audit): app/auth/callback/page.tsx's
+// round-42 fix reused isInvalidOrExpiredOtpError above to classify a failed
+// exchangeCodeForSession() (the PKCE magic-link callback), but that
+// classifier's shape was built for verifyOtp's 6-digit-code error, not
+// PKCE. Verified against @supabase/auth-js's own source
+// (node_modules/@supabase/auth-js/src/lib/errors.ts,
+// lib/error-codes.ts): a code-verifier missing from storage (opening the
+// link in a different browser/device than it was requested in) throws
+// client-side with code "pkce_code_verifier_not_found" and a message that
+// never contains "token"; an expired/already-used link comes back from the
+// server as one of GoTrue's own PKCE-specific codes
+// ("flow_state_not_found", "flow_state_expired", "bad_code_verifier") --
+// none of which contain "otp" either. isInvalidOrExpiredOtpError returns
+// false for all four real shapes, so the friendly copy it was meant to
+// gate never actually fired -- every PKCE callback failure fell through to
+// the generic fallback instead. Checked defensively by code substring
+// only, same reasoning as the other classifiers in this file (not pinned
+// to GoTrue's exact current code strings, since this isn't a documented
+// stable contract).
+export function isInvalidOrExpiredPkceError(e: { status?: unknown; code?: unknown; message?: unknown }): boolean {
+  const code = typeof e.code === "string" ? e.code.toLowerCase() : "";
+  return (
+    code.includes("pkce_code_verifier_not_found") ||
+    code.includes("flow_state_not_found") ||
+    code.includes("flow_state_expired") ||
+    code.includes("bad_code_verifier")
+  );
+}
