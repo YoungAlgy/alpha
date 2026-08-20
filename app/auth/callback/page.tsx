@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { isInvalidOrExpiredOtpError } from "@/lib/gotrue-errors";
 
 // Handles the magic-link callback for BOTH Supabase flow types:
 //   - PKCE flow: `?code=xxx` in the query — exchangeCodeForSession
@@ -112,7 +113,20 @@ function Inner() {
         router.replace("/signin?error=no_session" as never);
       } catch (e) {
         if (cancelled) return;
-        setErr(e instanceof Error ? e.message : "Sign-in failed");
+        // alpha-drift-r42-05 (2026-08-19): never show GoTrue's raw vendor
+        // wording here either -- this is the one other place in the app a
+        // raw Supabase auth SDK error could reach the UI (an expired/
+        // already-used magic link, or a PKCE code-verifier mismatch from
+        // opening the link in a different browser than it was requested
+        // in), the same class app/signin/page.tsx already fixed in round
+        // 35. Real message kept in the console for debugging.
+        console.warn("[auth/callback] sign-in failed:", e instanceof Error ? e.message : e);
+        const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
+        setErr(
+          isInvalidOrExpiredOtpError(shape)
+            ? "That link didn't work. It may have expired or already been used. Request a new one from the sign-in page."
+            : "Sign-in failed. Try again from the sign-in page."
+        );
         redirectTimer = setTimeout(() => {
           if (!cancelled) router.replace("/signin" as never);
         }, 1500);

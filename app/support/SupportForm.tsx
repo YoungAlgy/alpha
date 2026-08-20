@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, FormEvent } from "react";
+import { isValidEmail } from "@/lib/validate-email";
 
 export function SupportForm() {
   const [name, setName] = useState("");
@@ -22,6 +23,20 @@ export function SupportForm() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!email.trim() || !message.trim()) return;
+    // alpha-drift-r42-07 (2026-08-19): every other email input in the app
+    // (EmailChanger.tsx, signin/page.tsx) checks isValidEmail() client-side
+    // before submitting -- this one only checked for non-empty. A typo like
+    // "john@gmail" (missing the TLD) passed the browser's lax native
+    // type="email" check and this gate, then hit the server, where
+    // app/api/support/route.ts's Zod schema rejects it and composes a raw
+    // "Invalid input: email: Not a valid email address" string that this
+    // form renders verbatim, mashed together with the "Try emailing us
+    // directly." suffix with no separating punctuation.
+    if (!isValidEmail(email.trim())) {
+      setStatus("error");
+      setError("That doesn't look like an email. Check for a typo.");
+      return;
+    }
     setStatus("sending");
     setError(null);
     try {
