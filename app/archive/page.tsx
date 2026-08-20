@@ -53,6 +53,30 @@ export default function ArchivePage() {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+  // alpha-drift-r44-03 (2026-08-19): the focused "Try again" button
+  // unmounts the instant a retry leaves the "error" state (load()'s first
+  // line synchronously sets state="loading"), replaced by the loading
+  // skeleton (aria-hidden, nothing focusable) and then whatever state
+  // actually resolves -- focus silently drops to <body> with no signal a
+  // keyboard/screen-reader user's retry worked. Same unmount-without-
+  // focus-restore class already fixed 5 times elsewhere in this app
+  // (EmailChanger.tsx, app/settings/page.tsx x3, app/checkout/page.tsx).
+  // The page's own "Archive" <h1> is the one element that never unmounts
+  // across ANY state transition, so it's the stable focus target -- no new
+  // per-state ref needed, just a flag tracking whether we were in "error"
+  // last render.
+  const archiveHeadingRef = useRef<HTMLHeadingElement>(null);
+  const hadErrorRef = useRef(false);
+  useEffect(() => {
+    if (state === "error") {
+      hadErrorRef.current = true;
+      return;
+    }
+    if (hadErrorRef.current) {
+      archiveHeadingRef.current?.focus();
+      hadErrorRef.current = false;
+    }
+  }, [state]);
 
   const load = useCallback(async () => {
     if (mountedRef.current) setState("loading");
@@ -201,7 +225,7 @@ export default function ArchivePage() {
       </nav>
 
       <section className="flex-1 max-w-2xl mx-auto px-6 py-12 w-full">
-        <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight mb-10">
+        <h1 ref={archiveHeadingRef} tabIndex={-1} className="alpha-display text-4xl md:text-5xl font-bold tracking-tight mb-10" style={{ outline: "none" }}>
           Archive
         </h1>
 
