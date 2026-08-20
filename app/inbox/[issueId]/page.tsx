@@ -83,8 +83,9 @@ export default function IssuePage() {
           ]);
           if (stale()) return;
           // alpha-drift-r16-15: same app-level defense-in-depth as
-          // /inbox -- see that file's comment for why this can't wait
-          // on the pending RLS migration.
+          // /inbox -- see that file's comment (alpha-drift-r52-01: RLS
+          // also enforces this now, live since 2026-08-07, this check
+          // is kept anyway).
           //
           // alpha-drift-r20-05: same deleted-account gap as /inbox --
           // see that file's comment. A cascade-deleted `users` row makes

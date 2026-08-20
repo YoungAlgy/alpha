@@ -84,14 +84,16 @@ export default function InboxPage() {
                 .eq("id", session.user.id)
                 .maybeSingle(),
             ]);
-            // alpha-drift-r16-15: RLS enforces this too once the pending
-            // migration (20260807000000_issues_rls_active_access_only.sql)
-            // ships, but until then this app-level check is the ONLY thing
-            // stopping a cancelled/disputed subscriber's still-live session
-            // from reading their letters here. Keep both layers even after
-            // the migration lands -- defense in depth, matches the pattern
-            // app/letter/page.tsx already uses (RLS can't reach that route
-            // at all, since it's a service-role client).
+            // alpha-drift-r16-15: RLS also enforces this
+            // (20260807000000_issues_rls_active_access_only.sql, live since
+            // 2026-08-07 -- alpha-drift-r52-01, 2026-08-20: this comment
+            // used to call it "the pending migration," stale for two weeks).
+            // Kept this app-level check anyway -- defense in depth, matches
+            // the pattern app/letter/page.tsx already uses (RLS can't reach
+            // that route at all, since it's a service-role client), and it
+            // was the ONLY gate stopping a cancelled/disputed subscriber's
+            // still-live session from reading their letters here before the
+            // migration shipped.
             //
             // alpha-drift-r20-05 (found+fixed 2026-08-13): getSession() only
             // decodes the LOCAL cached JWT -- no live check against
