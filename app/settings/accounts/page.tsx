@@ -61,7 +61,20 @@ export default function AdminAccountsPage() {
   // all of them, so this stays true for the component's whole lifetime and
   // guards every setState call below against firing post-unmount.
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  // alpha-drift-r46-03 (2026-08-19): this used to only ever set the ref to
+  // false (on unmount) -- under React Strict Mode dev, every component's
+  // effects mount, immediately clean up, then mount again on the same
+  // initial render. The first (discarded) mount's cleanup set this to
+  // false; nothing ever set it back to true, so it stayed stuck false for
+  // the rest of the component's real lifetime and every guard below
+  // silently no-op'd forever, leaving the page stuck on its loading
+  // skeleton in local dev. Matches the already-fixed pattern in
+  // app/archive/page.tsx, app/inbox/page.tsx, and
+  // app/inbox/[issueId]/page.tsx.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   async function load(opts?: { search?: string; before?: string; append?: boolean }) {
     // alpha-drift-r45-04 (2026-08-19): this never cleared a prior `err` on
@@ -136,9 +149,6 @@ export default function AdminAccountsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      // Reload through whatever search was active, so acting on a result found
-      // past the newest-200 window doesn't bounce the admin back to page one.
-      await load(activeSearch ? { search: activeSearch } : undefined);
       const verb =
         action === "delete"
           ? "Deleted"
@@ -151,6 +161,17 @@ export default function AdminAccountsPage() {
     } catch (e) {
       alert(e instanceof Error ? e.message : "Action failed.");
     } finally {
+      // alpha-drift-r46-01 (2026-08-19): this used to only reload on the
+      // clean-success path -- but grant_free's own 502 (alpha-drift-r45-01)
+      // means the DB write already landed even though the response reports
+      // an error, so skipping the reload here left the row list/stats
+      // showing the pre-action snapshot (e.g. still "Not subscribed", or a
+      // SUPPRESSED badge that the DB write actually just cleared) for a
+      // write that had, in fact, already committed. Reload through whatever
+      // search was active, so acting on a result found past the newest-200
+      // window doesn't bounce the admin back to page one -- regardless of
+      // whether this action's own response was a full success.
+      await load(activeSearch ? { search: activeSearch } : undefined);
       setBusy(null);
     }
   }
