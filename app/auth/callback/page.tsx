@@ -162,7 +162,18 @@ function CallbackShell({ message }: { message: string }) {
         >
           α
         </div>
+        {/* alpha-drift-r53-05 (2026-08-20, accessibility-resweep-newer-code):
+            had no role/aria-live, unlike every sibling "here's what
+            happened" status text elsewhere in the app (app/inbox/page.tsx's
+            loadError h1, app/checkout/page.tsx's stripeErr, app/signin/
+            page.tsx's err, components/EmailChanger.tsx's err). Highest
+            stakes of any of them: on failure this page silently redirects
+            to /signin after 1.5s (see the timeout above), so a screen
+            reader user needs the announcement immediately, not on next
+            focus. */}
         <p
+          role="status"
+          aria-live="polite"
           className="alpha-display text-lg"
           style={{ color: "var(--ink-soft)" }}
         >
