@@ -43,6 +43,15 @@ export function ProfileEditor() {
   // topic but no birthday (that section gets skipped without one). Mirrors the
   // onboarding "you" step's gate, which the settings editor otherwise lacks.
   const [hasZodiac, setHasZodiac] = useState(false);
+  // alpha-drift-r62-07 (2026-08-20, silent-catch-audit-r8): a genuine read
+  // failure on the hydrate below used to be indistinguishable from a
+  // legitimately-empty profile -- form/saved both landed on EMPTY, Save
+  // unlocked the instant the reader retyped just their first name, and the
+  // route's own explicit-clear-on-blank semantics then wrote real nulls over
+  // the reader's actual city/blurbs/birthday/gender. Logging alone doesn't
+  // stop that; this flag blocks Save until the reader reloads and a real
+  // hydrate succeeds.
+  const [hydrateFailed, setHydrateFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   // Synchronous re-entrancy latch: busy is React state, so a sub-16ms double
@@ -67,12 +76,20 @@ export function ProfileEditor() {
           return;
         }
         setSignedIn(true);
-        const { data: row } = await sb
+        const { data: row, error: rowErr } = await sb
           .from("users")
           .select("first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, topics")
           .eq("id", user.id)
           .maybeSingle();
         if (cancelled) return;
+        if (rowErr) {
+          // Logged AND blocks Save (see hydrateFailed's own comment) --
+          // supabase-js resolves rather than throws on a query error, so the
+          // catch below was structurally blind to this exact failure mode.
+          console.warn("[ProfileEditor] signed-in hydrate row fetch failed:", rowErr.message);
+          setHydrateFailed(true);
+          return;
+        }
         setHasZodiac(Array.isArray(row?.topics) && row.topics.includes("zodiac"));
         const next: Form = {
           firstName: row?.first_name ?? "",
@@ -130,7 +147,7 @@ export function ProfileEditor() {
   // silently coerced the bad value to null server-side -- the Zodiac
   // section would then quietly stop working with zero indication why.
   const birthdayValid = form.birthday.length === 0 || parseBirthday(form.birthday) !== null;
-  const canSave = dirty && requiredFilled && birthdayValid && !busy;
+  const canSave = dirty && requiredFilled && birthdayValid && !busy && !hydrateFailed;
 
   async function save() {
     if (!canSave || saveInFlight.current) return;
@@ -219,6 +236,13 @@ export function ProfileEditor() {
         The more your letter knows, the more it feels written for you. Change any
         of it anytime.
       </p>
+
+      {hydrateFailed && (
+        <p role="alert" className="alpha-ui text-sm mb-5" style={{ color: "var(--ink)" }}>
+          Couldn&apos;t load your saved details. Reload the page before making changes here --
+          saving now would overwrite them with blanks.
+        </p>
+      )}
 
       <div className="space-y-5">
         <Field
@@ -333,8 +357,11 @@ export function ProfileEditor() {
           </div>
           {/* alpha-drift-r35-13 (2026-08-14): "unset" is a programmer's word
               (unset variable/flag) -- the onboarding version of this same
-              question already uses the human phrasing, "Prefer not to say." */}
-          <span className="alpha-ui text-xs block mt-1" style={{ color: "var(--ink-soft)", opacity: 0.8 }}>
+              question already uses the human phrasing, "Prefer not to say."
+              alpha-drift-r62-03 (2026-08-20, accessibility-resweep-newer-
+              code-round-10): opacity 0.8 on --ink-soft fails WCAG AA
+              4.5:1 in most themes -- --ink-soft alone already clears it. */}
+          <span className="alpha-ui text-xs block mt-1" style={{ color: "var(--ink-soft)" }}>
             Optional. Lets the letter talk to you naturally. Leave both off if you&apos;d rather not say.
           </span>
         </div>
@@ -472,8 +499,11 @@ function Field({
       ) : (
         <input {...shared} type="text" />
       )}
+      {/* alpha-drift-r62-03 (2026-08-20, accessibility-resweep-newer-code-
+          round-10): opacity 0.8 on --ink-soft fails WCAG AA 4.5:1 in most
+          themes -- --ink-soft alone already clears it. */}
       {hint && (
-        <span className="alpha-ui text-xs block mt-1" style={{ color: "var(--ink-soft)", opacity: 0.8 }}>
+        <span className="alpha-ui text-xs block mt-1" style={{ color: "var(--ink-soft)" }}>
           {hint}
         </span>
       )}

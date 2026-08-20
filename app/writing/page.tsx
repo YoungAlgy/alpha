@@ -382,9 +382,13 @@ export default function WritingPage() {
               writing just hit a snag. Try again now, or head to your inbox
               and it'll show up there in a few minutes.
             </p>
+            {/* alpha-drift-r62-03 (2026-08-20, accessibility-resweep-newer-
+                code-round-10): opacity 0.7 on --ink-soft fails WCAG AA
+                4.5:1 in 22 of 26 themes -- --ink-soft alone already clears
+                it everywhere, so dropping the opacity is the fix. */}
             <p
               className="alpha-ui text-xs leading-relaxed"
-              style={{ color: "var(--ink-soft)", opacity: 0.7 }}
+              style={{ color: "var(--ink-soft)" }}
             >
               Technical: {error}
             </p>

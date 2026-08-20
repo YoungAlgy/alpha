@@ -168,8 +168,12 @@ export function Digest({ issue, localTimezone = false }: DigestProps) {
               <Item key={itemIdx} item={item} />
             ))}
           </div>
+          {/* alpha-drift-r62-03 (2026-08-20, accessibility-resweep-newer-
+              code-round-10): opacity 0.75 on --ink-soft fails WCAG AA
+              4.5:1 in most themes -- --ink-soft alone already clears it
+              everywhere, so dropping the opacity is the fix. */}
           {disclaimer && (
-            <p className="alpha-ui text-xs mt-8" style={{ color: "var(--ink-soft)", opacity: 0.75 }}>
+            <p className="alpha-ui text-xs mt-8" style={{ color: "var(--ink-soft)" }}>
               {disclaimer}
             </p>
           )}

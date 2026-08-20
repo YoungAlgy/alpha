@@ -163,8 +163,14 @@ function Field({
         style={{ color: "var(--ink-soft)" }}
       >
         {label.toUpperCase()}
+        {/* alpha-drift-r62-03 (2026-08-20, accessibility-resweep-newer-
+            code-round-10): `opacity: 0.6` stacked on the already-tuned
+            --ink-soft token drops it below WCAG AA's 4.5:1 floor in every
+            theme (worst: mono at ~2.35:1). --ink-soft alone already clears
+            4.5:1 everywhere, so removing the opacity is the fix -- no color
+            token needed. */}
         {optional && (
-          <span style={{ opacity: 0.6 }}> · OPTIONAL</span>
+          <span> · OPTIONAL</span>
         )}
         {/* alpha-drift-r58-02 (2026-08-20, accessibility-resweep-newer-
             code-round-6): same --accent-ink WCAG contrast gap as
