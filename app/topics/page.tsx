@@ -229,6 +229,20 @@ export default function TopicsPage() {
 
   const customPicks = picked.filter(isCustomTopic);
 
+  // alpha-drift-r47-04 (2026-08-20): submit()'s signed-in save had no
+  // cancellation guard, unlike app/checkout/page.tsx's subscribe() (fixed
+  // round 46) -- a reader could hit Save, then click Back on this page's
+  // own StepShell (which had no awareness of `saving`) before the POST
+  // /api/account/topics resolved, and a late success still fired
+  // confirm()/update()/router.push("/settings") on top of wherever they'd
+  // since navigated, silently overwriting shared onboarding state. Reset
+  // in the effect body on mount, matching the established pattern.
+  const cancelledRef = useRef(false);
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => { cancelledRef.current = true; };
+  }, []);
+
   async function submit() {
     // Onboarding picks exactly the quota; signed-in editors must at least fill
     // their favorites (backups are optional extras).
@@ -262,10 +276,15 @@ export default function TopicsPage() {
             throw new Error(body?.error || "save failed");
           }
         } catch {
+          if (cancelledRef.current) return;
           setSaving(false);
           setSaveError("Couldn't save your topics. Check your connection and try again.");
           return;
         }
+        // alpha-drift-r47-04: bail before confirm()/update()/router.push if
+        // the reader has since navigated away -- a late save success must
+        // not silently overwrite shared onboarding state or redirect them.
+        if (cancelledRef.current) return;
         confirm();
         update({ topics: picked });
         router.push("/settings" as never);
@@ -289,7 +308,7 @@ export default function TopicsPage() {
   const ready = signedIn ? picked.length >= quota : picked.length === quota;
 
   return (
-    <StepShell stepIndex={7} prevPath={signedIn ? "settings" : "focus"}>
+    <StepShell stepIndex={7} prevPath={signedIn ? "settings" : "focus"} backDisabled={saving}>
       <div className="space-y-8">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
