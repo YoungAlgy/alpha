@@ -386,9 +386,10 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     resendHeaders["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
   // Idempotency key: stable per (subscriber, send date, kind). If a send for
-  // the same (user, week_of, kind) is retried — a Vercel cron retry racing the
-  // scheduled run, the rollback path re-opening the delivered_at claim, an
-  // admin re-trigger — Resend collapses it provider-side and the subscriber
+  // the same (user, week_of, kind) is retried — a GitHub Actions retry cron
+  // (daily-send.yml's 15:00/18:00 UTC offset schedules) racing the 14:00 UTC
+  // primary run, the rollback path re-opening the delivered_at claim, a
+  // workflow_dispatch re-trigger — Resend collapses it provider-side and the subscriber
   // gets ONE letter, not two. `kind` is included (not just user+date) so a
   // DIFFERENT-content retry — the cron's live send failing on our side after
   // Resend already accepted it, then a backup layer sending different content

@@ -189,7 +189,9 @@ bash scripts/deploy-from-wsl.sh
 
 The daily letter send itself does **not** run on Cloudflare (see the CPU-limit note above) —
 it runs on GitHub Actions instead (`.github/workflows/daily-send.yml`, `next build && next start`,
-14:00 UTC primary + 15:00 UTC retry), calling this deployment's `/api/cron/weekly-send` route
+14:00 UTC primary + 15:00 UTC and 18:00 UTC retries — the second retry was added 2026-08-06 after
+a real GitHub Actions platform-wide outage took out both the 14:00 and 15:00 runs the same day),
+calling this deployment's `/api/cron/weekly-send` route
 over HTTP. `.github/workflows/letter-watchdog.yml` checks delivery + secrets health daily and
 opens a GitHub Issue on failure.
 

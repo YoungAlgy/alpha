@@ -1082,9 +1082,13 @@ export async function GET(req: Request) {
       }
 
       // Registered with Next's after() UNCONDITIONALLY (not just on timeout)
-      // so Vercel is told to keep this invocation's lambda alive until the
-      // promise settles even if it's still running once the whole cron GET
-      // returns its response — without this, a subscriber whose persist+send
+      // so the Workers runtime's ctx.waitUntil (via OpenNext's
+      // cloudflare-node wrapper — this route runs on Cloudflare Workers, not
+      // Vercel; same mechanism already relied on for sendOpsAlert
+      // elsewhere, see app/api/admin/users/route.ts's alpha-drift-r35-03)
+      // keeps this invocation's execution context alive until the promise
+      // settles even if it's still running once the whole cron GET returns
+      // its response — without this, a subscriber whose persist+send
       // outlives the response risks getting its execution environment torn
       // down mid-write (e.g. between claiming delivered_at and actually
       // sending), which could leave a claim stuck with no email ever sent.

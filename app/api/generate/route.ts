@@ -23,7 +23,8 @@ export const maxDuration = 120;
 // PER-ATTEMPT, and the SDK's one retry plus topic-blurb's parse-retry can stack
 // past 120s in a pathological case. Failing fast here returns a clean 500 the
 // /writing client absorbs (its retry hits the now-warm per-topic cache), instead
-// of waiting for Vercel's hard 504. Mirrors the cron's per-user deadline.
+// of waiting for Cloudflare Workers' own hard timeout to kick in. Mirrors the
+// cron's per-user deadline.
 const GENERATE_DEADLINE_MS = 105_000;
 
 const ProfileSchema = z.object({

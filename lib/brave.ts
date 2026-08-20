@@ -21,9 +21,10 @@ const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 // "succeeds" all the way down.
 //
 // This counter is MONOTONIC (never reset) rather than reset-per-invocation on
-// purpose: two overlapping cron invocations on the same warm lambda (a Vercel
-// retry racing the scheduled run, a manual re-trigger) would otherwise race —
-// whichever resets last zeroes out the other's in-flight count, corrupting
+// purpose: two overlapping cron invocations of the same long-running process
+// (a GitHub Actions retry cron racing the 14:00 UTC primary run, a manual
+// workflow_dispatch re-trigger) would otherwise race — whichever resets last
+// zeroes out the other's in-flight count, corrupting
 // the ops-alert signal. A caller that wants "how many 429s during MY run"
 // should snapshot braveRateLimitedCount() at the start and end and diff the
 // two — a rare overlap then just double-counts shared load into both
