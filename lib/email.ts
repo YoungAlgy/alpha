@@ -325,7 +325,14 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
       // point. Stripped at this join site, the actual sink, rather than at
       // topicLabel()'s definition (which may have other consumers where a
       // colon in a label is harmless).
-      const safeLabel = s.topicLabel.replace(/:/g, "");
+      //
+      // alpha-drift-r40-02 (2026-08-19, self-audit): the ASCII-only /:/g
+      // missed the fullwidth colon U+FF1A ("："), the default colon
+      // character produced by Chinese/Japanese IME input -- a custom topic
+      // typed as "recipe：dinner ideas" reproduces the exact double-colon
+      // collision this fix exists to close, just via a look-alike character
+      // instead of the literal ASCII one. Widened to strip both.
+      const safeLabel = s.topicLabel.replace(/[:：]/g, "");
       return lead ? `• ${safeLabel}: ${lead}` : `• ${safeLabel}`;
     })
     .join("\n");
