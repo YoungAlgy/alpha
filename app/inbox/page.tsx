@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Digest } from "@/components/Digest";
@@ -32,18 +32,41 @@ export default function InboxPage() {
   const [celebrate, setCelebrate] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [accessEnded, setAccessEnded] = useState(false);
-
+  // alpha-drift-r43-02 (2026-08-19, self-audit): a genuine Supabase query
+  // failure (network blip, transient RLS/DB error) used to fall through
+  // the SAME path as "no letter yet" -- the identical bug class round 42
+  // already fixed on the sibling app/inbox/[issueId]/page.tsx, whose own
+  // comment cites app/archive/page.tsx's reasoning verbatim: "A query
+  // error must NOT be masked as 'no letters' -- that's alarming to a
+  // paying subscriber." This is the app's most-visited page, and a
+  // signed-in reader hitting this would have seen "You're signed in. Your
+  // letters show up here once they're sent" for a transient hiccup, with
+  // no indication anything actually went wrong and no retry affordance.
+  const [loadError, setLoadError] = useState(false);
+  const mountedRef = useRef(true);
   useEffect(() => {
-    if (!loaded) return;
-    let cancelled = false;
-    (async () => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const load = useCallback(async () => {
+    setMissing(false);
+    setLoadError(false);
+    // Local to this call (not component state) so the catch block below can
+    // read it synchronously without waiting on a setSignedIn() re-render.
+    let sessionEstablished = false;
+    try {
       // Path 1 — authenticated user reads from Supabase.
       // Prefer this so a returning sign-in on a fresh device still sees the letter.
       if (supabaseConfigured()) {
         try {
           const sb = supabaseClient();
           const { data: { session } } = await sb.auth.getSession();
+          if (!mountedRef.current) return;
           if (session) {
+            sessionEstablished = true;
             setSignedIn(true);
             // Independent queries — run them in parallel (same pattern as
             // /letter) instead of two sequential round trips on the app's
@@ -89,7 +112,20 @@ export default function InboxPage() {
               setAccessEnded(true);
               return;
             }
-            if (!error && data) {
+            // alpha-drift-r43-02: a genuine query error (network blip,
+            // transient RLS/DB failure) used to fall through this same
+            // `!error && data` gate as a real "no issue generated yet"
+            // zero-row result, with nothing distinguishing the two. Split
+            // them: `error` truthy is a genuine failure (loadError). A
+            // clean zero-row result (`!error && !data`) is left to fall
+            // through exactly as before -- that's the legitimate empty
+            // state for a signed-in reader who hasn't gotten a letter yet,
+            // same as the finding's own guidance not to touch it.
+            if (error) {
+              setLoadError(true);
+              return;
+            }
+            if (data) {
               const themeToApply = coerceThemeId(userRow?.theme) ?? coerceThemeId(state.theme) ?? "forest";
               document.documentElement.setAttribute("data-theme", themeToApply);
               setIssue({
@@ -106,7 +142,20 @@ export default function InboxPage() {
             }
           }
         } catch (e) {
-          console.warn("[inbox] supabase read failed, falling back to localStorage:", e);
+          // alpha-drift-r43-02: a thrown exception fetching session/data
+          // used to silently fall through to the Path 2 localStorage
+          // fallback, which does nothing useful for a signed-in reader (who
+          // never relies on localStorage) -- same masking-a-real-failure
+          // gap as the error-branch fix above. But this catch can also fire
+          // for a genuinely signed-OUT visitor (getSession() itself
+          // throwing), where falling through to Path 2 is still correct.
+          // sessionEstablished distinguishes the two: only surface
+          // loadError once we know a real session was actually confirmed.
+          console.warn("[inbox] supabase read failed:", e);
+          if (sessionEstablished) {
+            if (mountedRef.current) setLoadError(true);
+            return;
+          }
         }
       }
       // Path 2 — unauthenticated (or supabase down) falls back to localStorage.
@@ -129,16 +178,21 @@ export default function InboxPage() {
       } catch {
         setMissing(true);
       }
-    })().finally(() => {
+    } finally {
       // Mark the auth+fetch resolved so the sign-in screen below can only paint
       // once we KNOW the reader is signed out with no local letter — never
       // during the async window (which would flash sign-in before the letter).
-      if (!cancelled) setChecked(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [loaded, state.theme]);
+      // A `finally` here (not code after the try) is load-bearing: several
+      // branches above return early (accessEnded, loadError, issue found),
+      // and only `finally` still runs after those.
+      if (mountedRef.current) setChecked(true);
+    }
+  }, [state.theme]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    load();
+  }, [loaded, load]);
 
   // Clear any session, then HARD-navigate. This client-side redirect (below,
   // the "already signed in" branch) is the ONLY thing that bounces a
@@ -191,6 +245,32 @@ export default function InboxPage() {
     // them pre-filled or see this reader's email dropped into /signin.
     reset();
     window.location.assign(path);
+  }
+
+  if (loadError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <div className="text-center space-y-6 max-w-md">
+          <div
+            className="alpha-display text-6xl font-bold"
+            style={{ color: "var(--accent-ink)", opacity: 0.6 }}
+          >
+            α
+          </div>
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight" role="status" aria-live="polite">
+            Couldn&apos;t load your letters.
+          </h1>
+          <p className="alpha-display text-base md:text-lg leading-relaxed" style={{ color: "var(--ink-soft)" }}>
+            That&apos;s almost always a temporary hiccup. Your letters are safe.
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button type="button" onClick={() => load()} className="alpha-button">
+              Try again
+            </button>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   if (accessEnded) {
