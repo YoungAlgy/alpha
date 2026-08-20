@@ -138,6 +138,44 @@ const CHECKS = [
       };
     },
   },
+  {
+    // alpha-drift-r49-05 (2026-08-20): the /letter check above was the ONLY
+    // stale-cache regression guard in this script -- src/worker-entry.ts's
+    // no-store override used to be /letter-only, so every one of the app's
+    // other ~19 statically-prerendered, session-bearing pages (this app's
+    // own settings.settings/accounts admin panel among them) had no
+    // equivalent guard here to catch a future regression the way this check
+    // now does. src/worker-entry.ts's fix broadened the override to apply
+    // unconditionally to every non-static-asset route, so any one of those
+    // pages works as a representative check -- /settings/accounts picked
+    // since it's the highest-stakes of the bunch (admin data).
+    name: "/settings/accounts is not stale-cached",
+    hard: true,
+    run: async () => {
+      const res = await fetchWithTimeout(`${BASE_URL}/settings/accounts`);
+      const cc = res.headers.get("cache-control") || "";
+      return {
+        ok: cc.includes("no-store"),
+        detail: `Cache-Control: ${cc || "(none)"} -- a statically-prerendered page like this one defaults to the ASSETS binding's own max-age=0 (not no-store) unless src/worker-entry.ts's broad override is actually applying`,
+      };
+    },
+  },
+  {
+    // Same regression class as above, on the one OTHER non-static-asset
+    // shape this app serves: a per-request dynamic page (Next's own
+    // "ƒ Dynamic" render, distinct from the ASSETS-binding-served static
+    // pages the check above covers).
+    name: "/inbox/[issueId] is not stale-cached",
+    hard: true,
+    run: async () => {
+      const res = await fetchWithTimeout(`${BASE_URL}/inbox/smoke-test-nonexistent-id`);
+      const cc = res.headers.get("cache-control") || "";
+      return {
+        ok: cc.includes("no-store"),
+        detail: `Cache-Control: ${cc || "(none)"} -- a dynamic page like this one defaults to Next's own no-cache (not no-store) unless src/worker-entry.ts's broad override is actually applying`,
+      };
+    },
+  },
 ];
 
 let hardFailures = 0;

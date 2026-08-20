@@ -235,16 +235,44 @@ export default {
     // curl against a local dev server). This Worker layer runs strictly
     // after Next has already built the full response, so it's the one
     // place late enough to actually override it.
-    if (url.pathname === '/letter') {
-      const headers = new Headers(response.headers)
-      headers.set('Cache-Control', 'no-store, must-revalidate')
-      for (const cookie of setCookieHeaders) headers.append('Set-Cookie', cookie)
-      return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+    //
+    // alpha-drift-r49-05 (2026-08-20, cache-header-audit -- this finding
+    // never got adversarial review, a mid-round Claude session-limit outage
+    // killed all 3 verify votes; personally re-verified against
+    // public/_headers' own documented ASSETS-binding default and
+    // next.config.ts's headers() rule before acting on it): /letter used to
+    // be the ONLY route this Worker forced no-store on. Every OTHER
+    // non-static-asset route -- every one of the app's ~19 statically-
+    // prerendered pages (/checkout, /settings, /settings/accounts, /inbox,
+    // /topics, /archive, /signin, every onboarding step...), plus
+    // /inbox/[issueId], plus every /api/* route (already covered by
+    // next.config.ts, harmless to repeat here) -- fell through to a generic
+    // branch that appended a Set-Cookie header, whenever THIS request's
+    // session happened to be due for a refresh, onto a response that still
+    // carried whatever Cache-Control the underlying static asset or Next
+    // render already had. public/_headers' own comment confirms the ASSETS
+    // binding's default for anything outside /_next/static/* is `max-age=0,
+    // must-revalidate` -- NOT no-store -- which a shared cache (a
+    // corporate/ISP proxy, a misconfigured CDN rule) can legally store and
+    // later replay, including whatever Set-Cookie it captured on the first
+    // request: handing one subscriber's live session token to a different
+    // visitor of the same path. Broadened to force no-store on every real
+    // (non-static-asset) route unconditionally, not just /letter and not
+    // only on the specific request that happened to rotate a cookie -- so
+    // every page's caching contract is one easy invariant to reason about
+    // and test, matching this exact route's own precedent above instead of
+    // depending on catching the one request in many that carries a
+    // Set-Cookie. This subsumes the old /letter-only branch entirely.
+    if (isStaticAsset) {
+      // Never ran the session-refresh block above (see its own comment), so
+      // setCookieHeaders is always empty here -- nothing to merge in, and
+      // the ASSETS binding's own Cache-Control (long-lived + immutable for
+      // /_next/static/*, per public/_headers) is exactly right to keep.
+      return response
     }
 
-    if (setCookieHeaders.length === 0) return response
-
     const headers = new Headers(response.headers)
+    headers.set('Cache-Control', 'no-store, must-revalidate')
     for (const cookie of setCookieHeaders) headers.append('Set-Cookie', cookie)
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   },
