@@ -100,8 +100,12 @@ export function containsMetaLeak(s: string | undefined | null): boolean {
 // already had -- "robustly", "comprehensively", and "calibration(s)" all
 // slipped past undetected, confirmed by actually running findLexicalTells()
 // against real sentences using each form, not just re-reading the regex.
+// alpha-drift-r41-01 (2026-08-19, self-audit): the r40 diff touched robust
+// and comprehensive but left the adjacent crucial/vital/critical trio as
+// bare words -- "critically important," "vitally important," and "matters
+// crucially" all slipped past undetected for the same reason. Same fix.
 const BANNED_LEXICAL: RegExp[] = [
-  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust(?:ly)?|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive(?:ly)?|landscapes?|realms?|testaments?|optimize|optimizes|optimizing|optimized|optimizations?|calibrate|calibrates|calibrating|calibrated|calibrations?|synerg(?:y|ies)|crucial|vital|critical|game[- ]changers?|game[- ]changing|unprecedented(?:ly)?)\b/gi,
+  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust(?:ly)?|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive(?:ly)?|landscapes?|realms?|testaments?|optimize|optimizes|optimizing|optimized|optimizations?|calibrate|calibrates|calibrating|calibrated|calibrations?|synerg(?:y|ies)|crucial(?:ly)?|vital(?:ly)?|critical(?:ly)?|game[- ]changers?|game[- ]changing|unprecedented(?:ly)?)\b/gi,
   /\bthis matters because\b/gi,
   /\bmatters because\b/gi,
   /\bthe insight here\b/gi,

@@ -105,8 +105,10 @@ console.log("(5) lib/engine/voice-guard.ts: BANNED_LEXICAL now catches the words
   check("(5c) missing inflections added: navigates, elevates/elevating/elevated, fosters/fostered, delves/delved, bare tailor/tailors, calibrates", /navigates/.test(src) && /elevates\|elevating\|elevated/.test(src) && /fosters\|fostering\|fostered/.test(src) && /delves\|delving\|delved/.test(src) && /\btailor\|tailors\|tailored\|tailoring\b/.test(src) && /calibrates/.test(src));
   // alpha-drift-r39-02 also rewrote "synergy" to "synerg(?:y|ies)" (adding
   // plural coverage), breaking the literal "synergy" substring match the
-  // same non-reason as (5b) above.
-  check("(5d) crucial/vital/critical added as general bare-word detection (previously only matched inside one specific phrase)", /synerg/.test(src) && /crucial\|vital\|critical/.test(src) && /changers?/.test(src) && /unprecedented/.test(src));
+  // same non-reason as (5b) above. alpha-drift-r41-01 similarly gave
+  // crucial/vital/critical their own -ly suffixes, breaking the adjacent
+  // literal "crucial|vital|critical" substring the same way.
+  check("(5d) crucial/vital/critical added as general bare-word detection (previously only matched inside one specific phrase)", /synerg/.test(src) && /crucial/.test(src) && /vital/.test(src) && /critical/.test(src) && /changers?/.test(src) && /unprecedented/.test(src));
 
   // Behavioral proof against the REAL exported findLexicalTells, not a
   // reimplementation.
