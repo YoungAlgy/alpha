@@ -64,7 +64,11 @@ const check = (label: string, cond: boolean) => {
 console.log("(1) app/settings/accounts/page.tsx: act() now reloads regardless of outcome, and mountedRef resets on (re)mount");
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
-  check("(1a) the reload call now lives in act()'s finally block", /\} finally \{[\s\S]{0,900}?await load\(activeSearch \? \{ search: activeSearch \} : undefined\);\s*\n\s*setBusy\(null\);/.test(src));
+  // alpha-drift-r48-supersedes-r46 (2026-08-20): round 48's alpha-drift-r48-02
+  // replaced the single setBusy(null) call with busyRowsRef.current.delete +
+  // setBusyRows -- the actual point this assertion proves (the reload lives
+  // in the finally block, unconditional on outcome) is untouched.
+  check("(1a) the reload call now lives in act()'s finally block", /\} finally \{[\s\S]{0,900}?await load\(activeSearch \? \{ search: activeSearch \} : undefined\);\s*\n\s*busyRowsRef\.current\.delete\(userId\);/.test(src));
   check("(1b) it's no longer called right after the res.ok check (pre-catch)", !/if \(!res\.ok\) throw new Error\(data\.error \|\| `HTTP \$\{res\.status\}`\);\s*\n\s*await load\(/.test(src));
   check("(1c) mountedRef is now reset to true inside the mount effect body, not just useRef(true)", /useEffect\(\(\) => \{\s*\n\s*mountedRef\.current = true;\s*\n\s*return \(\) => \{ mountedRef\.current = false; \};\s*\n\s*\}, \[\]\);/.test(src));
 }

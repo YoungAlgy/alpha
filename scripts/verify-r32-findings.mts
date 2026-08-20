@@ -197,7 +197,13 @@ console.log("(8) app/settings/accounts/page.tsx: act() announces its own result 
   check("(8a) actionMsg state added", /const \[actionMsg, setActionMsg\] = useState<string \| null>\(null\);/.test(src));
   check("(8b) act()'s signature now takes email", /async function act\(userId: string, email: string, action: "delete" \| "grant_free" \| "revoke_free" \| "clear_suppression", confirmMsg\?: string\) \{/.test(src));
   check("(8c) a per-action verb is computed and announced on success", /setActionMsg\(`\$\{verb\} \$\{email\}\.`\);/.test(src));
-  check("(8d) actionMsg is cleared at the start of each new action (so a same-text repeat still mutates the live region)", /setBusy\(userId\);\s*\n\s*setActionMsg\(null\);/.test(src));
+  // alpha-drift-r48-supersedes-r32 (2026-08-20): round 48's alpha-drift-r48-02
+  // replaced the single setBusy(userId) call with a busyRowsRef/setBusyRows
+  // pair (per-row tracking, fixing a real cross-row disabled-state bug) --
+  // this assertion's own point (actionMsg clearing at the start of a new
+  // action) is unaffected, just needs to match the new lines immediately
+  // preceding it.
+  check("(8d) actionMsg is cleared at the start of each new action (so a same-text repeat still mutates the live region)", /setBusyRows\(new Set\(busyRowsRef\.current\)\);\s*\n\s*setActionMsg\(null\);/.test(src));
   check("(8e) a role=status live region renders actionMsg", /<p role="status" aria-live="polite" className="sr-only">\s*\{actionMsg\}/.test(src));
 
   // All 4 call sites now pass u.email as the second argument.

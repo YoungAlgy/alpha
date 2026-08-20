@@ -80,11 +80,16 @@ console.log("(3) app/topics/page.tsx: submit()'s signed-in save now has a cancel
 console.log("(4) app/settings/accounts/page.tsx: search/clear controls now disable during any in-flight admin action");
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
-  check("(4a) runSearch bails early while busy", /function runSearch\(e: React\.FormEvent\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*if \(busy !== null\) return;/.test(src));
-  check("(4b) clearSearch bails early while busy", /function clearSearch\(\) \{\s*\n\s*if \(busy !== null\) return;/.test(src));
-  check("(4c) the search input is disabled while busy", /aria-label="Search by email"\s*\n\s*disabled=\{busy !== null\}/.test(src));
-  check("(4d) the Search submit button is disabled while busy", /type="submit"\s*\n\s*disabled=\{busy !== null\}/.test(src));
-  check("(4e) the Clear button is disabled while busy", /type="button"\s*\n\s*disabled=\{busy !== null\}\s*\n\s*onClick=\{clearSearch\}/.test(src));
+  // alpha-drift-r48-supersedes-r47 (2026-08-20): round 48's alpha-drift-r48-02
+  // replaced the single `busy: string | null` slot with a Set<string>-based
+  // busyRowsRef/busyRows pair (fixing a real cross-row disabled-state bug,
+  // not just a rename) -- the "is anything busy" check these 5 assertions
+  // prove is now busyRowsRef.current.size > 0 / busyRows.size > 0.
+  check("(4a) runSearch bails early while busy", /function runSearch\(e: React\.FormEvent\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*if \(busyRowsRef\.current\.size > 0\) return;/.test(src));
+  check("(4b) clearSearch bails early while busy", /function clearSearch\(\) \{\s*\n\s*if \(busyRowsRef\.current\.size > 0\) return;/.test(src));
+  check("(4c) the search input is disabled while busy", /aria-label="Search by email"\s*\n\s*disabled=\{busyRows\.size > 0\}/.test(src));
+  check("(4d) the Search submit button is disabled while busy", /type="submit"\s*\n\s*disabled=\{busyRows\.size > 0\}/.test(src));
+  check("(4e) the Clear button is disabled while busy", /type="button"\s*\n\s*disabled=\{busyRows\.size > 0\}\s*\n\s*onClick=\{clearSearch\}/.test(src));
 }
 
 console.log("(5) lib/engine/gemini-client.ts: header comment and related sub-claims no longer describe Gemini as fallback-only");
