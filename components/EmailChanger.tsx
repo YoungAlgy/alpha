@@ -199,15 +199,32 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
             >
               {busy ? "Sending…" : "Send confirmation"}
             </button>
+            {/* alpha-drift-r45-02 (2026-08-19): this used to have no busy
+                guard at all, unlike the Send confirmation button right next
+                to it -- a reader could click Cancel while submit()'s
+                updateUser() call was still in flight, believe they'd backed
+                out cleanly (the focus-restore effect below correctly treats
+                editing->false as a real close), and then have the earlier
+                call's late success silently reopen the "confirmation sent"
+                panel and steal focus seconds later, with no click of theirs
+                visibly causing it. app/settings/page.tsx's tier-confirm
+                panel avoids this class entirely by design (its own Cancel
+                sets confirmingTier(null) synchronously before any fetch
+                starts, so the panel and an in-flight request are mutually
+                exclusive) -- this is the one sibling that let Cancel and a
+                pending mutation coexist. Disabling it for the same busy
+                window as Send confirmation closes the race instead of only
+                patching its focus symptom. */}
             <button
               type="button"
+              disabled={busy}
               onClick={() => {
                 setEditing(false);
                 setValue("");
                 setErr(null);
               }}
               className="alpha-ui text-sm underline underline-offset-4"
-              style={{ color: "var(--ink-soft)" }}
+              style={{ color: "var(--ink-soft)", opacity: busy ? 0.5 : 1 }}
             >
               Cancel
             </button>
