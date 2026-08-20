@@ -21,9 +21,21 @@ export const runtime = "nodejs";
 // ourselves, by user_id, before the auth user goes away and takes that FK
 // link with it.
 //
-// Before deleting, it cancels the user's Stripe subscription(s) — otherwise a
-// paying user would keep being billed after their account (and portal access)
-// is gone. That step is best-effort and never blocks the deletion.
+// It also cancels the user's Stripe subscription(s) — otherwise a paying user
+// would keep being billed after their account (and portal access) is gone.
+// That step is best-effort and never blocks the deletion.
+//
+// alpha-drift-r46-06 (2026-08-19): the Stripe/ticket/suppression cleanup used
+// to run BEFORE deleteUser() below. If deleteUser() then failed for a real
+// (non-not-found) reason, this returned a 500 saying "couldn't delete, try
+// again" while the subscription was already cancelled and the Stripe
+// customer already gone — the user reads that as a no-op and silently loses
+// paid access with no self-serve way to restore it. deleteUser() now runs
+// FIRST (right after a pre-fetch of stripe_customer_id, since the row is
+// about to cascade away), gating everything else: only on its success (or an
+// already-not-found race) do we run the Stripe/ticket/suppression cleanup.
+// That way a real deleteUser() failure means NOTHING else has happened yet,
+// so "couldn't delete, try again" is accurate again.
 //
 // Auth: only the signed-in user can delete their own account. We read the
 // session server-side and delete that exact id — no user-supplied id is
@@ -54,35 +66,20 @@ export async function POST() {
 
   const svc = await supabaseServiceClient();
 
-  // Cancel any Stripe subscription and delete the Customer object FIRST —
-  // deleting the auth user cascades away public.users (incl.
-  // stripe_customer_id), and the deleted account can't reach the billing
-  // portal, so a still-active subscription would bill forever with no way to
-  // stop it. Best-effort: a Stripe hiccup must never block the user's right
-  // to delete their account.
-  await cleanUpStripeCustomerBeforeDelete(svc, user.id, "[account/delete]");
-
-  // Delete the user's support tickets outright rather than letting the FK
-  // cascade just null out user_id — see deleteSupportTicketsBeforeDelete's
-  // own comment for why. Best-effort, like the Stripe step above: a failure
-  // here must not block the user's right to delete their account.
-  // alpha-drift-r28-08 (2026-08-15): pass the confirmed auth email too, so
-  // a support ticket filed signed-out with this same address (user_id
-  // permanently NULL) is caught, not just tickets already linked by id.
-  await deleteSupportTicketsBeforeDelete(svc, user.id, "[account/delete]", user.email);
-
-  // alpha-drift-r20-01 (found+fixed 2026-08-13): if this reader ever hard-
-  // bounced or complained, Resend keeps that as its own account-level
-  // suppression-list record, keyed by email, entirely separate from (and
-  // outliving) every Supabase trace this route already clears -- a real
-  // third-party record surviving the "all associated data (irreversible)"
-  // promise below. Reusing removeResendSuppression() here isn't about
-  // re-enabling delivery (they're gone, we won't email them again) -- the
-  // underlying call is DELETE /suppressions/{email}, so the effect wanted
-  // either way is identical: the record stops existing at Resend. Best-
-  // effort, same as the two calls above.
-  if (user.email) {
-    await removeResendSuppression(user.email);
+  // Pre-fetch stripe_customer_id while the row still exists — deleteUser()
+  // below cascades public.users away, and this is the only chance to learn
+  // it. `rowErr` (not just a falsy `row`) distinguishes "we confirmed there's
+  // no Stripe customer" from "the query itself failed and we don't actually
+  // know" — collapsing those would risk silently skipping real Stripe
+  // cleanup on a transient query error, the same class of gap already fixed
+  // elsewhere in this codebase (see admin/users/route.ts's alpha-drift-r26-01).
+  const { data: row, error: rowErr } = await svc
+    .from("users")
+    .select("stripe_customer_id")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (rowErr) {
+    console.error(`[account/delete] pre-fetch of stripe_customer_id failed for ${user.id}, proceeding with delete anyway:`, rowErr.message);
   }
 
   const { error } = await svc.auth.admin.deleteUser(user.id);
@@ -103,6 +100,37 @@ export async function POST() {
         { status: 500 },
       );
     }
+  }
+
+  // Cancel any Stripe subscription and delete the Customer object — the auth
+  // user (and cascaded public.users, incl. stripe_customer_id) is already
+  // gone at this point, so pass the pre-fetched id through rather than
+  // letting this re-query a row that no longer exists (it would find
+  // nothing and silently skip cleanup). Best-effort: a Stripe hiccup must
+  // never block the user's right to delete their account — and by this
+  // point the account is already deleted regardless.
+  await cleanUpStripeCustomerBeforeDelete(svc, user.id, "[account/delete]", undefined, rowErr ? undefined : (row?.stripe_customer_id ?? null));
+
+  // Delete the user's support tickets outright rather than letting the FK
+  // cascade just null out user_id — see deleteSupportTicketsBeforeDelete's
+  // own comment for why. Best-effort, like the Stripe step above.
+  // alpha-drift-r28-08 (2026-08-15): pass the confirmed auth email too, so
+  // a support ticket filed signed-out with this same address (user_id
+  // permanently NULL) is caught, not just tickets already linked by id.
+  await deleteSupportTicketsBeforeDelete(svc, user.id, "[account/delete]", user.email);
+
+  // alpha-drift-r20-01 (found+fixed 2026-08-13): if this reader ever hard-
+  // bounced or complained, Resend keeps that as its own account-level
+  // suppression-list record, keyed by email, entirely separate from (and
+  // outliving) every Supabase trace this route already clears -- a real
+  // third-party record surviving the "all associated data (irreversible)"
+  // promise below. Reusing removeResendSuppression() here isn't about
+  // re-enabling delivery (they're gone, we won't email them again) -- the
+  // underlying call is DELETE /suppressions/{email}, so the effect wanted
+  // either way is identical: the record stops existing at Resend. Best-
+  // effort, same as the Stripe/ticket steps above.
+  if (user.email) {
+    await removeResendSuppression(user.email);
   }
 
   // Best-effort sign-out so the now-orphaned session cookie is cleared.
