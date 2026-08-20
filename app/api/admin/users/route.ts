@@ -437,11 +437,33 @@ export async function POST(req: Request) {
     // level suppression list that also has to be cleared, or the cron
     // would keep calling sendLetterNotification for an "active" subscriber
     // Resend silently keeps skipping. Awaited (not fire-and-forget) so it
-    // gets a real chance to complete before this handler returns; a
-    // failure here never fails the grant itself (removeResendSuppression
-    // already swallows and logs its own errors).
+    // gets a real chance to complete before this handler returns.
+    //
+    // alpha-drift-r45-01 (2026-08-19): this used to say "a failure here
+    // never fails the grant itself" and discard removeResendSuppression's
+    // return value entirely -- but that's inconsistent with clear_suppression
+    // a few dozen lines below, which treats the identical failure as a hard
+    // blocking error (alpha-drift-r20-06/r21-06/r32-02's own reasoning: a
+    // Resend-side suppression surviving while this app thinks the reader is
+    // clear means every future send is silently dropped, with nothing
+    // anywhere to surface it). Worse here specifically: the UPDATE above
+    // already zeroed bounced_at/complained_at unconditionally, so the admin
+    // UI's own isSuppressed badge (app/settings/accounts/page.tsx) goes
+    // dark on a failure too -- there would be no self-serve or admin path
+    // left to ever notice or repair it. Now reports the failure instead of
+    // silently swallowing it, matching clear_suppression's own shape.
     if (existing.email) {
-      await removeResendSuppression(existing.email);
+      const cleared = await removeResendSuppression(existing.email);
+      if (!cleared) {
+        console.error(`[admin/users] grant_free: removeResendSuppression failed for ${body.userId} after the DB grant already landed`);
+        return NextResponse.json(
+          {
+            error:
+              "Free access granted, but clearing the Resend suppression failed. This reader's letters may still be silently dropped. Try again.",
+          },
+          { status: 502 }
+        );
+      }
     }
     return NextResponse.json({ ok: true });
   }
