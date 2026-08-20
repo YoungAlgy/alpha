@@ -40,8 +40,26 @@ export default function CheckoutPage() {
   // 503 stub path) still fired on top of wherever they'd since gone. Paired
   // with StepShell's new backDisabled prop below, which closes the trigger
   // for this at the UI level too.
+  //
+  // alpha-drift-r47-02 (2026-08-20, self-audit + stale-closure-sweep, found
+  // independently by two dimensions): this was written as a cleanup-only
+  // effect (`useEffect(() => () => { cancelledRef.current = true; }, [])`)
+  // -- the EXACT bug shape this same round-46 commit set had just fixed for
+  // mountedRef in app/settings/accounts/page.tsx. Under Next's
+  // reactStrictMode:true (confirmed in next.config.ts), React dev-mode
+  // mounts every component's effects, cleans them up, then mounts again on
+  // the same initial render -- the phantom first mount's cleanup flipped
+  // this to true, and nothing in the real second mount's effect body ever
+  // reset it back to false, since the body did nothing but return a cleanup
+  // closure. Stuck permanently true in local dev, every real Subscribe
+  // click hit the `if (cancelledRef.current) return;` guards immediately
+  // and silently did nothing. Now resets to false in the effect body on
+  // mount, matching the already-fixed mountedRef pattern exactly.
   const cancelledRef = useRef(false);
-  useEffect(() => () => { cancelledRef.current = true; }, []);
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => { cancelledRef.current = true; };
+  }, []);
 
   // Same completeness gate /api/stripe/checkout itself enforces server-side
   // (lib/checkout-guards.ts's isProfileComplete) — checked here too so a
