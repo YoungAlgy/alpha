@@ -131,7 +131,21 @@ export async function deleteUserAccount(): Promise<{ ok: boolean; error?: string
   if (!supabaseConfigured()) return { ok: true }; // localStorage-only path
   try {
     const sb = supabaseClient();
-    const { data: { session } } = await sb.auth.getSession();
+    // alpha-drift-r63-04 (2026-08-21, silent-catch-audit-r9, flagged as a
+    // higher-impact sibling of the theme/page.tsx getSession fix): used to
+    // discard `error` and return `{ ok: true }` on ANY falsy session,
+    // including a genuine getSession() failure -- unlike a real "signed
+    // out" result, which is harmless here, a failed CHECK used to report a
+    // successful account deletion to the reader when nothing was deleted
+    // (the /api/account/delete fetch below never even ran). Now only the
+    // genuine no-error "signed out" case short-circuits as ok:true; a real
+    // error is reported so the caller's `if (!result.ok) alert(...)` fires
+    // instead of silently clearing local state and redirecting to
+    // /welcome as if the (still billing, still-existing) account was gone.
+    const { data: { session }, error: sessionErr } = await sb.auth.getSession();
+    if (sessionErr) {
+      return { ok: false, error: `Couldn't verify your session: ${sessionErr.message}` };
+    }
     if (!session) return { ok: true };
     const res = await fetch("/api/account/delete", { method: "POST" });
     if (!res.ok) {

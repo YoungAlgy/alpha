@@ -151,11 +151,24 @@ export default function SettingsPage() {
         if (!user) return;
         setAuthEmail(user.email ?? null);
         if (user.email === ADMIN_EMAIL) setIsAdmin(true);
-        const { data: row } = await sb
+        // alpha-drift-r63-05 (2026-08-21, silent-catch-audit-r9 +
+        // form-validation-consistency-audit-r8, found independently by both):
+        // used to discard `error` -- supabase-js resolves rather than
+        // throws on a query error, so the catch below was structurally
+        // blind to it, and a real failure rendered identically to a
+        // genuinely-empty free account (wrong plan/price shown, the
+        // "Drop N topics" downgrade control hidden, "Resume my letters"
+        // hidden from a real paused-but-paying reader) with zero trace.
+        // Logged only -- no write path consumes this state (confirmTier()
+        // POSTs only {direction}; the server re-derives/re-reads), so
+        // there's no data-loss risk requiring ProfileEditor's behavioral
+        // Save-block treatment.
+        const { data: row, error: rowErr } = await sb
           .from("users")
           .select("topic_quota, topics, subscribed_at, cancelled_at, stripe_customer_id, unsubscribed_at")
           .eq("id", user.id)
           .maybeSingle();
+        if (rowErr) console.warn("[settings] hydrate row fetch failed:", rowErr.message);
         if (cancelled) return;
         if (row?.topic_quota && typeof row.topic_quota === "number") {
           setTopicQuota(clampQuota(row.topic_quota));
@@ -175,8 +188,12 @@ export default function SettingsPage() {
         if (row?.unsubscribed_at && row?.subscribed_at && hasActiveAccess(row.cancelled_at)) {
           setShowResume(true);
         }
-      } catch {
-        // ignore
+      } catch (e) {
+        // alpha-drift-r63-05: logged, not silent -- a thrown failure
+        // (getUser()/getSession() throwing on a missing-env misconfig, a
+        // network-level exception the row-fetch's own error log above
+        // can't cover) used to leave zero trace.
+        console.warn("[settings] hydrate threw:", e instanceof Error ? e.message : e);
       } finally {
         if (!cancelled) setQuotaLoaded(true);
       }
@@ -225,17 +242,25 @@ export default function SettingsPage() {
         const sb = supabaseClient();
         const { data: { user } } = await sb.auth.getUser();
         if (user) {
-          const { data: row } = await sb
+          // alpha-drift-r63-05: used to discard `error` too -- the
+          // fallback behavior below (proceed with the last-known quota) is
+          // deliberate and correct, but sibling best-effort reads elsewhere
+          // in this app (update-quantity's fresh topics re-read, the
+          // cron's Layer-2 backup lookup) still log the discarded error
+          // even when the fallback is intentional, so this one should too.
+          const { data: row, error: rowErr } = await sb
             .from("users")
             .select("topic_quota")
             .eq("id", user.id)
             .maybeSingle();
+          if (rowErr) console.warn("[settings] requestTier quota re-read failed:", rowErr.message);
           if (row?.topic_quota && typeof row.topic_quota === "number") {
             setTopicQuota(clampQuota(row.topic_quota));
           }
         }
-      } catch {
+      } catch (e) {
         // ignore — panel still opens with the last-known quota
+        console.warn("[settings] requestTier hydrate threw:", e instanceof Error ? e.message : e);
       }
     }
     setConfirmingTier(direction);
@@ -709,8 +734,19 @@ export default function SettingsPage() {
                 if (supabaseConfigured()) {
                   try {
                     const sb = supabaseClient();
-                    const { data: { session } } = await sb.auth.getSession();
-                    if (session) {
+                    // alpha-drift-r63-05: used to discard `error` -- a
+                    // genuine getSession() failure fell into the same
+                    // silent local-only fallback as a real "not signed in"
+                    // result, with no alert, unlike the sibling !res.ok
+                    // branch two lines down. Now treated the same way: a
+                    // reader who asked for their FULL data, promised by
+                    // privacy.tsx, gets told the download is degraded
+                    // instead of silently receiving a subset with no cue.
+                    const { data: { session }, error: sessionErr } = await sb.auth.getSession();
+                    if (sessionErr) {
+                      console.warn("[settings] export getSession failed:", sessionErr.message);
+                      alert("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
+                    } else if (session) {
                       const res = await fetch("/api/account/export");
                       if (res.ok) {
                         exportData = await res.json();

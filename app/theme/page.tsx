@@ -58,7 +58,16 @@ export default function ThemePage() {
     (async () => {
       try {
         const sb = supabaseClient();
-        const { data: { session } } = await sb.auth.getSession();
+        // alpha-drift-r63-04 (2026-08-21, silent-catch-audit-r9): used to
+        // discard `error` -- getSession() resolves rather than throws on an
+        // expired-refresh-token/auth-service blip (unlike getUser(), whose
+        // error IS the normal signed-out case, deliberately left alone
+        // elsewhere in this file/ThemeApplier/ProfileEditor), so a signed-
+        // in reader hitting this could silently get routed into onboarding
+        // /name on submit() instead of back to /settings. Logged only --
+        // the fail-open UX (misroute, self-recoverable) is unchanged.
+        const { data: { session }, error: sessionErr } = await sb.auth.getSession();
+        if (sessionErr) console.warn("[theme] signed-in hydrate getSession failed:", sessionErr.message);
         if (cancelled) return;
         if (!session) return;
         setSignedIn(true);
