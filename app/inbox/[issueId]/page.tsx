@@ -65,8 +65,21 @@ export default function IssuePage() {
     if (supabaseConfigured()) {
       try {
         const sb = supabaseClient();
-        const { data: { session } } = await sb.auth.getSession();
+        // alpha-drift-r64-03 (2026-08-21, silent-catch-audit-r10 +
+        // form-validation-consistency-audit-r9): used to discard `error`,
+        // falling through to `missing` below on a genuine getSession()
+        // failure -- worse than the sibling pages' fallback here, since
+        // this page's missing copy ("It might have been deleted...")
+        // actively implies data loss instead of a retryable hiccup.
+        // Routed to the existing loadError state instead (matching
+        // app/inbox/page.tsx and app/archive/page.tsx's same-round fix).
+        const { data: { session }, error: sessionErr } = await sb.auth.getSession();
         if (stale()) return;
+        if (sessionErr) {
+          console.warn("[issue] getSession failed:", sessionErr.message);
+          setLoadError(true);
+          return;
+        }
         if (session && forIssueId) {
           const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
             sb

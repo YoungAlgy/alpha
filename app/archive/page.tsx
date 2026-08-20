@@ -86,10 +86,24 @@ export default function ArchivePage() {
     if (supabaseConfigured()) {
       try {
         const sb = supabaseClient();
+        // alpha-drift-r64-03 (2026-08-21, form-validation-consistency-
+        // audit-r9): used to discard `error` -- a genuine getSession()
+        // failure resolves session:null rather than throwing, so it fell
+        // straight past the try/catch below into the unauthenticated
+        // localStorage fallback, showing a real subscriber's populated
+        // archive as "No letters yet" -- the exact false-empty this
+        // function's own leading comment forbids. Routed to the same
+        // "error" state the data-query errors below already use.
         const {
           data: { session },
+          error: sessionErr,
         } = await sb.auth.getSession();
         if (!mountedRef.current) return;
+        if (sessionErr) {
+          console.warn("[archive] getSession failed:", sessionErr.message);
+          setState("error");
+          return;
+        }
         if (session) {
           // RLS scopes issues to auth.uid() = user_id — no explicit filter needed.
           const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
@@ -162,9 +176,14 @@ export default function ArchivePage() {
     setLoadingMore(true);
     try {
       const sb = supabaseClient();
+      // alpha-drift-r64-03: logged only, no behavior change -- unlike
+      // load() above, a discarded error here already degrades safely (the
+      // existing list stays intact, "Load more" just silently no-ops).
       const {
         data: { session },
+        error: sessionErr,
       } = await sb.auth.getSession();
+      if (sessionErr) console.warn("[archive] loadMore getSession failed:", sessionErr.message);
       if (!mountedRef.current || !session) return;
       const from = items.length;
       // alpha-drift-r17-10 (found+fixed 2026-08-07): loadMore only ever

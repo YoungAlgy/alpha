@@ -54,19 +54,30 @@ export default function InboxPage() {
   const load = useCallback(async () => {
     setMissing(false);
     setLoadError(false);
-    // Local to this call (not component state) so the catch block below can
-    // read it synchronously without waiting on a setSignedIn() re-render.
-    let sessionEstablished = false;
     try {
       // Path 1 — authenticated user reads from Supabase.
       // Prefer this so a returning sign-in on a fresh device still sees the letter.
       if (supabaseConfigured()) {
         try {
           const sb = supabaseClient();
-          const { data: { session } } = await sb.auth.getSession();
+          // alpha-drift-r64-03 (2026-08-21, silent-catch-audit-r10 +
+          // form-validation-consistency-audit-r9): used to discard `error`
+          // -- supabase-js resolves rather than throws on a getSession()
+          // failure (e.g. a refresh timeout via this app's own
+          // AbortSignal.timeout(10_000)), which used to leave `session`
+          // falsy with zero trace and fall straight through to Path 2,
+          // rendering the signed-OUT "No letter on this device yet" screen
+          // to an actual signed-in paying subscriber. Routed into the same
+          // loadError screen the data-query errors below already use,
+          // matching this page's own r43-02 precedent one call earlier.
+          const { data: { session }, error: sessionErr } = await sb.auth.getSession();
           if (!mountedRef.current) return;
+          if (sessionErr) {
+            console.warn("[inbox] getSession failed:", sessionErr.message);
+            setLoadError(true);
+            return;
+          }
           if (session) {
-            sessionEstablished = true;
             setSignedIn(true);
             // Independent queries — run them in parallel (same pattern as
             // /letter) instead of two sequential round trips on the app's
@@ -148,16 +159,21 @@ export default function InboxPage() {
           // used to silently fall through to the Path 2 localStorage
           // fallback, which does nothing useful for a signed-in reader (who
           // never relies on localStorage) -- same masking-a-real-failure
-          // gap as the error-branch fix above. But this catch can also fire
-          // for a genuinely signed-OUT visitor (getSession() itself
-          // throwing), where falling through to Path 2 is still correct.
-          // sessionEstablished distinguishes the two: only surface
-          // loadError once we know a real session was actually confirmed.
+          // gap as the error-branch fix above.
+          //
+          // alpha-drift-r64-03 (2026-08-21, duplicate-code-audit-r14): this
+          // used to gate on a `sessionEstablished` flag, on the premise
+          // that a genuinely signed-out visitor could reach this catch via
+          // getSession() itself throwing -- traced against the installed
+          // @supabase/auth-js source and that case doesn't exist (a
+          // visitor with no stored session resolves {session:null,
+          // error:null}, it never throws). Every real path into this catch
+          // already belongs to an actual signed-in reader, so it now
+          // matches its siblings (app/archive/page.tsx, app/inbox/
+          // [issueId]/page.tsx) and sets loadError unconditionally.
           console.warn("[inbox] supabase read failed:", e);
-          if (sessionEstablished) {
-            if (mountedRef.current) setLoadError(true);
-            return;
-          }
+          if (mountedRef.current) setLoadError(true);
+          return;
         }
       }
       // Path 2 — unauthenticated (or supabase down) falls back to localStorage.

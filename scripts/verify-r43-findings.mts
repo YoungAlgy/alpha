@@ -10,11 +10,14 @@
 // - app/inbox/page.tsx: the main /inbox page had the SAME query-failure-
 //   vs-not-found conflation round 42 fixed on its sibling
 //   /inbox/[issueId]/page.tsx, on the app's most-visited page. Required a
-//   real refactor (extracted load() as a retryable callback, added a
-//   sessionEstablished local flag so the catch block only surfaces
-//   loadError once a real session was confirmed, not for a genuinely
-//   signed-out visitor whose getSession() call itself failed) -- and while
-//   implementing, caught and corrected a self-introduced regression before
+//   real refactor (extracted load() as a retryable callback; originally
+//   added a sessionEstablished local flag so the catch block only surfaced
+//   loadError once a real session was confirmed -- round 64 (alpha-drift-
+//   r64-03, 2026-08-21) found that premise false against the actual SDK
+//   source and removed it, since the flagged "genuinely signed-out
+//   visitor whose getSession() call itself failed" case doesn't exist)
+//   -- and while implementing, caught and corrected a self-introduced
+//   regression before
 //   shipping: an early draft treated `!data` (a legitimate "no issue
 //   generated yet" empty state) as an error too, which would have broken
 //   the normal experience for a brand-new signed-in subscriber.
@@ -72,7 +75,13 @@ console.log("(2) app/inbox/page.tsx: a genuine query failure is now distinguishe
   check("(2a) a new loadError state exists", /const \[loadError, setLoadError\] = useState\(false\);/.test(src));
   check("(2b) the issues-query error branch sets loadError, separate from the zero-row case", /if \(error\) \{\s*\n\s*setLoadError\(true\);\s*\n\s*return;\s*\n\s*\}/.test(src));
   check("(2c) a genuine zero-row result (no error, no data) is explicitly left to fall through, NOT treated as an error", /if \(data\) \{/.test(src) && !/if \(error \|\| !data\)/.test(src));
-  check("(2d) the catch block distinguishes a signed-in failure from a genuinely-signed-out one via a local flag", /let sessionEstablished = false;/.test(src) && /if \(sessionEstablished\) \{/.test(src));
+  // alpha-drift-r64-03 (2026-08-21, duplicate-code-audit-r14): the
+  // sessionEstablished gate this check asserted was removed -- its premise
+  // (getSession() can throw for a genuinely signed-out visitor) was false
+  // against the actual @supabase/auth-js source. The catch now sets
+  // loadError unconditionally, matching its siblings. See
+  // verify-r64-findings.mts's inbox section.
+  check("(2d) the catch block sets loadError unconditionally, matching its siblings (no sessionEstablished gate)", !/let sessionEstablished = false;/.test(src) && !/if \(sessionEstablished\) \{/.test(src) && /console\.warn\("\[inbox\] supabase read failed:", e\);\s*\n\s*if \(mountedRef\.current\) setLoadError\(true\);\s*\n\s*return;/.test(src));
   check("(2e) a distinct loadError UI block exists with a Try again button", /Couldn&apos;t load your letters\./.test(src) && /onClick=\{\(\) => load\(\)\}/.test(src));
   check("(2f) the original signed-in-but-no-letter-yet copy is untouched (still correct for the genuine empty state)", /You&apos;re signed in\. Your letters show up here once they&apos;re/.test(src));
   check("(2g) the finally block still unconditionally marks checked, even after an early return from any branch", /if \(mountedRef\.current\) setChecked\(true\);\s*\n\s*\}\s*\n\s*\}, \[state\.theme\]\);/.test(src));
