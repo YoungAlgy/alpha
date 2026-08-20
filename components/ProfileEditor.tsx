@@ -438,6 +438,19 @@ function Field({
     placeholder,
     disabled,
     maxLength,
+    // alpha-drift-r58-01 (2026-08-20, self-audit-r57): round 57's required
+    // prop only rendered a visual asterisk -- it never reached the actual
+    // control, so a screen-reader user got zero indication First name was
+    // required (unlike app/support/SupportForm.tsx's Field, which the round
+    // 57 commit claimed to mirror: there the caller places a REAL `required`
+    // attribute on its own input in addition to that Field's asterisk-only
+    // prop, two mechanisms working together -- this component collapsed
+    // that into one and silently dropped the accessibility half). No <form>
+    // wraps this component and Save is a plain type="button" onClick
+    // handler, so adding `required` here has zero native-form-validation
+    // side effects -- it's a pure accessibility fix.
+    required: required || undefined,
+    "aria-required": required || undefined,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(e.target.value),
     className:
       "w-full alpha-ui text-base bg-transparent border-b pt-2 pb-2 focus:outline-none focus:border-current placeholder:opacity-40",
@@ -447,7 +460,12 @@ function Field({
     <label className="block">
       <span className="alpha-ui text-xs block mb-1" style={{ color: "var(--ink-soft)" }}>
         {label}
-        {required && <span style={{ color: "var(--accent-ink)" }}> *</span>}
+        {/* alpha-drift-r58-02 (2026-08-20, accessibility-resweep-newer-
+            code-round-6): --accent-ink fails WCAG AA 4.5:1 against --paper
+            in the default theme and most others -- --ink clears every
+            theme, the same swap already applied repeatedly elsewhere in
+            this codebase for informational text. */}
+        {required && <span style={{ color: "var(--ink)" }}> *</span>}
       </span>
       {multiline ? (
         <textarea {...shared} rows={2} className={`${shared.className} resize-none`} />

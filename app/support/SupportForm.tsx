@@ -166,8 +166,12 @@ function Field({
         {optional && (
           <span style={{ opacity: 0.6 }}> · OPTIONAL</span>
         )}
+        {/* alpha-drift-r58-02 (2026-08-20, accessibility-resweep-newer-
+            code-round-6): same --accent-ink WCAG contrast gap as
+            components/ProfileEditor.tsx's own required-field asterisk
+            (fixed alongside this one) -- --ink clears every theme. */}
         {required && (
-          <span style={{ color: "var(--accent-ink)" }}> *</span>
+          <span style={{ color: "var(--ink)" }}> *</span>
         )}
       </div>
       {children}
