@@ -85,7 +85,13 @@ console.log("(2) lib/email.ts: the daily letter's IN THIS ISSUE list no longer j
   check("(2c) sanity: the sectionList builder itself contains zero em dashes after the fix", !!sectionListFnMatch && !sectionListFnMatch[0].includes("—"));
 
   const previewSrc = readFileSync(new URL("../scripts/preview-email.mts", import.meta.url), "utf8");
-  check("(2d) scripts/preview-email.mts's sample fixture updated to match (colon, not em dash)", /topicLabel \?\? "Topic"\}: \$\{LONG_HEADLINE\}/.test(previewSrc));
+  // alpha-drift-r39-01: r39 wrapped this same fixture's label in
+  // previewSafeLabel(...) (see verify-r39-findings.mts (1f)) to fix a
+  // separate colon-collision bug that fixture's raw-label version had
+  // reintroduced -- the literal "Topic"}: substring this assertion checked
+  // now has an extra closing paren before it. Loosened to check the colon
+  // join survived without pinning the exact call shape around it.
+  check("(2d) scripts/preview-email.mts's sample fixture updated to match (colon, not em dash)", /"Topic"\)?\}: \$\{LONG_HEADLINE\}/.test(previewSrc));
 }
 
 console.log("(3) app/api/stripe/webhook/route.ts: cancelledAt now derives from the live-refetched subscription, not the stale event snapshot");

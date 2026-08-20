@@ -100,6 +100,17 @@ console.log("(1) lib/email.ts: sectionList's colon join no longer collides with 
   const lead = "Some headline";
   const joined = `• ${safeLabel}: ${lead}`;
   check(`(1e) behavioral: joining the real "AI: news..." catalog label no longer produces a double colon -- actual: ${JSON.stringify(joined)}`, !joined.includes("::") && (joined.match(/:/g) ?? []).length === 1);
+
+  // alpha-drift-r39-01 (follow-up, same day): the actual live-rendered-HTML
+  // spot check this session ran to "confirm" the r38 fix was fooled by
+  // scripts/preview-email.mts's OWN hand-built fixture -- it used the raw
+  // topicLabel, never the real (unexported, so untestable by import) join
+  // logic inside sendLetterNotification, so it kept showing a double colon
+  // for SAMPLE_ISSUE's "AI: news..." section even after this fix shipped.
+  // Fixed the fixture to mirror the real stripping so a future "does the
+  // rendered output actually look right" spot check isn't misled again.
+  const previewSrc = readFileSync(new URL("../scripts/preview-email.mts", import.meta.url), "utf8");
+  check("(1f) preview-email.mts's fixture now mirrors the real colon-stripping instead of using the raw label", /const previewSafeLabel = \(label: string\) => label\.replace\(\/:\/g, ""\);/.test(previewSrc) && /previewSafeLabel\(SAMPLE_ISSUE\.sections\[0\]\?\.topicLabel/.test(previewSrc));
 }
 
 console.log("(2) lib/engine/voice-guard.ts: BANNED_LEXICAL now catches plural/adverb forms round 38 still missed");

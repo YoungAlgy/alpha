@@ -20,9 +20,19 @@ const LONG_HEADLINE = "A".repeat(180);
 // alpha-drift-r38-02: matches lib/email.ts's real sectionList joiner (a
 // colon, not an em dash, as of r38) so this preview stays honest about the
 // real contract, same discipline as the truncation-ellipsis note below.
+//
+// alpha-drift-r39-01: this fixture used the RAW topicLabel here, not
+// lib/email.ts's real (unexported) sectionList builder -- so it never
+// actually exercised the r39 colon-collision fix, and kept rendering a
+// double colon for SAMPLE_ISSUE's own "AI: news, releases & tools for
+// work" first section even after that fix shipped, silently misleading a
+// "did the fix work" check against this preview. Mirrors the real
+// builder's colon-stripping now, so this fixture's claim to stay honest
+// about the real contract is actually true.
+const previewSafeLabel = (label: string) => label.replace(/:/g, "");
 const sectionListWithLongHeadline = [
-  `• ${SAMPLE_ISSUE.sections[0]?.topicLabel ?? "Topic"}: ${LONG_HEADLINE}`,
-  ...SAMPLE_ISSUE.sections.slice(1).map((s) => `• ${s.topicLabel}`),
+  `• ${previewSafeLabel(SAMPLE_ISSUE.sections[0]?.topicLabel ?? "Topic")}: ${LONG_HEADLINE}`,
+  ...SAMPLE_ISSUE.sections.slice(1).map((s) => `• ${previewSafeLabel(s.topicLabel)}`),
 ].join("\n");
 
 // alpha-drift-r19-01 (found+fixed 2026-08-07): renderHTML/renderText no
