@@ -20,14 +20,17 @@
 const { cancelCustomerSubscriptions, cleanUpStripeCustomerBeforeDelete } = await import("../lib/stripe-cancel.ts");
 
 type Sub = { id: string; status: string };
-function stub(subs: Sub[], throwOn: string[] = [], customerDelThrows = false) {
+function stub(subs: Sub[], throwOn: string[] = [], customerDelThrows = false, listThrows = false) {
   const cancelledCalls: string[] = [];
   const customerDelCalls: string[] = [];
   const client = {
     cancelledCalls,
     customerDelCalls,
     subscriptions: {
-      list: async (_args: unknown) => ({ data: subs }),
+      list: async (_args: unknown) => {
+        if (listThrows) throw new Error("simulated stripe list failure");
+        return { data: subs };
+      },
       cancel: async (id: string) => {
         if (throwOn.includes(id)) throw new Error("simulated stripe failure");
         cancelledCalls.push(id);
@@ -272,6 +275,51 @@ try {
   await cleanUpStripeCustomerBeforeDelete(svc12 as never, "user_012", "[verify]", stripe12 as never);
   check("(12a) did its own Supabase lookup (5th arg omitted)", svc12.queriedIds.length === 1 && svc12.queriedIds[0] === "user_012");
   check("(12b) cancelled subscriptions on the id from its own lookup", stripe12.cancelledCalls.includes("sub_live_12"));
+} finally {
+  delete process.env.STRIPE_SECRET_KEY;
+}
+
+// (13) alpha-drift-r65-05 (2026-08-21, silent-catch-audit-r11):
+// subscriptions.list() itself throws (a network blip, a timeout, a one-off
+// 5xx) -- the subscription-cancel step and the customer-delete step used to
+// share one try, so this used to skip customers.del() entirely, and per
+// Stripe's own documented behavior, deleting the Customer is what actually
+// cancels a still-live subscription in that case. Must still attempt
+// customers.del(), and must never throw out of the wrapper.
+console.log("(13) subscriptions.list() throws -- customers.del() is still attempted (it also cancels any live subscription)");
+process.env.STRIPE_SECRET_KEY = "sk_test_verify_script_only";
+try {
+  const svc13 = supabaseStub({ stripe_customer_id: "cus_list_throws" });
+  const stripe13 = stub([], [], false, true);
+  let threw = false;
+  try {
+    await cleanUpStripeCustomerBeforeDelete(svc13 as never, "user_013", "[verify]", stripe13 as never);
+  } catch {
+    threw = true;
+  }
+  check("(13a) did not throw despite subscriptions.list() rejecting", !threw);
+  check("(13b) customers.del() was still attempted (the fix's whole point)", stripe13.customerDelCalls.includes("cus_list_throws"));
+} finally {
+  delete process.env.STRIPE_SECRET_KEY;
+}
+
+// (14) Both steps fail (subscriptions.list() throws AND customers.del()
+// throws) -- the worst case, with no fallback left to cancel the
+// subscription or delete the Customer. Must still never throw out of the
+// wrapper (sendOpsAlert is itself .catch(() => {})-guarded, matching the
+// r60-06 sibling alert above).
+console.log("(14) both subscriptions.list() and customers.del() throw -- still swallowed, does not throw");
+process.env.STRIPE_SECRET_KEY = "sk_test_verify_script_only";
+try {
+  const svc14 = supabaseStub({ stripe_customer_id: "cus_both_fail" });
+  const stripe14 = stub([], [], true, true);
+  let threw = false;
+  try {
+    await cleanUpStripeCustomerBeforeDelete(svc14 as never, "user_014", "[verify]", stripe14 as never);
+  } catch {
+    threw = true;
+  }
+  check("(14) did not throw despite both steps failing", !threw);
 } finally {
   delete process.env.STRIPE_SECRET_KEY;
 }

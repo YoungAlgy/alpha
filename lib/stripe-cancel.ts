@@ -144,10 +144,29 @@ export async function cleanUpStripeCustomerBeforeDelete(
     }
     if (!customerId) return;
     const stripe = stripeClient ?? getStripeClient();
-    const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(stripe, customerId);
-    console.log(
-      `${logPrefix} stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
-    );
+    // alpha-drift-r65-05 (2026-08-21, silent-catch-audit-r11): the
+    // subscription-cancel step and the customer-delete step used to share
+    // ONE try, so a throw out of cancelCustomerSubscriptions()'s unguarded
+    // stripe.subscriptions.list() (a network blip, a timeout, a one-off
+    // 5xx -- all real per lib/stripe.ts's own maxNetworkRetries:1) skipped
+    // customers.del() entirely, and Stripe's own documented behavior is
+    // that deleting a Customer ALSO cancels any still-active subscription
+    // -- so that skip meant NO code path cancelled it. Given separate
+    // try/catches now, matching the pattern app/api/stripe/webhook/
+    // route.ts already uses when calling this same cancel function.
+    let cancelFailed = false;
+    try {
+      const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(stripe, customerId);
+      console.log(
+        `${logPrefix} stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
+      );
+    } catch (cancelErr) {
+      cancelFailed = true;
+      console.warn(
+        `${logPrefix} stripe ${customerId}: subscription-cancel step threw, still attempting customer delete (deleting the Customer also cancels any live subscription, per Stripe's own documented behavior):`,
+        describeStripeError(cancelErr)
+      );
+    }
     try {
       await stripe.customers.del(customerId);
       console.log(`${logPrefix} stripe ${customerId}: customer object deleted`);
@@ -159,6 +178,17 @@ export async function cleanUpStripeCustomerBeforeDelete(
       //
       // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
       console.warn(`${logPrefix} stripe ${customerId}: customer delete failed:`, describeStripeError(delErr));
+      if (cancelFailed) {
+        // Both best-effort steps failed -- unlike a customers.del()-only
+        // failure (still caught by the weekly Stripe/Supabase reconcile
+        // job's orphaned-live-subscription check), a still-active
+        // subscription under a Customer that ALSO failed to delete has no
+        // other safety net, so this pages a human directly.
+        await sendOpsAlert(
+          "alpha: possible orphaned Stripe subscription after account delete",
+          `${logPrefix} user ${userId}'s account was deleted, but BOTH the subscription-cancel step and the customer-delete step failed for Stripe customer ${customerId}. If they had an active subscription, it may still be billing with no account left to manage it. Worth checking Stripe directly for this customer.`
+        ).catch(() => {});
+      }
     }
   } catch (e) {
     console.warn(`${logPrefix} subscription cancel failed (proceeding with delete):`, describeStripeError(e));
