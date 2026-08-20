@@ -115,11 +115,28 @@ export async function POST(req: Request) {
             // Look up the existing row so we don't clobber subscription-owned
             // state (topic_quota / cancelled_at) on a re-delivered or
             // out-of-order checkout event. See lib/webhook-user-mutation.
-            const { data: existing } = await sb
+            //
+            // alpha-drift-r66-04 (2026-08-21, silent-catch-audit-r12): used
+            // to discard `error` -- the only Supabase call in this handler
+            // that did (every sibling, incl. the topics-cap read 200 lines
+            // below, already checks it). A transient read failure on an
+            // ALREADY-subscribed user (the common onboarding-funnel case)
+            // used to look identical to "no row exists," routing into a
+            // doomed INSERT that collides on the users.id PK and throws a
+            // misleading "duplicate key" error instead of the real cause.
+            // Self-healing either way (Stripe retries, the ops alert still
+            // fires), so logged + folded into the insert-failure message
+            // below rather than an early throw -- an early throw would also
+            // break the "row genuinely absent" direct-checkout case, where
+            // this same read failing today still lets the INSERT succeed.
+            const { data: existing, error: existingErr } = await sb
               .from("users")
               .select("subscribed_at, cancelled_at")
               .eq("id", userId)
               .maybeSingle();
+            if (existingErr) {
+              console.warn("[stripe-webhook] existing-row lookup failed (may misroute into an insert if a row actually exists):", existingErr.message);
+            }
             // Is this checkout's subscription LIVE right now? A genuine new or
             // resubscribe checkout has an active sub; a re-delivered ORIGINAL
             // checkout for a since-ended subscription does not. Gates the
@@ -156,7 +173,13 @@ export async function POST(req: Request) {
             // isFirstSubscription gate reads the PRE-write row).
             if (mut.kind === "insert") {
               const { error: insErr } = await sb.from("users").insert(mut.row);
-              if (insErr) throw new Error(`user insert failed: ${insErr.message}`);
+              if (insErr) {
+                throw new Error(
+                  existingErr
+                    ? `user insert failed (the earlier existing-row lookup had also failed: ${existingErr.message}): ${insErr.message}`
+                    : `user insert failed: ${insErr.message}`
+                );
+              }
             } else {
               const { error: updErr } = await sb
                 .from("users")
