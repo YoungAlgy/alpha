@@ -50,16 +50,28 @@ export function QuestionStep({
   // signed-in reader who deep-links here, or a returning subscriber on a fresh
   // device, would otherwise see a blank form and could re-save stale values —
   // bounce them to their inbox, mirroring the welcome page's guard.
+  //
+  // alpha-drift-r48-01 (2026-08-20): had no cancellation guard -- this
+  // component is rendered by /name, /city, /role, /focus, /fun, and /email
+  // (every onboarding step past /theme). A signed-in reader who deep-linked
+  // into any of them and navigated away (Back, a link, a new URL) before
+  // getSession() resolved still got force-redirected to /inbox the moment
+  // it resolved, on top of wherever they'd since gone -- the same
+  // stale-async-navigation class already fixed for checkout's subscribe()
+  // (r46), signin's sendCode/verifyCode (r47), and topics' submit() (r47).
   useEffect(() => {
     if (!supabaseConfigured()) return;
+    let cancelled = false;
     (async () => {
       try {
         const { data: { session } } = await supabaseClient().auth.getSession();
+        if (cancelled) return;
         if (session) router.replace("/inbox" as never);
       } catch {
         // ignore — show the step as a fallback
       }
     })();
+    return () => { cancelled = true; };
   }, [router]);
 
   useEffect(() => {
