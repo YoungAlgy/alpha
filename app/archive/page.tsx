@@ -254,9 +254,12 @@ export default function ArchivePage() {
               <Link href="/welcome" className="alpha-button">
                 Start a new letter →
               </Link>
+              {/* alpha-drift-r59-07 (2026-08-20, accessibility-resweep-
+                  newer-code-round-7): under the WCAG 2.5.8 24px
+                  touch-target minimum. */}
               <Link
                 href="/support"
-                className="alpha-ui text-sm underline underline-offset-4 self-center"
+                className="alpha-ui text-sm underline underline-offset-4 self-center py-2 -my-2"
                 style={{ color: "var(--ink-soft)" }}
               >
                 Contact support

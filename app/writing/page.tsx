@@ -396,17 +396,20 @@ export default function WritingPage() {
               >
                 Try again →
               </button>
+              {/* alpha-drift-r59-04 (2026-08-20, accessibility-resweep-
+                  newer-code-round-7): under the WCAG 2.5.8 24px
+                  touch-target minimum, this app's actual failure/retry UI. */}
               <button
                 type="button"
                 onClick={() => router.push("/inbox" as never)}
-                className="alpha-ui text-sm underline underline-offset-4"
+                className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                 style={{ color: "var(--ink-soft)" }}
               >
                 Go to inbox
               </button>
               <a
                 href="mailto:youngalgy@gmail.com?subject=alpha%20generate%20failure"
-                className="alpha-ui text-sm underline underline-offset-4"
+                className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                 style={{ color: "var(--ink-soft)" }}
               >
                 Email support
@@ -424,10 +427,13 @@ export default function WritingPage() {
                 a word in reader-facing prose -- no other copy in the app
                 does this. */}
             <p>Taking longer than usual. We're still writing it in the background. Your letter will land in your inbox when it's ready.</p>
+            {/* alpha-drift-r59-04 (2026-08-20, accessibility-resweep-newer-
+                code-round-7): same touch-target fix as the error card's
+                controls above. */}
             <button
               type="button"
               onClick={() => router.push("/inbox" as never)}
-              className="underline underline-offset-4"
+              className="underline underline-offset-4 py-2 -my-2"
               // alpha-drift-r23-02 (found+fixed 2026-08-14): --accent-ink
               // fails WCAG AA 4.5:1 against --paper in 12+ themes -- --ink
               // clears every theme.

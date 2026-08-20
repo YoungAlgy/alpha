@@ -112,10 +112,15 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
           if you don&apos;t see them. Your letters keep coming to your current
           address until you finish.
         </p>
+        {/* alpha-drift-r59-06 (2026-08-20, accessibility-resweep-newer-
+            code-round-7): under the WCAG 2.5.8 24px touch-target minimum,
+            unlike its own sibling trigger button below ("Change email →",
+            already py-2 -my-2). Not the same control as the file's Cancel
+            button (that one was separately refuted for this issue). */}
         <button
           type="button"
           onClick={() => setSentTo(null)}
-          className="alpha-ui text-sm underline underline-offset-4 mt-3"
+          className="alpha-ui text-sm underline underline-offset-4 mt-3 py-2 -my-2"
           style={{ color: "var(--accent-ink)" }}
         >
           Use a different email

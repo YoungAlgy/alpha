@@ -50,9 +50,14 @@ export default function Error({
           <button type="button" onClick={() => reset()} className="alpha-button">
             Try again →
           </button>
+          {/* alpha-drift-r59-05 (2026-08-20, accessibility-resweep-newer-
+              code-round-7): under the WCAG 2.5.8 24px touch-target minimum
+              -- caught the round after alpha-drift-r58-03 touched this
+              file's h1 two lines up without catching the gap right next
+              to it. */}
           <Link
             href="/inbox"
-            className="alpha-ui text-sm underline underline-offset-4"
+            className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--ink-soft)" }}
           >
             Or open your inbox

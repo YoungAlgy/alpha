@@ -32,9 +32,12 @@ export default function NotFound() {
           <Link href="/welcome" className="alpha-button">
             Start fresh →
           </Link>
+          {/* alpha-drift-r59-05 (2026-08-20, accessibility-resweep-newer-
+              code-round-7): same touch-target fix as app/error.tsx's
+              identical sibling link. */}
           <Link
             href="/inbox"
-            className="alpha-ui text-sm underline underline-offset-4"
+            className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--ink-soft)" }}
           >
             Or open your inbox
