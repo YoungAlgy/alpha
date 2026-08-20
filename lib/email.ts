@@ -313,7 +313,20 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
       // instance of the house voice guide's #1 banned character across the
       // whole subscriber-facing surface. A colon reads as a plain
       // label:content pairing without needing the long dash.
-      return lead ? `• ${s.topicLabel}: ${lead}` : `• ${s.topicLabel}`;
+      //
+      // alpha-drift-r39-01 (2026-08-19, self-audit): the catalog's own
+      // "ai-news" topic label is literally "AI: news, releases & tools for
+      // work" (lib/topics.ts) -- a colon baked into the label itself, which
+      // the r38 fix never accounted for. Every subscriber on that topic (the
+      // app's own flagship tier-A topic) would see a double-colon line like
+      // "AI: news, releases & tools for work: <headline>" every day their AI
+      // section has a lead item. Custom user-typed topic labels can carry a
+      // colon too ("Recipe: dinner ideas") and nothing strips it before this
+      // point. Stripped at this join site, the actual sink, rather than at
+      // topicLabel()'s definition (which may have other consumers where a
+      // colon in a label is harmless).
+      const safeLabel = s.topicLabel.replace(/:/g, "");
+      return lead ? `• ${safeLabel}: ${lead}` : `• ${safeLabel}`;
     })
     .join("\n");
 
