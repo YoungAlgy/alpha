@@ -86,7 +86,13 @@ const check = (label: string, cond: boolean) => {
 console.log("(1) lib/email.ts: sectionList's colon join no longer collides with a colon already inside topicLabel");
 {
   const src = readFileSync(new URL("../lib/email.ts", import.meta.url), "utf8");
-  check("(1a) topicLabel is sanitized of colons before the join", /const safeLabel = s\.topicLabel\.replace\(\/:\/g, ""\);/.test(src));
+  // alpha-drift-r40-02: round 40 found the ASCII-only /:/g here missed the
+  // fullwidth colon (U+FF1A) a CJK IME can produce, widening this to
+  // /[:：]/g -- see verify-r40-findings.mts section (2) for that fix's own
+  // coverage. Loosened to check the strip-then-join SHAPE survived (any
+  // character class, not the exact single-colon regex), since the join
+  // mechanism itself is what this assertion cares about.
+  check("(1a) topicLabel is sanitized of colons before the join", /const safeLabel = s\.topicLabel\.replace\(\/\[?:.*?\]?\/g, ""\);/.test(src));
   check("(1b) the join uses safeLabel, not the raw label", /return lead \? `• \$\{safeLabel\}: \$\{lead\}` : `• \$\{safeLabel\}`;/.test(src));
   check("(1c) the raw (unsanitized) join is gone", !/return lead \? `• \$\{s\.topicLabel\}: \$\{lead\}` :/.test(src));
 

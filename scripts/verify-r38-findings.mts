@@ -81,7 +81,7 @@ console.log("(2) lib/email.ts: the daily letter's IN THIS ISSUE list no longer j
   // character itself is untouched. Widened the match window again after
   // r39 added more comment lines to this block (same non-reason as the
   // r38->r39 widening already done once here).
-  const sectionListFnMatch = src.match(/const sectionList = params\.issue\.sections[\s\S]{0,2200}?\.join\("\\n"\);/);
+  const sectionListFnMatch = src.match(/const sectionList = params\.issue\.sections[\s\S]{0,2600}?\.join\("\\n"\);/);
   check("(2c) sanity: the sectionList builder itself contains zero em dashes after the fix", !!sectionListFnMatch && !sectionListFnMatch[0].includes("—"));
 
   const previewSrc = readFileSync(new URL("../scripts/preview-email.mts", import.meta.url), "utf8");
