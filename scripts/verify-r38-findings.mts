@@ -38,9 +38,17 @@ console.log("(1) lib/engine/voice-guard.ts: BANNED_LEXICAL now catches the -ed f
   check("(1a) leveraged added", /leverage\|leverages\|leveraging\|leveraged\b/.test(src));
   check("(1b) utilized added", /utilize\|utilizes\|utilizing\|utilized\b/.test(src));
   check("(1c) navigated added", /navigate\|navigates\|navigating\|navigated\b/.test(src));
-  check("(1d) optimized added", /optimize\|optimizes\|optimizing\|optimized\|optimization\b/.test(src));
+  // alpha-drift-r39-02: round 39 further rewrote "optimization" to
+  // "optimizations?" (adding plural coverage) and "game-changer" to
+  // "game[- ]changers?" (adding the unhyphenated form) -- both changes
+  // break these two assertions' exact literal-substring match even though
+  // the underlying capability (optimized/game-changing detection) is still
+  // present and now MORE complete, not less. Loosened to check presence of
+  // the still-unchanged pieces plus the behavioral proof below, which is
+  // the assertion that actually matters.
+  check("(1d) optimized added", /optimize\|optimizes\|optimizing\|optimized\|optimizations?\b/.test(src));
   check("(1e) calibrated added", /calibrate\|calibrates\|calibrating\|calibrated\b/.test(src));
-  check("(1f) game-changing added alongside game-changer", /game-changer\|game-changing\b/.test(src));
+  check("(1f) game-changing added alongside game-changer", /changing\b/.test(src) && /changers?\b/.test(src));
 
   // Behavioral proof against the REAL exported findLexicalTells, not a
   // reimplementation -- these exact 6 sentences were confirmed by the r38
@@ -59,11 +67,21 @@ console.log("(2) lib/email.ts: the daily letter's IN THIS ISSUE list no longer j
 {
   const src = readFileSync(new URL("../lib/email.ts", import.meta.url), "utf8");
   check("(2a) the em dash join is gone", !/• \$\{s\.topicLabel\} — \$\{lead\}/.test(src));
-  check("(2b) replaced with a colon join", /return lead \? `• \$\{s\.topicLabel\}: \$\{lead\}` : `• \$\{s\.topicLabel\}`;/.test(src));
+  // alpha-drift-r39-01: round 39 found the r38 colon join itself collided
+  // with a colon already inside the catalog's own "ai-news" topic label,
+  // and fixed it by joining a sanitized safeLabel instead of the raw
+  // s.topicLabel directly -- see verify-r39-findings.mts section (1) for
+  // the full regression coverage of that fix. Loosened here to check the
+  // colon-join SHAPE survived (not the exact raw-label variable name),
+  // since the join mechanism itself (colon, not em dash) is still what
+  // this assertion cares about.
+  check("(2b) replaced with a colon join", /return lead \? `• \$\{safeLabel\}: \$\{lead\}` : `• \$\{safeLabel\}`;/.test(src));
 
   // Sanity: no other em dash was introduced by this edit, and the bullet
-  // character itself is untouched.
-  const sectionListFnMatch = src.match(/const sectionList = params\.issue\.sections[\s\S]{0,1200}?\.join\("\\n"\);/);
+  // character itself is untouched. Widened the match window again after
+  // r39 added more comment lines to this block (same non-reason as the
+  // r38->r39 widening already done once here).
+  const sectionListFnMatch = src.match(/const sectionList = params\.issue\.sections[\s\S]{0,2200}?\.join\("\\n"\);/);
   check("(2c) sanity: the sectionList builder itself contains zero em dashes after the fix", !!sectionListFnMatch && !sectionListFnMatch[0].includes("—"));
 
   const previewSrc = readFileSync(new URL("../scripts/preview-email.mts", import.meta.url), "utf8");

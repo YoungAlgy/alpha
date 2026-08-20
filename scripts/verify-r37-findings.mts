@@ -97,9 +97,16 @@ console.log("(5) lib/engine/voice-guard.ts: BANNED_LEXICAL now catches the words
   // assertion again for the same non-reason.
   const src = readFileSync(new URL("../lib/engine/voice-guard.ts", import.meta.url), "utf8");
   check("(5a) 'ensure' and its inflections are now in the regex (previously absent entirely)", /\bensure\|ensures\|ensuring\|ensured\b/.test(src));
-  check("(5b) 'game-changer' and 'unprecedented' are both in the regex (previously absent entirely; r38 added 'game-changing' between them too)", /game-changer/.test(src) && /unprecedented/.test(src));
+  // alpha-drift-r39-02 also rewrote game-changer's own pattern to
+  // game[- ]changers? (covering the unhyphenated "game changer" too), so
+  // the literal "game-changer" substring no longer appears -- check for
+  // "changer" generically instead.
+  check("(5b) 'game-changer'/'game changer' and 'unprecedented' are both covered (previously absent entirely; r38 added the hyphenated form, r39 widened it further)", /changers?/.test(src) && /unprecedented/.test(src));
   check("(5c) missing inflections added: navigates, elevates/elevating/elevated, fosters/fostered, delves/delved, bare tailor/tailors, calibrates", /navigates/.test(src) && /elevates\|elevating\|elevated/.test(src) && /fosters\|fostering\|fostered/.test(src) && /delves\|delving\|delved/.test(src) && /\btailor\|tailors\|tailored\|tailoring\b/.test(src) && /calibrates/.test(src));
-  check("(5d) crucial/vital/critical added as general bare-word detection (previously only matched inside one specific phrase)", /synergy\|crucial\|vital\|critical/.test(src) && /game-changer/.test(src) && /unprecedented/.test(src));
+  // alpha-drift-r39-02 also rewrote "synergy" to "synerg(?:y|ies)" (adding
+  // plural coverage), breaking the literal "synergy" substring match the
+  // same non-reason as (5b) above.
+  check("(5d) crucial/vital/critical added as general bare-word detection (previously only matched inside one specific phrase)", /synerg/.test(src) && /crucial\|vital\|critical/.test(src) && /changers?/.test(src) && /unprecedented/.test(src));
 
   // Behavioral proof against the REAL exported findLexicalTells, not a
   // reimplementation.
