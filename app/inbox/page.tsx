@@ -306,9 +306,13 @@ export default function InboxPage() {
             <button type="button" onClick={() => clearAndGo("/welcome")} className="alpha-button">
               Start a new letter →
             </button>
+            {/* alpha-drift-r60-01 (2026-08-20, accessibility-resweep-newer-
+                code-round-8): under the WCAG 2.5.8 24px touch-target
+                minimum, missed by every prior round despite the identical
+                app/archive/page.tsx sibling being fixed round 59. */}
             <Link
               href="/support"
-              className="alpha-ui text-sm underline underline-offset-4"
+              className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
               style={{ color: "var(--ink-soft)" }}
             >
               Contact support
@@ -351,10 +355,13 @@ export default function InboxPage() {
                 <Link href="/settings" className="alpha-button">
                   Go to settings →
                 </Link>
+                {/* alpha-drift-r60-02 (2026-08-20, accessibility-resweep-
+                    newer-code-round-8): same touch-target fix as this
+                    file's "Contact support" link above. */}
                 <button
                   type="button"
                   onClick={() => clearAndGo("/welcome")}
-                  className="alpha-ui text-sm underline underline-offset-4"
+                  className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{ color: "var(--ink-soft)" }}
                 >
                   Sign out
@@ -381,10 +388,12 @@ export default function InboxPage() {
                 >
                   Sign in to see my letters →
                 </button>
+                {/* alpha-drift-r60-03 (2026-08-20, accessibility-resweep-
+                    newer-code-round-8): same touch-target fix. */}
                 <button
                   type="button"
                   onClick={() => clearAndGo("/welcome", { skipSignOut: true })}
-                  className="alpha-ui text-sm underline underline-offset-4"
+                  className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{ color: "var(--ink-soft)" }}
                 >
                   I&apos;m new, start fresh

@@ -353,11 +353,16 @@ export default function SigninPage() {
                 className="alpha-ui text-sm mt-12 space-x-4"
                 style={{ color: "var(--ink-soft)" }}
               >
+                {/* alpha-drift-r60-04 (2026-08-20, accessibility-resweep-
+                    newer-code-round-8): under the WCAG 2.5.8 24px
+                    touch-target minimum -- buttons are inline-block by
+                    default, so py-2/-my-2 alone (no display change needed)
+                    grows the tap target without shifting the visual row. */}
                 <button
                   type="button"
                   onClick={() => sendCode(undefined, true)}
                   disabled={busy || cooldown > 0}
-                  className="underline underline-offset-4"
+                  className="underline underline-offset-4 py-2 -my-2"
                   style={{
                     color: "var(--accent-ink)",
                     opacity: busy || cooldown > 0 ? 0.5 : 1,
@@ -377,6 +382,8 @@ export default function SigninPage() {
                     /inbox (a successful verify) with no visible cause. Same
                     class already fixed for components/EmailChanger.tsx's
                     Cancel button, round 45. */}
+                {/* alpha-drift-r60-05 (2026-08-20, accessibility-resweep-
+                    newer-code-round-8): same touch-target fix. */}
                 <button
                   type="button"
                   disabled={busy}
@@ -386,7 +393,7 @@ export default function SigninPage() {
                     setErr(null);
                     setResent(false);
                   }}
-                  className="underline underline-offset-4"
+                  className="underline underline-offset-4 py-2 -my-2"
                   style={{ opacity: busy ? 0.5 : 1, cursor: busy ? "default" : "pointer" }}
                 >
                   Use different email
