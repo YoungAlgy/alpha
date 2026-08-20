@@ -130,7 +130,11 @@ UNSUBSCRIBE_SECRET=            # HMAC secret for unsubscribe + letter-view token
 CRON_SECRET=                   # bearer for /api/cron/weekly-send (GitHub Actions sends it)
 SUPPORT_FORWARD_EMAIL=         # where /api/support notifications go (optional)
 NEXT_PUBLIC_POSTHOG_KEY=       # analytics (optional — inert if unset)
-NEXT_PUBLIC_POSTHOG_HOST=      # optional, defaults to PostHog US cloud -- for a self-hosted PostHog instance
+NEXT_PUBLIC_POSTHOG_HOST=      # optional, defaults to PostHog US cloud -- for a self-hosted PostHog instance.
+                                # NOTE: next.config.ts's CSP connect-src only allows the US-cloud host today.
+                                # Setting this to anything else also requires adding that host to connect-src,
+                                # or PostHog calls are silently blocked with no server-side error (the same
+                                # silent-CSP-breakage class next.config.ts's own comments describe hitting twice).
 OPS_ALERT_EMAIL=               # internal ops-alert recipient (optional, defaults to youngalgy@gmail.com)
 OPS_ALERT_WEBHOOK_URL=         # Discord/Slack webhook fallback when Resend itself is broken (optional)
 JINA_API_KEY=                  # Jina Reader auth for deep-read article fetch (optional — Jina Reader works keyless, this just raises its rate limit)
