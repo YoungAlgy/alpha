@@ -25,7 +25,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 - **Auto-sign-in after checkout** — `/api/generate` calls `admin.generateLink` once to create the auth user; `/writing` redirects through that link to set the session cookie via `/auth/callback`. User lands on `/inbox` already signed in. The magic link is invisible to the user — never surfaced in an email.
 - **Returning sign-in: 6-digit code** — `/signin` uses Supabase `signInWithOtp` + `verifyOtp({ type: "email" })`. Magic Link template is overridden with `{{ .Token }}` only. No clickable email links for returning users.
 - **RLS-by-default** — every PII table (`users`, `issues`, `support_tickets`) has policies scoped to `auth.uid()`. Service role bypasses RLS for server-side operations (webhook upsert, generate persistence, admin endpoint).
-- **Admin Accounts panel** at `/settings/accounts` — gated to `youngalgy@gmail.com` via server-side session check. List, grant free subscription, revoke free, delete. Real Stripe customers protected from accidental revoke.
+- **Admin Accounts panel** at `/settings/accounts` — gated to `youngalgy@gmail.com` via server-side session check. List, grant free subscription, revoke free, clear delivery suppression, delete. Real Stripe customers protected from accidental revoke.
 - **In-app changelog** at `/settings/changelog` — hand-curated entries in `app/settings/changelog/page.tsx`. Server-rendered, `noindex` meta, private behind `/settings` (already in `robots.ts` disallow).
 - **Delivery reliability** (all added 2026-08-05, after moving the daily send off Cloudflare) —
   - **Stuck-claim reclaim** — `runPersistAndSend` stamps `delivered_at` as an atomic claim *before* calling Resend; if the process dies in between (a killed runner, an OOM), the row is left claimed with no email ever sent. The cron's GET handler reclaims any row matching "claimed, no proof of send, older than a 10-minute safety margin" back into the undelivered pool at the top of every run.
@@ -116,7 +116,11 @@ STRIPE_SECRET_KEY=             # Stripe (Alpha account). NOTE: not hard-required
                                 # deployment is a payment-bypass risk, not just a missing-feature.
 STRIPE_WEBHOOK_SECRET=         # whsec_... for the webhook endpoint
 BRAVE_SEARCH_API_KEY=          # Brave Search
-GEMINI_API_KEY=                # search + generation fallback tier (Brave rate-limited, or Claude down)
+GEMINI_API_KEY=                # search fallback (Brave rate-limited) AND the PRIMARY generation tier for
+                                # topic blurbs (cost-tiering, see lib/engine/topic-blurb.ts -- Gemini drafts
+                                # every blurb by default, Claude only escalates when Gemini's draft fails a
+                                # quality guard). Editor's-note generation still tries Claude first and
+                                # falls back to Gemini -- the two calls use opposite tier orders on purpose.
 GROQ_API_KEY=                  # generation fallback tier 2 (Gemini -> Groq -> DeepSeek -> Haiku -> Sonnet)
 DEEPSEEK_API_KEY=              # generation fallback tier 3, the uncapped backstop behind Groq
 YOU_API_KEY=                   # search fallback tier 3 (Brave -> Gemini grounded search -> You.com)

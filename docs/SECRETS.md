@@ -38,7 +38,7 @@ whatever they touch, because none of them can read another's secret store:
 |---|---|---|---|---|
 | Anthropic API key | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY` | `SEND_ANTHROPIC_API_KEY` | Generation falls through the whole Gemini→Groq→DeepSeek waterfall for every letter, or fails outright if all fallbacks also degraded |
 | Brave Search API key | `BRAVE_SEARCH_API_KEY` | `BRAVE_SEARCH_API_KEY` | `SEND_BRAVE_SEARCH_API_KEY` | Falls to Gemini grounded search → You.com; stale content if all three degrade |
-| Gemini API key | `GEMINI_API_KEY` | `GEMINI_API_KEY` | `SEND_GEMINI_API_KEY` | Loses the Brave-rate-limited search fallback AND the Claude-down generation fallback simultaneously (Gemini serves both roles) |
+| Gemini API key | `GEMINI_API_KEY` | `GEMINI_API_KEY` | `SEND_GEMINI_API_KEY` | Loses the Brave-rate-limited search fallback AND the PRIMARY generation tier for topic blurbs simultaneously (Gemini serves both roles, and drafts every blurb first by default under cost-tiering -- see `lib/engine/topic-blurb.ts`) |
 | Groq API key | `GROQ_API_KEY` | `GROQ_API_KEY` | `SEND_GROQ_API_KEY` | Generation fallback tier 2 gone; falls straight to DeepSeek |
 | DeepSeek API key | `DEEPSEEK_API_KEY` | `DEEPSEEK_API_KEY` | `SEND_DEEPSEEK_API_KEY` | The uncapped backstop generation tier gone — if Claude AND Gemini AND Groq are all down, letters fail outright instead of degrading |
 | You.com API key | `YOU_API_KEY` | `YOU_API_KEY` | `SEND_YOU_API_KEY` | Search fallback tier 3 gone |
