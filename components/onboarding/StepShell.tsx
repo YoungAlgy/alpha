@@ -10,6 +10,12 @@ interface StepShellProps {
   stepIndex: number; // 1-based (Welcome = 1)
   totalSteps?: number;
   prevPath?: string;
+  // alpha-drift-r46-02 (2026-08-19): checkout/page.tsx passes this while
+  // subscribe() is in flight -- without it, Back was reachable during the
+  // POST /api/stripe/checkout await, letting a reader navigate off /checkout
+  // right before a late window.location.href/router.push fired on top of
+  // wherever they'd since gone.
+  backDisabled?: boolean;
   children: React.ReactNode;
 }
 
@@ -17,6 +23,7 @@ export function StepShell({
   stepIndex,
   totalSteps = 11,
   prevPath,
+  backDisabled = false,
   children,
 }: StepShellProps) {
   const router = useRouter();
@@ -52,9 +59,10 @@ export function StepShell({
         {prevPath ? (
           <button
             type="button"
+            disabled={backDisabled}
             onClick={() => router.push(`/${prevPath}` as never)}
             className="alpha-ui text-sm py-3 -my-3"
-            style={{ color: "var(--ink-soft)" }}
+            style={{ color: "var(--ink-soft)", opacity: backDisabled ? 0.5 : 1 }}
           >
             ← Back
           </button>

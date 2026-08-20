@@ -29,6 +29,20 @@ export default function CheckoutPage() {
     if (alreadySubscribed) alreadySubscribedHeadingRef.current?.focus();
   }, [alreadySubscribed]);
 
+  // alpha-drift-r46-02 (2026-08-19): subscribe() had no cancellation guard
+  // at all, unlike every other async flow in this funnel that touches
+  // navigation or shared state (app/writing/page.tsx's own `cancelled`
+  // closure flag, app/topics/page.tsx, app/settings/accounts/page.tsx's
+  // mountedRef, app/auth/callback/page.tsx). A reader could click Subscribe,
+  // then navigate away via StepShell's Back button before the fetch
+  // resolved -- the in-flight promise kept running, and its resolution
+  // (window.location.href to Stripe, or router.push("/writing") on the
+  // 503 stub path) still fired on top of wherever they'd since gone. Paired
+  // with StepShell's new backDisabled prop below, which closes the trigger
+  // for this at the UI level too.
+  const cancelledRef = useRef(false);
+  useEffect(() => () => { cancelledRef.current = true; }, []);
+
   // Same completeness gate /api/stripe/checkout itself enforces server-side
   // (lib/checkout-guards.ts's isProfileComplete) — checked here too so a
   // direct link, cleared localStorage, or a back-button race never gets as
@@ -71,6 +85,7 @@ export default function CheckoutPage() {
         }),
       });
       const data = await res.json();
+      if (cancelledRef.current) return;
       if (res.status === 503) {
         // Stripe env not set — fall back to V0 stub flow
         update({ paid: true, completedAt: new Date().toISOString() });
@@ -90,6 +105,7 @@ export default function CheckoutPage() {
       }
       window.location.href = data.url;
     } catch (e) {
+      if (cancelledRef.current) return;
       setSubscribing(false);
       setStripeErr(e instanceof Error ? e.message : "Checkout failed.");
     }
@@ -101,7 +117,7 @@ export default function CheckoutPage() {
   const sw = SWATCHES[themeId];
 
   return (
-    <StepShell stepIndex={11} prevPath="email">
+    <StepShell stepIndex={11} prevPath="email" backDisabled={subscribing}>
       <div className="space-y-10">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
