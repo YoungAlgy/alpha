@@ -12,7 +12,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 | Styling | Tailwind CSS 4 + CSS custom properties (25 themes) |
 | Hosting | Cloudflare Workers (via OpenNext) for the website; the daily send itself runs on GitHub Actions (see Deployment below) |
 | DB / Auth | Supabase (project `xpqxhdciaoicsnyyfshy` in the "Algy" org) |
-| AI | Claude Sonnet 5 (topic blurbs) + Claude Opus 4.8 (editor's note) via `@anthropic-ai/sdk` |
+| AI | Gemini → Groq → DeepSeek → Claude Haiku 4.5 → Claude Sonnet 5, cost-tiered waterfall (topic blurbs); Claude Opus 4.8 primary / Gemini fallback (editor's note) — via `@anthropic-ai/sdk` + Gemini/Groq/DeepSeek SDKs |
 | Web search | Brave Search API ($5/mo free credit covers V0) |
 | Payments | Stripe — dedicated Alpha account (`acct_1TWfDlAhrDpDN9sH`), not shared with Ava |
 | Email | Resend — letters from `"alpha." <alpha@everyday.report>`, sign-in (Supabase SMTP) from `noreply@everyday.report`. Domain verified via Cloudflare DNS. Old sender was alpha@youngalgy.com (that domain now removed from Resend — free plan holds 1 domain). |
@@ -79,7 +79,7 @@ lib/
     mock-signals.ts           hand-written fallback signal for each topic
     topic-queries.ts          Brave queries per topic
     source-resolver.ts        Brave-first + mock fallback
-    topic-blurb.ts            Claude synthesis prompt for one section
+    topic-blurb.ts            cost-tiered blurb generation for one section (Gemini-primary, Claude last resort)
     editor-note.ts            Claude synthesis prompt for the personalized intro
     blurb-cache.ts            Supabase-backed (topic, week_of) cache
     assemble.ts               full Issue assembly
@@ -174,7 +174,7 @@ Nothing auto-deploys on push; deploys are manual:
 npm run cf:deploy
 ```
 
-`cf:deploy` chains: verify build env → `opennextjs-cloudflare build` → `opennextjs-cloudflare deploy` → a post-deploy smoke test against the live site (`scripts/smoke-test-deploy.mjs`).
+`cf:deploy` chains: verify build env → `opennextjs-cloudflare build` → `npm run typecheck:worker` → `opennextjs-cloudflare deploy` → a post-deploy smoke test against the live site (`scripts/smoke-test-deploy.mjs`).
 
 **Must run from a WSL-native checkout, not the `/mnt/c` Windows mount** — `node_modules` here
 has Linux-native binaries (workerd, etc.) that fail outright from Windows. Use the wrapper,

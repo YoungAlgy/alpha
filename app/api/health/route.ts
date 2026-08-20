@@ -79,10 +79,16 @@ export async function GET(req: Request) {
     stripeWebhook: !!process.env.STRIPE_WEBHOOK_SECRET,
     supabase: await checkSupabase(),
     brave: !!process.env.BRAVE_SEARCH_API_KEY,
-    // Fallback provider, not primary — false just means the Brave-outage /
-    // Anthropic-outage fallbacks are inert, NOT that the app is down. Surfaced
-    // so a rotated/dropped key is visible at a glance BEFORE an outage is the
-    // thing that reveals the fallback never armed.
+    // alpha-drift-r46-07 (2026-08-19): this used to describe Gemini as a
+    // reactive-only fallback -- accurate before 2026-07-23 (a88a0e7), which
+    // flipped topic-blurb.ts's cost-tiering waterfall so Gemini drafts EVERY
+    // topic blurb by default, tried before Anthropic regardless of whether
+    // Anthropic is even configured (see lib/engine/topic-blurb.ts's
+    // cost-tiering, and README.md's own Environment section). PRIMARY
+    // generation tier for topic blurbs, AND the Brave-outage search
+    // fallback. false means every blurb generation skips straight to Groq
+    // (a real behavioral/cost/quality change, not a dormant safety net), on
+    // top of the search fallback going inert.
     gemini: !!process.env.GEMINI_API_KEY,
     // 3rd search tier (Brave -> Gemini -> You.com), same reasoning as gemini
     // above — false means that last-resort tier is inert, not that the app
