@@ -79,7 +79,13 @@ console.log("(3) app/settings/accounts/page.tsx: focus restoration now fires for
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
   check("(3a) deleteCount was renamed to actionCount", /const \[actionCount, setActionCount\] = useState\(0\);/.test(src) && !/deleteCount/.test(src));
   check("(3b) the effect is keyed on actionCount", /if \(actionCount > 0\) accountsHeadingRef\.current\?\.focus\(\);\s*\n\s*\}, \[actionCount\]\);/.test(src));
-  check("(3c) act()'s success path increments unconditionally, no action==='delete' gate", /setActionMsg\(`\$\{verb\} \$\{email\}\.`\);\s*\n(?:\s*\/\/[^\n]*\n)*\s*setActionCount\(\(c\) => c \+ 1\);/.test(src));
+  // alpha-drift-r65-03 (2026-08-21, accessibility-resweep-newer-code-r13)
+  // moved setActionCount out of the try block's success branch entirely
+  // (into the finally block, so a failed-but-DB-landed action also
+  // restores focus) -- loosened to just confirm it's called unconditionally
+  // with no action==='delete' gate, not that it immediately follows
+  // setActionMsg. See verify-r65-findings.mts's (3).
+  check("(3c) act()'s success path increments unconditionally, no action==='delete' gate", /setActionCount\(\(c\) => c \+ 1\);/.test(src) && !/if \(action === "delete"\) setActionCount/.test(src));
 }
 
 console.log("(4) components/ThemeApplier.tsx: the DB hydrate now dispatches alpha-theme-change so ThemeSwitcher stays in sync");

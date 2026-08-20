@@ -248,9 +248,6 @@ export default function AdminAccountsPage() {
           ? "Revoked free access from"
           : "Cleared delivery suppression for";
       setActionMsg(`${verb} ${email}.`);
-      // alpha-drift-r61-03: no longer gated to action === "delete" -- see
-      // actionCount's own comment above.
-      setActionCount((c) => c + 1);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Action failed.");
     } finally {
@@ -265,6 +262,16 @@ export default function AdminAccountsPage() {
       // window doesn't bounce the admin back to page one -- regardless of
       // whether this action's own response was a full success.
       await load(activeSearch ? { search: activeSearch } : undefined);
+      // alpha-drift-r65-03 (2026-08-21, accessibility-resweep-newer-code-
+      // r13): used to sit in the try block's success-only branch (see
+      // actionCount's own comment above for the r61-03 "all 4 actions"
+      // history) -- but the same r46-01 reasoning above applies here too:
+      // a 502 like grant_free's own already-landed-DB-write case unmounts
+      // the just-clicked row's button on the reload above exactly like a
+      // clean success does, dropping a keyboard/screen-reader admin's
+      // focus to <body> with no restoration. Moved here so it fires
+      // whenever this reload actually ran, not just on a clean response.
+      setActionCount((c) => c + 1);
       busyRowsRef.current.delete(userId);
       setBusyRows(new Set(busyRowsRef.current));
     }
