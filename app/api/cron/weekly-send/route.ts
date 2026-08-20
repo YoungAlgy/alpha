@@ -1402,11 +1402,19 @@ export async function GET(req: Request) {
         ? `Groq (2nd content-generation tier) returned 429 on ${groqRateLimited} calls this run — its free-tier quota is under pressure. Escalates automatically to DeepSeek, so likely not a reader-visible problem yet, but worth watching if it keeps climbing.`
         : "",
       // DeepSeek is meant to be UNCAPPED (a funded balance, concurrency-limited
-      // only) — a real 429 here means even the backstop tier is straining,
+      // only) — a real 429/402 here means even the backstop tier is straining,
       // which is a materially more serious signal than Groq's free-tier limit
       // above.
+      //
+      // alpha-drift-r54-01 (2026-08-20, self-audit-r53): round 53 widened
+      // deepseekRateLimitedCount() (via lib/engine/openai-compat.ts's
+      // throwCompatError) to also count 402 -- DeepSeek's own documented
+      // real failure mode is running out of a funded balance, not a
+      // rate-limit wall -- but this message still said "returned 429"
+      // unconditionally, which would assert a factually wrong status code
+      // to Algy in exactly the incident that fix was built to surface.
       deepseekRateLimited > 0
-        ? `DeepSeek (the uncapped backstop tier) returned 429 on ${deepseekRateLimited} calls this run — that shouldn't normally happen on a funded account. Worth checking the DeepSeek dashboard for balance/concurrency issues.`
+        ? `DeepSeek (the uncapped backstop tier) hit a quota/balance wall on ${deepseekRateLimited} calls this run (429 or 402) — that shouldn't normally happen on a funded account. Worth checking the DeepSeek dashboard for balance/concurrency issues.`
         : "",
       deferred.length
         ? `${paidCallCeilingHit ? "Time budget and/or the paid-call cost ceiling" : "Time budget"} exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${capListLine(deferred)}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically).${paidCallCeilingHit ? "" : " This is a scale signal — the subscriber list is big enough that the daily run is pressing against the workflow's time budget."}`

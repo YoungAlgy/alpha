@@ -15,11 +15,18 @@ export const runtime = "nodejs";
 // delete). Unlike the fire-and-forget user-sync, this path is an explicit user
 // action with values loaded from the DB first, so it CAN clear an optional blurb.
 //
-// first_name is the one load-bearing field — the weekly cron skips any row with
-// no first_name (and the letter greets by it), so an empty value is rejected.
-// city + the three blurbs are personalization: editable and clearable. Lengths
-// are capped server-side (onboarding had no cap) to protect both the DB and the
-// generation prompt, which reads these fields verbatim.
+// alpha-drift-r54-04 (2026-08-20, duplicate-code-audit-round-2): this used to
+// group city with the three blurbs as "personalization: editable and
+// clearable" -- wrong. The code below (cleanRequired for city, same as
+// first_name) has always treated it as load-bearing, matching components/
+// ProfileEditor.tsx's own independent requiredFilled = firstName && city
+// gate. first_name AND city are the two load-bearing fields — the weekly
+// cron skips any row with no first_name (and the letter greets by it), and
+// city feeds the letter's own local-signal framing — so an empty value for
+// either is rejected. Only the three blurbs are personalization: editable
+// and clearable. Lengths are capped server-side (onboarding had no cap) to
+// protect both the DB and the generation prompt, which reads these fields
+// verbatim.
 const LIMITS = {
   first_name: 60,
   city: 120,
