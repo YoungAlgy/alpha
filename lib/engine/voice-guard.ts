@@ -94,8 +94,14 @@ export function containsMetaLeak(s: string | undefined | null): boolean {
 // "unprecedentedly". Verified by actually running findLexicalTells()
 // against real sentences using each missed form, not just reading the
 // regex text -- see verify-r39-findings.mts for the fixture.
+// alpha-drift-r40-01 (2026-08-19, self-audit): robust/comprehensive/
+// calibrate were already on this list but never got the same -ly/noun
+// inflection treatment their siblings (seamless, optimize, elevate...)
+// already had -- "robustly", "comprehensively", and "calibration(s)" all
+// slipped past undetected, confirmed by actually running findLexicalTells()
+// against real sentences using each form, not just re-reading the regex.
 const BANNED_LEXICAL: RegExp[] = [
-  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive|landscapes?|realms?|testaments?|optimize|optimizes|optimizing|optimized|optimizations?|calibrate|calibrates|calibrating|calibrated|synerg(?:y|ies)|crucial|vital|critical|game[- ]changers?|game[- ]changing|unprecedented(?:ly)?)\b/gi,
+  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust(?:ly)?|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive(?:ly)?|landscapes?|realms?|testaments?|optimize|optimizes|optimizing|optimized|optimizations?|calibrate|calibrates|calibrating|calibrated|calibrations?|synerg(?:y|ies)|crucial|vital|critical|game[- ]changers?|game[- ]changing|unprecedented(?:ly)?)\b/gi,
   /\bthis matters because\b/gi,
   /\bmatters because\b/gi,
   /\bthe insight here\b/gi,
