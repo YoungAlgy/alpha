@@ -9,10 +9,15 @@ import { isValidEmail } from "@/lib/validate-email";
 // auth.updateUser({ email }) sends a confirmation link to the NEW address (and,
 // if "secure email change" is on, the current one too). The auth email only
 // flips AFTER the reader clicks it — so until then their letters keep coming to
-// the current address. emailRedirectTo points the confirm link back to
-// /settings, where the page's reconcile syncs public.users.email + Stripe to the
-// new verified auth email. We never write the email ourselves here; Supabase
-// owns the verification.
+// the current address. emailRedirectTo points the confirm link at
+// /auth/callback?next=/settings, landing the reader back on /settings after
+// sign-in -- but the actual public.users.email + Stripe mirror sync doesn't
+// happen there. It happens on the NEXT signed-in page load anywhere in the
+// app, via components/ThemeApplier.tsx's hydrate effect (its own r56-05
+// comment is the source of truth here; this file and app/api/account/email/
+// reconcile/route.ts both used to misattribute the trigger to /settings
+// itself, wrong since the day this feature shipped). We never write the
+// email ourselves here; Supabase owns the verification.
 export function EmailChanger({ currentEmail }: { currentEmail: string | null }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");

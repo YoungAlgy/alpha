@@ -16,8 +16,16 @@ export const runtime = "nodejs";
 // the SESSION (user.email), which Supabase only sets after the reader confirmed
 // ownership via the change link. So a caller can only ever set their own mirror
 // to their own already-verified auth email — idempotent, and a no-op when they
-// already match (every normal sign-in). The settings page fires this on load,
-// which is where an email-change confirm lands (emailRedirectTo → /settings).
+// already match (every normal sign-in).
+//
+// alpha-drift-r65-06 (2026-08-21, form-validation-consistency-audit-r10):
+// this used to say "the settings page fires this on load" -- wrong from the
+// day this route shipped (git blame: same commit added both this comment
+// and the real caller). components/ThemeApplier.tsx is the app's SOLE
+// trigger (its own r56-05 comment already correctly names it), firing on
+// EVERY signed-in page load where the mirror is stale, not just /settings.
+// A future edit to app/settings/page.tsx believing this comment could
+// delete the app's only email-mirror-sync trigger with nothing to catch it.
 export async function POST() {
   const sb = await supabaseServerClient();
   const {
@@ -29,8 +37,9 @@ export async function POST() {
 
   // Rate limit per user (not IP): this is a single-row Supabase write behind
   // auth, so the abuse case is a scripted authenticated client hammering it,
-  // not an anonymous IP. 30/hr is well above the "fires once per /settings
-  // load" real usage described above.
+  // not an anonymous IP. 30/hr is well above real usage -- ThemeApplier
+  // fires this once per signed-in page load while the mirror is stale, so
+  // a normal browsing session might trigger it a handful of times, not 30.
   const limited = rateLimit(`account-email-reconcile:${user.id}`, { limit: 30, windowMs: 60 * 60 * 1000 });
   if (!limited.ok) {
     return NextResponse.json(
