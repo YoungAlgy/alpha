@@ -108,8 +108,13 @@ console.log("(6) app/api/stripe/update-quantity/route.ts + app/api/stripe/webhoo
 {
   const uq = readFileSync(new URL("../app/api/stripe/update-quantity/route.ts", import.meta.url), "utf8");
   check("(6a) update-quantity imports poolCap", /import \{ poolCap \} from "@\/lib\/engine\/select-sections";/.test(uq));
-  check("(6b) the row select now includes topics", /\.select\("stripe_customer_id, topic_quota, subscribed_at, cancelled_at, topics"\)/.test(uq));
-  check("(6c) cappedTopics is computed via poolCap(newQuota)", /\(row\.topics as TopicId\[\]\)\.slice\(0, poolCap\(newQuota\)\)/.test(uq));
+  // alpha-drift-r59-01 (2026-08-20, self-audit-r58) found this early
+  // `row.topics` snapshot was stale by the time it reached the final write
+  // (3 sequential Stripe round-trips sat in between) and re-read `topics`
+  // fresh right before the write instead -- loosened to match. See
+  // verify-r59-findings.mts's (1).
+  check("(6b) topics is no longer in the early row select (re-read fresh later, see r59-01)", !/\.select\("stripe_customer_id, topic_quota, subscribed_at, cancelled_at, topics"\)/.test(uq));
+  check("(6c) cappedTopics is computed via poolCap(newQuota) from a freshly-read row", /\(freshRow\.topics as TopicId\[\]\)\.slice\(0, poolCap\(newQuota\)\)/.test(uq));
   check("(6d) the update conditionally includes the capped topics", /topic_quota: newQuota, \.\.\.\(cappedTopics \? \{ topics: cappedTopics \} : \{\}\)/.test(uq));
 
   const wh = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
