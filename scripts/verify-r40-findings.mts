@@ -37,8 +37,13 @@ const check = (label: string, cond: boolean) => {
 console.log("(1) lib/engine/voice-guard.ts: robust/comprehensive/calibrate now get the same -ly/noun inflection treatment as their siblings");
 {
   const src = readFileSync(new URL("../lib/engine/voice-guard.ts", import.meta.url), "utf8");
-  check("(1a) robust(?:ly)? covers robustly", /robust\(\?:ly\)\?/.test(src));
-  check("(1b) comprehensive(?:ly)? covers comprehensively", /comprehensive\(\?:ly\)\?/.test(src));
+  // alpha-drift-r42-01: round 42 further widened robust/comprehensive to
+  // also cover their -ness noun forms (robust(?:ly)? -> robust(?:ly|ness)?),
+  // breaking these two exact-substring checks the same non-reason as
+  // several prior rounds' widenings. Loosened to check the -ly branch is
+  // still present within the wider group, not the exact old group shape.
+  check("(1a) robust(?:ly)? covers robustly", /robust\(\?:ly/.test(src));
+  check("(1b) comprehensive(?:ly)? covers comprehensively", /comprehensive\(\?:ly/.test(src));
   check("(1c) calibrations? covers the noun form", /calibrations\?/.test(src));
 
   const { findLexicalTells } = await import("../lib/engine/voice-guard.ts");

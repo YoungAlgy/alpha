@@ -104,8 +104,18 @@ export function containsMetaLeak(s: string | undefined | null): boolean {
 // and comprehensive but left the adjacent crucial/vital/critical trio as
 // bare words -- "critically important," "vitally important," and "matters
 // crucially" all slipped past undetected for the same reason. Same fix.
+// alpha-drift-r42-01 (2026-08-19, self-audit): robust/comprehensive/
+// seamless still missed their -ness noun forms ("robustness,"
+// "comprehensiveness," "seamlessness") -- same gap shape one level deeper.
+// Deliberately did NOT add vitality/criticality (vital/critical's own -ity
+// noun forms): the existing r37-05 comment already documents vital/
+// critical carrying real false-positive risk in ordinary usage ("vital
+// signs," "critical mass"), and their noun forms ("economic vitality,"
+// "system criticality") are even more common in innocent, non-AI-tell
+// usage than the bare adjectives are -- adding them would compound a risk
+// already deliberately accepted, not close a real gap.
 const BANNED_LEXICAL: RegExp[] = [
-  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust(?:ly)?|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive(?:ly)?|landscapes?|realms?|testaments?|optimize|optimizes|optimizing|optimized|optimizations?|calibrate|calibrates|calibrating|calibrated|calibrations?|synerg(?:y|ies)|crucial(?:ly)?|vital(?:ly)?|critical(?:ly)?|game[- ]changers?|game[- ]changing|unprecedented(?:ly)?)\b/gi,
+  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust(?:ly|ness)?|seamless(?:ly|ness)?|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive(?:ly|ness)?|landscapes?|realms?|testaments?|optimize|optimizes|optimizing|optimized|optimizations?|calibrate|calibrates|calibrating|calibrated|calibrations?|synerg(?:y|ies)|crucial(?:ly)?|vital(?:ly)?|critical(?:ly)?|game[- ]changers?|game[- ]changing|unprecedented(?:ly)?)\b/gi,
   /\bthis matters because\b/gi,
   /\bmatters because\b/gi,
   /\bthe insight here\b/gi,
