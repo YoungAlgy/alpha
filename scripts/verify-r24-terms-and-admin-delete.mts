@@ -71,10 +71,19 @@ console.log("(4) app/api/admin/users/route.ts: delete branch selects stripe_cust
   check("(4e) cleanUpStripeCustomerBeforeDelete is called with the explicit ternary that distinguishes a missing row from an omitted argument", /cleanUpStripeCustomerBeforeDelete\(\s*sb,\s*body\.userId,\s*"\[admin\/delete\]",\s*undefined,\s*targetUser \? targetUser\.stripe_customer_id : null\s*\)/.test(deleteBlock));
 }
 
-console.log("(5) sanity: account/delete/route.ts is UNCHANGED -- still omits the new param, still relies on its own internal lookup");
+console.log("(5) app/api/account/delete/route.ts: round 46 later gave this call site its own pre-fetched id too (a real, separately-shipped fix, not a regression of round 24's sanity boundary)");
 {
+  // alpha-drift-r59-11 (2026-08-20, duplicate-code-audit-r9): this used to
+  // assert account/delete/route.ts stayed at the OLD pre-round-24 3-arg
+  // call shape, as a sanity check that round 24's admin-delete dedup fix
+  // hadn't accidentally spread here too. Round 46 legitimately changed
+  // this call to 5 arguments (passing a pre-fetched stripe_customer_id,
+  // same shape as the admin route) to fix a real ordering bug -- already
+  // documented as shipped/closed in this marathon's own memory. Updated to
+  // assert the current, correct 5-argument call instead of the stale
+  // pre-round-46 shape.
   const src = readFileSync(new URL("../app/api/account/delete/route.ts", import.meta.url), "utf8");
-  check("(5a) still calls with exactly 3 arguments (no pre-fetch to pass -- it never needed stripe_customer_id for anything else)", /cleanUpStripeCustomerBeforeDelete\(svc, user\.id, "\[account\/delete\]"\);/.test(src));
+  check("(5a) now calls with the round-46 5-argument form, passing a pre-fetched stripe_customer_id", /cleanUpStripeCustomerBeforeDelete\(svc, user\.id, "\[account\/delete\]", undefined, rowErr \? undefined : \(row\?\.stripe_customer_id \?\? null\)\);/.test(src));
 }
 
 console.log("(6) alpha-drift-r25-02: the ternary itself computes the right value for all 3 real shapes of targetUser");

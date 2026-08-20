@@ -50,10 +50,20 @@ console.log("(2) the real code: generateEditorNote is a structurally SEPARATE pi
 console.log("(3) the corrected privacy policy copy accurately reflects both of the above");
 {
   const src = readFileSync(new URL("../app/privacy/page.tsx", import.meta.url), "utf8");
-  check("(3a) Anthropic bullet: profile data is scoped to the editor's note specifically, not topic sections generally", /writes the short editor&apos;s note at[\s\S]{0,60}the one part of the letter built from your[\s\S]{0,60}name, city/.test(src));
-  check("(3b) Anthropic bullet: explicitly states it does NOT see the profile when writing a topic section", /in that role it never sees your[\s\S]{0,20}profile, only the topic and that day&apos;s research/.test(src));
+  // alpha-drift-r59-09 (2026-08-20, duplicate-code-audit-r9): round 36
+  // (alpha-drift-r36-05) broke both bullets' marathon sentences into short
+  // declaratives -- same facts, no meaning changed, but exact wording/
+  // punctuation shifted (a semicolon splice became "down. In that", "of
+  // the letter built from" became "built from", lowercase mid-sentence
+  // "in that role" became a new sentence's capitalized "In that role").
+  // These regexes went stale the moment that copy-only rewrite landed,
+  // permanently red-failing on wording that was intentionally, correctly
+  // changed for readability. Updated to match the current, real sentence
+  // boundaries.
+  check("(3a) Anthropic bullet: profile data is scoped to the editor's note specifically, not topic sections generally", /writes the short editor&apos;s note at\s+the top of your letter\.\s+That note is the one part built from your\s+profile: your name, city/.test(src));
+  check("(3b) Anthropic bullet: explicitly states it does NOT see the profile when writing a topic section", /In that role it never sees your\s+profile, only the topic and that day&apos;s research/.test(src));
   check("(3c) Gemini/Groq/DeepSeek bullet: explicitly states none of the four see profile data for a topic section", /None of the four ever see your[\s\S]{0,20}profile when writing a topic section/.test(src));
-  check("(3d) Gemini/Groq/DeepSeek bullet: correctly scopes profile-data exposure to their editor's-note fallback role specifically", /also back up the[\s\S]{0,20}editor&apos;s note if Anthropic is briefly down; in that specific[\s\S]{0,20}role, whichever one steps in sees the same profile fields/.test(src));
+  check("(3d) Gemini/Groq/DeepSeek bullet: correctly scopes profile-data exposure to their editor's-note fallback role specifically", /also\s+back up the\s+editor&apos;s note if Anthropic is briefly down\.\s+In that\s+specific role, whichever one steps in sees the same profile\s+fields/.test(src));
   // Regression guard: the OLD false claims must be gone, not just the new
   // true ones added alongside them.
   check("(3e) the old false claim ('also writes each topic section... included in the generation request') is gone", !/also writes each topic section when our[\s\S]{0,20}free-tier writers below can&apos;t\. Your name, city/.test(src));

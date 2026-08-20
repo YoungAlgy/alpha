@@ -49,9 +49,18 @@ console.log("(4) the new replacement sentence reads naturally and doesn't reintr
     "(4) it no longer contains 'leverage' in any form",
     !!newSentenceMatch && findLexicalTells(newSentenceMatch[0]).length === 0
   );
+  // alpha-drift-r59-10 (2026-08-20, duplicate-code-audit-r9): round 40's
+  // later voice-guide pass rewrote this exact sentence again, this time to
+  // drop a banned rule-of-three/colon construction ("...do: platforms,
+  // aggregation, leverage.") -- the literal "platforms, aggregation"
+  // substring went with it, even though the sentence is still accurate and
+  // still banned-word-free (checks above already re-confirm that). Relaxed
+  // to check the sentence still centers on Stratechery's real thesis (who
+  // holds power and why) rather than requiring wording round 40
+  // intentionally removed.
   check(
-    "(4) the meaning is preserved -- still names platforms + aggregation as Stratechery's core lens",
-    !!newSentenceMatch && newSentenceMatch[0].includes("platforms, aggregation")
+    "(4) the meaning is preserved -- still centers on who holds power in tech and why, Stratechery's actual thesis",
+    !!newSentenceMatch && /holds the power and why/.test(newSentenceMatch[0])
   );
 }
 
