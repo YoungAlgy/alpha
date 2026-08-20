@@ -16,10 +16,25 @@ export function ScrollFadeIn({
   className,
 }: ScrollFadeInProps) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [shown, setShown] = useState(false);
+  // alpha-drift-r64-01 (2026-08-21, accessibility-resweep-newer-code-r12):
+  // this used to always start at false and animate in via the effect below
+  // -- with no prefers-reduced-motion check anywhere, wrapping every topic
+  // section of the daily digest (components/Digest.tsx), it was the app's
+  // only scroll-triggered motion, re-firing once per section as a reader
+  // scrolled the core letter-reading surface. Reading the media query at
+  // useState-init time (not inside the effect, which runs after first
+  // paint) means a reduced-motion reader's `shown` is already true on the
+  // very first render -- opacity/transform never change, so the attached
+  // CSS transition never actually plays (a JS gate added only inside the
+  // effect would still animate once, since the pre-effect paint already
+  // committed the opacity:0 starting state).
+  const prefersReducedMotion =
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const [shown, setShown] = useState(prefersReducedMotion);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (prefersReducedMotion) return;
     const el = ref.current;
     if (!el) return;
 

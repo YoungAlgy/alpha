@@ -987,17 +987,26 @@ html.alpha-intro-active::after {
   object-fit: contain;
 }
 
-/* Accent-colored focus rings on inputs (a11y + brand alignment) */
+/* Focus rings on inputs (a11y) -- alpha-drift-r64-02 (2026-08-21,
+   accessibility-resweep-newer-code-r12): these are the app's ONLY
+   :focus-visible rules, so this is the sole keyboard focus indicator on
+   every input/button/link/[role=button] app-wide. var(--accent) failed
+   WCAG 1.4.11's 3:1 non-text-contrast floor against --paper in 11 of 25
+   themes, including forest (the default a fresh/anonymous visitor gets).
+   Deliberately using --ink here, not --accent-ink -- --ink clears 3:1 (and
+   even 4.5:1) in every theme with real margin, while --accent-ink is the
+   token round 55's still-pending design-system decision covers, and this
+   file should not become a new consumer of it ahead of that call. */
 input:focus-visible,
 textarea:focus-visible {
   outline: none;
-  border-color: var(--accent) !important;
-  box-shadow: 0 1px 0 var(--accent);
+  border-color: var(--ink) !important;
+  box-shadow: 0 1px 0 var(--ink);
 }
 button:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
   outline-offset: 3px;
   border-radius: 4px;
 }
