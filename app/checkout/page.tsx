@@ -149,7 +149,19 @@ export default function CheckoutPage() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-[160px_1fr] gap-5 items-stretch">
+        {/* alpha-drift-r54-05 (2026-08-20, loading-state-consistency-resweep):
+            useOnboarding()'s state starts empty and only fills in from
+            localStorage inside a post-mount effect (loaded flips true a
+            beat later) -- this block used to render unconditionally,
+            reading state.* directly, so a returning visitor with real,
+            previously-saved data (the normal case -- checkout is step 11 of
+            11) briefly saw the theme preview default to Forest regardless
+            of what they'd actually picked, an empty topics-chip row, and
+            missing City/Email lines, before snapping to their real choices.
+            Same bug class settings/page.tsx's quotaLoaded gate already
+            closed elsewhere (rounds 19/44) -- gated here too, on the app's
+            single highest-stakes screen. */}
+        {loaded && <div className="grid md:grid-cols-[160px_1fr] gap-5 items-stretch">
           <div
             className="rounded-lg overflow-hidden p-4 flex flex-col justify-between"
             style={{
@@ -226,7 +238,7 @@ export default function CheckoutPage() {
             {state.city && <MiniRow label="City" value={state.city} />}
             {state.email && <MiniRow label="Email" value={state.email} />}
           </div>
-        </div>
+        </div>}
 
         <div
           className="p-6 rounded-lg space-y-4"
