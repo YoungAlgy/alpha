@@ -138,9 +138,11 @@ export default function WritingPage() {
     let demographicsStripped = false;
 
     // Retry once with a backoff if the first attempt fails. The engine can
-    // hiccup on Brave rate-limit / a flaky Claude call / cold Lambda starts;
-    // these are usually transient. After two failures we surface the recovery
-    // UI so the user isn't stranded staring at a writing animation.
+    // hiccup on Brave rate-limit / a flaky Claude call / a cold Worker start
+    // (this app has run on Cloudflare Workers, not AWS/Vercel Lambda, since
+    // 2026-08-05); these are usually transient. After two failures we
+    // surface the recovery UI so the user isn't stranded staring at a
+    // writing animation.
     async function attemptGenerate(retriesLeft: number): Promise<void> {
       try {
         const requestProfile = demographicsStripped

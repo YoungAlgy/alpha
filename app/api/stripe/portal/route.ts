@@ -71,10 +71,12 @@ export async function POST(req: Request) {
 
   try {
     const stripe = getStripeClient();
-    // Prefer the public app URL — behind the youngalgy.com rewrite, req.url's
-    // origin is the internal Vercel hostname, which would bounce the user to
-    // the unrouted deployment after they finish in the Stripe portal. Same
-    // pattern as the checkout route.
+    // alpha-drift-r49-04 (2026-08-20, docs-code-drift-round-5): same stale
+    // "internal Vercel host" rationale as the checkout route's
+    // alpha-drift-r49-03 -- fixed together. Prefer the public app URL — this
+    // route runs on Cloudflare Workers, and req.url can still reflect a
+    // Worker-internal or preview hostname, which would bounce the user to
+    // the unrouted deployment after they finish in the Stripe portal.
     const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || new URL(req.url).origin;
     const session = await stripe.billingPortal.sessions.create({
       customer: row.stripe_customer_id,

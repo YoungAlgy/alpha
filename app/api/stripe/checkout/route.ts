@@ -111,10 +111,14 @@ export async function POST(req: Request) {
     }
   }
 
-  // Prefer the public app URL (alpha.everyday.report) over the request origin —
-  // a request that arrives through a proxy/rewrite carries the raw internal
-  // Vercel host in req.url, which would send users back to an unrouted URL
-  // after Stripe success.
+  // alpha-drift-r49-03 (2026-08-20, docs-code-drift-round-5): same stale
+  // "internal Vercel host" rationale as app/api/generate/route.ts's
+  // alpha-drift-r49-02 -- that proxy/rewrite doesn't exist anymore and this
+  // app hasn't run on Vercel since 2026-08-05. Prefer the public app URL
+  // (alpha.everyday.report) over the request origin — this route runs on
+  // Cloudflare Workers, and req.url can still reflect a Worker-internal or
+  // preview hostname, which would send users back to an unrouted URL after
+  // Stripe success.
   const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || new URL(req.url).origin;
 
   try {

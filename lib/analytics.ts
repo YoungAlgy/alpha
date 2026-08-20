@@ -13,8 +13,12 @@
 // PostHogProvider calls initAnalytics() then capturePageview() in the same
 // mount) are queued and flushed once posthog is ready, rather than dropped.
 //
-// To activate: set NEXT_PUBLIC_POSTHOG_KEY (and optionally
-// NEXT_PUBLIC_POSTHOG_HOST, defaults to PostHog US cloud) in Vercel env.
+// alpha-drift-r49-07 (2026-08-20, docs-code-drift-round-5): this said "in
+// Vercel env" -- this app hasn't run on Vercel since 2026-08-05, so there's
+// no Vercel env to set it in. To activate: set NEXT_PUBLIC_POSTHOG_KEY (and
+// optionally NEXT_PUBLIC_POSTHOG_HOST, defaults to PostHog US cloud) via
+// .env.local for local dev and `npx wrangler secret put
+// NEXT_PUBLIC_POSTHOG_KEY` for production (see docs/SECRETS.md).
 
 let started = false;
 let posthog: typeof import("posthog-js").default | null = null;

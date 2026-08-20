@@ -363,11 +363,18 @@ export async function POST(req: Request) {
     // week) we DO NOT re-send. Protects against /writing remounts, double-
     // submits, retries that succeeded the first time but the client never
     // saw the response, etc. The cron uses the same gate via delivered_at.
-    // NEVER derive this from req.url: behind the youngalgy.com rewrite the
-    // request origin is the internal Vercel hostname, and these URLs go into
-    // the subscriber's EMAIL — links to the internal host land on a domain
-    // where their session cookie doesn't exist ("No letter yet" dead end; a
-    // real subscriber hit exactly this). Same canonical fallback as the cron.
+    // alpha-drift-r49-02 (2026-08-20, docs-code-drift-round-5): this used to
+    // blame req.url on "the youngalgy.com rewrite" landing on "the internal
+    // Vercel hostname" -- that proxy/rewrite doesn't exist anymore
+    // (youngalgy.com now 301-redirects rather than proxying, per
+    // next.config.ts's own 2026-08-05 correction) and this app hasn't run on
+    // Vercel since the same date. NEVER derive this from req.url: this route
+    // runs on Cloudflare Workers behind alpha's own domain, and req.url can
+    // still reflect a Worker-internal or preview hostname depending on how
+    // the request arrived -- these URLs go into the subscriber's EMAIL, so
+    // an unrouted host would land on a domain where their session cookie
+    // doesn't exist ("No letter yet" dead end; a real subscriber hit exactly
+    // this). Same canonical fallback as the cron.
     const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
     const inboxUrl = `${origin}/inbox`;
     let emailSent = false;
