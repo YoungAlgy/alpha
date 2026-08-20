@@ -66,6 +66,25 @@ function appOrigin(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
 }
 
+// alpha-drift-r50-03 (2026-08-20, cache-header-audit-round-2): every HTML
+// response this route returns is served at a URL carrying a real,
+// never-expiring credential (?token=..., verifyUnsubscribeToken has no
+// expiry check, unlike verifyLetterToken's 90-day TTL) -- yet nothing here
+// ever set Referrer-Policy. next.config.ts's site-wide default is
+// strict-origin-when-cross-origin, which sends the FULL current URL
+// (including ?token=...) as Referer on a SAME-origin navigation (only
+// cross-origin nav gets the stripped-down origin-only form). Every page
+// here links same-origin to /welcome or /settings, so clicking through
+// leaked the token into Cloudflare's own request logs for that destination
+// request, and into any client-side analytics reading document.referrer.
+// The sibling /letter route already closed this exact class via its page
+// metadata's `referrer: "no-referrer"` (app/letter/page.tsx) -- Route
+// Handlers can't use that export, so it needed its own explicit header.
+// Belt-and-suspenders: rel="noreferrer" is also added to the outbound links
+// themselves below, so the token can't leak even from a client that
+// ignores the response header.
+const NO_REFERRER_HEADERS = { "Referrer-Policy": "no-referrer" } as const;
+
 // GET never mutates state (see FAIL-SAFE note above) — it only validates the
 // token and renders a confirmation page with a real <form method="POST">.
 export async function GET(req: Request) {
@@ -76,7 +95,7 @@ export async function GET(req: Request) {
   if (!userId) {
     return new NextResponse(htmlPage("Couldn't unsubscribe", "<p>Invalid or expired link.</p>"), {
       status: 400,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: { "Content-Type": "text/html; charset=utf-8", ...NO_REFERRER_HEADERS },
     });
   }
 
@@ -92,7 +111,7 @@ export async function GET(req: Request) {
     ),
     {
       status: 200,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: { "Content-Type": "text/html; charset=utf-8", ...NO_REFERRER_HEADERS },
     }
   );
 }
@@ -131,18 +150,18 @@ export async function POST(req: Request) {
     if (!result.ok) {
       return new NextResponse(htmlPage("Couldn't unsubscribe", `<p>${result.error}</p>`), {
         status: result.status,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: { "Content-Type": "text/html; charset=utf-8", ...NO_REFERRER_HEADERS },
       });
     }
     const settingsUrl = escapeHtml(`${appOrigin()}/settings`);
     return new NextResponse(
       htmlPage(
         "You're unsubscribed.",
-        `<p>We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="${settingsUrl}">settings</a> if you also want to stop paying. Changed your mind? Sign in and hit <a href="${settingsUrl}">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20alpha.%20letters">youngalgy@gmail.com</a>.</p>`
+        `<p>We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="${settingsUrl}" rel="noreferrer">settings</a> if you also want to stop paying. Changed your mind? Sign in and hit <a href="${settingsUrl}" rel="noreferrer">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20alpha.%20letters">youngalgy@gmail.com</a>.</p>`
       ),
       {
         status: 200,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: { "Content-Type": "text/html; charset=utf-8", ...NO_REFERRER_HEADERS },
       }
     );
   }
@@ -209,7 +228,7 @@ function htmlPage(title: string, bodyHtml: string): string {
     <p class="mark">α<span class="brand-gold">.</span></p>
     <h1>${escapeHtml(title)}</h1>
     ${bodyHtml}
-    <p><a href="${escapeHtml(`${appOrigin()}/welcome`)}">Back to alpha<span class="brand-gold">.</span></a></p>
+    <p><a href="${escapeHtml(`${appOrigin()}/welcome`)}" rel="noreferrer">Back to alpha<span class="brand-gold">.</span></a></p>
   </div>
 </body>
 </html>`;

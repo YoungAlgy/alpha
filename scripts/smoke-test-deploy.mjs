@@ -93,8 +93,15 @@ const CHECKS = [
     name: "Supabase service-role path (invalid unsubscribe token should 400, not 500)",
     hard: true,
     run: async () => {
+      // alpha-drift-r50-04 (2026-08-20): this used to query `?t=`, but the
+      // route reads `token` (lib/unsubscribe.ts's own unsubscribeUrl()
+      // helper builds every real link as `?token=...`) -- the wrong param
+      // name meant this was silently exercising the "no token supplied"
+      // path (falls back to "", same 400 as a malformed one) rather than
+      // the "invalid token value" path its own name and comment claim to
+      // test. Fixed to the real param name.
       const res = await fetchWithTimeout(
-        `${BASE_URL}/api/unsubscribe?t=smoke-test-invalid-token-${Date.now()}`
+        `${BASE_URL}/api/unsubscribe?token=smoke-test-invalid-token-${Date.now()}`
       );
       return {
         ok: res.status === 400,
