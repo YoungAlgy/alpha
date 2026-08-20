@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { coerceThemeId } from "@/lib/themes";
+import { themeEditedThisLoad } from "@/lib/theme-edit-tracker";
 import type { ThemeId } from "@/lib/types";
 
 const ONBOARDING_KEY = "alpha-onboarding";
@@ -77,7 +78,21 @@ export function ThemeApplier() {
           .eq("id", user.id)
           .maybeSingle();
         const dbTheme = coerceThemeId(data?.theme);
-        if (dbTheme) set(dbTheme);
+        // alpha-drift-r55-04 (2026-08-20, hydrate-vs-live-edit-race-audit):
+        // this SELECT is a real, unsequenced network round trip started at
+        // mount, racing setTheme()'s own independent DB write (lib/
+        // theme.ts) whenever a user picks a theme (ThemeSwitcher, or
+        // app/theme/page.tsx) before this resolves. Without this check, a
+        // hydrate landing after the pick silently reverted <html
+        // data-theme> back to the stale pre-pick value, with ThemeSwitcher's
+        // own active-theme label left showing the NEW pick (it isn't told
+        // about this revert) -- a visibly inconsistent state until the next
+        // navigation/reload re-reads the by-then-correct DB row. Same
+        // live-edit-wins-over-same-mount-hydrate pattern as app/topics/
+        // page.tsx's userEditedRef and app/theme/page.tsx's userPickedRef,
+        // via a shared module flag since this and setTheme() are separate
+        // component trees.
+        if (dbTheme && !themeEditedThisLoad()) set(dbTheme);
         // Self-heal the email mirror app-wide. After a confirmed email change the
         // auth email leads public.users.email (what the cron sends to); this is
         // the cheapest always-signed-in hook (the getUser + users read already

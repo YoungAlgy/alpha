@@ -2,6 +2,7 @@
 
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { coerceThemeId } from "@/lib/themes";
+import { markThemeEditedThisLoad } from "@/lib/theme-edit-tracker";
 import type { ThemeId } from "@/lib/types";
 
 // The single canonical way to change the theme. Before this existed the theme
@@ -25,6 +26,14 @@ export function setTheme(id: ThemeId): void {
     return;
   }
   id = safe;
+
+  // alpha-drift-r55-04 (2026-08-20, hydrate-vs-live-edit-race-audit): mark
+  // this before anything else below -- components/ThemeApplier.tsx's own
+  // signed-in hydrate effect (a real, unsequenced network round trip
+  // started independently on mount) checks this flag before overwriting
+  // <html data-theme>, so a live pick here always wins over a same-mount
+  // hydrate response that merely started earlier. See theme-edit-tracker.ts.
+  markThemeEditedThisLoad();
 
   // 1. Instant repaint of the current page.
   document.documentElement.setAttribute("data-theme", id);
