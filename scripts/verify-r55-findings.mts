@@ -112,7 +112,10 @@ console.log("(5) components/ThemeApplier.tsx + lib/theme.ts: a live theme pick n
   // alpha-drift-r56-01 loosened this to allow markThemeEditedThisLoad
   // joining the same import line (round 56 wired it into onStorage too).
   check("(5c) ThemeApplier imports themeEditedThisLoad", /import \{ themeEditedThisLoad(?:, markThemeEditedThisLoad)? \} from "@\/lib\/theme-edit-tracker";/.test(themeApplier));
-  check("(5d) the hydrate's set(dbTheme) is gated behind !themeEditedThisLoad()", /if \(dbTheme && !themeEditedThisLoad\(\)\) set\(dbTheme\);/.test(themeApplier));
+  // alpha-drift-r61-04 (2026-08-20, duplicate-code-audit-r11) wrapped this
+  // into a block to also dispatch alpha-theme-change -- loosened to allow
+  // either the single-statement or block form. See verify-r61-findings.mts's (4).
+  check("(5d) the hydrate's set(dbTheme) is gated behind !themeEditedThisLoad()", /if \(dbTheme && !themeEditedThisLoad\(\)\) \{?\s*\n?\s*set\(dbTheme\);/.test(themeApplier));
 
   const themeTs = readFileSync(new URL("../lib/theme.ts", import.meta.url), "utf8");
   check("(5e) lib/theme.ts imports markThemeEditedThisLoad", /import \{ markThemeEditedThisLoad \} from "@\/lib\/theme-edit-tracker";/.test(themeTs));

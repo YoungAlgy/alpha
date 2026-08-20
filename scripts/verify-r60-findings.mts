@@ -118,7 +118,12 @@ console.log("(7) app/api/admin/users/route.ts: gatherStats()'s 3 reads now check
   check("(7b) the latest-issue read checks error", /const \{ data: latestIssues, error: latestIssuesError \} = await sb/.test(src));
   check("(7c) the issue-count read checks error", /const \{ count, error: countError \} = await sb/.test(src));
   check("(7d) all 3 throw once logged", (src.match(/throw new Error\(`gatherStats/g) || []).length === 3);
-  check("(7e) GET wraps the Promise.all in try/catch, returning a clean 500 JSON", /catch \(e\) \{\s*\n\s*console\.error\("\[admin\/users\] gatherStats failed:", e instanceof Error \? e\.message : e\);\s*\n\s*return NextResponse\.json\(\{ error: "Couldn't load stats\. Try again\." \}, \{ status: 500 \}\);/.test(src));
+  // alpha-drift-r61-01 (2026-08-20, self-audit-r60) replaced the coupled
+  // Promise.all + try/catch with Promise.allSettled, since the try/catch
+  // form discarded a successful user-list fetch whenever ONLY gatherStats()
+  // failed -- loosened to check for the current decoupled handling instead
+  // of the exact old try/catch shape. See verify-r61-findings.mts's (1).
+  check("(7e) GET decouples usersQuery from gatherStats() so a stats failure can't discard a successful user list (superseded by r61-01)", /Promise\.allSettled\(\[usersQuery, gatherStats\(\)\]\)/.test(src) && /console\.error\("\[admin\/users\] gatherStats failed:"/.test(src));
 }
 
 console.log("(8) lib/user-sync.ts + lib/onboarding-state.ts: syncUserProfile now only writes topics when THIS call's patch explicitly included it");

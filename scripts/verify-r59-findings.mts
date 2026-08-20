@@ -83,7 +83,10 @@ console.log("(1) app/api/stripe/update-quantity/route.ts: topics is now re-read 
 {
   const src = readFileSync(new URL("../app/api/stripe/update-quantity/route.ts", import.meta.url), "utf8");
   check("(1a) the early SELECT no longer includes topics", !/\.select\("stripe_customer_id, topic_quota, subscribed_at, cancelled_at, topics"\)/.test(src));
-  check("(1b) a fresh topics-only SELECT happens right before the final write", /const \{ data: freshRow \} = await svc\s*\n\s*\.from\("users"\)\s*\n\s*\.select\("topics"\)\s*\n\s*\.eq\("id", user\.id\)\s*\n\s*\.maybeSingle\(\);/.test(src));
+  // alpha-drift-r61-07 added an `error: freshErr` destructure + a log check
+  // to this same read -- loosened to allow either shape. See
+  // verify-r61-findings.mts's (7).
+  check("(1b) a fresh topics-only SELECT happens right before the final write", /const \{ data: freshRow(?:, error: freshErr)? \} = await svc\s*\n\s*\.from\("users"\)\s*\n\s*\.select\("topics"\)\s*\n\s*\.eq\("id", user\.id\)\s*\n\s*\.maybeSingle\(\);/.test(src));
   check("(1c) cappedTopics is now derived from freshRow, not the stale row", /Array\.isArray\(freshRow\?\.topics\)\s*\n\s*\? \(freshRow\.topics as TopicId\[\]\)\.slice\(0, poolCap\(newQuota\)\)/.test(src));
 }
 
