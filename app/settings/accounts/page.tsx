@@ -64,6 +64,13 @@ export default function AdminAccountsPage() {
   useEffect(() => () => { mountedRef.current = false; }, []);
 
   async function load(opts?: { search?: string; before?: string; append?: boolean }) {
+    // alpha-drift-r45-04 (2026-08-19): this never cleared a prior `err` on
+    // a later successful load -- if the initial mount load() 401'd (e.g.
+    // the auth cookie hadn't hydrated yet) and a subsequent retry/search
+    // succeeded, the fully-loaded, accurate user list rendered underneath a
+    // permanently stuck "Sign in first." banner, with nothing to say the
+    // data below it was actually fresh and correct.
+    if (err) setErr(null);
     try {
       const params = new URLSearchParams();
       if (opts?.search) params.set("q", opts.search);

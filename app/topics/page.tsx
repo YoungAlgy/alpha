@@ -145,7 +145,16 @@ export default function TopicsPage() {
   const favCount = Math.min(picked.length, quota);
   const backupCount = Math.max(0, picked.length - quota);
 
+  // alpha-drift-r45-03 (2026-08-19): saveError used to only clear at the
+  // top of the NEXT submit() call, not on any of the actions a reader would
+  // naturally take to fix a failed save -- so after one failed Save, the
+  // sticky status bar kept showing the stale "Couldn't save your topics..."
+  // message instead of live pick-count progress, no matter how the reader
+  // adjusted their picks afterward. Cleared here and in removeAt/move/
+  // addCustom's success path, matching how customErr is already cleared on
+  // the custom-topic input's own onChange.
   function toggle(id: TopicId) {
+    if (saveError) setSaveError(null);
     setPicked((prev) => {
       if (prev.includes(id)) {
         unselect();
@@ -183,9 +192,11 @@ export default function TopicsPage() {
     setPicked((prev) => [...prev, id]);
     setCustomText("");
     setCustomErr(null);
+    if (saveError) setSaveError(null);
   }
 
   function removeAt(id: TopicId) {
+    if (saveError) setSaveError(null);
     unselect();
     setAnnouncement(`${topicLabel(id)} removed from your lineup.`);
     setPicked((prev) => prev.filter((t) => t !== id));
@@ -196,6 +207,7 @@ export default function TopicsPage() {
   function move(from: number, dir: -1 | 1) {
     const to = from + dir;
     if (to < 0 || to >= picked.length) return;
+    if (saveError) setSaveError(null);
     // alpha-drift-r32-02: computed from the closure's own `picked`/`quota`
     // (both already in scope every render) rather than inside the setPicked
     // updater below -- an updater can run twice under dev Strict Mode, and
