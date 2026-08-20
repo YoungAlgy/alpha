@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Digest } from "@/components/Digest";
@@ -26,81 +26,114 @@ export default function IssuePage() {
   const [issue, setIssue] = useState<Issue | null>(null);
   const [missing, setMissing] = useState(false);
   const [accessEnded, setAccessEnded] = useState(false);
+  // alpha-drift-r42-06 (2026-08-19): a genuine query failure (network blip,
+  // transient Supabase/RLS error) used to fall through the SAME `missing`
+  // gate as a real zero-row not-found, so a reader hitting a transient
+  // hiccup saw "It might have been deleted" -- alarming and wrong, plus no
+  // retry affordance. Same distinction app/archive/page.tsx's own
+  // `state === "error"` branch already makes one directory over, with the
+  // identical reasoning in its own comment: "A query error must NOT be
+  // masked as 'no letters' -- that's alarming to a paying subscriber."
+  const [loadError, setLoadError] = useState(false);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // App Router doesn't remount this component when only issueId changes via
+  // client-side navigation (e.g. jumping between two archived issues from
+  // /archive), so mountedRef alone isn't enough -- an older in-flight fetch
+  // for a PREVIOUS issueId, resolving after a newer one starts (not
+  // guaranteed to resolve in request order), could otherwise overwrite the
+  // screen with the wrong letter. activeIssueIdRef tracks which issueId the
+  // most recently started load() call is actually for; each in-flight
+  // call's own captured `forIssueId` has to still match it at every await
+  // point before touching state. A same-issueId retry (the Try Again
+  // button) is never stale against itself, so this doesn't block retries.
+  const activeIssueIdRef = useRef<string | undefined>(undefined);
+
+  const load = useCallback(async () => {
+    const forIssueId = issueId;
+    activeIssueIdRef.current = forIssueId;
+    const stale = () => activeIssueIdRef.current !== forIssueId || !mountedRef.current;
+    setMissing(false);
+    setLoadError(false);
+    if (supabaseConfigured()) {
+      try {
+        const sb = supabaseClient();
+        const { data: { session } } = await sb.auth.getSession();
+        if (stale()) return;
+        if (session && forIssueId) {
+          const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
+            sb
+              .from("issues")
+              .select("week_of, volume, number, editor_intro, sections")
+              .eq("id", forIssueId)
+              .eq("user_id", session.user.id)
+              .maybeSingle(),
+            sb
+              .from("users")
+              .select("first_name, city, theme, cancelled_at")
+              .eq("id", session.user.id)
+              .maybeSingle(),
+          ]);
+          if (stale()) return;
+          // alpha-drift-r16-15: same app-level defense-in-depth as
+          // /inbox -- see that file's comment for why this can't wait
+          // on the pending RLS migration.
+          //
+          // alpha-drift-r20-05: same deleted-account gap as /inbox --
+          // see that file's comment. A cascade-deleted `users` row makes
+          // userRow null, which hasActiveAccess(undefined) misreads as
+          // "active." !userError && !userRow is a genuine zero-row
+          // result, not a query failure (that's handled below by the
+          // separate `error` check on the issues query).
+          if (!userError && !userRow) {
+            setAccessEnded(true);
+            return;
+          }
+          if (!hasActiveAccess(userRow?.cancelled_at)) {
+            setAccessEnded(true);
+            return;
+          }
+          if (error) {
+            setLoadError(true);
+            return;
+          }
+          if (data) {
+            const themeId = coerceThemeId(userRow?.theme);
+            if (themeId) {
+              document.documentElement.setAttribute("data-theme", themeId);
+            }
+            setIssue({
+              id: forIssueId,
+              volume: data.volume,
+              number: data.number,
+              weekOf: data.week_of,
+              recipientFirstName: userRow?.first_name || "you",
+              recipientCity: userRow?.city || "",
+              editorIntro: data.editor_intro,
+              sections: data.sections,
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("[issue] fetch failed:", e);
+        if (!stale()) setLoadError(true);
+        return;
+      }
+    }
+    if (!stale()) setMissing(true);
+  }, [issueId]);
 
   useEffect(() => {
-    // App Router doesn't remount this component when only issueId changes
-    // via client-side navigation (e.g. jumping between two archived issues
-    // from /archive), so without a cancellation guard an older fetch that
-    // resolves AFTER a newer one -- not guaranteed to resolve in request
-    // order -- can overwrite the screen with the wrong letter. Same pattern
-    // already used on the sibling /inbox page.
-    let cancelled = false;
-    (async () => {
-      if (supabaseConfigured()) {
-        try {
-          const sb = supabaseClient();
-          const { data: { session } } = await sb.auth.getSession();
-          if (cancelled) return;
-          if (session && issueId) {
-            const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
-              sb
-                .from("issues")
-                .select("week_of, volume, number, editor_intro, sections")
-                .eq("id", issueId)
-                .eq("user_id", session.user.id)
-                .maybeSingle(),
-              sb
-                .from("users")
-                .select("first_name, city, theme, cancelled_at")
-                .eq("id", session.user.id)
-                .maybeSingle(),
-            ]);
-            if (cancelled) return;
-            // alpha-drift-r16-15: same app-level defense-in-depth as
-            // /inbox -- see that file's comment for why this can't wait
-            // on the pending RLS migration.
-            //
-            // alpha-drift-r20-05: same deleted-account gap as /inbox --
-            // see that file's comment. A cascade-deleted `users` row makes
-            // userRow null, which hasActiveAccess(undefined) misreads as
-            // "active." !userError && !userRow is a genuine zero-row
-            // result, not a query failure.
-            if (!userError && !userRow) {
-              setAccessEnded(true);
-              return;
-            }
-            if (!hasActiveAccess(userRow?.cancelled_at)) {
-              setAccessEnded(true);
-              return;
-            }
-            if (!error && data) {
-              const themeId = coerceThemeId(userRow?.theme);
-              if (themeId) {
-                document.documentElement.setAttribute("data-theme", themeId);
-              }
-              setIssue({
-                id: issueId,
-                volume: data.volume,
-                number: data.number,
-                weekOf: data.week_of,
-                recipientFirstName: userRow?.first_name || "you",
-                recipientCity: userRow?.city || "",
-                editorIntro: data.editor_intro,
-                sections: data.sections,
-              });
-              return;
-            }
-          }
-        } catch (e) {
-          console.warn("[issue] fetch failed:", e);
-        }
-      }
-      if (!cancelled) setMissing(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [issueId]);
+    load();
+  }, [load]);
 
   if (accessEnded) {
     return (
@@ -128,6 +161,42 @@ export default function IssuePage() {
               style={{ color: "var(--ink-soft)" }}
             >
               Contact support
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <div className="text-center space-y-6 max-w-md">
+          <div
+            className="alpha-display text-6xl font-bold"
+            style={{ color: "var(--accent-ink)", opacity: 0.6 }}
+          >
+            α
+          </div>
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight" role="status" aria-live="polite">
+            Couldn&apos;t load that letter.
+          </h1>
+          <p
+            className="alpha-display text-base"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            That&apos;s almost always a temporary hiccup. Your letters are safe.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            <button type="button" onClick={() => load()} className="alpha-button">
+              Try again
+            </button>
+            <Link
+              href="/archive"
+              className="alpha-ui text-sm underline underline-offset-4 pt-3"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              Back to archive
             </Link>
           </div>
         </div>
