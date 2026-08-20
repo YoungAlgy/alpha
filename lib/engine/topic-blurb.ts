@@ -41,7 +41,17 @@ export function topicBlurbPaidCallCount(): number {
 // all attach the same shape deliberately so this one check works universally
 // instead of each tier needing its own error-shape logic.
 function isRateLimited(e: unknown): boolean {
-  return typeof e === "object" && e !== null && "status" in e && (e as { status: unknown }).status === 429;
+  // alpha-drift-r53-06 (2026-08-20, duplicate-code-audit): widened to also
+  // treat 402 (quota/balance exhausted) as a skip-the-retry signal, same
+  // reasoning as lib/engine/openai-compat.ts's throwCompatError -- a 402
+  // is a deterministic wall, not a transient rate limit, so retrying
+  // against it just burns one guaranteed-to-fail call before escalating.
+  // Safe to widen universally (this check already runs for all 5
+  // generation tiers, per the comment above): Anthropic's real API doesn't
+  // organically produce 402, so this only ever matters for the OpenAI-
+  // compatible/Gemini tiers that actually can.
+  const status = typeof e === "object" && e !== null && "status" in e ? (e as { status: unknown }).status : undefined;
+  return status === 429 || status === 402;
 }
 
 // Used by generateTopicBlurb's Sonnet-retry step below: only take the retry

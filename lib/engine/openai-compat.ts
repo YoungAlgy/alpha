@@ -29,7 +29,20 @@ export async function throwCompatError(
   res: Response,
   onRateLimited?: () => void
 ): Promise<never> {
-  if (res.status === 429) onRateLimited?.();
+  // alpha-drift-r53-06 (2026-08-20, duplicate-code-audit): this used to only
+  // check 429 -- lib/brave.ts's braveRateLimitedCount and lib/you-search.ts's
+  // youRateLimitedCount both deliberately count 402 (quota/balance
+  // exhausted) alongside 429, specifically because 429-only counting let a
+  // real outage go completely invisible to the cron's ops-alert summary
+  // (see brave.ts's own comment). groq-client.ts and deepseek-client.ts's
+  // own comments both claim to mirror that "full rationale" via this shared
+  // helper, but this line never actually implemented the 402 half of it --
+  // for deepseek-client.ts specifically (a real funded balance, the one
+  // tier whose failure mode IS running out of money) that meant a genuine
+  // balance-exhausted outage would read 0 on deepseekRateLimitedCount()
+  // with zero operator-visible trace, the exact gap brave.ts's fix exists
+  // to prevent.
+  if (res.status === 429 || res.status === 402) onRateLimited?.();
   const text = await res.text().catch(() => "");
   const err = new Error(`${providerLabel} ${model} ${res.status}: ${text.slice(0, 300)}`);
   (err as Error & { status?: number }).status = res.status;
