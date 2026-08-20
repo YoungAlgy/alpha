@@ -84,8 +84,18 @@ export function containsMetaLeak(s: string | undefined | null): boolean {
 // forms r37's own verify script never exercised. Also added "game-changing"
 // alongside the existing "game-changer" (the adjectival form is at least as
 // common as the noun).
+// alpha-drift-r39-02 (2026-08-19, self-audit): still missed plain PLURAL
+// forms of every pluralizable noun on the list -- "optimizations" (despite
+// singular "optimization" being explicitly listed), "landscapes", "realms",
+// "testaments", "synergies" all evaded the `\b(...)\b` alternation, since
+// none of those alternatives had a trailing `s?`/`ies` variant. Also added
+// the unhyphenated "game changer"/"game changing" (a very ordinary way to
+// write it -- the hyphen-literal-only pattern missed it) and the adverb
+// "unprecedentedly". Verified by actually running findLexicalTells()
+// against real sentences using each missed form, not just reading the
+// regex text -- see verify-r39-findings.mts for the fixture.
 const BANNED_LEXICAL: RegExp[] = [
-  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive|landscape|realm|testament|optimize|optimizes|optimizing|optimized|optimization|calibrate|calibrates|calibrating|calibrated|synergy|crucial|vital|critical|game-changer|game-changing|unprecedented)\b/gi,
+  /\b(leverage|leverages|leveraging|leveraged|utilize|utilizes|utilizing|utilized|navigate|navigates|navigating|navigated|elevate|elevates|elevating|elevated|foster|fosters|fostering|fostered|tailor|tailors|tailored|tailoring|robust|seamless|seamlessly|delve|delves|delving|delved|ensure|ensures|ensuring|ensured|comprehensive|landscapes?|realms?|testaments?|optimize|optimizes|optimizing|optimized|optimizations?|calibrate|calibrates|calibrating|calibrated|synerg(?:y|ies)|crucial|vital|critical|game[- ]changers?|game[- ]changing|unprecedented(?:ly)?)\b/gi,
   /\bthis matters because\b/gi,
   /\bmatters because\b/gi,
   /\bthe insight here\b/gi,
