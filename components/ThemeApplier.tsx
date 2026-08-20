@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { coerceThemeId } from "@/lib/themes";
-import { themeEditedThisLoad } from "@/lib/theme-edit-tracker";
+import { themeEditedThisLoad, markThemeEditedThisLoad } from "@/lib/theme-edit-tracker";
 import type { ThemeId } from "@/lib/types";
 
 const ONBOARDING_KEY = "alpha-onboarding";
@@ -100,7 +100,20 @@ export function ThemeApplier() {
         // just /settings. No-op on every normal load (they already match).
         const authLc = user.email?.trim().toLowerCase();
         if (authLc && (data?.email ?? "").toLowerCase() !== authLc) {
-          fetch("/api/account/email/reconcile", { method: "POST" }).catch(() => {});
+          // alpha-drift-r56-05 (2026-08-20, silent-catch-audit-r2): this is
+          // the app's SOLE trigger for reconciling a confirmed new auth
+          // email back into public.users.email (weekly-send's actual
+          // delivery address) -- app/settings/page.tsx doesn't fire it
+          // itself despite EmailChanger.tsx's own comment implying it does.
+          // The route's own internal DB failures already page ops via
+          // sendOpsAlert, but a failure at THIS layer (network blip, an ad/
+          // privacy-blocker rule matching the URL) never reaches the server
+          // at all, so that alert path never fires either -- previously
+          // silent everywhere. Logged, not silent, matching this file's own
+          // theme-hydrate catch below and lib/theme.ts's setTheme() convention.
+          fetch("/api/account/email/reconcile", { method: "POST" }).catch((e) =>
+            console.warn("[ThemeApplier] email reconcile failed:", e instanceof Error ? e.message : e)
+          );
         }
       } catch {
         // ignore — fall back to local
@@ -111,8 +124,20 @@ export function ThemeApplier() {
       const detail = (e as CustomEvent<{ theme?: ThemeId }>).detail;
       if (detail?.theme) set(detail.theme);
     }
+    // alpha-drift-r56-01 (2026-08-20, self-audit-r55): round 55's
+    // live-edit-wins-over-hydrate guard only covered a same-tab pick
+    // (setTheme() calling markThemeEditedThisLoad() before its own writes).
+    // But setTheme() also writes localStorage, which fires this native
+    // `storage` event in every OTHER open tab of the same origin -- and
+    // this handler applied the cross-tab pick with no call to
+    // markThemeEditedThisLoad(), so a tab whose own signed-in hydrate
+    // SELECT was still in flight could have it silently reverted once that
+    // SELECT resolved with the pre-pick value. Since editedThisLoad is a
+    // per-tab module flag (not shared across tabs), a cross-tab pick has to
+    // arm THIS tab's own copy explicitly, the same way an in-tab pick does.
     function onStorage(e: StorageEvent) {
       if (e.key === ONBOARDING_KEY || e.key === FALLBACK_KEY) {
+        markThemeEditedThisLoad();
         const next = readLocalTheme();
         if (next) set(next);
       }
