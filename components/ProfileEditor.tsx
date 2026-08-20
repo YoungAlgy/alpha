@@ -8,9 +8,12 @@ import { BLURB_CAPS } from "@/lib/types";
 import type { Gender } from "@/lib/types";
 
 // The details onboarding collected. Editing them used to be impossible after
-// sign-up (settings only let you change topics + theme). first_name + city are
-// required; everything else is optional and clearable. Labels/placeholders
-// mirror the onboarding steps so the questions read the same here.
+// sign-up (settings only let you change topics + theme). Only first name is
+// required; everything else (including city, as of alpha-drift-r57-01) is
+// optional and clearable, matching app/api/account/profile/route.ts and the
+// rest of the app (checkout, generation, the DB schema itself). Labels/
+// placeholders mirror the onboarding steps so the questions read the same
+// here.
 interface Form {
   firstName: string;
   city: string;
@@ -107,7 +110,16 @@ export function ProfileEditor() {
     form.birthday !== saved.birthday ||
     form.gender !== saved.gender;
 
-  const requiredFilled = form.firstName.trim().length > 0 && form.city.trim().length > 0;
+  // alpha-drift-r57-01 (2026-08-20, form-validation-consistency-audit-r2):
+  // city dropped out of this gate -- it was the one place in the app
+  // requiring it (checkout's isProfileComplete, the generate-route schema,
+  // and the DB column itself all treat it as optional), and with no visible
+  // required/optional indicator anywhere on this form, a subscriber who
+  // legitimately reached Settings with an empty city (e.g. a direct-
+  // checkout signup that skipped onboarding -- an explicitly anticipated
+  // case, not hypothetical) got a permanently disabled Save button with
+  // zero explanation. See app/api/account/profile/route.ts's matching fix.
+  const requiredFilled = form.firstName.trim().length > 0;
   // alpha-drift-r34-02 (2026-08-14): this used to only require firstName/city
   // -- birthday had NO validity gate at all, unlike app/you/page.tsx's
   // alpha-drift-r22-04 fix for the identical input. A native <input
@@ -216,6 +228,7 @@ export function ProfileEditor() {
           placeholder="you"
           disabled={!loaded || busy}
           maxLength={60}
+          required
         />
         <Field
           label="City"
@@ -399,6 +412,7 @@ function Field({
   multiline = false,
   disabled = false,
   maxLength,
+  required = false,
 }: {
   label: string;
   value: string;
@@ -412,6 +426,12 @@ function Field({
   // without this a reader could paste something over the cap and see
   // "Saved" with no indication most of what they wrote was cut server-side.
   maxLength?: number;
+  // alpha-drift-r57-01 (2026-08-20, form-validation-consistency-audit-r2):
+  // this form's Save button silently disables with zero explanation when a
+  // required field is empty -- unlike app/support/SupportForm.tsx's own
+  // Field, which has always shown a visible marker. Mirrors that pattern so
+  // a blocked Save is never a silent dead end again.
+  required?: boolean;
 }) {
   const shared = {
     value,
@@ -427,6 +447,7 @@ function Field({
     <label className="block">
       <span className="alpha-ui text-xs block mb-1" style={{ color: "var(--ink-soft)" }}>
         {label}
+        {required && <span style={{ color: "var(--accent-ink)" }}> *</span>}
       </span>
       {multiline ? (
         <textarea {...shared} rows={2} className={`${shared.className} resize-none`} />

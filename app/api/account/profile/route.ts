@@ -15,16 +15,27 @@ export const runtime = "nodejs";
 // delete). Unlike the fire-and-forget user-sync, this path is an explicit user
 // action with values loaded from the DB first, so it CAN clear an optional blurb.
 //
-// alpha-drift-r54-04 (2026-08-20, duplicate-code-audit-round-2): this used to
-// group city with the three blurbs as "personalization: editable and
-// clearable" -- wrong. The code below (cleanRequired for city, same as
-// first_name) has always treated it as load-bearing, matching components/
-// ProfileEditor.tsx's own independent requiredFilled = firstName && city
-// gate. first_name AND city are the two load-bearing fields — the weekly
-// cron skips any row with no first_name (and the letter greets by it), and
-// city feeds the letter's own local-signal framing — so an empty value for
-// either is rejected. Only the three blurbs are personalization: editable
-// and clearable. Lengths are capped server-side (onboarding had no cap) to
+// alpha-drift-r57-01 (2026-08-20, form-validation-consistency-audit-r2):
+// round 54's own comment here (alpha-drift-r54-04) called city "load-bearing"
+// alongside first_name -- accurate about what THIS file's cleanRequired did,
+// but it never checked whether that behavior agreed with the rest of the
+// app. It didn't: users.city is a nullable DB column with no default
+// (20260513000000_initial_schema.sql), lib/checkout-guards.ts's
+// isProfileComplete() (used by both checkout's client gate and its server
+// route) never requires it, app/api/generate/route.ts's ProfileSchema
+// defaults it to "", lib/webhook-user-mutation.ts's own comment explicitly
+// anticipates "a direct-checkout user who skipped onboarding" landing with
+// city:"", and every downstream reader (editor-note.ts, assemble.ts, the
+// inbox pages) degrades gracefully on empty city. This route (and
+// components/ProfileEditor.tsx's independent requiredFilled gate) was the
+// ONE outlier requiring it -- with no visible required/optional indicator
+// anywhere on that form, so a subscriber who legitimately reached Settings
+// with an empty city (a real, code-comment-anticipated case, not a
+// hypothetical) got a permanently disabled Save button with zero
+// explanation. Loosened to match the rest of the app: only first_name is
+// load-bearing here (the weekly cron skips any row with no first_name, and
+// the letter greets by it) -- city joins the three blurbs as optional and
+// clearable. Lengths are capped server-side (onboarding had no cap) to
 // protect both the DB and the generation prompt, which reads these fields
 // verbatim.
 const LIMITS = {
@@ -104,14 +115,6 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  const city = cleanRequired(body.city, LIMITS.city);
-  if ("error" in city) {
-    return NextResponse.json(
-      { error: "Add your city so the letter can flag what's nearby." },
-      { status: 400 }
-    );
-  }
-
   // Birthday: keep only a real ISO date; empty or invalid clears it to null
   // (the native date input only ever sends a valid date or ""). Gender: only the
   // two stored values; "prefer not to say" or anything else clears to null.
@@ -121,7 +124,7 @@ export async function POST(req: Request) {
 
   const updates = {
     first_name: firstName.value,
-    city: city.value,
+    city: cleanOptional(body.city, LIMITS.city),
     job_blurb: cleanOptional(body.jobBlurb, LIMITS.job_blurb),
     project_blurb: cleanOptional(body.projectBlurb, LIMITS.project_blurb),
     fun_blurb: cleanOptional(body.funBlurb, LIMITS.fun_blurb),
