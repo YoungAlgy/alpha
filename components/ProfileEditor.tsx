@@ -258,7 +258,19 @@ export function ProfileEditor() {
             aria-live="polite"
             className="alpha-ui text-xs block mt-1"
             style={{
-              color: (form.birthday.length > 0 && !birthdayValid) ? "var(--ink)" : hasZodiac && !form.birthday ? "var(--accent-ink)" : "var(--ink-soft)",
+              // alpha-drift-r53-01 (2026-08-20, accessibility-resweep-newer-code):
+              // this branch still used --accent-ink -- the identical
+              // Zodiac-birthday-required warning on app/topics/page.tsx and
+              // app/you/page.tsx was fixed to --ink in round 24
+              // (alpha-drift-r24-01, --accent-ink fails WCAG AA 4.5:1 in 12+
+              // themes) but this ProfileEditor.tsx copy was missed by that
+              // sweep, and round 34 later added role="status" to this exact
+              // span without touching the color -- scripts/verify-accent-
+              // ink-error-text-contrast.mts's own comprehensive scan (check
+              // 5) already asserts zero role="status"/role="alert" elements
+              // use --accent-ink app-wide, and was failing on exactly this
+              // offender until this fix.
+              color: (form.birthday.length > 0 && !birthdayValid) ? "var(--ink)" : hasZodiac && !form.birthday ? "var(--ink)" : "var(--ink-soft)",
               opacity: (form.birthday.length > 0 && !birthdayValid) || (hasZodiac && !form.birthday) ? 1 : 0.8,
             }}
           >
