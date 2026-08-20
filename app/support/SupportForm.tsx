@@ -32,7 +32,15 @@ export function SupportForm() {
     // "Invalid input: email: Not a valid email address" string that this
     // form renders verbatim, mashed together with the "Try emailing us
     // directly." suffix with no separating punctuation.
-    if (!isValidEmail(email.trim())) {
+    // alpha-drift-r57-09 (2026-08-20, form-validation-consistency-audit-r2):
+    // this validated a trimmed copy but sent the raw, untrimmed `email`
+    // state to the server -- breaking this app's own established
+    // trim-before-send convention (signin/page.tsx, EmailChanger.tsx both
+    // trim before use). A leading/trailing space a reader didn't notice
+    // typing would sail past isValidEmail() (trimmed here) and land in the
+    // stored support ticket and the reply-to address exactly as typed.
+    const cleanEmail = email.trim();
+    if (!isValidEmail(cleanEmail)) {
       setStatus("error");
       setError("That doesn't look like an email. Check for a typo.");
       return;
@@ -43,7 +51,7 @@ export function SupportForm() {
       const res = await fetch("/api/support", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, message }),
+        body: JSON.stringify({ name, email: cleanEmail, message }),
       });
       if (!res.ok) {
         // Surface the route's actual message (e.g. a specific Zod validation

@@ -1,6 +1,6 @@
 import type { BraveResult } from "@/lib/brave";
 import { hostTier, tierRank, type SourceTier } from "./source-authority";
-import { normalizeUrl } from "./url-guard";
+import { normalizeUrl, MIRROR_SUBDOMAIN_RE } from "./url-guard";
 
 // Dedup + authority-rank raw Brave results into a shortlist. Pure (no I/O) so
 // it's unit-testable. The expensive part (reading the article) happens after —
@@ -18,9 +18,23 @@ export interface RankedSource extends BraveResult {
   tier: SourceTier;
 }
 
+// alpha-drift-r57-05 (2026-08-20, duplicate-code-audit): this used to strip
+// only "www." via a hand-rolled /^www\./ -- the EXACT bug class urlKey()'s
+// own comment below describes url-guard.ts's normalizeUrl being fixed for
+// (an AMP/mobile mirror subdomain reading as a different host), just never
+// applied HERE. `host` is what the per-host cap in rankAndDedup groups by
+// ("keep the shortlist varied," this file's own header comment) and what
+// gets shown as the source label in the prompt (source-resolver.ts) -- an
+// amp./m./mobile.-prefixed result for a DIFFERENT article on an
+// already-capped host slipped past the cap under its own separate "host,"
+// undermining the exact diversity guarantee the cap exists to provide.
+// hostTier() below was never affected (its own registrable() + endsWith
+// match already tolerates any subdomain), only the cap and the display
+// label were. Now shares url-guard.ts's MIRROR_SUBDOMAIN_RE instead of a
+// second, narrower copy of the same idea.
 function hostOf(url: string): string {
   try {
-    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    return new URL(url).hostname.toLowerCase().replace(MIRROR_SUBDOMAIN_RE, "");
   } catch {
     return "";
   }

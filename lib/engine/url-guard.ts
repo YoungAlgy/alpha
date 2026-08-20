@@ -19,8 +19,13 @@ const URL_RE = /https?:\/\/[^\s"'<>)\]}]+/gi;
 // Cosmetic subdomain prefixes that mirror the SAME content as the canonical
 // host (Google AMP pages, mobile-optimized pages) — collapsed just like
 // "www." so a same-story AMP/mobile URL matches its canonical counterpart
-// instead of reading as a different host.
-const MIRROR_SUBDOMAIN_RE = /^(?:www|amp|m|mobile)\./;
+// instead of reading as a different host. Exported so any OTHER host
+// normalization in the engine (e.g. source-rank.ts's hostOf(), used for its
+// per-host diversity cap and the host label shown to the model) can share
+// this exact definition instead of hand-rolling a narrower www-only version
+// that silently drifts from this one — see source-rank.ts's own comment on
+// urlKey() for the bug class a prior drift here already caused once.
+export const MIRROR_SUBDOMAIN_RE = /^(?:www|amp|m|mobile)\./;
 
 // Cross-site attribution/tracking params that never distinguish WHICH content
 // a page shows, only where the visitor came from — stripped so a same-story
