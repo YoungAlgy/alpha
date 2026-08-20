@@ -1,21 +1,31 @@
-// Verifies the free-first cost tiering in generateTopicBlurb (2026-07-23):
-// Gemini (free) -> Haiku (cheap) -> Sonnet (last resort), each escalation
-// gated on the SAME guards every draft has to pass (url-guard, meta-leak
-// guard, and a zero-tolerance banned-lexical-tell check).
-//   1. Normal case — all three tiers healthy, a complete blurb comes back.
+// Verifies the free-first cost tiering in generateTopicBlurb: Gemini (free)
+// -> Groq (free) -> DeepSeek (paid, uncapped) -> Haiku (cheap) -> Sonnet
+// (last resort), each escalation gated on the SAME guards every draft has to
+// pass (url-guard, meta-leak guard, and a zero-tolerance banned-lexical-tell
+// check).
+//
+// alpha-drift-r66-03 (2026-08-21, duplicate-code-audit-r16): this header
+// used to describe a stale 3-tier chain (Gemini -> Haiku -> Sonnet) that
+// predates Groq and DeepSeek joining 2026-07-29 (commit ecc968c) -- that
+// commit updated tests 2/3's actual assertions to check for "escalating to
+// Groq" but never touched this docstring, which claimed the wrong shape for
+// 4 weeks after. lib/engine/client.ts carried the identical stale
+// parenthetical, fixed in the same pass.
+//   1. Normal case — all five tiers healthy, a complete blurb comes back.
 //      Does NOT assert which tier "won": every tier's output is
 //      non-deterministic and the quality gate can legitimately escalate on a
 //      good run too, so no single run proves which tier is typical.
-//   2. Gemini forced down (bad key) -> escalates past it, blurb still comes
-//      back.
-//   3. Gemini forced down twice in a row (bad key, both the first attempt and
-//      the retry) -> escalation reaches Haiku. (Forcing Haiku's OWN failure
-//      specifically isn't testable by mutating ALPHA_BLURB_CHEAP_MODEL
-//      mid-script: like BLURB_MODEL, it's a module-level constant baked in at
-//      first import, not re-read per call — same as real production, where
-//      env vars are fixed at deploy time. Test 1 below already exercises the
-//      full Gemini -> Haiku -> Sonnet chain organically when it happens live,
-//      which is stronger evidence than a forced synthetic case anyway.)
+//   2. Gemini forced down (bad key) -> escalates past it to Groq, blurb
+//      still comes back.
+//   3. Gemini forced down again (2nd independent run) -> escalation past it
+//      to Groq is real, not a stale fluke from test 2. (Forcing Groq/
+//      DeepSeek/Haiku's OWN failures specifically isn't testable this way:
+//      like BLURB_MODEL, each tier's config is a module-level constant baked
+//      in at first import, not re-read per call — same as real production,
+//      where env vars are fixed at deploy time. Test 1 above already
+//      exercises the full Gemini -> Groq -> DeepSeek -> Haiku -> Sonnet
+//      chain organically when it happens live, which is stronger evidence
+//      than a forced synthetic case anyway.)
 //   4. Invariant check across all of the above: no returned blurb, from any
 //      tier, on any run, ever contains a banned lexical tell.
 // Run: npx tsx scripts/verify-cost-tiering.mts

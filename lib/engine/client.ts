@@ -50,7 +50,11 @@ function pickModel(envVar: string, fallback: string): string {
 export const BLURB_MODEL = pickModel("ALPHA_BLURB_MODEL", DEFAULT_MODEL);
 
 // The cheap middle tier in topic-blurb.ts's cost-tiering waterfall (Gemini
-// free -> Haiku cheap -> Sonnet last resort). This was alpha's actual
+// free -> Groq free -> DeepSeek paid-uncapped -> Haiku cheap -> Sonnet last
+// resort -- alpha-drift-r66-03, 2026-08-21: this parenthetical predated
+// Groq/DeepSeek joining 2026-07-29 and was stale for 4 weeks; scripts/
+// verify-cost-tiering.mts carried the identical drift, fixed same pass).
+// This was alpha's actual
 // production blurb model for weeks before the deliberate 2026-07-03 upgrade
 // to Sonnet 5 ("blurbs are the actual product") — not a novel or unvalidated
 // choice, a known-good one being reintroduced as a cost lever now that live
