@@ -90,6 +90,22 @@ export default function AdminAccountsPage() {
     return () => { mountedRef.current = false; };
   }, []);
 
+  // alpha-drift-r49-08 (2026-08-20, sibling-consistency-round-7): load() had
+  // no request-ordering guard at all -- act()'s own finally block (round
+  // 46) always reloads, runSearch/clearSearch each trigger their own load(),
+  // and none of these four call sites are sequenced against each other
+  // (only busyRowsRef's same-row check blocks a second click on the SAME
+  // row). Two admin actions on different rows, or an action racing a
+  // search, could each fire their own load() and have the responses land
+  // out of HTTP order -- whichever arrives LAST silently wins the
+  // setUsers/setStats write, even if it reflects an OLDER request than the
+  // one that resolved first. Same class of bug this codebase already
+  // guards against elsewhere (app/inbox/[issueId]/page.tsx's
+  // activeIssueIdRef/stale() guard, lib/brave.ts's monotonic counter) --
+  // loadSeqRef is a monotonic per-call id; a response only gets applied if
+  // it's still the MOST RECENTLY ISSUED call by the time it resolves.
+  const loadSeqRef = useRef(0);
+
   async function load(opts?: { search?: string; before?: string; append?: boolean }) {
     // alpha-drift-r45-04 (2026-08-19): this never cleared a prior `err` on
     // a later successful load -- if the initial mount load() 401'd (e.g.
@@ -98,12 +114,14 @@ export default function AdminAccountsPage() {
     // permanently stuck "Sign in first." banner, with nothing to say the
     // data below it was actually fresh and correct.
     if (err) setErr(null);
+    const seq = ++loadSeqRef.current;
+    const isStale = () => !mountedRef.current || seq !== loadSeqRef.current;
     try {
       const params = new URLSearchParams();
       if (opts?.search) params.set("q", opts.search);
       else if (opts?.before) params.set("before", opts.before);
       const res = await fetch(`/api/admin/users${params.toString() ? `?${params}` : ""}`);
-      if (!mountedRef.current) return;
+      if (isStale()) return;
       if (res.status === 401) {
         setErr("Sign in first.");
         return;
@@ -113,7 +131,7 @@ export default function AdminAccountsPage() {
         return;
       }
       const data = await res.json();
-      if (!mountedRef.current) return;
+      if (isStale()) return;
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setUsers((prev) => (opts?.append && prev ? [...prev, ...data.users] : data.users));
       if (data.stats) setStats(data.stats);
@@ -121,7 +139,7 @@ export default function AdminAccountsPage() {
       // we've hit the end of the table (or, for a search, all the matches).
       setHasMore(data.users.length === 200);
     } catch (e) {
-      if (mountedRef.current) setErr(e instanceof Error ? e.message : "Couldn't load users.");
+      if (!isStale()) setErr(e instanceof Error ? e.message : "Couldn't load users.");
     }
   }
 
