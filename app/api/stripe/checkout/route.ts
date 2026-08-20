@@ -88,11 +88,21 @@ export async function POST(req: Request) {
   if (body.email) {
     try {
       const sb = await supabaseServiceClient();
-      const { data: existing } = await sb
+      // alpha-drift-r60-07 (2026-08-20, silent-catch-audit-r6): `error` used
+      // to be discarded silently. shouldBlockDoubleSubscription(null) is
+      // documented as an intentional fail-open on a missing row, so a query
+      // failure already behaves correctly (checkout still proceeds) --
+      // logged here isn't a behavior fix, it's the difference between this
+      // guard going permanently and invisibly dead (a schema/RLS drift with
+      // zero trace anywhere) and someone actually noticing.
+      const { data: existing, error: existingError } = await sb
         .from("users")
         .select("subscribed_at, cancelled_at, stripe_customer_id")
         .eq("email", body.email)
         .maybeSingle();
+      if (existingError) {
+        console.warn("[stripe/checkout] active-subscription pre-check query failed, allowing checkout:", existingError.message);
+      }
       if (shouldBlockDoubleSubscription(existing)) {
         return NextResponse.json(
           {

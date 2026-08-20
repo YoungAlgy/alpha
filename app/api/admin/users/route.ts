@@ -37,13 +37,30 @@ async function gatherStats(): Promise<Stats> {
     unsubscribed_at: string | null;
     stripe_customer_id: string | null;
   };
+  // alpha-drift-r60-08 (2026-08-20, silent-catch-audit-r6): all three reads
+  // in this function used to discard `error` entirely. On a failure,
+  // Supabase resolves rather than throws, so `page`/`latestIssues`/`count`
+  // just came back undefined/null and every downstream stat silently
+  // computed as 0 or truncated -- with the route still returning a normal
+  // 200, misleading whoever reads this admin dashboard into treating a
+  // query blip as real "paying: 0" business data. app/api/cron/weekly-
+  // send/route.ts's own comment near its equivalent paginated fetch
+  // ("Same fix, same reasoning as gatherStats()...") turned out to be
+  // false as of the code that existed before this fix -- corrected below.
+  // Throwing here (once logged) lets GET's own try/catch return the same
+  // clean 500 JSON shape its sibling usersQuery error path already uses,
+  // instead of a misleadingly-successful 200 with wrong numbers.
   const rows: StatsRow[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data: page } = await sb
+    const { data: page, error: pageError } = await sb
       .from("users")
       .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id")
       .order("id")
       .range(from, from + PAGE_SIZE - 1);
+    if (pageError) {
+      console.error("[admin/users] gatherStats users page fetch failed:", pageError.message);
+      throw new Error(`gatherStats users page fetch failed: ${pageError.message}`);
+    }
     if (!page || page.length === 0) break;
     rows.push(...page);
     if (page.length < PAGE_SIZE) break;
@@ -74,19 +91,27 @@ async function gatherStats(): Promise<Stats> {
   }
 
   // Latest issue snapshot — surfaces whether the weekly cron is running
-  const { data: latestIssues } = await sb
+  const { data: latestIssues, error: latestIssuesError } = await sb
     .from("issues")
     .select("week_of")
     .order("week_of", { ascending: false })
     .limit(1);
+  if (latestIssuesError) {
+    console.error("[admin/users] gatherStats latest-issue lookup failed:", latestIssuesError.message);
+    throw new Error(`gatherStats latest-issue lookup failed: ${latestIssuesError.message}`);
+  }
   const latestWeekOf = latestIssues?.[0]?.week_of ?? null;
 
   let latestIssueCount = 0;
   if (latestWeekOf) {
-    const { count } = await sb
+    const { count, error: countError } = await sb
       .from("issues")
       .select("*", { count: "exact", head: true })
       .eq("week_of", latestWeekOf);
+    if (countError) {
+      console.error("[admin/users] gatherStats issue count failed:", countError.message);
+      throw new Error(`gatherStats issue count failed: ${countError.message}`);
+    }
     latestIssueCount = count ?? 0;
   }
 
@@ -216,10 +241,20 @@ export async function GET(req: Request) {
     usersQuery = usersQuery.limit(200);
   }
 
-  const [{ data: users, error }, stats] = await Promise.all([
-    usersQuery,
-    gatherStats(),
-  ]);
+  // alpha-drift-r60-08: gatherStats() now throws (already logged internally)
+  // on any of its 3 reads failing, instead of silently resolving to
+  // 0/incomplete stats -- wrapped here so that surfaces as the same clean
+  // 500 JSON shape the usersQuery error path already returns below, not an
+  // unhandled rejection.
+  let users: unknown[] | null;
+  let error: { message: string } | null;
+  let stats: Stats;
+  try {
+    [{ data: users, error }, stats] = await Promise.all([usersQuery, gatherStats()]);
+  } catch (e) {
+    console.error("[admin/users] gatherStats failed:", e instanceof Error ? e.message : e);
+    return NextResponse.json({ error: "Couldn't load stats. Try again." }, { status: 500 });
+  }
 
   if (error) {
     console.error("[admin/users] users query failed:", error.message);

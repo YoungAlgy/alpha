@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getStripeClient, describeStripeError } from "./stripe";
+import { sendOpsAlert } from "./email";
 
 // Cancel every still-billable subscription for a Stripe customer. Used by the
 // account-deletion flow: when a user deletes their account we delete the auth
@@ -115,11 +116,30 @@ export async function cleanUpStripeCustomerBeforeDelete(
   try {
     let customerId = preFetchedCustomerId;
     if (customerId === undefined) {
-      const { data: row } = await svc
+      // alpha-drift-r60-06 (2026-08-20, silent-catch-audit-r6): `error` used
+      // to be discarded entirely. This branch only runs when the caller's
+      // OWN pre-fetch already failed (that's what makes preFetchedCustomerId
+      // undefined in the first place) -- so a failure here is a SECOND
+      // consecutive DB failure on the same request, and by this point in
+      // account/delete/route.ts the auth user has already been irreversibly
+      // deleted. Silently returning below with no trace would leave an
+      // active Stripe subscription billing an account that no longer
+      // exists, with nothing anywhere pointing at why. Logged and paged --
+      // this is the one failure mode on this best-effort path a human
+      // actually needs to know about, since there's no later reconciliation
+      // pass that would ever catch it.
+      const { data: row, error: rowErr } = await svc
         .from("users")
         .select("stripe_customer_id")
         .eq("id", userId)
         .maybeSingle();
+      if (rowErr) {
+        console.warn(`${logPrefix} stripe_customer_id re-lookup failed, cannot verify/cancel any Stripe subscription:`, rowErr.message);
+        await sendOpsAlert(
+          "alpha: possible orphaned Stripe subscription after account delete",
+          `${logPrefix} user ${userId}'s account was deleted, but BOTH attempts to look up their stripe_customer_id failed (the caller's own pre-fetch, then this internal retry) -- error: ${rowErr.message}. If they had an active subscription, it may still be billing with no account left to manage it. Worth checking Stripe directly for this user's email/customer record.`
+        ).catch(() => {});
+      }
       customerId = row?.stripe_customer_id;
     }
     if (!customerId) return;
