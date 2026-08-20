@@ -9,6 +9,7 @@ import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
 import { braveRateLimitedCount } from "@/lib/brave";
 import { youRateLimitedCount } from "@/lib/you-search";
+import { geminiRateLimitedCount } from "@/lib/engine/gemini-client";
 import { groqRateLimitedCount } from "@/lib/engine/groq-client";
 import { deepseekRateLimitedCount, deepseekCallCount } from "@/lib/engine/deepseek-client";
 import { topicBlurbPaidCallCount } from "@/lib/engine/topic-blurb";
@@ -383,6 +384,11 @@ export async function GET(req: Request) {
   // Anthropic isn't funded) with zero operator-visible signal.
   const braveBaseline = braveRateLimitedCount();
   const youBaseline = youRateLimitedCount();
+  // alpha-drift-r60-09 (2026-08-20, duplicate-code-audit-r10): Gemini is the
+  // PRIMARY generation tier (tried FIRST for every blurb, not a downstream
+  // fallback like Groq/DeepSeek) and had no counter at all until now --
+  // baselined the same way as its four siblings.
+  const geminiBaseline = geminiRateLimitedCount();
   const groqBaseline = groqRateLimitedCount();
   const deepseekBaseline = deepseekRateLimitedCount();
   // Baselined the same way as the four rate-limit counters above, but this
@@ -1279,6 +1285,7 @@ export async function GET(req: Request) {
   const elapsedMs = Date.now() - startedAt;
   const braveRateLimited = braveRateLimitedCount() - braveBaseline;
   const youRateLimited = youRateLimitedCount() - youBaseline;
+  const geminiRateLimited = geminiRateLimitedCount() - geminiBaseline;
   const groqRateLimited = groqRateLimitedCount() - groqBaseline;
   const deepseekRateLimited = deepseekRateLimitedCount() - deepseekBaseline;
   // Logged every run (not just when the ceiling trips) specifically so a
@@ -1308,6 +1315,7 @@ export async function GET(req: Request) {
     failed,
     braveRateLimited,
     youRateLimited,
+    geminiRateLimited,
     groqRateLimited,
     deepseekRateLimited,
     paidCallsThisRun,
@@ -1352,6 +1360,7 @@ export async function GET(req: Request) {
     skippedBlankSubscribers.length > 0 ||
     failed > 0 ||
     braveRateLimited > 0 ||
+    geminiRateLimited > 0 ||
     groqRateLimited > 0 ||
     deepseekRateLimited > 0 ||
     deferred.length > 0 ||
@@ -1390,6 +1399,17 @@ export async function GET(req: Request) {
       // hitting its own limit.
       youRateLimited > 0
         ? `You.com (the 3rd search tier) ALSO returned 429 on ${youRateLimited} queries this run — the fallback chain is running three-deep and still straining. Worth checking the You.com dashboard for remaining credit.`
+        : "",
+      // alpha-drift-r60-09 (2026-08-20, duplicate-code-audit-r10): Gemini
+      // had NO counter at all until now, despite being the PRIMARY
+      // generation tier (tried FIRST for every blurb, unlike Groq/DeepSeek
+      // below which are downstream fallbacks) -- a sustained Gemini-only
+      // outage previously produced zero signal here, silently shifting all
+      // blurb load onto Groq then DeepSeek. Placed ahead of Groq/DeepSeek's
+      // lines since a nonzero count here is the more urgent signal: the
+      // tier every blurb tries first is straining, not just a fallback.
+      geminiRateLimited > 0
+        ? `Gemini (the PRIMARY, first-tried generation tier for every topic blurb) returned 429 or 402 on ${geminiRateLimited} calls this run — its free-tier quota may be exhausted or the API key may be invalid/rotated (both have happened before, see lib/you-search.ts's 2026-07-29 incident note). Escalates automatically to Groq then DeepSeek, so likely not a reader-visible problem yet, but this is the tier every blurb tries first — worth checking sooner than the Groq/DeepSeek lines below.`
         : "",
       // UNLIKE youRateLimited above, Groq/DeepSeek are content-GENERATION
       // fallbacks (2026-07-29), not chained behind Brave's search tiers — Groq
@@ -1437,7 +1457,7 @@ export async function GET(req: Request) {
         : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}${eligibilityRecheckFailures > 0 ? `, eligibility-recheck failed x${eligibilityRecheckFailures}` : ""}`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${geminiRateLimited > 0 ? ", Gemini quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}${eligibilityRecheckFailures > 0 ? `, eligibility-recheck failed x${eligibilityRecheckFailures}` : ""}`,
       lines.join("\n")
     );
   }

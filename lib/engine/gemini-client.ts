@@ -45,6 +45,30 @@ function apiKey(): string {
   return key;
 }
 
+// alpha-drift-r60-09 (2026-08-20, duplicate-code-audit-r10): Brave (lib/
+// brave.ts), You.com (lib/you-search.ts), Groq, and DeepSeek all have this
+// exact monotonic-counter pattern, each explicitly commented as mirroring
+// the others, and all four feed weekly-send/route.ts's ops-alert baseline/
+// trigger/message. Gemini -- the PRIMARY, first-tried generation tier for
+// every topic blurb, not a downstream fallback like Groq/DeepSeek -- had no
+// equivalent, despite topic-blurb.ts's tryGemini() already detecting a
+// Gemini 429/402 via isRateLimited(e) (it just never counted it). A
+// sustained Gemini-only outage (quota exhaustion, an invalid/rotated key --
+// both real, previously-observed incidents per lib/you-search.ts's and
+// lib/engine/source-resolver.ts's own comments) silently shifted 100% of
+// blurb load onto Groq then DeepSeek with zero signal in the one alert
+// email Algy actually reads. Incremented directly in callGemini() below
+// (this file's single shared error path for every caller) rather than
+// threaded as a per-caller callback like the openai-compat.ts siblings --
+// Gemini's raw-REST client has no equivalent shared helper to hook into,
+// and every caller (geminiGenerateText, geminiGroundedSearch) already
+// funnels through this one function, so this is the correct centralization
+// point here.
+let rateLimitedCount = 0;
+export function geminiRateLimitedCount(): number {
+  return rateLimitedCount;
+}
+
 interface GeminiPart {
   text?: string;
 }
@@ -80,6 +104,10 @@ async function callGemini(
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) {
+    // alpha-drift-r60-09: matches the sibling providers' 429-or-402
+    // trigger condition (openai-compat.ts's throwCompatError) -- 402 covers
+    // a genuinely balance/quota-exhausted response, not just a rate limit.
+    if (res.status === 429 || res.status === 402) rateLimitedCount += 1;
     const text = await res.text().catch(() => "");
     const err = new Error(`Gemini ${model} ${res.status}: ${text.slice(0, 300)}`);
     // Attach the real numeric status so callers can check e.status === 429
