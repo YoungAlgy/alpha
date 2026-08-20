@@ -327,13 +327,26 @@ export async function POST(req: Request) {
           // already goes through the real function. Reusing it here means
           // this retry-vs-absorb decision can never silently drift from
           // the canonical definition the way a second hand-copy could.
-          if (isTerminalSubscriptionStatus(sub.status)) {
+          //
+          // alpha-drift-r39-03 (2026-08-19, self-audit): this used to check
+          // `sub.status` -- the stale event snapshot -- while cancelledAt
+          // just above already reads `liveSub?.status ?? sub.status` for
+          // exactly the out-of-order-delivery reason explained there. A
+          // genuinely non-terminal event retried AFTER a later terminal
+          // event has already deleted the account would see liveSub report
+          // the real terminal status, but this check's stale sub.status
+          // would still say non-terminal and throw to force a Stripe retry
+          // that can never succeed (the row is genuinely gone) -- wasted
+          // ~3-day retry storm plus repeated day-bucketed alert noise for an
+          // already-resolved deletion. Matched to the same converged source.
+          const effectiveStatus = liveSub?.status ?? sub.status;
+          if (isTerminalSubscriptionStatus(effectiveStatus)) {
             console.warn(
-              `[stripe-webhook] subscription mirror matched 0 rows for customer ${customerId} (status=${sub.status}, account deleted?) — no-op`
+              `[stripe-webhook] subscription mirror matched 0 rows for customer ${customerId} (status=${effectiveStatus}, account deleted?) — no-op`
             );
           } else {
             throw new Error(
-              `subscription mirror matched 0 rows for customer ${customerId} (status=${sub.status}, out-of-order? will retry)`
+              `subscription mirror matched 0 rows for customer ${customerId} (status=${effectiveStatus}, out-of-order? will retry)`
             );
           }
         }
