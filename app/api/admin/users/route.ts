@@ -241,24 +241,40 @@ export async function GET(req: Request) {
     usersQuery = usersQuery.limit(200);
   }
 
-  // alpha-drift-r60-08: gatherStats() now throws (already logged internally)
-  // on any of its 3 reads failing, instead of silently resolving to
-  // 0/incomplete stats -- wrapped here so that surfaces as the same clean
-  // 500 JSON shape the usersQuery error path already returns below, not an
-  // unhandled rejection.
-  let users: unknown[] | null;
-  let error: { message: string } | null;
-  let stats: Stats;
-  try {
-    [{ data: users, error }, stats] = await Promise.all([usersQuery, gatherStats()]);
-  } catch (e) {
-    console.error("[admin/users] gatherStats failed:", e instanceof Error ? e.message : e);
-    return NextResponse.json({ error: "Couldn't load stats. Try again." }, { status: 500 });
+  // alpha-drift-r61-01 (2026-08-20, self-audit-r60): round 60's own
+  // gatherStats()-throws fix (alpha-drift-r60-08) combined the two reads in
+  // one Promise.all -- Promise.all rejects the WHOLE call the instant
+  // EITHER promise rejects, discarding an already-successful (or about-to-
+  // succeed) usersQuery result along with the failed stats. Before round
+  // 60, gatherStats() never threw, so this always returned 200 with the
+  // real user list even when stats came back wrong; round 60 traded that
+  // for "the entire admin dashboard, including the Grant/Revoke/Delete/
+  // Clear-suppression action buttons an admin might urgently need during
+  // exactly this kind of DB blip, goes fully blank" on any transient stats-
+  // side failure. Promise.allSettled decouples them: a stats failure is
+  // still logged (round 60's real improvement, kept), but a working user
+  // list is never thrown away over it. stats: null signals "unavailable"
+  // to the frontend, which already renders that gracefully (app/settings/
+  // accounts/page.tsx's `{stats && (...)}` gate) -- the row list and every
+  // action button still work normally.
+  const [usersSettled, statsSettled] = await Promise.allSettled([usersQuery, gatherStats()]);
+  if (usersSettled.status === "rejected") {
+    // Supabase-js resolves query errors rather than rejecting -- this
+    // shouldn't happen in practice, but handled defensively rather than
+    // left to bubble into a raw 500.
+    console.error("[admin/users] users query threw unexpectedly:", usersSettled.reason instanceof Error ? usersSettled.reason.message : usersSettled.reason);
+    return NextResponse.json({ error: "Couldn't load users. Try again." }, { status: 500 });
   }
-
+  const { data: users, error } = usersSettled.value;
   if (error) {
     console.error("[admin/users] users query failed:", error.message);
     return NextResponse.json({ error: "Couldn't load users. Try again." }, { status: 500 });
+  }
+  let stats: Stats | null = null;
+  if (statsSettled.status === "fulfilled") {
+    stats = statsSettled.value;
+  } else {
+    console.error("[admin/users] gatherStats failed:", statsSettled.reason instanceof Error ? statsSettled.reason.message : statsSettled.reason);
   }
   return NextResponse.json({ users, stats });
 }
