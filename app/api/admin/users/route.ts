@@ -600,13 +600,32 @@ export async function POST(req: Request) {
         );
       }
     }
-    const { error } = await sb
-      .from("users")
-      .update({ bounced_at: null, complained_at: null })
-      .eq("id", body.userId);
+    // alpha-drift-r44-01 (2026-08-19, self-audit): this UPDATE used to be a
+    // plain check-then-act, not a real compare-and-swap -- the `fresh`
+    // read above only PROVED nothing had changed at read time, but the
+    // window between that read and this write landing at Supabase was
+    // still open. A bounce/complaint webhook landing in THAT narrower
+    // window would still get silently clobbered back to null, reintroducing
+    // (in a smaller window) the exact bug alpha-drift-r21-06/r32-02 already
+    // fixed twice for this same action. Folded the `fresh` snapshot into
+    // the WHERE clause itself (the same established idiom grant_free/
+    // revoke_free already use above) so the write is now atomic with the
+    // check, and .select("id") detects a lost race as a real 0-row result
+    // instead of silently succeeding.
+    let suppressionQuery = sb.from("users").update({ bounced_at: null, complained_at: null }).eq("id", body.userId);
+    suppressionQuery = fresh.bounced_at === null ? suppressionQuery.is("bounced_at", null) : suppressionQuery.eq("bounced_at", fresh.bounced_at);
+    suppressionQuery = fresh.complained_at === null ? suppressionQuery.is("complained_at", null) : suppressionQuery.eq("complained_at", fresh.complained_at);
+    const { error, data: suppressionUpdated } = await suppressionQuery.select("id");
     if (error) {
       console.error("[admin/users] clear_suppression failed:", error.message);
       return NextResponse.json({ error: "Resend suppression cleared, but the DB update failed. Try again." }, { status: 500 });
+    }
+    if (!suppressionUpdated || suppressionUpdated.length === 0) {
+      console.error(`[admin/users] clear_suppression: lost race, a bounce/complaint landed between the fresh-read and the write for ${body.userId}`);
+      return NextResponse.json(
+        { error: "A new bounce/complaint just landed for this reader. Left the DB flags untouched. Try again." },
+        { status: 502 }
+      );
     }
     return NextResponse.json({ ok: true });
   }
