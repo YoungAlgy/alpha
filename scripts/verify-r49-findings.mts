@@ -118,7 +118,15 @@ console.log("(8) lib/analytics.ts: PostHog activation instructions no longer say
 {
   const src = readFileSync(new URL("../lib/analytics.ts", import.meta.url), "utf8");
   check("(8a) no longer says 'in Vercel env'", !/in Vercel env\./.test(src));
-  check("(8b) now points at wrangler secret put + docs/SECRETS.md", /npx wrangler secret put/.test(src) && /docs\/SECRETS\.md/.test(src));
+  // alpha-drift-r50-supersedes-r49 (2026-08-20): round 49's own fix here was
+  // itself wrong -- `wrangler secret put` only creates a Worker RUNTIME
+  // binding, but this is a "use client" module reading a NEXT_PUBLIC_* var
+  // that Next.js inlines at BUILD TIME, so a Wrangler secret set afterward
+  // has zero effect on the already-built bundle. Round 50's self-audit-r49
+  // caught this and repointed the instruction at the WSL deploy checkout's
+  // own build-time env file instead. The point this assertion actually
+  // proves (still points at docs/SECRETS.md, no longer says "Vercel") holds.
+  check("(8b) now points at the WSL deploy checkout's build-time env file + docs/SECRETS.md", /WSL deploy checkout's own build-time env file/.test(src) && /docs\/SECRETS\.md/.test(src));
 }
 
 console.log("(9) sanity: the refuted docs/SECRETS.md finding was deliberately left unchanged");
