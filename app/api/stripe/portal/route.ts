@@ -50,7 +50,19 @@ export async function POST(req: Request) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (error || !row?.stripe_customer_id) {
+  // alpha-drift-r59-08 (2026-08-20, silent-catch-audit-r5): `error` used to
+  // be OR'd directly into the same "no customer on file" branch below, with
+  // no logging -- a genuine Supabase failure (connection blip, RLS hiccup)
+  // on this SELECT produced the identical, misleading "Subscribe first" 400
+  // as a real paying user hitting the app's only self-serve cancel/update-
+  // card path. Split to match the pattern already established at every
+  // sibling site (update-quantity/route.ts, admin/users/route.ts): log and
+  // return a distinct, honest, retryable 500.
+  if (error) {
+    console.error("[stripe/portal] customer lookup failed:", error.message);
+    return NextResponse.json({ error: "Couldn't load your subscription. Try again." }, { status: 500 });
+  }
+  if (!row?.stripe_customer_id) {
     return NextResponse.json(
       { error: "No Stripe customer on file. Subscribe first." },
       { status: 400 }
