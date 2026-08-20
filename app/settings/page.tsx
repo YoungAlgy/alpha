@@ -13,6 +13,7 @@ import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS } from "@/lib/types";
+import { poolCap } from "@/lib/engine/select-sections";
 
 export default function SettingsPage() {
   const { state, reset } = useOnboarding();
@@ -257,6 +258,19 @@ export default function SettingsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setTopicQuota(data.topicQuota);
+      // alpha-drift-r59-02 (2026-08-20, form-validation-consistency-audit-
+      // r4): a downgrade truncates users.topics server-side to
+      // poolCap(newQuota) in the same write (alpha-drift-r58-06), but this
+      // success branch never kept the client's own `topics` state in sync
+      // with it -- so the "Your topics" section below kept rendering
+      // backup rows the server had just deleted from the DB (and that will
+      // never appear in a generated letter) until the reader reloaded or
+      // navigated away and back. Mirrors the server's own poolCap(newQuota)
+      // truncation locally, avoiding an extra round trip; a no-op on "up"
+      // since poolCap only ever shrinks on a downgrade.
+      if (direction === "down") {
+        setTopics((prev) => (prev ? prev.slice(0, poolCap(data.topicQuota)) : prev));
+      }
       // Trust the server's real Stripe-derived monthlyCents rather than
       // re-deriving dollars from topicQuota — see monthlyCents state comment.
       setMonthlyCents(data.monthlyCents);
@@ -432,9 +446,13 @@ export default function SettingsPage() {
                     </ul>
                   </>
                 )}
+                {/* alpha-drift-r59-03 (2026-08-20, accessibility-resweep-
+                    newer-code-round-7): under the WCAG 2.5.8 24px
+                    touch-target minimum, unlike 6 sibling links in this
+                    same file that already carry this padding. */}
                 <Link
                   href="/topics"
-                  className="alpha-ui text-sm underline underline-offset-4"
+                  className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{ color: "var(--accent-ink)" }}
                 >
                   Change topics →
@@ -454,9 +472,11 @@ export default function SettingsPage() {
                 padding (see ThemeSwitcher's own comment on why the default
                 right-anchored dropdown ran off-screen here on mobile). */}
             <ThemeSwitcher align="left" />
+            {/* alpha-drift-r59-03 (2026-08-20, accessibility-resweep-newer-
+                code-round-7): same touch-target fix as "Change topics" above. */}
             <Link
               href="/theme"
-              className="alpha-ui text-sm underline underline-offset-4"
+              className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
               style={{ color: "var(--accent-ink)" }}
             >
               See all looks →
@@ -596,9 +616,12 @@ export default function SettingsPage() {
           )}
           {justAdded && (
             <p className="mb-3">
+              {/* alpha-drift-r59-03 (2026-08-20, accessibility-resweep-
+                  newer-code-round-7): same touch-target fix as the other
+                  bare CTA links in this file. */}
               <Link
                 href="/topics"
-                className="alpha-ui text-sm underline underline-offset-4 font-semibold"
+                className="alpha-ui text-sm underline underline-offset-4 font-semibold py-2 -my-2"
                 style={{ color: "var(--accent-ink)" }}
               >
                 Pick your new topics →
@@ -641,9 +664,12 @@ export default function SettingsPage() {
             <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
               See everyone who's signed up. Grant free subscriptions or remove users.
             </p>
+            {/* alpha-drift-r59-03 (2026-08-20, accessibility-resweep-newer-
+                code-round-7): same touch-target fix as the other bare CTA
+                links in this file. */}
             <Link
               href="/settings/accounts"
-              className="alpha-ui text-sm underline underline-offset-4"
+              className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
               style={{ color: "var(--accent-ink)" }}
             >
               Manage all users →
@@ -655,9 +681,12 @@ export default function SettingsPage() {
           <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
             Recent improvements, additions, and fixes.
           </p>
+          {/* alpha-drift-r59-03 (2026-08-20, accessibility-resweep-newer-
+              code-round-7): same touch-target fix as the other bare CTA
+              links in this file. */}
           <Link
             href="/settings/changelog"
-            className="alpha-ui text-sm underline underline-offset-4"
+            className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--accent-ink)" }}
           >
             Changelog →

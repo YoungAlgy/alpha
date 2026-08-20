@@ -92,7 +92,10 @@ export async function POST(req: Request) {
   const svc = await supabaseServiceClient();
   const { data: row, error: rowErr } = await svc
     .from("users")
-    .select("stripe_customer_id, topic_quota, subscribed_at, cancelled_at, topics")
+    // alpha-drift-r59-01: `topics` deliberately dropped from this early
+    // SELECT -- it's re-read fresh right before the write further down,
+    // see that fetch's own comment for why reusing this snapshot was a bug.
+    .select("stripe_customer_id, topic_quota, subscribed_at, cancelled_at")
     .eq("id", user.id)
     .maybeSingle();
   if (rowErr) {
@@ -256,8 +259,26 @@ export async function POST(req: Request) {
   // needed). Truncated here to mirror weekly-send/route.ts's own existing
   // read-time slice(0, poolCap(letterSize)) -- applying the same policy at
   // write-time instead of leaving the DB row silently inconsistent with it.
-  const cappedTopics = Array.isArray(row.topics)
-    ? (row.topics as TopicId[]).slice(0, poolCap(newQuota))
+  //
+  // alpha-drift-r59-01 (2026-08-20, self-audit-r58): this used to reuse
+  // `row.topics`, fetched at the TOP of the handler before 3 sequential
+  // awaited Stripe calls (list/update/retrieve -- easily hundreds of ms to
+  // several seconds). Since cappedTopics is truthy on virtually every call
+  // (a fresh signup's topics defaults to '{}', never null), this write
+  // clobbered `topics` back to that stale pre-request snapshot on EVERY
+  // plan change, up or down -- silently reverting a concurrent, independent
+  // /api/account/topics save (a plain unconditional update with no version
+  // check) made in the window while this request's Stripe round-trips were
+  // still in flight. Re-read fresh, immediately before this write, mirroring
+  // the webhook's own subscription-mirror branch, which already read this
+  // correctly (no intervening network calls there).
+  const { data: freshRow } = await svc
+    .from("users")
+    .select("topics")
+    .eq("id", user.id)
+    .maybeSingle();
+  const cappedTopics = Array.isArray(freshRow?.topics)
+    ? (freshRow.topics as TopicId[]).slice(0, poolCap(newQuota))
     : undefined;
   const { error: quotaErr } = await svc
     .from("users")
