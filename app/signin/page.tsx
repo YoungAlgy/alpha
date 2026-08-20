@@ -327,8 +327,19 @@ export default function SigninPage() {
                   {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
                 </button>
                 <span>·</span>
+                {/* alpha-drift-r46-05 (2026-08-19): had no busy guard, unlike
+                    the Resend button right next to it -- a reader could click
+                    Resend or Sign in (busy=true, awaiting signInWithOtp/
+                    verifyOtp) then immediately click this, switching back to
+                    the email step while the earlier request was still in
+                    flight. A late resolution then snapped them back to the
+                    code step (a successful resend) or redirected them to
+                    /inbox (a successful verify) with no visible cause. Same
+                    class already fixed for components/EmailChanger.tsx's
+                    Cancel button, round 45. */}
                 <button
                   type="button"
+                  disabled={busy}
                   onClick={() => {
                     setStep("email");
                     setCode("");
@@ -336,6 +347,7 @@ export default function SigninPage() {
                     setResent(false);
                   }}
                   className="underline underline-offset-4"
+                  style={{ opacity: busy ? 0.5 : 1, cursor: busy ? "default" : "pointer" }}
                 >
                   Use different email
                 </button>
