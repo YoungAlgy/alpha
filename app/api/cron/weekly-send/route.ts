@@ -91,9 +91,12 @@ const FAST_FALLBACK_TOPIC_COUNT = 3;
 // Bounds the persist-and-send tail (issue upsert, delivered_at claim, the
 // Resend send, and its rollback-on-failure) that runs after generateIssue
 // succeeds. Before this, that tail had NO timeout at all — a genuinely hung
-// Supabase or Resend call would park the whole per-subscriber loop until
-// Vercel's hard maxDuration kill, silently dropping every later subscriber in
-// the same run with no ops alert (that code never runs after a kill). Safe to
+// Supabase or Resend call would park the whole per-subscriber loop until the
+// real host ceiling kills it (the GitHub Actions workflow's own `curl
+// --max-time` (1500s) / job `timeout-minutes` (30) — see the `maxDuration`
+// comment above for why that value no longer means a Vercel platform
+// directive), silently dropping every later subscriber in the same run with
+// no ops alert (that code never runs after a kill). Safe to
 // bound: withDeadline only stops WAITING, it doesn't cancel the underlying
 // call, so the detached continuation (including the send-failure rollback)
 // still runs to completion in the background regardless of whether this
@@ -109,14 +112,17 @@ const PERSIST_AND_SEND_DEADLINE_MS = 45_000;
 
 // Time-budget safety valve. The loop below is sequential (topic-blurb caching
 // is what bounds cost, not parallelism), so at enough subscribers a run of
-// near-deadline generations can approach the 800s maxDuration cap. Reserve
-// enough of it to (a) let the LAST subscriber we DO start run its full
-// PER_USER_DEADLINE_MS before we'd hit the wall, and (b) leave real margin
-// after that for the summary + ops-alert email. Past this point, remaining
-// subscribers are DEFERRED (recorded, not attempted) rather than risking a
-// Vercel hard-kill mid-loop — which would silently truncate the send with no
-// ops alert (that code never runs after a kill) and no auto-resume (tomorrow's
-// cron computes a NEW weekOf, so it never revisits today's unprocessed tail).
+// near-deadline generations can approach the real host ceiling (the GitHub
+// Actions workflow's 1500s curl budget / 30min job timeout — see the
+// `maxDuration` comment above; this constant's own name is legacy from when
+// that value was a Vercel platform directive). Reserve enough of it to (a)
+// let the LAST subscriber we DO start run its full PER_USER_DEADLINE_MS
+// before we'd hit the wall, and (b) leave real margin after that for the
+// summary + ops-alert email. Past this point, remaining subscribers are
+// DEFERRED (recorded, not attempted) rather than risking a hard kill
+// mid-loop — which would silently truncate the send with no ops alert (that
+// code never runs after a kill) and no auto-resume (tomorrow's cron computes
+// a NEW weekOf, so it never revisits today's unprocessed tail).
 // This is an interim safety net, not the full fix (chunked sends via a cursor
 // param + multiple cron slots) — sufficient at the current subscriber count,
 // revisit if the list grows enough to actually hit it in practice.
@@ -403,7 +409,9 @@ export async function GET(req: Request) {
   const skippedBlankSubscribers: string[] = [];
   // Subscribers who WOULD have gotten a real send but the time budget ran out
   // first (see CRON_TIME_BUDGET_MS) — surfaced the same way, so a run that
-  // starts approaching the cap is loud instead of a silent Vercel kill.
+  // starts approaching the cap is loud instead of a silent hard kill (the
+  // GitHub Actions workflow's own curl --max-time / job timeout-minutes --
+  // see the `maxDuration` comment near the top of this file).
   // Also holds anyone deferred by PAID_CALL_CEILING (paidCallCeilingHit
   // below distinguishes which one, for the ops alert) — same recovery path
   // either way (?weekOf= backfill), so one shared list is enough.
@@ -455,7 +463,7 @@ export async function GET(req: Request) {
 
   // Allow ?force=1 to override the delivered_at idempotency gate (only the
   // admin will ever hit this with the CRON_SECRET in hand; useful for explicit
-  // resend-this-week ops, never set by the Vercel cron itself).
+  // resend-this-week ops, never set by the scheduled GitHub Actions run itself).
   const force = url.searchParams.get("force") === "1";
 
   console.log(
@@ -655,7 +663,7 @@ export async function GET(req: Request) {
   // (below) is exhausted by overhead, independent of and well before any
   // generation cost becomes the bottleneck. CRON_TIME_BUDGET_MS is the
   // interim safety net — it stops starting new subscribers before that
-  // becomes a silent Vercel kill, deferring the rest loudly instead (though
+  // becomes a silent hard kill, deferring the rest loudly instead (though
   // a deferred subscriber is effectively skipped, not delayed: tomorrow's
   // cron computes a new weekOf and never revisits today's unprocessed
   // tail). The real fix at that scale is still chunked sends (cursor param
@@ -692,8 +700,8 @@ export async function GET(req: Request) {
 
     // Idempotency gate: if this (user, week) already has a delivered_at
     // stamp, skip the send entirely. Prevents duplicate emails when the
-    // endpoint gets hit multiple times (admin re-trigger, Vercel cron retry,
-    // ?weekOf= backfill, etc.). Override with ?force=1.
+    // endpoint gets hit multiple times (admin re-trigger, a retried
+    // scheduled run, ?weekOf= backfill, etc.). Override with ?force=1.
     if (!force && alreadyDelivered.has(row.id)) {
       skippedAlreadyDelivered++;
       console.log(`[cron/weekly-send] skipped (already delivered this period) → ${row.id}`);
@@ -795,8 +803,8 @@ export async function GET(req: Request) {
 
       // ATOMIC delivered_at CLAIM — the race-safe idempotency guard. The
       // prefetch Set above is a cheap fast-path for the common SEQUENTIAL
-      // rerun; it does NOT stop two OVERLAPPING invocations (a Vercel retry
-      // racing the scheduled run, or a manual run racing the cron) from both
+      // rerun; it does NOT stop two OVERLAPPING invocations (a retried
+      // scheduled run racing the original, or a manual run racing the cron) from both
       // seeing the user as undelivered and both sending a duplicate. This
       // UPDATE ... WHERE delivered_at IS NULL is an atomic compare-and-swap:
       // Postgres row-locks the issue so exactly ONE concurrent invocation
@@ -1379,7 +1387,7 @@ export async function GET(req: Request) {
         ? `DeepSeek (the uncapped backstop tier) returned 429 on ${deepseekRateLimited} calls this run — that shouldn't normally happen on a funded account. Worth checking the DeepSeek dashboard for balance/concurrency issues.`
         : "",
       deferred.length
-        ? `${paidCallCeilingHit ? "Time budget and/or the paid-call cost ceiling" : "Time budget"} exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${capListLine(deferred)}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically).${paidCallCeilingHit ? "" : " This is a scale signal — the subscriber list is big enough that the daily run is pressing against Vercel's time cap."}`
+        ? `${paidCallCeilingHit ? "Time budget and/or the paid-call cost ceiling" : "Time budget"} exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${capListLine(deferred)}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically).${paidCallCeilingHit ? "" : " This is a scale signal — the subscriber list is big enough that the daily run is pressing against the workflow's time budget."}`
         : "",
       // PAID_CALL_CEILING tripped — a materially different signal than a
       // scale-driven time-budget defer above: this means Haiku+Sonnet+
