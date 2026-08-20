@@ -249,10 +249,14 @@ export async function GET(req: Request) {
 
   // Allow ?weekOf=YYYY-MM-DD override (useful for backfills + admin testing
   // when the schedule hasn't fired yet). Defaults to today (the send date).
-  // CRON: GitHub Actions' daily-send.yml drives every send, "0 14 * * *"
-  // (14:00 UTC primary) plus an offset "0 15 * * *" retry for a dropped or
-  // failed primary run. The handler derives the period from today's date, so
-  // one schedule covers every send day.
+  // CRON: GitHub Actions' daily-send.yml drives every send: "0 14 * * *"
+  // (14:00 UTC primary), "0 15 * * *" (first offset retry, added 2026-08-05),
+  // and "0 18 * * *" (second offset retry, added 2026-08-06 after a real
+  // GitHub Actions platform-wide outage took out both the 14:00 and 15:00
+  // runs the same day -- alpha-drift-r51-01, 2026-08-20: this comment used
+  // to only mention two of the three, README.md already had the correct
+  // count). The handler derives the period from today's date, so one
+  // schedule set covers every send day.
   const url = new URL(req.url);
   const weekOfOverride = url.searchParams.get("weekOf");
   // alpha-drift-r26-06 (2026-08-14): a shape-only regex check accepts an
@@ -1041,7 +1045,7 @@ export async function GET(req: Request) {
 
     // RETRY-SAFETY: if a PRIOR run already generated and persisted this
     // subscriber's issue but never successfully delivered it (a same-day
-    // retry after a transient send failure — see the offset retry trigger),
+    // retry after a transient send failure — see the offset retry triggers),
     // reuse that exact persisted content instead of regenerating. Found live
     // 2026-08-05: the per-user editor's note (assemble.ts's
     // generateEditorNote) is never cached, so a regenerated retry produces a
