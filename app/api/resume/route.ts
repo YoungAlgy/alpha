@@ -18,14 +18,23 @@ export const runtime = "nodejs";
 // is actively relied on elsewhere every day (lib/theme.ts's setTheme(),
 // lib/user-sync.ts's syncUserProfile(), both writing through the browser-
 // scoped client). The real reason this route needs the service role is the
-// separate protect_user_privileged_columns BEFORE UPDATE trigger
-// (20260524000000_security_user_column_lock.sql), which pins
-// unsubscribed_at (along with subscribed_at/cancelled_at/topic_quota/
-// stripe_customer_id/email/id/created_at) back to its old value for any
-// non-service_role caller -- not an absent policy. Flagging this explicitly
-// so a future "which users-table policies have real callers" pass doesn't
-// read this comment as evidence the self-update policy is unused and drop
-// it, repeating the 2026-08-06 topics_all_valid same-day-hotfix incident.
+// separate protect_user_privileged_columns BEFORE UPDATE trigger, which
+// pins unsubscribed_at back to its old value for any non-service_role
+// caller -- not an absent policy. Flagging this explicitly so a future
+// "which users-table policies have real callers" pass doesn't read this
+// comment as evidence the self-update policy is unused and drop it,
+// repeating the 2026-08-06 topics_all_valid same-day-hotfix incident.
+//
+// alpha-drift-r52-02 (2026-08-20, self-audit-r51): the trigger's locked-
+// column list above used to name only 8 columns, citing
+// 20260524000000_security_user_column_lock.sql's original function body --
+// that migration was superseded by 20260806030000_resend_webhook_
+// deliverability.sql's `create or replace function`, which added
+// bounced_at/complained_at to the same locked set (the identical gap
+// scripts/verify-rls-privileged-columns.mts's own r40-08 comment already
+// documented for that file). The CURRENT trigger locks all 10:
+// subscribed_at/cancelled_at/unsubscribed_at/topic_quota/bounced_at/
+// complained_at/stripe_customer_id/email/id/created_at.
 // Idempotent: clearing an already-null unsubscribed_at is a harmless no-op,
 // and clearing it for a non-subscribed user does nothing (the cron still
 // gates on active access).
