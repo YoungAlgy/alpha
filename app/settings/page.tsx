@@ -366,7 +366,19 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Your topics">
-          {(() => {
+          {/* alpha-drift-r44-02 (2026-08-19): matches Billing's own
+              quotaLoaded gate below -- `topics ?? state.topics ?? []`
+              used to render unconditionally, so a signed-in reader with no
+              local onboarding state on this device (a fresh device, or an
+              admin-granted account that never onboarded, per this file's
+              own r-comment on hasPaidSub above) briefly saw the section
+              copy over a genuinely empty list before the real pool popped
+              in once the fetch landed. */}
+          {!quotaLoaded ? (
+            <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+              Loading your topics…
+            </p>
+          ) : (() => {
             const all = topics ?? state.topics ?? [];
             const favorites = all.slice(0, topicQuota);
             const backups = all.slice(topicQuota);
@@ -433,7 +445,18 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Email">
-          <EmailChanger currentEmail={authEmail || state.email || null} />
+          {/* alpha-drift-r44-02: same gap as "Your topics" above --
+              EmailChanger renders `currentEmail || "—"` unconditionally, so
+              before authEmail resolves this showed a bare "—" placeholder
+              for the same class of reader (fresh device, no local
+              onboarding state) instead of a genuine loading indicator. */}
+          {!quotaLoaded ? (
+            <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+              Loading…
+            </p>
+          ) : (
+            <EmailChanger currentEmail={authEmail || state.email || null} />
+          )}
         </Section>
 
         <Section title="Billing">
