@@ -92,7 +92,25 @@ export function ThemeApplier() {
         // page.tsx's userEditedRef and app/theme/page.tsx's userPickedRef,
         // via a shared module flag since this and setTheme() are separate
         // component trees.
-        if (dbTheme && !themeEditedThisLoad()) set(dbTheme);
+        // alpha-drift-r61-04 (2026-08-20, duplicate-code-audit-r11): set()
+        // only updates the DOM attribute -- it never dispatched the
+        // alpha-theme-change event lib/theme.ts's setTheme() fires on a
+        // live pick, so components/ThemeSwitcher.tsx (which only re-reads
+        // the applied theme once on mount, then on that same event or a
+        // storage event) never learned about a theme this hydrate
+        // legitimately applied. On a fresh page load ThemeApplier's local-
+        // storage paint and this DB hydrate can both land before or after
+        // ThemeSwitcher's own mount-read resolves, so the switcher's button
+        // label and its dropdown's "currently selected" highlight could go
+        // stale -- showing the OLD theme name while <html data-theme> (and
+        // the rest of the page) had already moved to the DB's real value.
+        // Dispatching here is safe against re-triggering ThemeApplier's own
+        // onChange listener below: it just calls set() again with the same
+        // value, a no-op.
+        if (dbTheme && !themeEditedThisLoad()) {
+          set(dbTheme);
+          window.dispatchEvent(new CustomEvent("alpha-theme-change", { detail: { theme: dbTheme } }));
+        }
         // Self-heal the email mirror app-wide. After a confirmed email change the
         // auth email leads public.users.email (what the cron sends to); this is
         // the cheapest always-signed-in hook (the getUser + users read already
