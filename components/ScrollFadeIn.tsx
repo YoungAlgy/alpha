@@ -17,26 +17,40 @@ export function ScrollFadeIn({
 }: ScrollFadeInProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   // alpha-drift-r64-01 (2026-08-21, accessibility-resweep-newer-code-r12):
-  // this used to always start at false and animate in via the effect below
-  // -- with no prefers-reduced-motion check anywhere, wrapping every topic
-  // section of the daily digest (components/Digest.tsx), it was the app's
-  // only scroll-triggered motion, re-firing once per section as a reader
-  // scrolled the core letter-reading surface. Reading the media query at
-  // useState-init time (not inside the effect, which runs after first
-  // paint) means a reduced-motion reader's `shown` is already true on the
-  // very first render -- opacity/transform never change, so the attached
-  // CSS transition never actually plays (a JS gate added only inside the
-  // effect would still animate once, since the pre-effect paint already
-  // committed the opacity:0 starting state).
-  const prefersReducedMotion =
-    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const [shown, setShown] = useState(prefersReducedMotion);
+  // no prefers-reduced-motion check at all -- with the app's only
+  // scroll-triggered motion wrapping every topic section of the daily
+  // digest (components/Digest.tsx), it re-fired once per section as a
+  // reader scrolled the core letter-reading surface.
+  //
+  // alpha-drift-r65-01 (2026-08-21, self-audit-r64): round 64's own fix
+  // read the media query at useState-init time, which diverges between
+  // SSR (window is always undefined in Node, so the server ALWAYS emits
+  // shown=false) and client hydration -- on app/letter/page.tsx and
+  // app/sample/page.tsx, both genuine Server Components that render
+  // <Digest> synchronously with no client-side loading gate, a
+  // reduced-motion visitor's first client render disagreed with the
+  // server-emitted markup. React never patches a hydration mismatch in
+  // production, so the mismatched props silently won and the effect's
+  // early-return meant setShown was never called again -- every topic
+  // section of the actual letter (the "Read the full letter" link in
+  // every subscriber email) and the public /sample page stayed
+  // PERMANENTLY INVISIBLE for reduced-motion readers. A cosmetic fade
+  // became content-blanking for exactly the population the fix meant to
+  // protect. Fixed with a CSS-only override instead (see the
+  // .alpha-scroll-fade rule in globals.css) -- media queries evaluate
+  // identically for SSR-emitted markup and client paint, so there is no
+  // divergence regardless of which pages have a client-side loading gate.
+  const [shown, setShown] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (prefersReducedMotion) return;
     const el = ref.current;
     if (!el) return;
+
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setShown(true);
+      return;
+    }
 
     // If element is already above the fold, show without animation.
     const r = el.getBoundingClientRect();
@@ -63,7 +77,7 @@ export function ScrollFadeIn({
   return (
     <div
       ref={ref}
-      className={className}
+      className={`alpha-scroll-fade${className ? ` ${className}` : ""}`}
       style={{
         opacity: shown ? 1 : 0,
         transform: shown ? "translateY(0)" : "translateY(12px)",

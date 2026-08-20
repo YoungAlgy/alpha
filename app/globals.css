@@ -890,6 +890,19 @@ body {
   box-shadow: 4px 4px 0 var(--ink);
 }
 
+/* alpha-drift-r65-02 (2026-08-21, self-audit-r64): round 64's own
+   button/a/[role=button]:focus-visible fix (below) swapped the app's sole
+   focus ring from var(--accent) to var(--ink) -- a real WCAG fix
+   everywhere else, but arcade's own hard-edged ink box-shadow above sits
+   at the identical 3px offset, so on this one theme the ring's bottom/
+   right edge fused into the shadow instead of reading as a discrete ring.
+   Not --accent (arcade's #FF6B9D fails the same 3:1 floor round 64 just
+   fixed) -- just push the ring clear of both the resting 3px shadow and
+   the 4px hover shadow. */
+[data-theme="arcade"] .alpha-button:focus-visible {
+  outline-offset: 6px;
+}
+
 /* Topic-picker card tactile feedback */
 .topic-card {
   transition: transform 160ms ease, box-shadow 160ms ease, background-color 200ms ease, border-color 200ms ease;
@@ -972,6 +985,16 @@ html.alpha-intro-active::after {
 @media (prefers-reduced-motion: reduce) {
   html.alpha-intro-active::before,
   html.alpha-intro-active::after { display: none; }
+  /* alpha-drift-r65-01 (2026-08-21, self-audit-r64): components/
+     ScrollFadeIn.tsx's own reduced-motion check (added round 64, fixed
+     for an SSR/hydration mismatch this round) still leaves a brief window
+     where the mount effect flips shown from false to true through the
+     inline transition -- !important is needed since the transition is
+     set via inline style, which this stylesheet rule can't otherwise
+     beat. This makes that flip instant instead of animated, on top of
+     (not instead of) the JS gate that already skips the scroll-driven
+     re-trigger. */
+  .alpha-scroll-fade { transition: none !important; }
 }
 
 /* Source-link favicon */
