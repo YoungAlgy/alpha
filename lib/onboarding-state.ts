@@ -105,8 +105,13 @@ export function useOnboarding() {
     };
     write(next);
     // Fire-and-forget Supabase sync if user is authed. Errors are swallowed
-    // inside syncUserProfile — never blocks the UI.
-    syncUserProfile(next);
+    // inside syncUserProfile — never blocks the UI. `patch` (this call's
+    // own, unmerged intent) is passed alongside `next` (the merged result)
+    // so syncUserProfile can tell a field this call actually meant to touch
+    // apart from one that's merely present from an earlier, possibly-stale
+    // localStorage snapshot -- see alpha-drift-r60-10 on syncUserProfile
+    // itself for why that distinction matters for topics specifically.
+    syncUserProfile(next, patch);
     setState(next);
   }, []);
 

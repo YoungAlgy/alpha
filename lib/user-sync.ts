@@ -8,7 +8,26 @@ import type { OnboardingState } from "@/lib/onboarding-state";
 // Fire-and-forget sync of an OnboardingState to the authenticated user's row
 // in public.users. Runs only when Supabase is configured AND a session exists.
 // Errors are warn-logged but never thrown.
-export async function syncUserProfile(state: OnboardingState): Promise<void> {
+//
+// alpha-drift-r60-10 (2026-08-20, form-validation-consistency-audit-r5):
+// `patch` is the ORIGINAL, unmerged object this specific update() call was
+// given -- distinct from `state`, which is that patch already merged onto
+// the freshest localStorage snapshot (lib/onboarding-state.ts's update()).
+// Needed specifically to gate the topics write below: this function used to
+// write `state.topics` unconditionally whenever present, with zero poolCap
+// enforcement, unlike the other two write paths into this same column
+// (app/api/account/topics/route.ts, and app/api/stripe/update-quantity+
+// webhook, both fixed in rounds 58-59 for exactly this class of bug). Since
+// `state` can carry a STALE, larger localStorage-cached pool from before a
+// downgrade, ANY unrelated onboarding-state save (e.g. saving a profile
+// field in Settings) would silently re-write that stale pool straight
+// through the browser's own RLS-scoped client, clobbering a correctly-
+// server-truncated pool back above the reader's current plan cap. Every
+// legitimate topics-syncing caller already passes `{topics: picked}`
+// explicitly right after a server-validated save (app/topics/page.tsx), so
+// gating on "did THIS call's patch actually intend to touch topics" loses
+// no real functionality while closing the stale-pool-resurrection gap.
+export async function syncUserProfile(state: OnboardingState, patch: Partial<OnboardingState>): Promise<void> {
   if (!supabaseConfigured()) return;
   try {
     const sb = supabaseClient();
@@ -50,7 +69,7 @@ export async function syncUserProfile(state: OnboardingState): Promise<void> {
     if (birthday && parseBirthday(birthday)) updates.birthday = birthday;
     const gender = coerceGender(state.gender);
     if (gender) updates.gender = gender;
-    if (Array.isArray(state.topics) && state.topics.length > 0) {
+    if ("topics" in patch && Array.isArray(state.topics) && state.topics.length > 0) {
       // Filter through isValidTopicId: this write goes straight through the
       // browser's own RLS-scoped client (not the validated /api/account/topics
       // route), so a stale/corrupted localStorage state or a modified client
