@@ -124,6 +124,17 @@ export default function SettingsPage() {
   // await (Stripe cancel, support-ticket delete, then admin.deleteUser) with
   // zero loading feedback. Found in review 2026-08-06.
   const deleteInFlight = useRef(false);
+  // alpha-drift-r46-04 (2026-08-19): deleteInFlight (above) only ever
+  // blocked a second click of THIS button -- it did nothing to disable it
+  // visually or communicate that work was happening, unlike every other
+  // mutation control on this page (Save details, Send confirmation, Resume
+  // my letters) which all dim/disable and swap to an in-progress label.
+  // With nothing on screen indicating the multi-step delete (Stripe cancel,
+  // support-ticket delete, admin.deleteUser) was running, a reader could
+  // click elsewhere on the page (e.g. Back to inbox) while it was still in
+  // flight -- the eventual reset()/localStorage-clear/redirect to /welcome
+  // still fires afterward regardless of where they'd since navigated.
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!supabaseConfigured()) {
@@ -692,6 +703,7 @@ export default function SettingsPage() {
             <br />
             <button
               type="button"
+              disabled={deleting}
               onClick={async () => {
                 // Paying users: the delete endpoint cancels their Stripe
                 // subscription before removing the account (best-effort), so we
@@ -710,6 +722,7 @@ export default function SettingsPage() {
                 if (!confirm(confirmMsg)) return;
                 if (deleteInFlight.current) return;
                 deleteInFlight.current = true;
+                setDeleting(true);
                 const result = await deleteUserAccount();
                 if (!result.ok) {
                   alert(`Couldn't delete: ${result.error}\nLocal data will still clear.`);
@@ -720,9 +733,9 @@ export default function SettingsPage() {
                 window.location.href = "/welcome";
               }}
               className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
-              style={{ color: "var(--ink-soft)" }}
+              style={{ color: "var(--ink-soft)", opacity: deleting ? 0.5 : 1 }}
             >
-              Delete my account
+              {deleting ? "Deleting…" : "Delete my account"}
             </button>
           </div>
         </Section>
