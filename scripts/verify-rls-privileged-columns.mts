@@ -82,13 +82,29 @@ try {
   // --- (1) privileged columns must NOT change via the authenticated client ---
   console.log("(1) privileged-column writes via the anon-key + user session are silently reverted");
   const before = preRow!;
+  const forgedId = "00000000-0000-4000-8000-000000000000"; // arbitrary, won't collide with a real auth-generated uuid
+  // alpha-drift-r40-08 (2026-08-19, self-audit): this used to forge
+  // cancelled_at to null, which is a no-op test against a freshly-created
+  // disposable user whose cancelled_at is already null by default -- a
+  // broken protection on this column would have passed silently either
+  // way. Forged to a real non-null timestamp instead. Also added id,
+  // created_at, bounced_at, complained_at -- bounced_at/complained_at were
+  // added to the trigger's locked-column list in
+  // 20260806030000_resend_webhook_deliverability.sql (after this script was
+  // first written) but this script was never updated to match; id and
+  // created_at were locked from the trigger's original creation but were
+  // never covered here either.
   const forgedValues = {
+    id: forgedId,
     topic_quota: 25,
     subscribed_at: new Date().toISOString(),
-    cancelled_at: null,
+    cancelled_at: new Date().toISOString(),
     stripe_customer_id: "cus_forged_by_verify_script",
-    unsubscribed_at: null,
+    unsubscribed_at: new Date().toISOString(),
     email: "someone-else@example.com",
+    created_at: new Date("2020-01-01T00:00:00Z").toISOString(),
+    bounced_at: new Date().toISOString(),
+    complained_at: new Date().toISOString(),
   };
   const { error: forgeErr } = await asUser.from("users").update(forgedValues).eq("id", userId);
   // RLS + the trigger mean this UPDATE either matches the row and gets
@@ -99,14 +115,19 @@ try {
   void forgeErr;
 
   const { data: afterForge } = await admin.from("users").select("*").eq("id", userId).maybeSingle();
+  check("(1) id unchanged -- forging the primary key itself did not rename the row", afterForge?.id === before.id && afterForge?.id !== forgedId);
   check("(1) topic_quota unchanged (trigger held)", afterForge?.topic_quota === before.topic_quota);
   check(
     "(1) subscribed_at unchanged -- THE core paywall-escalation vector this trigger exists to close",
     afterForge?.subscribed_at === before.subscribed_at
   );
+  check("(1) cancelled_at unchanged (forged to a real non-null timestamp, not the no-op null the prior version of this script used)", afterForge?.cancelled_at === before.cancelled_at);
   check("(1) stripe_customer_id unchanged", afterForge?.stripe_customer_id === before.stripe_customer_id);
   check("(1) unsubscribed_at unchanged", afterForge?.unsubscribed_at === before.unsubscribed_at);
   check("(1) email unchanged (identity column)", afterForge?.email === before.email);
+  check("(1) created_at unchanged", afterForge?.created_at === before.created_at);
+  check("(1) bounced_at unchanged (locked in the 2026-08-06 migration, never covered here until now)", afterForge?.bounced_at === before.bounced_at);
+  check("(1) complained_at unchanged (locked in the 2026-08-06 migration, never covered here until now)", afterForge?.complained_at === before.complained_at);
 
   // --- (2) a genuine profile field must STILL be self-editable -------------
   // Proves the policy+trigger combo does exactly what it claims -- not
