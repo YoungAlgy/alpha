@@ -63,17 +63,29 @@ export default function TopicsPage() {
   // alpha-drift-r54-02 (2026-08-20, accessibility-resweep-newer-code-round-2):
   // the topic-card grid is fully interactive from first paint -- toggle()/
   // removeAt()/move()/addCustom() aren't gated behind topicsHydrated at all.
-  // The signed-in hydrate effect below does an unconditional setPicked()/
-  // setTarget() the moment its own network round trip resolves, with no
-  // check for whether the user already changed `picked` locally since
-  // mount. A signed-in subscriber tapping cards during that window (a real
-  // PostgREST request, not a cached read) had every tap silently discarded
-  // and replaced by the OLD saved list the instant the fetch resolved, with
-  // zero indication anything happened -- and a subsequent Save would
-  // re-persist the stale list, losing their real edits. Set true the first
-  // time the user changes the pool; the hydrate effect then skips its own
-  // writes once this is set, so a live edit always wins over a same-mount
-  // hydrate response that merely started before it.
+  // The signed-in hydrate effect below does an unconditional setPicked() the
+  // moment its own network round trip resolves, with no check for whether
+  // the user already changed `picked` locally since mount. A signed-in
+  // subscriber tapping cards during that window (a real PostgREST request,
+  // not a cached read) had every tap silently discarded and replaced by the
+  // OLD saved list the instant the fetch resolved, with zero indication
+  // anything happened -- and a subsequent Save would re-persist the stale
+  // list, losing their real edits. Set true the first time the user changes
+  // the pool; the hydrate effect then skips its own setPicked() once this
+  // is set, so a live edit always wins over a same-mount hydrate response
+  // that merely started before it.
+  //
+  // alpha-drift-r55-02 (2026-08-20, self-audit-r54): this ONLY guards
+  // `picked` -- `target`/quota is never user-edited state on this page (no
+  // handler on this page calls setTarget), so unlike app/theme/page.tsx's
+  // userPickedRef (which cleanly gates the one thing pickTheme() also
+  // writes), bundling setTarget under this same latch was a bug, not a
+  // defensible 1:1 mapping: a single early tap permanently stuck `target`
+  // at DEFAULT_TARGET for the rest of the mount, silently letting a
+  // higher-quota subscriber's Save persist an under-filled pool (the server
+  // only enforces an upper cap, never a minimum against the real quota --
+  // see lib/account-topics-guards.ts). setTarget now runs unconditionally
+  // on hydrate, below, outside this ref's guard.
   const userEditedRef = useRef(false);
 
   useEffect(() => {
@@ -104,14 +116,18 @@ export default function TopicsPage() {
         // save from another device.
         setSignedIn(true);
         setUserBirthday(row?.birthday ?? null);
-        // alpha-drift-r54-02: skip the pool/quota writes below once the user
-        // has already made a live edit this mount -- see userEditedRef's
-        // own comment. signedIn/birthday above are unaffected by picking,
-        // so they stay unconditional.
+        // alpha-drift-r55-02: unlike `picked`, `target`/quota is never
+        // user-edited state on this page -- no handler here ever calls
+        // setTarget -- so there's no live edit for this write to clobber.
+        // Runs unconditionally, unlike the setPicked() below.
+        if (row?.topic_quota && typeof row.topic_quota === "number") {
+          setTarget(clampQuota(row.topic_quota));
+        }
+        // alpha-drift-r54-02: skip the pool write below once the user has
+        // already made a live edit this mount -- see userEditedRef's own
+        // comment. signedIn/birthday/target above are unaffected by
+        // picking, so they stay unconditional.
         if (!userEditedRef.current) {
-          if (row?.topic_quota && typeof row.topic_quota === "number") {
-            setTarget(clampQuota(row.topic_quota));
-          }
           // Prefer the DB's saved order (the user's ranking) over whatever
           // onboarding localStorage happens to hold on this device.
           if (Array.isArray(row?.topics) && row.topics.length > 0) {
@@ -189,7 +205,6 @@ export default function TopicsPage() {
   }
 
   function addCustom() {
-    userEditedRef.current = true;
     const id = makeCustomTopic(customText);
     if (!id) {
       setCustomErr("Give it a couple of words. The more specific, the better.");
@@ -211,6 +226,12 @@ export default function TopicsPage() {
       );
       return;
     }
+    // alpha-drift-r55-01 (2026-08-20, self-audit-r54): set only once every
+    // validation return above has been cleared, so a no-op Add attempt
+    // (empty text, a duplicate, or already at the pool cap) doesn't
+    // spuriously arm the latch for a click that never actually changed
+    // `picked`.
+    userEditedRef.current = true;
     tap();
     setPicked((prev) => [...prev, id]);
     setCustomText("");
@@ -546,6 +567,13 @@ export default function TopicsPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    // alpha-drift-r55-01 (2026-08-20, self-audit-r54): this
+                    // is a 5th live-edit path into `picked` that predates
+                    // userEditedRef -- round 54 only wired the ref into
+                    // toggle()/addCustom()/removeAt()/move(), missing this
+                    // one, so a hydrate resolving right after this tap could
+                    // still silently discard the just-added topic.
+                    userEditedRef.current = true;
                     tap();
                     setPicked((p) => (p.includes(sug) ? p : [...p, sug]));
                     setCustomText("");
