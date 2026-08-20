@@ -21,15 +21,23 @@ const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 // "succeeds" all the way down.
 //
 // This counter is MONOTONIC (never reset) rather than reset-per-invocation on
-// purpose: two overlapping cron invocations of the same long-running process
-// (a GitHub Actions retry cron racing the 14:00 UTC primary run, a manual
-// workflow_dispatch re-trigger) would otherwise race — whichever resets last
-// zeroes out the other's in-flight count, corrupting
-// the ops-alert signal. A caller that wants "how many 429s during MY run"
-// should snapshot braveRateLimitedCount() at the start and end and diff the
-// two — a rare overlap then just double-counts shared load into both
-// invocations' deltas (a harmless, conservative-direction inaccuracy) rather
-// than silently losing one invocation's count entirely.
+// purpose: assemble.ts batches several topics concurrently via Promise.all
+// (see lib/engine/source-resolver.ts's own comment on this exact counter),
+// so a naive reset-then-read pattern from one topic's code could zero out a
+// DIFFERENT topic's still-in-flight count, corrupting the ops-alert signal.
+// A caller that wants "how many 429s during MY run" should snapshot
+// braveRateLimitedCount() at the start and end and diff the two.
+//
+// alpha-drift-r49-06 (2026-08-20, self-audit-r48): round 48 reworded this
+// comment's justification from a Vercel-warm-lambda cross-invocation race to
+// a GitHub-Actions-cross-invocation race -- but daily-send.yml's own
+// `concurrency: { group: alpha-daily-send, cancel-in-progress: false }`
+// already queues any retry/re-trigger behind a still-in-flight run of the
+// SAME workflow, so two GitHub Actions runs of this workflow can never
+// actually overlap the way the reworded comment described. Dropped the
+// cross-invocation framing entirely and led with the real, always-true
+// reason instead: concurrent per-topic calls WITHIN one invocation sharing
+// this module-level counter.
 let rateLimited429 = 0;
 export function braveRateLimitedCount(): number {
   return rateLimited429;

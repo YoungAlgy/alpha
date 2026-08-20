@@ -365,8 +365,11 @@ export async function GET(req: Request) {
   const startedAt = Date.now();
   // Snapshot the monotonic counter now; THIS run's 429 count is the delta at
   // the end minus this baseline. Diffing (not resetting) is what makes this
-  // safe under two overlapping invocations on the same warm lambda — see the
-  // comment on braveRateLimitedCount in lib/brave.ts. Same reasoning for
+  // safe under concurrent per-topic calls sharing the counter within one
+  // invocation — see the comment on braveRateLimitedCount in lib/brave.ts
+  // (alpha-drift-r49-06, 2026-08-20: this same "warm lambda" phrase was
+  // dropped from that comment for the identical reason — see its own note).
+  // Same reasoning for
   // You.com's counter (lib/you-search.ts) — without this baseline+delta, a
   // struggling 3rd search tier would have zero operator-visible signal, the
   // same gap Brave's own counter exists to close. Groq/DeepSeek (2026-07-29)
@@ -1081,17 +1084,28 @@ export async function GET(req: Request) {
         console.log(`[cron/weekly-send] reusing already-generated issue (retry, zero new AI cost) → ${row.id}`);
       }
 
+      // alpha-drift-r49-01 (2026-08-20, self-audit-r48 -- round 48's own
+      // rewrite of this comment claimed this route runs on Cloudflare
+      // Workers via ctx.waitUntil, and pointed at app/api/admin/users/
+      // route.ts's alpha-drift-r35-03 -- BOTH wrong. This file's own
+      // maxDuration comment a few dozen lines up already says the send
+      // "now runs via `next start` on GitHub Actions
+      // (.github/workflows/daily-send.yml)" -- a plain long-running Node.js
+      // process on a GitHub Actions runner, never touching the deployed
+      // Cloudflare Workers site (daily-send.yml's Build step is explicitly
+      // labeled "NOT the Cloudflare/OpenNext bundle, just a runnable
+      // server"; wrangler.jsonc deliberately has no triggers.crons). The
+      // real alpha-drift-r35-03 tag lives in app/api/account/email/
+      // reconcile/route.ts, not admin/users/route.ts.
+      //
       // Registered with Next's after() UNCONDITIONALLY (not just on timeout)
-      // so the Workers runtime's ctx.waitUntil (via OpenNext's
-      // cloudflare-node wrapper — this route runs on Cloudflare Workers, not
-      // Vercel; same mechanism already relied on for sendOpsAlert
-      // elsewhere, see app/api/admin/users/route.ts's alpha-drift-r35-03)
-      // keeps this invocation's execution context alive until the promise
+      // so this plain Node.js process is kept alive until the promise
       // settles even if it's still running once the whole cron GET returns
       // its response — without this, a subscriber whose persist+send
-      // outlives the response risks getting its execution environment torn
-      // down mid-write (e.g. between claiming delivered_at and actually
-      // sending), which could leave a claim stuck with no email ever sent.
+      // outlives the response risks the process moving on (or the workflow
+      // step ending) mid-write (e.g. between claiming delivered_at and
+      // actually sending), which could leave a claim stuck with no email
+      // ever sent.
       // after() on an already-settled promise is a harmless no-op, so this is
       // safe to call every time, not just in the timeout path. NOTE:
       // sent/failed/failures below can still end up double-counting a

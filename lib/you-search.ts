@@ -20,8 +20,8 @@ import type { BraveResult, BraveSearchOptions } from "@/lib/brave";
 const ENDPOINT = "https://ydc-index.io/v1/search";
 
 // Mirrors braveRateLimitedCount's monotonic-counter reasoning (lib/brave.ts,
-// see its comment) — never reset per-invocation so two overlapping cron runs
-// on a warm lambda can't zero out each other's in-flight count.
+// see its comment) — never reset per-invocation so one concurrently-running
+// topic's code can't zero out a different topic's in-flight count.
 let rateLimitedCount = 0;
 export function youRateLimitedCount(): number {
   return rateLimitedCount;

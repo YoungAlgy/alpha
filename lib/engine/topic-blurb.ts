@@ -15,8 +15,9 @@ function narrowKind(k: string | undefined): BlurbItemKind {
 }
 
 // Mirrors groqRateLimitedCount/deepseekRateLimitedCount's monotonic-counter
-// reasoning (never reset per-invocation, survives overlapping cron runs on a
-// warm lambda) — see lib/brave.ts's comment for the full rationale. Unlike
+// reasoning (never reset per-invocation, survives concurrently-running
+// topics sharing this module) — see lib/brave.ts's comment for the full
+// rationale. Unlike
 // those, this counts every REAL call regardless of outcome: Haiku/Sonnet are
 // two of the three tiers with no free-tier wall to organically stop a
 // runaway (see alpha-spend-cap-01 in alpha_full_app_review_2026-08-05.md —

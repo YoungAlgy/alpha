@@ -63,8 +63,9 @@ export function groqConfigured(): boolean {
 }
 
 // Mirrors braveRateLimitedCount/youRateLimitedCount's monotonic-counter
-// reasoning (never reset per-invocation, survives overlapping cron runs on a
-// warm lambda) — see lib/brave.ts's comment for the full rationale.
+// reasoning (never reset per-invocation, survives concurrently-running
+// topics sharing this module) — see lib/brave.ts's comment for the full
+// rationale.
 let rateLimitedCount = 0;
 export function groqRateLimitedCount(): number {
   return rateLimitedCount;
