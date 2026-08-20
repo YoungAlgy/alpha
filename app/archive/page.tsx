@@ -33,6 +33,15 @@ export default function ArchivePage() {
   const [state, setState] = useState<LoadState>("loading");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  // alpha-drift-r66-02 (2026-08-21, accessibility-resweep-newer-code-r14):
+  // loadMore() appended new letters with zero announcement anywhere in this
+  // file -- no live region existed at all. New items land ABOVE the button
+  // in DOM order, and the button's own disabled={loadingMore} blurs it on
+  // click (Chrome drops a disabled focused element to <body>), so its
+  // "Load more"/"Loading..." label swap isn't a reliable fallback either.
+  // Mirrors app/settings/accounts/page.tsx:444's established sr-only
+  // role=status pattern.
+  const [loadMoreMsg, setLoadMoreMsg] = useState<string | null>(null);
   // load() has two call sites (mount, the retry button); loadMore() is a
   // separate function with its own independent query and its own mountedRef
   // checks -- it never calls load(). A mounted ref covering the component's
@@ -215,11 +224,18 @@ export default function ArchivePage() {
       }
       if (error) return; // leave the existing list intact; the button just stays visible to retry
       const rows = (data || []) as Array<{ id: string; week_of: string; editor_intro: string }>;
+      const newTotal = items.length + rows.length;
       setItems((prev) => [
         ...prev,
         ...rows.map((row) => ({ id: row.id, weekOf: row.week_of, firstLine: row.editor_intro })),
       ]);
-      setHasMore(rows.length === PAGE_SIZE);
+      const stillMore = rows.length === PAGE_SIZE;
+      setHasMore(stillMore);
+      setLoadMoreMsg(
+        rows.length === 0
+          ? "No more letters to load."
+          : `Loaded ${rows.length} more letter${rows.length === 1 ? "" : "s"} -- ${newTotal} shown.${stillMore ? "" : " That's all of them."}`
+      );
     } finally {
       if (mountedRef.current) setLoadingMore(false);
     }
@@ -248,6 +264,14 @@ export default function ArchivePage() {
         <h1 ref={archiveHeadingRef} tabIndex={-1} className="alpha-display text-4xl md:text-5xl font-bold tracking-tight mb-10" style={{ outline: "none" }}>
           Archive
         </h1>
+
+        {/* alpha-drift-r66-02: mounted unconditionally, not inside any
+            state-gated block -- if nested inside {state === "ready" && ...}
+            the "no more letters" exhaustion message would set and unmount
+            in the same commit and never actually announce. */}
+        <p role="status" aria-live="polite" className="sr-only">
+          {loadMoreMsg}
+        </p>
 
         {state === "loading" && (
           <ul className="space-y-6 animate-pulse" aria-hidden>

@@ -170,6 +170,21 @@ export default function AdminAccountsPage() {
       if (isStale()) return;
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setUsers((prev) => (opts?.append && prev ? [...prev, ...data.users] : data.users));
+      // alpha-drift-r66-01 (2026-08-21, accessibility-resweep-newer-code-
+      // r14): Load More appended rows with zero announcement -- the page's
+      // own sr-only role=status region (below) exists but was only ever
+      // fed by act()'s result, never by this path. A screen-reader admin
+      // got no confirmation new rows loaded, and (per this page's
+      // disabled={loadingMore} on the just-clicked button, the same
+      // focus-loss class already fixed for act()'s row actions) couldn't
+      // rely on the button's own label change either. Includes the
+      // running total, not just this page's count -- the API caps every
+      // response at 200, so a bare per-page count would repeat verbatim
+      // across consecutive clicks and silently fail to re-announce.
+      if (opts?.append) {
+        const newTotal = (users?.length ?? 0) + data.users.length;
+        setActionMsg(`Loaded ${data.users.length} more account${data.users.length === 1 ? "" : "s"} -- ${newTotal} shown.`);
+      }
       if (data.stats) {
         setStats(data.stats);
         setStatsStale(false);
