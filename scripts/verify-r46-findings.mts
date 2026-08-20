@@ -72,7 +72,15 @@ console.log("(1) app/settings/accounts/page.tsx: act() now reloads regardless of
 console.log("(2) app/checkout/page.tsx + StepShell.tsx: subscribe() now has a cancellation guard, and Back disables during it");
 {
   const checkoutSrc = readFileSync(new URL("../app/checkout/page.tsx", import.meta.url), "utf8");
-  check("(2a) cancelledRef is declared and set on unmount", /const cancelledRef = useRef\(false\);\s*\n\s*useEffect\(\(\) => \(\) => \{ cancelledRef\.current = true; \}, \[\]\);/.test(checkoutSrc));
+  // alpha-drift-r47-supersedes-r46 (2026-08-20): this round's own cancelledRef
+  // fix was ITSELF the exact Strict-Mode bug this same round fixed for
+  // mountedRef elsewhere (cleanup-only, never reset on mount) -- round 47's
+  // self-audit and stale-closure-sweep dimensions both caught it independently
+  // and it's now fixed to reset in the effect body. Loosened to just confirm
+  // the ref still exists and still gets set on cleanup, since the exact
+  // cleanup-only shape this assertion originally proved is the very thing that
+  // got fixed.
+  check("(2a) cancelledRef is declared and gets set true on cleanup", /const cancelledRef = useRef\(false\);/.test(checkoutSrc) && /return \(\) => \{ cancelledRef\.current = true; \};/.test(checkoutSrc));
   check("(2b) subscribe() checks it right after the fetch resolves, before any navigation branch", /const data = await res\.json\(\);\s*\n\s*if \(cancelledRef\.current\) return;/.test(checkoutSrc));
   check("(2c) the catch block also checks it before touching state", /\} catch \(e\) \{\s*\n\s*if \(cancelledRef\.current\) return;\s*\n\s*setSubscribing\(false\);/.test(checkoutSrc));
   check("(2d) StepShell now receives backDisabled tied to subscribing", /<StepShell stepIndex=\{11\} prevPath="email" backDisabled=\{subscribing\}>/.test(checkoutSrc));
