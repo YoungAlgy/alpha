@@ -54,6 +54,29 @@ export function isValidCalendarDateString(raw: string): boolean {
   return !!m && isValidCalendarDate(+m[1], +m[2], +m[3]);
 }
 
+// alpha-drift-r53-07 (2026-08-20, timezone-date-edge-case-audit): both the
+// cutoff below and maxBirthdayForMinAge used to subtract MIN_AGE_YEARS from
+// "now" and feed the raw month/day straight into Date.UTC / string
+// interpolation. On Feb 29 in a year where (currentYear - MIN_AGE_YEARS)
+// isn't itself a leap year -- true on essentially every real leap day,
+// since 13 (an odd number) mod 4 = 1 -- that silently rolled over to March
+// 1 (Date.UTC's own well-known JS behavior for an out-of-range day),
+// loosening the under-13 cutoff by one real day, and separately made
+// maxBirthdayForMinAge() emit the literal nonexistent string "…-02-29" as
+// an HTML date input's max attribute (an invalid value browsers treat as
+// absent per spec, silently removing the client-side upper bound for that
+// one day). Shared helper: subtract N years from `now`, clamped to the
+// last real day of the target month if the naive result would roll over.
+function subtractYearsClamped(now: Date, years: number): Date {
+  const y = now.getUTCFullYear() - years;
+  const m = now.getUTCMonth();
+  const d = now.getUTCDate();
+  const candidate = new Date(Date.UTC(y, m, d));
+  // Date.UTC(y, m+1, 0) is JS's own idiom for "the last day of month m" --
+  // rolling the day to 0 walks back one day from the 1st of the NEXT month.
+  return candidate.getUTCMonth() !== m ? new Date(Date.UTC(y, m + 1, 0)) : candidate;
+}
+
 // A birthday is stored as an ISO date string "YYYY-MM-DD". Parse leniently and
 // return null for anything that isn't a real, sane date (year 1900..a real
 // minimum age from today).
@@ -71,7 +94,7 @@ export function parseBirthday(raw: string | null | undefined): { year: number; m
   // that September date arrives, even though the plain year difference would
   // already read as MIN_AGE_YEARS).
   const now = new Date();
-  const cutoff = new Date(Date.UTC(now.getUTCFullYear() - MIN_AGE_YEARS, now.getUTCMonth(), now.getUTCDate()));
+  const cutoff = subtractYearsClamped(now, MIN_AGE_YEARS);
   if (d.getTime() > cutoff.getTime()) return null;
   return { year, month, day };
 }
@@ -86,10 +109,10 @@ export function parseBirthday(raw: string | null | undefined): { year: number; m
 // `new Date()` could otherwise differ by up to a day between a UTC server
 // and a client in another timezone, right at the day boundary.
 export function maxBirthdayForMinAge(): string {
-  const now = new Date();
-  const y = now.getUTCFullYear() - MIN_AGE_YEARS;
-  const mo = String(now.getUTCMonth() + 1).padStart(2, "0");
-  const da = String(now.getUTCDate()).padStart(2, "0");
+  const clamped = subtractYearsClamped(new Date(), MIN_AGE_YEARS);
+  const y = clamped.getUTCFullYear();
+  const mo = String(clamped.getUTCMonth() + 1).padStart(2, "0");
+  const da = String(clamped.getUTCDate()).padStart(2, "0");
   return `${y}-${mo}-${da}`;
 }
 
