@@ -4,8 +4,9 @@ import { getStripeClient, describeStripeError, isTransientStripeError } from "@/
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { checkoutUserMutation, isFirstSubscription, deriveCancelledAt, isTerminalSubscriptionStatus } from "@/lib/webhook-user-mutation";
 import { sendWelcomeEmail, resendConfigured, sendOpsAlert, removeResendSuppression } from "@/lib/email";
-import { clampQuota, TOPICS_PER_BUNDLE } from "@/lib/types";
+import { clampQuota, TOPICS_PER_BUNDLE, type TopicId } from "@/lib/types";
 import { cancelCustomerSubscriptions } from "@/lib/stripe-cancel";
+import { poolCap } from "@/lib/engine/select-sections";
 
 export const runtime = "nodejs";
 
@@ -300,11 +301,34 @@ export async function POST(req: Request) {
         // Deriving from liveSub converges on Stripe's actual current state
         // regardless of delivery order, same as quantity two lines above.
         const cancelledAt = deriveCancelledAt(liveSub?.status ?? sub.status, liveSub?.cancel_at ?? sub.cancel_at);
+        // alpha-drift-r58-06 (2026-08-20, form-validation-consistency-audit-
+        // r3): mirrors app/api/stripe/update-quantity/route.ts's own fix --
+        // see that file's identical comment for the full reasoning. A
+        // downgrade shrinks poolCap (quota + 5 free backup slots), and this
+        // write used to touch only topic_quota, leaving a reader's stored
+        // topics pool stuck above the new cap and every future self-serve
+        // /topics save silently rejected. Best-effort: on a read failure,
+        // fall back to writing topic_quota alone (today's behavior) rather
+        // than failing the whole webhook over a truncation nicety.
+        let cappedTopics: TopicId[] | undefined;
+        try {
+          const { data: topicsRow } = await sb
+            .from("users")
+            .select("topics")
+            .eq("stripe_customer_id", customerId)
+            .maybeSingle();
+          if (Array.isArray(topicsRow?.topics)) {
+            cappedTopics = (topicsRow.topics as TopicId[]).slice(0, poolCap(topicQuota));
+          }
+        } catch (e) {
+          console.warn("[stripe-webhook] topics-cap read failed, writing topic_quota only:", e instanceof Error ? e.message : e);
+        }
         const { data: subRows, error: subErr } = await sb
           .from("users")
           .update({
             cancelled_at: cancelledAt,
             topic_quota: topicQuota,
+            ...(cappedTopics ? { topics: cappedTopics } : {}),
           })
           .eq("stripe_customer_id", customerId)
           .select("id");

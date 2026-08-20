@@ -3,9 +3,10 @@ import type Stripe from "stripe";
 import { getStripeClient, describeStripeError } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
-import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS } from "@/lib/types";
+import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS, type TopicId } from "@/lib/types";
 import { rateLimit } from "@/lib/rate-limit";
 import { nextQuantity, isLiveForManagement } from "@/lib/update-quantity-guards";
+import { poolCap } from "@/lib/engine/select-sections";
 
 export const runtime = "nodejs";
 
@@ -91,7 +92,7 @@ export async function POST(req: Request) {
   const svc = await supabaseServiceClient();
   const { data: row, error: rowErr } = await svc
     .from("users")
-    .select("stripe_customer_id, topic_quota, subscribed_at, cancelled_at")
+    .select("stripe_customer_id, topic_quota, subscribed_at, cancelled_at, topics")
     .eq("id", user.id)
     .maybeSingle();
   if (rowErr) {
@@ -241,9 +242,26 @@ export async function POST(req: Request) {
   // truth; the subscription.updated webhook re-mirrors and throws on failure),
   // so tell the client the truth and let the webhook reconcile.
   const newQuota = clampQuota(confirmedQty * TOPICS_PER_BUNDLE);
+  // alpha-drift-r58-06 (2026-08-20, form-validation-consistency-audit-r3):
+  // a downgrade shrinks poolCap (= quota + 5 free backup slots, lib/engine/
+  // select-sections.ts) but this write never touched `topics` -- so a
+  // reader who'd filled their backups (the UI's own "add a few more and
+  // they become backups, free" nudge) got their stored pool stuck above
+  // the new, smaller cap. lib/account-topics-guards.ts's
+  // validateTopicsAgainstCap hard-rejects an over-cap array with no
+  // truncation, so EVERY future self-serve save -- even a pure reorder or
+  // single removal -- was silently blocked until the reader manually
+  // trimmed enough items on their own, contradicting settings' own
+  // downgrade copy ("any extra picks become free backups," no action
+  // needed). Truncated here to mirror weekly-send/route.ts's own existing
+  // read-time slice(0, poolCap(letterSize)) -- applying the same policy at
+  // write-time instead of leaving the DB row silently inconsistent with it.
+  const cappedTopics = Array.isArray(row.topics)
+    ? (row.topics as TopicId[]).slice(0, poolCap(newQuota))
+    : undefined;
   const { error: quotaErr } = await svc
     .from("users")
-    .update({ topic_quota: newQuota })
+    .update({ topic_quota: newQuota, ...(cappedTopics ? { topics: cappedTopics } : {}) })
     .eq("id", user.id);
   if (quotaErr) {
     console.error("[update-quantity] quota write-through failed:", quotaErr.message);
