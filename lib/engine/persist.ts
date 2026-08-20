@@ -87,8 +87,14 @@ export async function persistIssueIfPossible(
   expectedUserId?: string
 ): Promise<PersistResult | null> {
   if (!supabaseConfigured()) return null;
-  // We can't write to public.users / public.issues without a user_id (RLS).
-  // Email is the bootstrap identifier.
+  // alpha-drift-r53-02 (2026-08-20, rls-migration-drift-audit-round-3): this
+  // used to say "(RLS)" -- wrong. `sb` below is always supabaseServiceClient(),
+  // which bypasses RLS entirely on every table; there's also no INSERT
+  // policy on issues today regardless. The real reason a user_id is
+  // required: public.issues.user_id is NOT NULL with an FK to
+  // public.users(id) (itself FKing to auth.users(id)) -- even a
+  // fully-authorized service-role client can't satisfy those schema
+  // constraints without a real user_id. Email is the bootstrap identifier.
   // Lowercase so the auth user + public.users row key on the same canonical
   // email the checkout/webhook paths use (emails are case-insensitive in
   // practice; Supabase auth lowercases anyway).
