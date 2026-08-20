@@ -374,10 +374,18 @@ export default function AdminAccountsPage() {
           <div
             className="alpha-card p-5 mb-10"
             style={{
-              borderColor: "var(--rule)",
+              // alpha-drift-r63-01 (2026-08-21, self-audit-r62): this used
+              // to be `opacity: statsStale ? 0.6 : 1` on the whole card --
+              // group opacity composites BOTH the background and the
+              // --ink-soft text as one layer against the page backdrop, so
+              // it silently dropped every label/sub-line/the disclosure
+              // span itself below the 4.5:1 WCAG AA floor in all 26 themes
+              // -- the exact class the same round's 82f2a00 commit was
+              // busy purging everywhere else. Border-color-only cue instead
+              // -- text stays at full, already-tuned contrast.
+              borderColor: statsStale ? "var(--ink-soft)" : "var(--rule)",
               borderRadius: "var(--radius-card)",
               background: "var(--paper-deep)",
-              opacity: statsStale ? 0.6 : 1,
             }}
           >
             <div className="alpha-mono mb-4" style={{ color: "var(--ink)" }}>

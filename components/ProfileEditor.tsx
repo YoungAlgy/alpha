@@ -307,8 +307,15 @@ export function ProfileEditor() {
               // 5) already asserts zero role="status"/role="alert" elements
               // use --accent-ink app-wide, and was failing on exactly this
               // offender until this fix.
+              // alpha-drift-r63-02 (2026-08-21, accessibility-resweep-
+              // newer-code-r11): the default (non-warning) branch carried
+              // opacity: 0.8 on --ink-soft -- the same class round 62 fixed
+              // at 2 other spots in this same file, missed here since
+              // round 62's regex only matched a bare `color, opacity`
+              // object, not this ternary form. --ink-soft alone already
+              // clears WCAG AA 4.5:1 in every theme, so dropping the
+              // opacity is the whole fix.
               color: (form.birthday.length > 0 && !birthdayValid) ? "var(--ink)" : hasZodiac && !form.birthday ? "var(--ink)" : "var(--ink-soft)",
-              opacity: (form.birthday.length > 0 && !birthdayValid) || (hasZodiac && !form.birthday) ? 1 : 0.8,
             }}
           >
             {(() => {

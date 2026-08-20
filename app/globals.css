@@ -1003,6 +1003,12 @@ a:focus-visible,
 }
 
 /* Small keyboard-hint chip next to text inputs */
+/* alpha-drift-r63-02 (2026-08-21, accessibility-resweep-newer-code-r11):
+   opacity: 0.7 stacked on the already-tuned --ink-soft dropped it below
+   WCAG AA's 4.5:1 floor in 21 of 25 themes -- the same class round 62
+   fixed at 5 inline-style sites, missed here since it lives in a shared
+   CSS class rather than an inline style. --ink-soft alone already clears
+   4.5:1 everywhere, so removing the opacity is the whole fix. */
 .alpha-kbd-hint {
   display: inline-flex;
   align-items: center;
@@ -1012,7 +1018,6 @@ a:focus-visible,
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  opacity: 0.7;
 }
 .alpha-kbd {
   display: inline-block;
