@@ -32,6 +32,12 @@ export function AudioToggle({ compact = false }: { compact?: boolean }) {
       type="button"
       onClick={toggle}
       aria-label={on ? "Mute audio" : "Unmute audio"}
+      // alpha-drift-r39-08 (2026-08-19): every other toggle in this app
+      // exposes its CURRENT state via ARIA (ThemeSwitcher's aria-expanded,
+      // gender/theme pickers' aria-pressed) rather than only the next
+      // action -- this was the one exception. Pressed = muted (the state
+      // this button's own action toggles into "on").
+      aria-pressed={!on}
       className="alpha-ui text-sm font-medium rounded-full border p-3"
       style={{
         borderColor: "var(--rule)",

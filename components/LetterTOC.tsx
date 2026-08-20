@@ -78,6 +78,12 @@ export function LetterTOC({ issue }: LetterTOCProps) {
               <button
                 type="button"
                 onClick={() => jump(s.topicId, i)}
+                // alpha-drift-r39-09 (2026-08-19): isActive was already
+                // computed and drove the visual color/weight, but was never
+                // surfaced to assistive tech -- a screen-reader user tabbing
+                // through the TOC had no way to tell which section, if any,
+                // matched their current reading position.
+                aria-current={isActive ? "true" : undefined}
                 className="alpha-ui text-left flex items-center gap-2 text-sm hover:opacity-70"
                 style={{
                   color: isActive ? "var(--ink)" : "var(--ink-soft)",

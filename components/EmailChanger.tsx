@@ -168,6 +168,14 @@ export function EmailChanger({ currentEmail }: { currentEmail: string | null }) 
             type="email"
             inputMode="email"
             autoComplete="email"
+            // alpha-drift-r39-07 (2026-08-19): this was the sole input in
+            // the app relying only on a placeholder for its accessible name
+            // -- placeholder text disappears the moment a reader types and
+            // reads as example text, not an instruction, to a screen
+            // reader. Every other input in the app pairs a real label or
+            // aria-label (see app/settings/accounts/page.tsx's own comment
+            // on exactly why placeholder-only labeling is insufficient).
+            aria-label="New email address"
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
