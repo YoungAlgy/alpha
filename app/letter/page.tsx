@@ -61,10 +61,24 @@ export default async function LetterPage({
     if (weekOf) {
       issueQuery = issueQuery.eq("week_of", weekOf);
     }
-    const [{ data: userRow, error: userError }, { data: issueRow }] = await Promise.all([
+    // alpha-drift-r65-04 (2026-08-21, duplicate-code-audit-r15): the
+    // issues-query error used to be discarded entirely -- unlike the
+    // sibling pages this Promise.all pattern was copied to (inbox,
+    // archive, inbox/[issueId], all of which check it), this route never
+    // got the round-43 genuine-failure-vs-empty split. Supabase-js
+    // resolves rather than throws on a query error, so the outer catch
+    // below can't see it either -- a real DB/schema failure fell through
+    // silently identical to "this token's issue genuinely doesn't exist,"
+    // with zero trace, on the app's highest-traffic email CTA. Logged
+    // only: the existing "Couldn't load your letter." fallback is already
+    // appropriately non-committal for both cases. userError was already
+    // destructured but never logged either -- same gap, same fix.
+    const [{ data: userRow, error: userError }, { data: issueRow, error: issueError }] = await Promise.all([
       sb.from("users").select("first_name, city, theme, cancelled_at").eq("id", userId).maybeSingle(),
       issueQuery.order("week_of", { ascending: false }).limit(1).maybeSingle(),
     ]);
+    if (userError) console.error("[letter] users query error:", userError.message);
+    if (issueError) console.error("[letter] issues query error:", issueError.message);
     // alpha-drift-r15-03: this route uses the service-role client (a signed
     // token, not a session), which bypasses the issues table's RLS policy
     // entirely -- so the cancelled_at check that policy now enforces for
