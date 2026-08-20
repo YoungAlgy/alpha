@@ -87,6 +87,24 @@ export default function TopicsPage() {
   // see lib/account-topics-guards.ts). setTarget now runs unconditionally
   // on hydrate, below, outside this ref's guard.
   const userEditedRef = useRef(false);
+  // alpha-drift-r61-02 (2026-08-20, accessibility-resweep-newer-code-round-
+  // 9): removeAt() unmounts the just-clicked "remove" button (a custom-
+  // topic chip, or a ranked-pick row) with no focus restoration -- the
+  // browser drops focus to <body>, forcing a full re-Tab from the top of
+  // the page. Mirrors the accountsHeadingRef/deleteCount convention already
+  // used in app/settings/accounts/page.tsx for the identical "a focused
+  // list-item control just unmounted" problem: a monotonic counter (not a
+  // boolean, so two removals in a row both re-trigger the effect even
+  // though a boolean "true" wouldn't visibly change) plus a useEffect keyed
+  // on it. Targets this page's own top <h1> (always rendered, unlike
+  // "Your lineup" below, which only exists when signedIn && picked.length >
+  // 0) since removeAt() fires from BOTH the always-available custom-topic
+  // chip (any onboarding user) and the signed-in-only ranked lineup.
+  const [removedCount, setRemovedCount] = useState(0);
+  const topicsHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (removedCount > 0) topicsHeadingRef.current?.focus();
+  }, [removedCount]);
 
   useEffect(() => {
     if (loaded && state.topics) setPicked(state.topics);
@@ -245,6 +263,8 @@ export default function TopicsPage() {
     unselect();
     setAnnouncement(`${topicLabel(id)} removed from your lineup.`);
     setPicked((prev) => prev.filter((t) => t !== id));
+    // alpha-drift-r61-02: see removedCount/topicsHeadingRef's own comment.
+    setRemovedCount((c) => c + 1);
   }
 
   // Reorder the pool — order IS the ranking (index 0 = top). Moving an item
@@ -357,7 +377,12 @@ export default function TopicsPage() {
     <StepShell stepIndex={7} prevPath={signedIn ? "settings" : "focus"} backDisabled={saving}>
       <div className="space-y-8">
         <div>
-          <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
+          <h1
+            ref={topicsHeadingRef}
+            tabIndex={-1}
+            className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3"
+            style={{ outline: "none" }}
+          >
             {!signedIn && quota === DEFAULT_TARGET
               ? "Pick five things you want to stay sharp on."
               : signedIn

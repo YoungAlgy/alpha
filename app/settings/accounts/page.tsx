@@ -63,15 +63,25 @@ export default function AdminAccountsPage() {
   // else claiming it, the browser drops focus to <body>, silently losing a
   // keyboard admin's position in the list. Mirrors app/settings/page.tsx's
   // own confirmHeadingRef/billingHeadingRef convention: a monotonic counter
-  // (not a boolean, so two deletes in a row both trigger the effect even
+  // (not a boolean, so two actions in a row both trigger the effect even
   // though the "true" value wouldn't visibly change) plus a useEffect keyed
   // on it, so focus moves only once React has actually committed the
   // row's removal, not synchronously inside act() before the DOM updates.
-  const [deleteCount, setDeleteCount] = useState(0);
+  //
+  // alpha-drift-r61-03 (2026-08-20, accessibility-resweep-newer-code-round-
+  // 9): originally only incremented for action === "delete" -- but
+  // grant_free/revoke_free/clear_suppression ALSO unmount their own just-
+  // clicked button via this same finally-block reload (isGranted/
+  // isSuppressed flipping swaps one conditionally-rendered button for a
+  // different one, or for nothing, not an in-place update), dropping focus
+  // to <body> identically. Renamed delete->action and the gate on
+  // act()'s success path removed so all 4 actions restore focus, not just
+  // delete.
+  const [actionCount, setActionCount] = useState(0);
   const accountsHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (deleteCount > 0) accountsHeadingRef.current?.focus();
-  }, [deleteCount]);
+    if (actionCount > 0) accountsHeadingRef.current?.focus();
+  }, [actionCount]);
   // alpha-drift-r32-04 (2026-08-14): act() only ever alert()'d on FAILURE --
   // a successful grant/revoke/clear/delete gave a sighted admin the visual
   // row-list reload as feedback, but a screen reader user got no
@@ -220,7 +230,9 @@ export default function AdminAccountsPage() {
           ? "Revoked free access from"
           : "Cleared delivery suppression for";
       setActionMsg(`${verb} ${email}.`);
-      if (action === "delete") setDeleteCount((c) => c + 1);
+      // alpha-drift-r61-03: no longer gated to action === "delete" -- see
+      // actionCount's own comment above.
+      setActionCount((c) => c + 1);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Action failed.");
     } finally {
