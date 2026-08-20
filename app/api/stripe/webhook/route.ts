@@ -310,14 +310,27 @@ export async function POST(req: Request) {
         // /topics save silently rejected. Best-effort: on a read failure,
         // fall back to writing topic_quota alone (today's behavior) rather
         // than failing the whole webhook over a truncation nicety.
+        //
+        // alpha-drift-r61-08 (2026-08-20, form-validation-consistency-audit-
+        // r6): the try/catch above claimed to cover "a read failure," but
+        // Supabase-js resolves rather than throws on a query error -- the
+        // catch only ever fired for a genuinely thrown exception, never for
+        // the actual documented failure mode. A real error resolved as
+        // `{data: null, error}` with no destructuring of `error`, so the
+        // promised warn silently never happened and the truncation was
+        // permanently skipped for that subscription change with zero trace
+        // (this handler still returns 200, so Stripe never redelivers).
+        // Checked explicitly now instead of relying on the try/catch alone.
         let cappedTopics: TopicId[] | undefined;
         try {
-          const { data: topicsRow } = await sb
+          const { data: topicsRow, error: topicsErr } = await sb
             .from("users")
             .select("topics")
             .eq("stripe_customer_id", customerId)
             .maybeSingle();
-          if (Array.isArray(topicsRow?.topics)) {
+          if (topicsErr) {
+            console.warn("[stripe-webhook] topics-cap read failed, writing topic_quota only:", topicsErr.message);
+          } else if (Array.isArray(topicsRow?.topics)) {
             cappedTopics = (topicsRow.topics as TopicId[]).slice(0, poolCap(topicQuota));
           }
         } catch (e) {

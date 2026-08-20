@@ -1238,7 +1238,18 @@ export async function GET(req: Request) {
       // same as today. Honest that it's a repeat.
       if (!backupIssue) {
         try {
-          const { data: prior } = await sb
+          // alpha-drift-r61-06 (2026-08-20, silent-catch-audit-r7): `error`
+          // used to be discarded -- since this sits in a try/catch but
+          // Supabase resolves rather than throws on a query error, a real
+          // DB failure here never reached the catch below; it just left
+          // `prior` undefined, indistinguishable in the logs from "this
+          // subscriber genuinely has no prior delivered issue." Purely a
+          // logging fix: the subscriber-facing outcome (no backup this run)
+          // is correct either way and doesn't change -- this just lets a
+          // real failure in the last-resort fallback be told apart from a
+          // subscriber having no delivery history, which matters for
+          // diagnosing whether the fallback itself is broken mid-outage.
+          const { data: prior, error: priorErr } = await sb
             .from("issues")
             .select("sections")
             .eq("user_id", row.id)
@@ -1247,6 +1258,9 @@ export async function GET(req: Request) {
             .order("week_of", { ascending: false })
             .limit(1)
             .maybeSingle();
+          if (priorErr) {
+            console.error(`[cron/weekly-send] backup lookup query failed → ${row.id}: ${priorErr.message}`);
+          }
           if (prior?.sections) {
             backupIssue = buildBackupIssue(
               "Quick note: today's letter is running behind, so here's a repeat of your last one while it catches up.",

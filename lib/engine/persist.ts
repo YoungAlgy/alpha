@@ -1,6 +1,7 @@
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { coerceGender } from "@/lib/demographics";
 import { sendOpsAlert, removeResendSuppression } from "@/lib/email";
+import { isUserNotFoundError } from "@/lib/gotrue-errors";
 import type { Issue, UserProfile } from "@/lib/types";
 
 interface PersistResult {
@@ -105,7 +106,29 @@ export async function persistIssueIfPossible(
     const sb = await supabaseServiceClient();
 
     if (expectedUserId) {
-      const { data: stillExists } = await sb.auth.admin.getUserById(expectedUserId);
+      // alpha-drift-r61-05 (2026-08-20, silent-catch-audit-r7): `error`
+      // used to be discarded, so a transient GoTrue/Auth-API failure
+      // (network blip, a 5xx) was indistinguishable from a genuine
+      // "account deleted" result -- both left `stillExists?.user` falsy,
+      // and the log below blamed deletion even when the account was
+      // actually still there and the lookup itself just failed. This is a
+      // logging/diagnosis fix, not a design change: on genuine ambiguity
+      // (a real, non-not-found error) this still fails closed and skips
+      // persistence -- resurrecting a deleted account by guessing wrong
+      // would be worse than losing one archive entry -- but now says so
+      // accurately and pages ops, instead of silently mis-blaming a
+      // deletion that never happened.
+      const { data: stillExists, error: getUserErr } = await sb.auth.admin.getUserById(expectedUserId);
+      if (getUserErr && !isUserNotFoundError(getUserErr)) {
+        console.warn(
+          `[persist] getUserById(${expectedUserId}) lookup failed (not a not-found result) -- cannot verify whether ${email}'s account still exists. Skipping persistence to avoid resurrecting a possibly-deleted account. Error: ${getUserErr.message}`
+        );
+        await sendOpsAlert(
+          "alpha: couldn't verify account still exists before persisting a letter",
+          `[persist] getUserById(${expectedUserId}) for ${email} failed with a real API error (not \"not found\"): ${getUserErr.message}. Persistence was skipped as a precaution, so this subscriber's freshly-generated letter did NOT get archived to /inbox this run -- worth checking whether their account is actually fine and this was a transient GoTrue blip.`
+        ).catch(() => {});
+        return null;
+      }
       if (!stillExists?.user) {
         console.warn(
           `[persist] expectedUserId ${expectedUserId} (${email}) no longer exists -- account was likely deleted while this generate call was in flight. Skipping persistence rather than letting generateLink create a new account for this email.`

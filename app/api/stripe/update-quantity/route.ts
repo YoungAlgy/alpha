@@ -272,11 +272,21 @@ export async function POST(req: Request) {
   // still in flight. Re-read fresh, immediately before this write, mirroring
   // the webhook's own subscription-mirror branch, which already read this
   // correctly (no intervening network calls there).
-  const { data: freshRow } = await svc
+  // alpha-drift-r61-07 (2026-08-20, form-validation-consistency-audit-r6):
+  // `error` used to be discarded here, unlike every other Supabase call in
+  // this handler (rowErr above, quotaErr below) -- a transient read
+  // failure silently left cappedTopics undefined, so the write below
+  // updated topic_quota WITHOUT touching topics, reproducing the exact
+  // alpha-drift-r58-06 bug this fix (r59-01) exists to prevent, with zero
+  // trace anywhere. Logged, matching the rest of this handler's pattern.
+  const { data: freshRow, error: freshErr } = await svc
     .from("users")
     .select("topics")
     .eq("id", user.id)
     .maybeSingle();
+  if (freshErr) {
+    console.error("[update-quantity] topics re-read failed:", freshErr.message);
+  }
   const cappedTopics = Array.isArray(freshRow?.topics)
     ? (freshRow.topics as TopicId[]).slice(0, poolCap(newQuota))
     : undefined;
