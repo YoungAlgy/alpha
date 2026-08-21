@@ -36,11 +36,10 @@ export default function ArchivePage() {
   // alpha-drift-r66-02 (2026-08-21, accessibility-resweep-newer-code-r14):
   // loadMore() appended new letters with zero announcement anywhere in this
   // file -- no live region existed at all. New items land ABOVE the button
-  // in DOM order, and the button's own disabled={loadingMore} blurs it on
-  // click (Chrome drops a disabled focused element to <body>), so its
-  // "Load more"/"Loading..." label swap isn't a reliable fallback either.
-  // Mirrors app/settings/accounts/page.tsx:444's established sr-only
-  // role=status pattern.
+  // in DOM order, and the button's own aria-disabled={loadingMore} (alpha-
+  // drift-r67-02) doesn't move focus either, so its "Load more"/"Loading..."
+  // label swap isn't a reliable fallback. Mirrors the sr-only role=status
+  // region below app/settings/accounts/page.tsx's own err block.
   const [loadMoreMsg, setLoadMoreMsg] = useState<string | null>(null);
   // load() has two call sites (mount, the retry button); loadMore() is a
   // separate function with its own independent query and its own mountedRef
@@ -86,6 +85,19 @@ export default function ArchivePage() {
       hadErrorRef.current = false;
     }
   }, [state]);
+  // alpha-drift-r67-02 (2026-08-21, accessibility-resweep-newer-code-r15):
+  // mirrors app/settings/accounts/page.tsx's loadMoreBtnRef/loadMoreCount
+  // fix -- aria-disabled (below) means the button never blurs mid-request,
+  // so focus only needs rescuing once THIS load-more's response actually
+  // unmounts the button: either "ended" (access revoked mid-session) or
+  // hasMore flipping false (list now fully loaded). Gated on
+  // loadMoreCount > 0 so the initial mount (hasMore starts false) doesn't
+  // wrongly yank focus to the heading before any Load More click happened.
+  const loadMoreBtnRef = useRef<HTMLButtonElement>(null);
+  const [loadMoreCount, setLoadMoreCount] = useState(0);
+  useEffect(() => {
+    if (loadMoreCount > 0 && !loadMoreBtnRef.current) archiveHeadingRef.current?.focus();
+  }, [loadMoreCount]);
 
   const load = useCallback(async () => {
     if (mountedRef.current) setState("loading");
@@ -237,7 +249,10 @@ export default function ArchivePage() {
           : `Loaded ${rows.length} more letter${rows.length === 1 ? "" : "s"} -- ${newTotal} shown.${stillMore ? "" : " That's all of them."}`
       );
     } finally {
-      if (mountedRef.current) setLoadingMore(false);
+      if (mountedRef.current) {
+        setLoadingMore(false);
+        setLoadMoreCount((c) => c + 1);
+      }
     }
   }, [items.length, loadingMore]);
 
@@ -368,8 +383,14 @@ export default function ArchivePage() {
           <div className="pt-8 text-center">
             <button
               type="button"
+              ref={loadMoreBtnRef}
               onClick={() => loadMore()}
-              disabled={loadingMore}
+              // alpha-drift-r67-02: aria-disabled, not disabled -- see
+              // app/settings/accounts/page.tsx's sibling fix comment. The
+              // existing `if (!supabaseConfigured() || loadingMore) return;`
+              // guard at loadMore()'s top already does the re-entrancy job
+              // disabled used to.
+              aria-disabled={loadingMore}
               className="alpha-button"
             >
               {loadingMore ? "Loading…" : "Load more"}

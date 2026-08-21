@@ -93,6 +93,20 @@ export default function AdminAccountsPage() {
   useEffect(() => {
     if (actionCount > 0) accountsHeadingRef.current?.focus();
   }, [actionCount]);
+  // alpha-drift-r67-01 (2026-08-21, accessibility-resweep-newer-code-r15):
+  // Load More's button intentionally never blurs mid-request (aria-disabled,
+  // not disabled -- see the button's own comment below), so focus only
+  // needs rescuing when THIS action's reload response drops the button from
+  // the DOM entirely: hasMore flips false (every row through the newest 200
+  // is now shown) and the block's own hasMore gate stops rendering it. Same
+  // monotonic-counter-plus-effect shape as actionCount above, gated on the
+  // ref being empty so a still-mounted button (more pages left) is left
+  // alone -- focus never moved off it in the first place.
+  const loadMoreBtnRef = useRef<HTMLButtonElement>(null);
+  const [loadMoreCount, setLoadMoreCount] = useState(0);
+  useEffect(() => {
+    if (loadMoreCount > 0 && !loadMoreBtnRef.current) accountsHeadingRef.current?.focus();
+  }, [loadMoreCount]);
   // alpha-drift-r32-04 (2026-08-14): act() only ever alert()'d on FAILURE --
   // a successful grant/revoke/clear/delete gave a sighted admin the visual
   // row-list reload as feedback, but a screen reader user got no
@@ -150,6 +164,19 @@ export default function AdminAccountsPage() {
     // permanently stuck "Sign in first." banner, with nothing to say the
     // data below it was actually fresh and correct.
     if (err) setErr(null);
+    // alpha-drift-r67-03 (2026-08-21, form-validation-consistency-audit-
+    // r13): mirrors act()'s own setActionMsg(null)-then-set convention
+    // (alpha-drift-r32-04's verify check 8d) -- actionMsg is a single
+    // shared slot between act()'s per-action messages and this append
+    // path's own, and the two "no more accounts" announcements below can
+    // land far apart in time but be textually IDENTICAL, which React's
+    // Object.is bailout would otherwise silently swallow (no re-render, no
+    // re-announcement). Clearing here -- before the fetch, so there's a
+    // real async gap before the real message lands -- guarantees that.
+    // Scoped to append only: a blanket clear would wipe out the success
+    // message act()'s own finally block just set, moments before its own
+    // reload call into this same function.
+    if (opts?.append) setActionMsg(null);
     const seq = ++loadSeqRef.current;
     const isStale = () => !mountedRef.current || seq !== loadSeqRef.current;
     try {
@@ -175,15 +202,27 @@ export default function AdminAccountsPage() {
       // own sr-only role=status region (below) exists but was only ever
       // fed by act()'s result, never by this path. A screen-reader admin
       // got no confirmation new rows loaded, and (per this page's
-      // disabled={loadingMore} on the just-clicked button, the same
+      // aria-disabled={loadingMore} on the just-clicked button, the same
       // focus-loss class already fixed for act()'s row actions) couldn't
       // rely on the button's own label change either. Includes the
       // running total, not just this page's count -- the API caps every
       // response at 200, so a bare per-page count would repeat verbatim
       // across consecutive clicks and silently fail to re-announce.
+      //
+      // alpha-drift-r67-03 (2026-08-21): the zero-row and exhaustion cases
+      // were unhandled -- a 0-row response (the boundary lands exactly on
+      // a multiple of 200) rendered "Loaded 0 more accounts -- N shown.",
+      // wrongly implying rows arrived, and a final partial page gave no
+      // signal the list was now complete, unlike the sibling fix in
+      // app/archive/page.tsx this mirrors.
       if (opts?.append) {
         const newTotal = (users?.length ?? 0) + data.users.length;
-        setActionMsg(`Loaded ${data.users.length} more account${data.users.length === 1 ? "" : "s"} -- ${newTotal} shown.`);
+        const stillMore = data.users.length === 200;
+        setActionMsg(
+          data.users.length === 0
+            ? "No more accounts to load."
+            : `Loaded ${data.users.length} more account${data.users.length === 1 ? "" : "s"} -- ${newTotal} shown.${stillMore ? "" : " That's all of them."}`
+        );
       }
       if (data.stats) {
         setStats(data.stats);
@@ -231,12 +270,13 @@ export default function AdminAccountsPage() {
   }
 
   async function loadMore() {
-    if (!users || users.length === 0) return;
+    if (loadingMore || !users || users.length === 0) return;
     setLoadingMore(true);
     try {
       await load({ before: users[users.length - 1].created_at, append: true });
     } finally {
       setLoadingMore(false);
+      setLoadMoreCount((c) => c + 1);
     }
   }
 
@@ -664,7 +704,16 @@ export default function AdminAccountsPage() {
         {users && users.length > 0 && !activeSearch && hasMore && (
           <button
             type="button"
-            disabled={loadingMore}
+            ref={loadMoreBtnRef}
+            // alpha-drift-r67-01: aria-disabled, not disabled -- a real
+            // disabled attribute blurs a focused button back to <body> the
+            // instant it's set (Chrome and others), which fires mid-click
+            // on every "more pages remain" case even though the button
+            // stays mounted right after -- the opposite of the focus loss
+            // this fix exists to prevent. loadMore()'s own leading guard
+            // (if (loadingMore) ... return;) does the re-entrancy job
+            // disabled used to.
+            aria-disabled={loadingMore}
             onClick={loadMore}
             className="alpha-ui text-sm mt-6 underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--ink)", opacity: loadingMore ? 0.4 : 1 }}
