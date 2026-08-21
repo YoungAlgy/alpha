@@ -113,6 +113,23 @@ export function ProfileEditor() {
     };
   }, []);
 
+  // alpha-drift-r68-01 (2026-08-21, form-validation-consistency-audit-r14):
+  // hasZodiac above is fetched once at mount and had no resync path -- a
+  // downgrade on app/settings/page.tsx can truncate users.topics server-side
+  // (alpha-drift-r58-06/r59-02) and silently drop zodiac from the pool while
+  // this component keeps showing (or hiding) a state the server just
+  // changed, until the reader reloads. confirmTier()'s "down" success branch
+  // now broadcasts the truncated result; mirrors lib/theme.ts's
+  // alpha-theme-change / components/ThemeApplier.tsx's listener pattern.
+  useEffect(() => {
+    function onTopicsTruncated(e: Event) {
+      const detail = (e as CustomEvent<{ topics?: string[] }>).detail;
+      if (Array.isArray(detail?.topics)) setHasZodiac(detail.topics.includes("zodiac"));
+    }
+    window.addEventListener("alpha-topics-truncated", onTopicsTruncated);
+    return () => window.removeEventListener("alpha-topics-truncated", onTopicsTruncated);
+  }, []);
+
   function set<K extends keyof Form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
     if (msg) setMsg(null);

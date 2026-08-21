@@ -294,7 +294,21 @@ export default function SettingsPage() {
       // truncation locally, avoiding an extra round trip; a no-op on "up"
       // since poolCap only ever shrinks on a downgrade.
       if (direction === "down") {
-        setTopics((prev) => (prev ? prev.slice(0, poolCap(data.topicQuota)) : prev));
+        const truncated = topics ? topics.slice(0, poolCap(data.topicQuota)) : null;
+        if (truncated) {
+          setTopics(truncated);
+          // alpha-drift-r68-01 (2026-08-21, form-validation-consistency-
+          // audit-r14): components/ProfileEditor.tsx's hasZodiac flag is
+          // fetched once at mount and never resynced -- this truncation can
+          // silently drop the reader's zodiac pick with no signal to that
+          // separate component tree, leaving its "add your birthday or
+          // Zodiac gets skipped" hint stale for the rest of this visit.
+          // Broadcasts the actual truncated result so it (and any future
+          // topics-derived state) can recompute, mirroring lib/theme.ts's
+          // setTheme() -> alpha-theme-change pattern (ThemeApplier.tsx's
+          // listener is the reference implementation).
+          window.dispatchEvent(new CustomEvent("alpha-topics-truncated", { detail: { topics: truncated } }));
+        }
       }
       // Trust the server's real Stripe-derived monthlyCents rather than
       // re-deriving dollars from topicQuota — see monthlyCents state comment.
