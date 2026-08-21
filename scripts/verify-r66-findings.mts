@@ -52,7 +52,13 @@ console.log("(1) app/settings/accounts/page.tsx: Load More now announces a runni
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
   check("(1a) the append path computes a running total", /const newTotal = \(users\?\.length \?\? 0\) \+ data\.users\.length;/.test(src));
-  check("(1b) setActionMsg fires only on the append path, with the running total in the text", /if \(opts\?\.append\) \{\s*\n\s*const newTotal = [\s\S]{0,120}\n\s*setActionMsg\(`Loaded \$\{data\.users\.length\} more account[\s\S]{0,80}\$\{newTotal\} shown\.`\);\s*\n\s*\}/.test(src));
+  // alpha-drift-r67-03 (2026-08-21): superseded by a zero-row branch and an
+  // exhaustion suffix (see verify-r67-findings.mts) -- the exact single-
+  // line template this used to pin no longer exists. Reasserted here as
+  // the semantic invariant this check actually cares about: the append
+  // path still announces only on append, and the running total still
+  // appears in that announcement.
+  check("(1b) setActionMsg fires only on the append path, with the running total in the text", /if \(opts\?\.append\) \{[\s\S]{0,400}setActionMsg\(\s*\n[\s\S]{0,400}\$\{newTotal\} shown\.[\s\S]{0,200}\n\s*\);\s*\n\s*\}/.test(src));
 }
 
 console.log("(2) app/archive/page.tsx: a new sr-only live region announces Load More results, mounted unconditionally");
