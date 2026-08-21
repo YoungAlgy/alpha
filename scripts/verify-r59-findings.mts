@@ -144,7 +144,12 @@ console.log("(8) app/settings/page.tsx: a downgrade now resyncs the client's top
 {
   const src = readFileSync(new URL("../app/settings/page.tsx", import.meta.url), "utf8");
   check("(8a) poolCap is imported", /import \{ poolCap \} from "@\/lib\/engine\/select-sections";/.test(src));
-  check("(8b) confirmTier's success branch truncates topics on a downgrade", /if \(direction === "down"\) \{\s*\n\s*setTopics\(\(prev\) => \(prev \? prev\.slice\(0, poolCap\(data\.topicQuota\)\) : prev\)\);\s*\n\s*\}/.test(src));
+  // alpha-drift-r68-01 (2026-08-21): superseded by a broadcast fix -- the
+  // exact functional-setTopics-updater shape this used to pin no longer
+  // exists (see verify-r68-findings.mts check 1). Reasserted here as the
+  // semantic invariant this check actually cares about: a downgrade still
+  // truncates topics to poolCap(data.topicQuota) and still calls setTopics.
+  check("(8b) confirmTier's success branch truncates topics on a downgrade", /if \(direction === "down"\) \{[\s\S]{0,200}poolCap\(data\.topicQuota\)[\s\S]{0,200}setTopics\(/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
