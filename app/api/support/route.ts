@@ -18,7 +18,16 @@ export const runtime = "nodejs";
 const SupportPayloadSchema = z.object({
   name: z.string().max(120).optional(),
   email: z.string().min(1).max(200).refine(isValidEmail, "Not a valid email address"),
-  message: z.string().max(5000),
+  // alpha-drift-r69-02 (2026-08-21, form-validation-consistency-audit-r15):
+  // message had no lower bound -- app/support/SupportForm.tsx blocks an
+  // empty/whitespace-only submit client-side, but a direct POST bypasses
+  // that entirely, and this route is deliberately unauthenticated with no
+  // CSRF guard, so nothing else stood between a raw request and a stored,
+  // owner-notified ticket with a blank body. .refine, not a bare .min(1) or
+  // a .trim() transform: a bare min(1) still lets " " through, and a
+  // .trim() transform would silently mutate the stored text and the dedup
+  // key below (isDuplicateSubmission hashes email+message).
+  message: z.string().max(5000).refine((s) => s.trim().length > 0, "Message can't be empty."),
 });
 type SupportPayload = z.infer<typeof SupportPayloadSchema>;
 

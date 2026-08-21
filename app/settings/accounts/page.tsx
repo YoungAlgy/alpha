@@ -397,7 +397,21 @@ export default function AdminAccountsPage() {
 
         <form onSubmit={runSearch} className="flex gap-3 mb-10">
           <input
-            type="email"
+            type="text"
+            // alpha-drift-r69-01 (2026-08-21, form-validation-consistency-
+            // audit-r15): this used to be type="email" -- the server does a
+            // plain ILIKE substring match with no format requirement
+            // (app/api/admin/users/route.ts:237), but a real <form
+            // onSubmit> plus a type="submit" button means the browser's
+            // own HTML5 email-format constraint validation ran first and
+            // silently blocked submitting anything that isn't shaped like
+            // "x@y" -- so the one realistic way an admin actually uses this
+            // box (a name fragment, a bare domain like "gmail.com") never
+            // reached runSearch() at all. inputMode="email" keeps the
+            // mobile "@" keyboard hint (matches app/signin/page.tsx and
+            // components/EmailChanger.tsx's own inputMode usage) without
+            // triggering format validation the way type="email" does.
+            inputMode="email"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search by email…"
