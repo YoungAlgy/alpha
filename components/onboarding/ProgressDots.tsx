@@ -8,6 +8,13 @@ export function ProgressDots({ current, total }: ProgressDotsProps) {
     <div
       className="flex items-center gap-1.5"
       role="progressbar"
+      // alpha-drift-r76-01 (2026-08-21, accessibility-resweep-newer-code-
+      // r24): role="progressbar" requires an accessible name (WCAG 4.1.2 --
+      // aria-valuetext supplies the live value, not the name); this had
+      // neither aria-label nor aria-labelledby, and no ancestor (a bare
+      // <nav> in StepShell.tsx) supplied one either. Static label, separate
+      // from aria-valuetext's own "Step X of Y".
+      aria-label="Onboarding progress"
       aria-valuenow={current}
       aria-valuemin={1}
       aria-valuemax={total}
