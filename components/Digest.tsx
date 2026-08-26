@@ -271,7 +271,17 @@ function Item({ item }: { item: DigestItem }) {
                       className="alpha-src-favicon"
                     />
                   )}
-                  <span>{ref.label} ↗</span>
+                  {/* alpha-drift-r70-02 (2026-08-21, accessibility-resweep-
+                      newer-code-r18): the arrow used to be baked into this
+                      same text node, unlike the primaryRef link 32 lines
+                      above (which already splits it into its own
+                      aria-hidden span) -- a screen reader announced this
+                      link's accessible name as "label north east arrow"
+                      instead of just the label. Nested (not a sibling
+                      span) so it stays one flex item and the arrow keeps
+                      trailing a wrapped label's last line, matching how
+                      the primaryRef link already wraps. */}
+                  <span>{ref.label}<span aria-hidden>{" ↗"}</span></span>
                 </a>
                 {ref.note && (
                   <span style={{ color: "var(--ink-soft)" }}> ({ref.note})</span>

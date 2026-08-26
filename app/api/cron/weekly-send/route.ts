@@ -583,6 +583,27 @@ export async function GET(req: Request) {
     // active-subscriber count is large (a much higher, less urgent bar than
     // priorIssueCount's LIFETIME-count problem below, but free to close
     // outright here rather than just deferring it).
+    // alpha-drift-r70-01 (2026-08-21, silent-catch-audit-reverify, first
+    // raised round 69): each chunk's own Supabase `error` used to be
+    // discarded inside .then(flatMap) -- a failed chunk was silently
+    // indistinguishable from a chunk with zero real rows, unlike every
+    // other query in this file (reclaimErr just above, countsErr below).
+    // At this app's real ~4-6 users there's exactly one chunk, so ANY
+    // transient failure here reads as "nobody already delivered" and skips
+    // the fast-path idempotency check at the alreadyDelivered.has() read
+    // below -- real wasted generation spend, not a duplicate send (the
+    // atomic delivered_at claim still catches it), so this is a log-only
+    // fix, not a behavior change.
+    const warnOnChunkErrors = (results: Array<{ error: { message: string } | null }>, label: string) => {
+      const failed = results.filter((r) => r.error);
+      if (failed.length > 0) {
+        console.warn(
+          `[cron/weekly-send] ${label} prefetch: ${failed.length}/${results.length} chunk(s) failed — ${failed
+            .map((r) => r.error!.message)
+            .join("; ")}`
+        );
+      }
+    };
     const stampsPromise =
       !force && rows.length > 0
         ? Promise.all(
@@ -594,7 +615,10 @@ export async function GET(req: Request) {
                 .not("delivered_at", "is", null)
                 .in("user_id", ids)
             )
-          ).then((results) => results.flatMap((r) => r.data ?? []))
+          ).then((results) => {
+            warnOnChunkErrors(results, "alreadyDelivered");
+            return results.flatMap((r) => r.data ?? []);
+          })
         : null;
     // Prefetch each subscriber's persisted-but-undelivered issue (retry-safety
     // reuse below, near runPersistAndSend) in one query PER CHUNK — was a
@@ -609,7 +633,10 @@ export async function GET(req: Request) {
           .is("delivered_at", null)
           .in("user_id", ids)
       )
-    ).then((results) => results.flatMap((r) => r.data ?? []));
+    ).then((results) => {
+      warnOnChunkErrors(results, "pendingIssues");
+      return results.flatMap((r) => r.data ?? []);
+    });
 
     const [stampsResult, pendingResult] = await Promise.all([
       stampsPromise ?? Promise.resolve(null),
