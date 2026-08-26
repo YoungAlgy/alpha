@@ -82,7 +82,13 @@ console.log("(1) app/signin/page.tsx: focus is now restored symmetrically on bot
 console.log("(2) README.md: the onboarding funnel now includes the real 11th screen (/you) in both the prose bullet and the directory tree");
 {
   const src = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-  check("(2a) the funnel bullet says 11 screens and includes you between fun and email", /\(11 screens, no public landing\) — `welcome → theme → name → city → role → focus → topics → fun → you → email → checkout`/.test(src));
+  // alpha-drift-r77-02 (2026-08-21): superseded by a fix to the bullet's
+  // OWN separate "no public landing" claim (false since app/page.tsx
+  // shipped in v0.68 -- see verify-r77-findings.mts) -- the exact literal
+  // this used to pin included that now-removed clause. Reasserted as the
+  // semantic invariant this check actually cares about: 11 screens, and
+  // the you step present in the funnel chain.
+  check("(2a) the funnel bullet says 11 screens and includes you between fun and email", /\(11 screens\)[\s\S]{0,200}`welcome → theme → name → city → role → focus → topics → fun → you → email → checkout`/.test(src));
   check("(2b) the directory-layout tree row also includes you", /welcome \/ theme \/ name \/ city \/ role \/ focus \/ topics \/ fun \/ you \/ email \/ checkout   onboarding funnel/.test(src));
 }
 
