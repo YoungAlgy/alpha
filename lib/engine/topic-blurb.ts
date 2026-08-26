@@ -440,7 +440,17 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     try {
       return await callClaudeAndParse(BLURB_MODEL);
     } catch (e) {
-      if (e instanceof BlurbTruncatedError) throw e;
+      if (e instanceof BlurbTruncatedError) {
+        // alpha-drift-r79-02 (2026-08-21, silent-catch-audit): this used to
+        // rethrow with zero logging, the only truncation branch in the
+        // whole 5-tier waterfall that didn't -- every sibling tier (and
+        // the 429 branch right below, same function) logs before
+        // escalating/rethrowing. The only downstream trace was
+        // assemble.ts's generic "skipped N quiet topic(s)" line, which
+        // misreports a genuine hard failure as an ordinary quiet news day.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet draft truncated, no tier left to escalate to`);
+        throw e;
+      }
       if (isRateLimited(e)) {
         // Nowhere left to escalate either way (last tier), but skipping the
         // doomed retry still saves real latency under concurrent load — same
@@ -718,9 +728,24 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   // unbounded loop or dropping the whole topic over.
   if (finalized.items.length > 0 && finalized.tells.length > 0) {
     console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet draft slipped a banned word (${finalized.tells.join(", ")}), retrying once`);
-    const retryParsed = await trySonnet();
-    const retryFinalized = finalizeBlurb(retryParsed);
-    finalized = keepRetryOrOriginal(finalized, retryFinalized);
+    // alpha-drift-r79-03 (2026-08-21, silent-catch-audit): this retry used
+    // to be unguarded -- if it rejected (a 429, a truncation, or a failed
+    // parse retry, all real throw paths on trySonnet()), the exception
+    // propagated up and dropped this ENTIRE topic from the letter, discarding
+    // the already-usable `finalized` draft this block is holding onto. That
+    // directly contradicts this function's own stated intent two comments
+    // up ("not worth ... dropping the whole topic over") and bypasses
+    // keepRetryOrOriginal()'s whole purpose (see its own comment: a bad
+    // retry must not "silently throw away the original's perfectly usable
+    // content for nothing") by never reaching it at all. A rejected retry
+    // now falls back to the original draft, tells-slip and all.
+    try {
+      const retryParsed = await trySonnet();
+      const retryFinalized = finalizeBlurb(retryParsed);
+      finalized = keepRetryOrOriginal(finalized, retryFinalized);
+    } catch (e) {
+      console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet tells-retry failed, shipping the original draft with its slip: ${e instanceof Error ? e.message : e}`);
+    }
   }
   return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
 }
