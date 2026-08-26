@@ -1,7 +1,14 @@
-// Signal-strength audit across all topics. Brave-only (cheap/fast, no Claude):
-// resolves each topic's weekly signal and reports the count of distinct real
-// URLs. Thin signal (few URLs) → thin letters + more links dropped by the
-// guard. Surfaces which topic query sets need work.
+// Signal-strength audit across all topics. Calls the real resolveTopicSignal
+// pipeline (no Claude) and reports the count of distinct real URLs. Thin
+// signal (few URLs) → thin letters + more links dropped by the guard.
+// Surfaces which topic query sets need work.
+// alpha-drift-r73-03 (2026-08-21, duplicate-code-audit-r22): this used to
+// say "Brave-only (cheap/fast)" -- resolveTopicSignal has since grown a
+// Gemini-grounded-search fallback, a You.com fallback, and full-article
+// deep-read fetches via Jina Reader (all on by default), none of which are
+// Brave-only or cheap. A run can burn real Gemini/You.com quota and fire
+// external Jina fetches for any topic whose Brave results are thin or
+// rate-limited that day.
 //
 // Run: npx tsx scripts/audit-topic-signal.mts
 import { loadEnvLocal } from "./_load-env.mts";
