@@ -995,6 +995,16 @@ html.alpha-intro-active::after {
      (not instead of) the JS gate that already skips the scroll-driven
      re-trigger. */
   .alpha-scroll-fade { transition: none !important; }
+  /* alpha-drift-r78-01 (2026-08-21, accessibility-resweep-newer-code-r26):
+     .alpha-hero (the landing + /welcome headline wordmark breathe, ~line
+     920) was the last INFINITE, auto-starting animation in the app with
+     no reduced-motion guard -- every other animation already checks this
+     media query (the intro veil above, ScrollFadeIn, FirstLetterCelebration,
+     app/writing/page.tsx's own dedicated block). No !important needed:
+     .alpha-hero's animation comes from a plain stylesheet rule (not an
+     inline style like .alpha-scroll-fade's), so equal specificity plus
+     later source order is enough to win. */
+  .alpha-hero { animation: none; }
 }
 
 /* Source-link favicon */
