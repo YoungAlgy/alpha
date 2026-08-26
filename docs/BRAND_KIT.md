@@ -177,10 +177,12 @@ Write like a plain-spoken person, never like AI:
 
 ## 9. The theme system (Alpha-specific, optional)
 
-Alpha lets a reader re-skin the letter body via `<html data-theme="...">`. Ten skins
-in `lib/themes.ts` (soft, linen, ink, cottage, arcade, marina, midnight, forest, mono,
-sunset), each overriding the same token set (palette, fonts, radius, shadow). The
-default chrome and identity are **Forest**.
+Alpha lets a reader re-skin the letter body via `<html data-theme="...">`. 25 skins
+live in the `THEMES` array in `lib/themes.ts` -- see that file for the current,
+authoritative list (id/label/description per skin) rather than hand-counting it here,
+since a hardcoded list silently goes stale the next time a theme is added or removed.
+Each one overrides the same token set (palette, fonts, radius, shadow). The default
+chrome and identity are **Forest**.
 
 Other apps do NOT need the theme system. They match the **Forest** tokens (sections 3
 to 7) as their single house style. Adopt the theming machinery only if an app genuinely
