@@ -58,10 +58,22 @@ async function performUnsubscribe(token: string): Promise<
   return { ok: true, email: data.email };
 }
 
-// ABSOLUTE links only in this page's HTML. Old emails point at
-// youngalgy.com/alpha/api/unsubscribe, which that hub PROXIES here forever —
-// so this page renders on a foreign origin where a root-relative /settings
-// would resolve into the portfolio site, not this app.
+// ABSOLUTE links only in this page's HTML -- old (pre-2026-07-03) emails
+// point at youngalgy.com/alpha/api/unsubscribe, which now 301-redirects here
+// rather than proxying (see next.config.ts's fuller correction) -- so even
+// after that redirect the browser is on this app's own origin, and a
+// root-relative /settings would resolve correctly. Absolute links are kept
+// here defensively regardless.
+//
+// alpha-drift-r79-01 (2026-08-21, self-audit): this comment used to claim
+// the old hub "PROXIES here forever" -- verified false by next.config.ts's
+// own 2026-08-05 correction (the youngalgy.com Vercel project this pointed
+// at is gone; the live youngalgy.com now 301-redirects instead). That
+// correction was already applied to 3 sibling files in round 49; this one
+// was missed. NOTE: automatic RFC-8058 one-click POST unsubscribe from
+// those pre-move links is still broken (mail providers don't follow the
+// 301, and it would downgrade POST->GET anyway) -- see next.config.ts for
+// the real, still-open fix.
 function appOrigin(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
 }
