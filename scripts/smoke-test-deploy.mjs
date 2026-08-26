@@ -54,7 +54,14 @@ const CHECKS = [
       if (bad.length > 0) {
         return { ok: false, detail: `checks.${bad.join(", checks.")} not true -- got ${JSON.stringify(body?.checks)}` };
       }
-      const SOFT = ["gemini", "you", "groq", "deepseek"];
+      // alpha-drift-r71-01 (2026-08-21, duplicate-code-audit-r20): this list
+      // used to be missing "brave" -- app/api/health/route.ts's own checks
+      // object, scripts/verify-send-preflight.mjs's SOFT_RESILIENCE_TIER, and
+      // .github/workflows/letter-watchdog.yml all name brave alongside these
+      // same 4 fields as the resilience tier, but this script's copy fell one
+      // short, so a broken/missing BRAVE_SEARCH_API_KEY produced zero warning
+      // on this deploy gate even though every sibling list already covers it.
+      const SOFT = ["gemini", "you", "groq", "deepseek", "brave"];
       const softBad = SOFT.filter((k) => body?.checks?.[k] !== true);
       if (softBad.length > 0) {
         console.warn(`  (soft warning, not failing) resilience-tier fallback(s) inert: ${softBad.join(", ")}`);
