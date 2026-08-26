@@ -107,6 +107,18 @@ export default function AdminAccountsPage() {
   useEffect(() => {
     if (loadMoreCount > 0 && !loadMoreBtnRef.current) accountsHeadingRef.current?.focus();
   }, [loadMoreCount]);
+  // alpha-drift-r73-02 (2026-08-21, accessibility-resweep-newer-code-r21):
+  // clearSearch() unconditionally sets activeSearch to "", which unmounts
+  // the just-clicked Clear button (rendered only inside `{activeSearch &&
+  // ...}`) with no focus restoration -- the same class already fixed for
+  // this file's row actions and Load More, just never wired to this third
+  // control. Separate counter, not folded into either of the two above,
+  // since Clear's own unmount condition (activeSearch) is independent of
+  // both actionCount's and loadMoreCount's.
+  const [clearCount, setClearCount] = useState(0);
+  useEffect(() => {
+    if (clearCount > 0) accountsHeadingRef.current?.focus();
+  }, [clearCount]);
   // alpha-drift-r32-04 (2026-08-14): act() only ever alert()'d on FAILURE --
   // a successful grant/revoke/clear/delete gave a sighted admin the visual
   // row-list reload as feedback, but a screen reader user got no
@@ -267,6 +279,7 @@ export default function AdminAccountsPage() {
     setQ("");
     setActiveSearch("");
     load();
+    setClearCount((c) => c + 1);
   }
 
   async function loadMore() {

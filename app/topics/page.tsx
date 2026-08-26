@@ -105,6 +105,17 @@ export default function TopicsPage() {
   useEffect(() => {
     if (removedCount > 0) topicsHeadingRef.current?.focus();
   }, [removedCount]);
+  // alpha-drift-r73-01 (2026-08-21, self-audit): the curated-topic-
+  // suggestion button (below) unmounts itself on click exactly like
+  // removeAt() does -- adding the suggestion always makes its own gate
+  // (`sug` recomputes null once customText clears, or picked.includes(sug)
+  // trips) go false, taking the just-focused button out with it. A
+  // separate counter+effect (not folded into removedCount above) so this
+  // doesn't disturb removeAt()'s own pinned regression-test shape.
+  const [suggestedCount, setSuggestedCount] = useState(0);
+  useEffect(() => {
+    if (suggestedCount > 0) topicsHeadingRef.current?.focus();
+  }, [suggestedCount]);
 
   useEffect(() => {
     if (loaded && state.topics) setPicked(state.topics);
@@ -617,6 +628,7 @@ export default function TopicsPage() {
                     setPicked((p) => (p.includes(sug) ? p : [...p, sug]));
                     setCustomText("");
                     setCustomErr(null);
+                    setSuggestedCount((c) => c + 1);
                   }}
                   className="underline underline-offset-4 font-semibold"
                   style={{ color: "var(--accent-ink)" }}
