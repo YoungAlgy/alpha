@@ -839,9 +839,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       className="py-8 border-b"
       style={{ borderColor: "var(--rule)" }}
     >
+      {/* alpha-drift-r77-01 (2026-08-21, accessibility-resweep-newer-code-
+          r25): --accent-ink fails WCAG AA 4.5:1 against --paper in the
+          default theme and most others -- this is plain informational
+          section-heading text (YOUR DETAILS, BILLING, etc.), not a link or
+          CTA, matching the --ink-soft swap already applied to every other
+          alpha-mono category label in the app (LetterTOC's SECTIONS,
+          Digest's kind label, changelog's month headings, and this exact
+          Section() shape on app/settings/changelog/page.tsx, r57-04). */}
       <h2
         className="alpha-mono mb-4"
-        style={{ color: "var(--accent-ink)" }}
+        style={{ color: "var(--ink-soft)" }}
       >
         {title.toUpperCase()}
       </h2>
