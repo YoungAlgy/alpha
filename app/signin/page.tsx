@@ -24,6 +24,7 @@ export default function SigninPage() {
   const [cooldown, setCooldown] = useState(0); // seconds until "Resend" re-enables
   const [resent, setResent] = useState(false); // transient "new code sent" confirmation
   const codeInputRef = useRef<HTMLInputElement>(null);
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const stubTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(stubTimer.current), []);
   // alpha-drift-r47-03 (2026-08-20): this was the one page in the funnel
@@ -100,8 +101,21 @@ export default function SigninPage() {
   }, [router]);
 
   // Auto-focus the code input when we land on step 2
+  //
+  // alpha-drift-r74-01 (2026-08-21, self-audit): this used to be one-
+  // directional (code only) -- both step branches start with the same
+  // element-type sequence (h1, p, form, {err && p}), so React reuses that
+  // <form>'s <input> across the step change instead of remounting it, and
+  // autoFocus (below) only fires on true node creation, never on an update
+  // to a reused node. The "Use different email" button (code step) has one
+  // extra sibling the email step lacks, so setStep("email") always leaves
+  // React with fewer children than before -- it unmounts that trailing
+  // block, taking the just-clicked, focused button with it, with nothing
+  // to restore focus. Symmetric now: whichever step we land on gets
+  // focused, matching this file's own established codeInputRef pattern.
   useEffect(() => {
     if (step === "code") codeInputRef.current?.focus();
+    if (step === "email") emailInputRef.current?.focus();
   }, [step]);
 
   const RESEND_COOLDOWN_S = 30;
@@ -242,6 +256,7 @@ export default function SigninPage() {
               </p>
               <form onSubmit={sendCode} className="space-y-5">
                 <input
+                  ref={emailInputRef}
                   autoFocus
                   type="email"
                   aria-label="Email address"
