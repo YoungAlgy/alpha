@@ -21,7 +21,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 
 - **Theme-first onboarding** — `/theme` is step 2 (right after `/welcome`). The chosen theme is applied app-wide via `ThemeApplier` (root layout) so every step from `/name` through `/checkout` adopts the user's palette. ThemeApplier reads from `public.users` for signed-in users, falls back to localStorage for mid-funnel users.
 - **Shared topic_blurbs cache** (`lib/engine/blurb-cache.ts`) — generate each topic-week's content once in Supabase, serve to every subscriber. ~10× cost reduction vs. naive per-user generation.
-- **Onboarding-first funnel** (10 screens, no public landing) — `welcome → theme → name → city → role → focus → topics → fun → email → checkout`. Conversion play borrowed from Headway/Noom.
+- **Onboarding-first funnel** (11 screens, no public landing) — `welcome → theme → name → city → role → focus → topics → fun → you → email → checkout`. Conversion play borrowed from Headway/Noom.
 - **Auto-sign-in after checkout** — `/api/generate` calls `admin.generateLink` once to create the auth user; `/writing` redirects through that link to set the session cookie via `/auth/callback`. User lands on `/inbox` already signed in. The magic link is invisible to the user — never surfaced in an email.
 - **Returning sign-in: 6-digit code** — `/signin` uses Supabase `signInWithOtp` + `verifyOtp({ type: "email" })`. Magic Link template is overridden with `{{ .Token }}` only. No clickable email links for returning users.
 - **RLS-by-default** — every PII table (`users`, `issues`, `support_tickets`) has row level security enabled. `users` keeps self-read/self-update policies scoped to `auth.uid()` (billing/identity columns further locked by a trigger); `issues` keeps a self-read policy gated on active access; `support_tickets` has zero policies as of 2026-08-05 (its one anonymous-insert policy was dropped as dead code) — all access, including the public `/support` form, goes through the service role. Service role bypasses RLS for every server-side operation (webhook upsert, generate persistence, admin endpoint).
@@ -38,7 +38,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 
 ```
 app/
-  welcome / theme / name / city / role / focus / topics / fun / email / checkout   onboarding funnel
+  welcome / theme / name / city / role / focus / topics / fun / you / email / checkout   onboarding funnel
   writing                                                                          generate progress UI
   inbox / inbox/[issueId] / archive                                                 letter reading
   settings / settings/accounts / settings/changelog                                 account, admin, what's new

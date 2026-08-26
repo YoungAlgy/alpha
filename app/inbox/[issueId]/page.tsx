@@ -18,7 +18,9 @@ import type { Issue } from "@/lib/types";
 // signed-in owner. The fetch is scoped to the user (RLS + an explicit user_id
 // filter), so another user's id — or any unknown/missing id — returns nothing
 // and we show a friendly "can't find that letter" state with sign-in/archive
-// links. (No localStorage fallback here; that only lives on the main /inbox.)
+// links. (No localStorage fallback here. /inbox renders the cached first
+// issue for signed-out visitors, and /archive reads the same
+// alpha-first-issue key to list it -- this route only ever reads the DB.)
 
 export default function IssuePage() {
   const params = useParams<{ issueId: string }>();
