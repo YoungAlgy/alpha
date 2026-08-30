@@ -18,6 +18,9 @@
   // it on, it's the fastest way to verify a deploy before DNS even points here.
   "workers_dev": true,
   "vars": {
+    // The release guard fails closed before any checkout provider or database
+    // access. A separate reviewed release will reopen this after migration.
+    "ALPHA_CHECKOUT_MODE": "paused",
     // OpenNext's DO revalidation queue bills the full timeout as Durable
     // Object "duration" on every ISR revalidation, regardless of how fast
     // the fetch actually completes (acknowledged upstream as "problematic"

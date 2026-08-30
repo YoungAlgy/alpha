@@ -4,6 +4,7 @@ import { STRIPE_PRICE_ID, getStripeClient, describeStripeError } from "@/lib/str
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { isProfileComplete, shouldBlockDoubleSubscription } from "@/lib/checkout-guards";
+import { checkoutMode } from "@/lib/checkout-maintenance";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,22 @@ const CheckoutPayloadSchema = z.object({
 type CheckoutPayload = z.infer<typeof CheckoutPayloadSchema>;
 
 export async function POST(req: Request) {
+  if (checkoutMode(process.env.ALPHA_CHECKOUT_MODE) === "paused") {
+    return NextResponse.json(
+      {
+        error: "checkout_temporarily_paused",
+        message: "Checkout is briefly unavailable. Try again in a few minutes.",
+      },
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store, must-revalidate",
+          "Retry-After": "300",
+        },
+      }
+    );
+  }
+
   // Rate limit (same in-memory limiter the sibling generate/support routes use).
   // Caps casual abuse AND bulk probing of the already-subscribed guard below —
   // that guard returns a distinguishable 409 for active subscribers vs a 200 for

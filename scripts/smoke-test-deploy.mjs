@@ -16,7 +16,25 @@
 // before touching anything real.
 
 const BASE_URL = process.env.SMOKE_TEST_URL?.trim() || "https://alpha.everyday.report";
+const EXPECTED_RELEASE = process.env.ALPHA_EXPECTED_RELEASE_SHA?.trim() || "";
+const EXPECTED_CHECKOUT_MODE =
+  process.env.ALPHA_EXPECTED_CHECKOUT_MODE?.trim() || "";
 const TIMEOUT_MS = 10_000;
+
+if (!/^[0-9a-f]{40}$/.test(EXPECTED_RELEASE)) {
+  console.error(
+    "::error:: ALPHA_EXPECTED_RELEASE_SHA must be the full 40-character commit SHA. " +
+      "Use scripts/deploy-from-wsl.sh so the intended release is captured before deployment."
+  );
+  process.exit(1);
+}
+if (!["open", "paused"].includes(EXPECTED_CHECKOUT_MODE)) {
+  console.error(
+    "::error:: ALPHA_EXPECTED_CHECKOUT_MODE must be exactly open or paused. " +
+      "The pre-deploy gate must match it to the versioned wrangler.jsonc value."
+  );
+  process.exit(1);
+}
 
 async function fetchWithTimeout(url, opts = {}) {
   const controller = new AbortController();
@@ -54,6 +72,18 @@ const CHECKS = [
       if (bad.length > 0) {
         return { ok: false, detail: `checks.${bad.join(", checks.")} not true -- got ${JSON.stringify(body?.checks)}` };
       }
+      if (body?.release !== EXPECTED_RELEASE) {
+        return {
+          ok: false,
+          detail: `release ${JSON.stringify(body?.release)} does not match intended ${EXPECTED_RELEASE}`,
+        };
+      }
+      if (body?.checkoutMode !== EXPECTED_CHECKOUT_MODE) {
+        return {
+          ok: false,
+          detail: `checkoutMode ${JSON.stringify(body?.checkoutMode)} does not match intended ${EXPECTED_CHECKOUT_MODE}`,
+        };
+      }
       // alpha-drift-r71-01 (2026-08-21, duplicate-code-audit-r20): this list
       // used to be missing "brave" -- app/api/health/route.ts's own checks
       // object, scripts/verify-send-preflight.mjs's SOFT_RESILIENCE_TIER, and
@@ -66,7 +96,10 @@ const CHECKS = [
       if (softBad.length > 0) {
         console.warn(`  (soft warning, not failing) resilience-tier fallback(s) inert: ${softBad.join(", ")}`);
       }
-      return { ok: true, detail: "core providers all true" };
+      return {
+        ok: true,
+        detail: `core providers all true; release ${EXPECTED_RELEASE}; checkout ${EXPECTED_CHECKOUT_MODE}`,
+      };
     },
   },
   {
@@ -191,6 +224,61 @@ const CHECKS = [
     },
   },
 ];
+
+if (EXPECTED_CHECKOUT_MODE === "paused") {
+  CHECKS.splice(2, 0, {
+    name: "public checkout is paused before provider access",
+    hard: true,
+    run: async () => {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/stripe/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      let body = null;
+      try {
+        body = await res.json();
+      } catch {
+        // The structured response is part of this hard check.
+      }
+      const cacheControl = res.headers.get("cache-control") || "";
+      const retryAfter = res.headers.get("retry-after") || "";
+      return {
+        ok:
+          res.status === 503 &&
+          body?.error === "checkout_temporarily_paused" &&
+          cacheControl.includes("no-store") &&
+          retryAfter === "300",
+        detail: `status ${res.status}; error ${JSON.stringify(body?.error)}; Cache-Control ${cacheControl || "(none)"}; Retry-After ${retryAfter || "(none)"}`,
+      };
+    },
+  });
+} else {
+  CHECKS.splice(2, 0, {
+    name: "public checkout gate is open without creating a Session",
+    hard: true,
+    run: async () => {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/stripe/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      let body = null;
+      try {
+        body = await res.json();
+      } catch {
+        // The structured validation response is part of this hard check.
+      }
+      return {
+        ok:
+          res.status === 400 &&
+          body?.error ===
+            "Please finish setting up your profile before subscribing.",
+        detail: `status ${res.status}; error ${JSON.stringify(body?.error)}`,
+      };
+    },
+  });
+}
 
 let hardFailures = 0;
 console.log(`Smoke-testing ${BASE_URL} ...\n`);

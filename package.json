@@ -9,7 +9,7 @@
     "lint": "eslint",
     "cf:build": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && npm run typecheck:worker",
     "cf:preview": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "cf:deploy": "node scripts/verify-build-env.mjs && opennextjs-cloudflare build && npm run typecheck:worker && opennextjs-cloudflare deploy && node scripts/smoke-test-deploy.mjs",
+    "cf:deploy": "node scripts/verify-deploy-release.mjs && node scripts/verify-build-env.mjs && node scripts/verify-build-supabase-identity.mjs && opennextjs-cloudflare build && npm run typecheck:worker && opennextjs-cloudflare deploy && node scripts/smoke-test-deploy.mjs",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
     "postinstall": "patch-package"

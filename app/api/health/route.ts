@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { withDeadline } from "@/lib/with-deadline";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
+import { checkoutMode } from "@/lib/checkout-maintenance";
 
 // Lightweight uptime check. Returns 200 if the app is alive + key env vars
 // are configured. Doesn't reach external services (Stripe, etc.) to keep the
@@ -109,6 +110,8 @@ export async function GET(req: Request) {
     {
       ok: true,
       version: "alpha-v0.63",
+      release: process.env.NEXT_PUBLIC_ALPHA_RELEASE_SHA?.trim() || null,
+      checkoutMode: checkoutMode(process.env.ALPHA_CHECKOUT_MODE),
       timestamp: new Date().toISOString(),
       checks,
     },

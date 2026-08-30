@@ -20,6 +20,25 @@
 import nextEnv from "@next/env";
 const { loadEnvConfig } = nextEnv;
 
+const ALPHA_SUPABASE_HOST = "xpqxhdciaoicsnyyfshy.supabase.co";
+
+function isExactAlphaSupabaseUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return (
+      parsed.protocol === "https:" &&
+      parsed.hostname === ALPHA_SUPABASE_HOST &&
+      (parsed.pathname === "/" || parsed.pathname === "") &&
+      !parsed.username &&
+      !parsed.password &&
+      !parsed.search &&
+      !parsed.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Only the vars that are actually NEXT_PUBLIC_*-prefixed and referenced by
 // app code matter here -- server-only secrets (ANTHROPIC_API_KEY, etc.) are
 // read live from the Cloudflare Worker's runtime bindings, not baked in at
@@ -29,8 +48,8 @@ const { loadEnvConfig } = nextEnv;
 const REQUIRED_PUBLIC_VARS = [
   {
     name: "NEXT_PUBLIC_SUPABASE_URL",
-    validate: (v) => /^https:\/\/[a-z0-9]+\.supabase\.co\/?$/.test(v),
-    hint: "expected https://<ref>.supabase.co",
+    validate: isExactAlphaSupabaseUrl,
+    hint: `expected the dedicated Alpha project at https://${ALPHA_SUPABASE_HOST}`,
   },
   {
     name: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
@@ -46,7 +65,8 @@ for (const { name, validate, hint } of REQUIRED_PUBLIC_VARS) {
   const value = combinedEnv[name];
   if (!value || !validate(value)) {
     failed = true;
-    console.error(`\n::error:: ${name} resolved to ${JSON.stringify(value ?? "")} -- ${hint}`);
+    const state = value ? "a present but invalid value" : "an empty or missing value";
+    console.error(`\n::error:: ${name} resolved to ${state} -- ${hint}`);
     // Show which files were loaded, in the exact precedence order Next.js
     // used, so whoever hits this can see WHICH file is winning and overriding
     // a good value -- this is what would have made today's bug obvious in
@@ -55,7 +75,7 @@ for (const { name, validate, hint } of REQUIRED_PUBLIC_VARS) {
     console.error("  Env files loaded (later entries win ties for the same key):");
     for (const f of loadedEnvFiles) {
       const hasKey = Object.prototype.hasOwnProperty.call(f.env, name);
-      console.error(`    - ${f.path}${hasKey ? ` (sets ${name}=${JSON.stringify(f.env[name])})` : ""}`);
+      console.error(`    - ${f.path}${hasKey ? ` (sets ${name}; value withheld)` : ""}`);
     }
   }
 }

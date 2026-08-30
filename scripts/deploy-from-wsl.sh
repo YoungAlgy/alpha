@@ -48,6 +48,19 @@ else
   echo "    Already up to date at $after"
 fi
 
+# The public build marker is frozen into /api/health by Next.js. The expected
+# copy stays in the deploy process so the live smoke test can prove this exact
+# commit reached the canonical host.
+export NEXT_PUBLIC_ALPHA_RELEASE_SHA="$after"
+export ALPHA_EXPECTED_RELEASE_SHA="$after"
+checkout_mode="$(node -e '
+  const source = require("node:fs").readFileSync("wrangler.jsonc", "utf8");
+  const matches = [...source.matchAll(/"ALPHA_CHECKOUT_MODE"\s*:\s*"(open|paused)"/g)];
+  if (matches.length !== 1) process.exit(1);
+  process.stdout.write(matches[0][1]);
+')"
+export ALPHA_EXPECTED_CHECKOUT_MODE="$checkout_mode"
+
 # alpha-drift-r22-01 (found+fixed 2026-08-14): this script hard-resets the
 # CODE to match origin/master but never touched node_modules -- fine on an
 # ordinary code-only deploy, but a commit that bumps package-lock.json (a
@@ -67,5 +80,15 @@ if [ "$lockfile_before" != "$lockfile_after" ] || [ ! -d node_modules ]; then
   npm ci
 fi
 
+echo "==> Capturing the active Worker rollback target..."
+rollback_version="$(node scripts/capture-cloudflare-rollback.mjs "$after")"
+export ALPHA_ROLLBACK_VERSION_ID="$rollback_version"
+echo "    Active rollback target: $rollback_version"
+
 echo "==> Deploying (npm run cf:deploy)..."
-npm run cf:deploy
+if ! npm run cf:deploy; then
+  echo "error: deploy or live smoke failed. Keep checkout paused and inspect the release record." >&2
+  echo "rollback target: $rollback_version" >&2
+  echo "review before running: ./node_modules/.bin/wrangler rollback $rollback_version --name alpha" >&2
+  exit 1
+fi
