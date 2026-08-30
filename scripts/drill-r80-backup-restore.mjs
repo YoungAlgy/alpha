@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Offline Round 80 recovery drill. It creates an isolated loopback PostgreSQL
-// cluster, applies the repository migrations, exports a synthetic snapshot,
-// restores it through the public local-only CLI, and destroys the cluster.
-// Child-process output and fixture rows are never printed.
+// cluster, applies the repository migrations, restores either a generated
+// synthetic snapshot or an explicitly supplied real backup through the public
+// local-only CLI, and destroys the cluster. Child-process output and rows are
+// never printed.
 import { spawnSync } from "node:child_process";
 import {
   lstatSync,
@@ -35,6 +36,14 @@ const FIXTURE_ISSUE_ID = "44444444-4444-4444-8444-444444444444";
 function fail(message) {
   throw new Error(message);
 }
+
+function argumentValue(name) {
+  const index = process.argv.indexOf(name);
+  if (index < 0 || index === process.argv.length - 1) return "";
+  return process.argv[index + 1];
+}
+
+const REAL_BACKUP_DIRECTORY = argumentValue("--real-backup-dir");
 
 function command(executable, args, options = {}) {
   const {
@@ -450,7 +459,15 @@ async function drill() {
     fail("unsafe local drill directory");
   }
   const dataDirectory = path.join(temporaryDirectory, "postgres");
-  const backupDirectory = path.join(temporaryDirectory, "backup");
+  const backupDirectory = REAL_BACKUP_DIRECTORY
+    ? path.resolve(REAL_BACKUP_DIRECTORY)
+    : path.join(temporaryDirectory, "backup");
+  if (REAL_BACKUP_DIRECTORY) {
+    const backupStat = lstatSync(backupDirectory);
+    if (!backupStat.isDirectory() || backupStat.isSymbolicLink()) {
+      fail("real backup path must be a regular local directory");
+    }
+  }
   const serverLog = path.join(temporaryDirectory, "postgres.log");
   const port = await getFreeLoopbackPort();
   let serverStarted = false;
@@ -490,7 +507,14 @@ async function drill() {
 
     psql(psqlBin, port, "postgres", {
       stage: "isolated roles or databases could not be created",
-      input: `
+      input: REAL_BACKUP_DIRECTORY
+        ? `
+create role anon nologin;
+create role authenticated nologin;
+create role service_role nologin;
+create database alpha_r80_destination;
+`
+        : `
 create role anon nologin;
 create role authenticated nologin;
 create role service_role nologin;
@@ -498,38 +522,45 @@ create database alpha_r80_source;
 create database alpha_r80_destination;
 `,
     });
-    bootstrapDatabase(psqlBin, port, "alpha_r80_source");
     bootstrapDatabase(psqlBin, port, "alpha_r80_destination");
-    loadSyntheticFixture(psqlBin, port, "alpha_r80_source");
+    let manifest;
+    if (REAL_BACKUP_DIRECTORY) {
+      manifest = JSON.parse(
+        readFileSync(path.join(backupDirectory, "MANIFEST.json"), "utf8")
+      );
+    } else {
+      bootstrapDatabase(psqlBin, port, "alpha_r80_source");
+      loadSyntheticFixture(psqlBin, port, "alpha_r80_source");
 
-    const { mkdirSync } = await import("node:fs");
-    mkdirSync(backupDirectory);
-    const manifest = exportSyntheticSnapshot(
-      psqlBin,
-      port,
-      "alpha_r80_source",
-      backupDirectory
-    );
+      const { mkdirSync } = await import("node:fs");
+      mkdirSync(backupDirectory);
+      manifest = exportSyntheticSnapshot(
+        psqlBin,
+        port,
+        "alpha_r80_source",
+        backupDirectory
+      );
 
-    const nonlocal = runRestoreCli({
-      backupDirectory,
-      databaseUrl: "postgresql://postgres@198.51.100.10/blocked",
-      psqlBin,
-    });
-    if (nonlocal.status === 0) fail("nonlocal restore target was accepted");
-    assertAggregateLine(nonlocal, "stderr", "RESTORE FAIL:");
+      const nonlocal = runRestoreCli({
+        backupDirectory,
+        databaseUrl: "postgresql://postgres@198.51.100.10/blocked",
+        psqlBin,
+      });
+      if (nonlocal.status === 0) fail("nonlocal restore target was accepted");
+      assertAggregateLine(nonlocal, "stderr", "RESTORE FAIL:");
 
-    const usersPath = path.join(backupDirectory, "users.json");
-    const originalUsers = readFileSync(usersPath);
-    writeFileSync(usersPath, Buffer.concat([originalUsers, Buffer.from("\n")]));
-    const tampered = runRestoreCli({
-      backupDirectory,
-      databaseUrl: `postgresql://postgres@127.0.0.1:${port}/alpha_r80_destination`,
-      psqlBin,
-    });
-    if (tampered.status === 0) fail("tampered backup was accepted");
-    assertAggregateLine(tampered, "stderr", "RESTORE FAIL:");
-    writeFileSync(usersPath, originalUsers);
+      const usersPath = path.join(backupDirectory, "users.json");
+      const originalUsers = readFileSync(usersPath);
+      writeFileSync(usersPath, Buffer.concat([originalUsers, Buffer.from("\n")]));
+      const tampered = runRestoreCli({
+        backupDirectory,
+        databaseUrl: `postgresql://postgres@127.0.0.1:${port}/alpha_r80_destination`,
+        psqlBin,
+      });
+      if (tampered.status === 0) fail("tampered backup was accepted");
+      assertAggregateLine(tampered, "stderr", "RESTORE FAIL:");
+      writeFileSync(usersPath, originalUsers);
+    }
 
     const firstRestore = runRestoreCli({
       backupDirectory,
@@ -537,12 +568,8 @@ create database alpha_r80_destination;
       psqlBin,
     });
     if (firstRestore.status !== 0) {
-      const sqlState = firstRestore.stderr.match(/SQLSTATE ([0-9A-Z]{5})/)?.[1];
-      fail(
-        sqlState
-          ? `valid local restore failed with SQLSTATE ${sqlState}`
-          : `valid local restore failed (${firstRestore.stderr.trim() || "no diagnostic"})`
-      );
+      assertAggregateLine(firstRestore, "stderr", "RESTORE FAIL:");
+      fail(`valid local restore failed: ${firstRestore.stderr.trim()}`);
     }
     assertAggregateLine(firstRestore, "stdout", "RESTORE PASS:");
     verifyRestoredDatabase(psqlBin, port, "alpha_r80_destination", manifest);
@@ -597,9 +624,15 @@ create database alpha_r80_destination;
 
 try {
   await drill();
-  console.log(
-    `DRILL PASS: ${CRITICAL_TABLES.length} tables restored with manifest counts/hashes, exact auth anchors, foreign keys, and serial sequences verified.`
-  );
+  if (REAL_BACKUP_DIRECTORY) {
+    console.log(
+      `REAL BACKUP DRILL PASS: ${CRITICAL_TABLES.length} tables restored with manifest counts/hashes, exact auth anchors, foreign keys, and serial sequences verified.`
+    );
+  } else {
+    console.log(
+      `DRILL PASS: ${CRITICAL_TABLES.length} tables restored with manifest counts/hashes, exact auth anchors, foreign keys, and serial sequences verified.`
+    );
+  }
 } catch (error) {
   const message = error instanceof Error ? error.message : "local recovery drill failed";
   console.error(`DRILL FAIL: ${message}`);

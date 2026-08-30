@@ -152,6 +152,8 @@ matches(restoreCli, /psqlBin: process\.env\.PSQL_BIN/);
 excludes(restoreCli, /result\.(?:stdout|stderr)/);
 
 matches(drill, /nativeSibling\(psqlBin, "initdb"\)/);
+matches(drill, /argumentValue\("--real-backup-dir"\)/);
+matches(drill, /REAL BACKUP DRILL/);
 matches(drill, /nativeSibling\(psqlBin, "pg_ctl"\)/);
 matches(drill, /-h 127\.0\.0\.1/);
 matches(drill, /create role anon nologin/);
