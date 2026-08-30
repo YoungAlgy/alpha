@@ -7,16 +7,13 @@ name: Database backup
 # this session, went NXDOMAIN with no warning) meant total, unrecoverable
 # loss of every subscriber row for a paying-customer product.
 #
-# Daily export of the 3 source-of-truth tables (users, issues,
-# support_tickets -- see scripts/backup-critical-tables.mjs's own comment
-# for why NOT topic_blurbs/stripe_webhook_events/resend_webhook_events)
+# Daily export of subscriber source data and durable checkout, fulfillment,
+# refund, and deletion obligations (see scripts/backup-critical-tables.mjs)
 # to a GitHub Actions artifact. Not a full pg_dump/PITR replacement -- a
 # baseline safety net using infrastructure this repo already has, not a new
-# paid service or a new account. Restore is manual (re-insert the JSON via
-# the Supabase SQL editor or REST API) -- there's no automated restore path,
-# by design: an automated restore is a much higher-risk piece of tooling
-# (a bug there could overwrite good data) than this repo's own bar for
-# "build it now vs. flag it" supports for a first pass.
+# paid service or a new account. Restore is manual by design. The artifact
+# does not contain Supabase Auth identities or schema. Follow
+# docs/DATABASE_RECOVERY.md and stop if those identities cannot be recovered.
 #
 # 30-day artifact retention, not GitHub's max (90d) or indefinite -- keeps
 # a real recovery window (a mistake noticed within a month is recoverable)
@@ -34,7 +31,7 @@ name: Database backup
 # (full subscriber emails, names, cities, bios, Stripe customer IDs, raw
 # support-ticket text) as a public artifact for real -- caught live and
 # deleted the same day. Fix: encrypt the whole backup/ directory into one
-# opaque blob (openssl aes-256-cbc+pbkdf2, BACKUP_ENCRYPTION_KEY secret)
+# opaque blob (openssl aes-256-cbc+pbkdf2, BACKUP_ENCRYPTION_KEY_V2 secret)
 # before it ever reaches upload-artifact, and never let the plaintext
 # files themselves become the uploaded path. The artifact being public is
 # now harmless -- it's ciphertext without the key, which lives only in
@@ -42,6 +39,8 @@ name: Database backup
 #
 # alpha-drift-r16-14 (found+fixed 2026-08-07): the encrypt step above
 # trusted BACKUP_ENCRYPTION_KEY without ever checking it was actually set.
+# New backups use a separately retained V2 key. The old secret remains in
+# place so historical artifacts are not made harder to recover.
 # `set -euo pipefail` gives no protection here -- openssl does not treat an
 # empty passphrase as an error, it happily encrypts with one and exits 0.
 # Reproduced locally: an empty/unset key still produces a real ciphertext
@@ -69,10 +68,14 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Export users, issues, support_tickets
+      - name: Export critical subscriber and operational tables
         env:
           SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          # This helper branch runs before the Round 80 migration. The exporter
+          # must prove each known new table is still absent with PGRST205 before
+          # representing that table as an empty file in the recovery snapshot.
+          BACKUP_PRE_R80_MODE: "1"
         run: |
           export BACKUP_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           node scripts/backup-critical-tables.mjs backup
@@ -82,17 +85,19 @@ jobs:
       # blob and delete the plaintext before upload-artifact ever sees it.
       - name: Encrypt backup
         env:
-          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          # V2 is also retained locally in an Alpha-only DPAPI store so an
+          # encrypted artifact remains recoverable if GitHub is unavailable.
+          BACKUP_ENCRYPTION_KEY_V2: ${{ secrets.BACKUP_ENCRYPTION_KEY_V2 }}
         run: |
           set -euo pipefail
-          if [ -z "${BACKUP_ENCRYPTION_KEY}" ]; then
-            echo "::error:: BACKUP_ENCRYPTION_KEY is unset or empty -- refusing to 'encrypt' with an empty passphrase and upload a public artifact that isn't actually protected. Check the GitHub secret still exists (Settings > Secrets and variables > Actions)."
+          if [ -z "${BACKUP_ENCRYPTION_KEY_V2}" ]; then
+            echo "::error:: BACKUP_ENCRYPTION_KEY_V2 is unset or empty. Refusing to upload an artifact protected by an empty passphrase."
             exit 1
           fi
           tar -czf backup.tar.gz -C backup .
           openssl enc -aes-256-cbc -pbkdf2 -salt \
             -in backup.tar.gz -out backup.tar.gz.enc \
-            -pass env:BACKUP_ENCRYPTION_KEY
+            -pass env:BACKUP_ENCRYPTION_KEY_V2
           rm -rf backup backup.tar.gz
 
       - name: Upload encrypted backup artifact
