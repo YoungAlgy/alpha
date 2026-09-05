@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { withDeadline } from "@/lib/with-deadline";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
+import { legacyCheckoutRootCutoffUnix } from "@/lib/legacy-checkout";
+import { hardProductFailures } from "@/lib/health-status";
 import { checkoutMode } from "@/lib/checkout-maintenance";
+import { alphaAccessMode } from "@/lib/access-mode";
+import { SUBSCRIBER_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
+import { noModelModeEnabled } from "@/lib/engine/provider-policy";
+import { publicFeedFallbackEnabled } from "@/lib/engine/public-feed-search";
 
 // Lightweight uptime check. Returns 200 if the app is alive + key env vars
 // are configured. Doesn't reach external services (Stripe, etc.) to keep the
@@ -47,6 +53,14 @@ async function checkSupabase(): Promise<boolean> {
   }
 }
 
+function hasLegacyCheckoutCutoff(): boolean {
+  try {
+    return legacyCheckoutRootCutoffUnix() > 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(req: Request) {
   // alpha-drift-r28-06 (2026-08-15): this route runs a real checkSupabase()
   // round-trip on EVERY call (force-dynamic + no-store above deliberately
@@ -72,12 +86,19 @@ export async function GET(req: Request) {
     );
   }
 
+  const strictNoModel = noModelModeEnabled();
+  const publicFeed = publicFeedFallbackEnabled();
   const checks = {
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     resend: !!process.env.RESEND_API_KEY,
     emailProvider: process.env.RESEND_API_KEY ? "resend" : "none",
     stripe: !!process.env.STRIPE_SECRET_KEY,
     stripeWebhook: !!process.env.STRIPE_WEBHOOK_SECRET,
+    checkoutBinding: !!process.env.CHECKOUT_BINDING_SECRET,
+    // The same random root is domain-separated for letter tokens and the
+    // distributed abuse limiter. Presence alone is not enough for the latter.
+    unsubscribe: (process.env.UNSUBSCRIBE_SECRET?.trim().length ?? 0) >= 32,
+    legacyCheckoutCutoff: hasLegacyCheckoutCutoff(),
     supabase: await checkSupabase(),
     brave: !!process.env.BRAVE_SEARCH_API_KEY,
     // alpha-drift-r46-07 (2026-08-19): this used to describe Gemini as a
@@ -105,16 +126,34 @@ export async function GET(req: Request) {
     // means a Gemini-AND-Groq-exhausted, Anthropic-unfunded day has no real
     // fallback left besides the stale-resend backup layer.
     deepseek: !!process.env.DEEPSEEK_API_KEY,
+    publicFeed,
+    freshSourceConfigured:
+      !!process.env.BRAVE_SEARCH_API_KEY ||
+      !!process.env.YOU_API_KEY ||
+      publicFeed ||
+      (!strictNoModel && !!process.env.GEMINI_API_KEY),
   };
+  const accessMode = alphaAccessMode(true);
+  const hardFailures = hardProductFailures(checks, accessMode);
+  const ok = hardFailures.length === 0;
   return NextResponse.json(
     {
-      ok: true,
+      ok,
       version: "alpha-v0.63",
       release: process.env.NEXT_PUBLIC_ALPHA_RELEASE_SHA?.trim() || null,
+      accessMode,
+      subscriberDeliveryMode: SUBSCRIBER_LETTERS_ENABLED ? "open" : "paused",
       checkoutMode: checkoutMode(process.env.ALPHA_CHECKOUT_MODE),
+      noModelMode: strictNoModel,
       timestamp: new Date().toISOString(),
       checks,
+      // Generator/search providers remain informational resilience tiers.
+      // Only hard product dependencies can make this endpoint unhealthy.
+      hardFailures,
     },
-    { headers: { "Cache-Control": "no-store, must-revalidate" } }
+    {
+      status: ok ? 200 : 503,
+      headers: { "Cache-Control": "no-store, must-revalidate" },
+    }
   );
 }

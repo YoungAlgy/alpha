@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
+import {
+  AccountExportTooLargeError,
+  fetchCompleteExportRows,
+  normalizeAccountEmails,
+} from "@/lib/account-privacy";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
+
+function escapeIlike(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
 
 // Real "download my data" export. The settings page used to just
 // JSON.stringify the client's in-memory onboarding state (localStorage) —
@@ -44,103 +53,160 @@ export async function GET() {
     return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
   }
 
-  // .limit() well above any realistic lifetime issue count (daily cadence,
-  // ~365/year) so PostgREST's silent 1,000-row select cap fails loudly via a
-  // future increase rather than silently truncating a long-tenured
-  // subscriber's data export.
-  const { data: issues, error: issuesErr } = await svc
-    .from("issues")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("week_of", { ascending: true })
-    .limit(5000);
-  if (issuesErr) {
-    console.error("[account/export] issues fetch failed:", issuesErr.message);
-    return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
-  }
+  const mirrorEmail =
+    profile &&
+    typeof profile === "object" &&
+    typeof (profile as { email?: unknown }).email === "string"
+      ? (profile as { email: string }).email
+      : null;
+  // Auth is authoritative after a confirmed email change. The public mirror
+  // remains included because signed-out support tickets can still carry the
+  // older address while the mirror catches up.
+  const exportEmails = normalizeAccountEmails(user.email, mirrorEmail);
 
-  // The delete path (lib/stripe-cancel.ts's deleteSupportTicketsBeforeDelete)
-  // treats a subscriber's support tickets as their data to remove -- this
-  // export must agree on what "the user's data" means, matching the same
-  // privacy-page promise. Only tickets submitted while signed in ever carry
-  // a real user_id (app/api/support/route.ts, fixed 2026-08-06); the
-  // orphaned-by-email query below (alpha-drift-r28-08) closes the gap this
-  // comment used to just flag -- a signed-out submission under this same
-  // email is caught too now, not silently missing from the export.
-  // alpha-drift-r18-01 (found+fixed 2026-08-07): the sibling issues query
-  // above already guards against PostgREST's silent 1,000-row select cap
-  // with an explicit .limit() well past any realistic count -- this query
-  // had no such guard at all, so a subscriber who somehow filed more than
-  // 1,000 support tickets would silently get a truncated export with no
-  // indication anything was cut off. Vanishingly unlikely in practice
-  // (support tickets aren't a daily-cadence table like issues), but the
-  // fix costs nothing and keeps both queries in this file honest about the
-  // same failure mode.
-  const { data: supportTickets, error: supportErr } = await svc
-    .from("support_tickets")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: true })
-    .limit(5000);
-  if (supportErr) {
-    console.error("[account/export] support_tickets fetch failed:", supportErr.message);
-    return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
-  }
+  let issues: unknown[];
+  let deliveryAttempts: unknown[];
+  let suppressionEvents: unknown[];
+  let supportTickets: unknown[];
+  const orphanedSupportTickets: unknown[] = [];
+  try {
+    issues = await fetchCompleteExportRows(
+      "issues",
+      async (from, to) => {
+        const result = await svc
+          .from("issues")
+          .select("*", { count: "exact" })
+          .eq("user_id", user.id)
+          .order("week_of", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to);
+        return {
+          data: result.data,
+          count: result.count,
+          error: result.error,
+        };
+      }
+    );
 
-  // alpha-drift-r28-08 (2026-08-15): the comment two blocks up already named
-  // this exact gap ("anonymous submissions... won't appear here") without
-  // closing it -- a ticket filed signed-out with this same email has
-  // user_id permanently NULL (app/api/support/route.ts only links it when
-  // the submitter happens to be signed in at that moment), so the query
-  // above misses it even though it's genuinely this reader's own data.
-  // Scoped to user_id IS NULL specifically so this can never surface
-  // another real account's own already-linked ticket. Case-insensitive via
-  // ilike on a wildcard-escaped value, same as the matching delete-side fix
-  // in lib/stripe-cancel.ts's deleteSupportTicketsBeforeDelete.
-  let orphanedSupportTickets: typeof supportTickets = [];
-  if (user.email) {
-    const escapedEmail = user.email.replace(/[\\%_]/g, "\\$&");
-    const { data: orphaned, error: orphanedErr } = await svc
-      .from("support_tickets")
-      .select("*")
-      .is("user_id", null)
-      .ilike("email", escapedEmail)
-      .order("created_at", { ascending: true })
-      .limit(5000);
-    if (orphanedErr) {
-      console.error("[account/export] orphaned support_tickets fetch failed:", orphanedErr.message);
-      return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
+    deliveryAttempts = await fetchCompleteExportRows(
+      "delivery attempts",
+      async (from, to) => {
+        const result = await svc
+          .from("resend_delivery_attempts")
+          .select("*", { count: "exact" })
+          .eq("user_id", user.id)
+          .order("started_at", { ascending: true })
+          .order("attempt_id", { ascending: true })
+          .range(from, to);
+        return {
+          data: result.data,
+          count: result.count,
+          error: result.error,
+        };
+      }
+    );
+
+    suppressionEvents = await fetchCompleteExportRows(
+      "Resend suppression events",
+      async (from, to) => {
+        const result = await svc
+          .from("resend_webhook_events")
+          .select("*", { count: "exact" })
+          .eq("owner_user_id", user.id)
+          .order("received_at", { ascending: true })
+          .order("email_id", { ascending: true })
+          .order("type", { ascending: true })
+          .range(from, to);
+        return {
+          data: result.data,
+          count: result.count,
+          error: result.error,
+        };
+      }
+    );
+
+    supportTickets = await fetchCompleteExportRows(
+      "support tickets linked to the account",
+      async (from, to) => {
+        const result = await svc
+          .from("support_tickets")
+          .select("*", { count: "exact" })
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to);
+        return {
+          data: result.data,
+          count: result.count,
+          error: result.error,
+        };
+      }
+    );
+
+    // user_id IS NULL is deliberate. A ticket linked to another account is
+    // never returned just because its email happens to match this account.
+    for (const email of exportEmails) {
+      const escapedEmail = escapeIlike(email);
+      const ticketsForEmail = await fetchCompleteExportRows(
+        "orphaned support tickets",
+        async (from, to) => {
+          const result = await svc
+            .from("support_tickets")
+            .select("*", { count: "exact" })
+            .is("user_id", null)
+            .ilike("email", escapedEmail)
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to);
+          return {
+            data: result.data,
+            count: result.count,
+            error: result.error,
+          };
+        }
+      );
+      orphanedSupportTickets.push(...ticketsForEmail);
     }
-    orphanedSupportTickets = orphaned;
+  } catch (error) {
+    if (error instanceof AccountExportTooLargeError) {
+      console.warn("[account/export] bounded export limit reached:", error.message);
+      return NextResponse.json(
+        {
+          error:
+            "Your export is larger than the one-file limit. Contact support for a complete export.",
+        },
+        { status: 413 }
+      );
+    }
+    console.error(
+      "[account/export] paginated data fetch failed:",
+      error instanceof Error ? error.message : error
+    );
+    return NextResponse.json({ error: "Couldn't build your export. Try again." }, { status: 500 });
   }
 
-  return NextResponse.json({
-    exported_at: new Date().toISOString(),
-    // alpha-drift-r18-01 (found+fixed 2026-08-07): app/privacy/page.tsx
-    // promises "everything we have about you," but this export never read
-    // Supabase Auth's OWN record at all -- separate from the public.users
-    // profile row above, and the actual source of truth for sign-in history.
-    // Already have it for free: `user` (fetched above to authenticate this
-    // request in the first place) IS that record, just never included in
-    // the response. Low practical impact today (this app never sets any
-    // custom user_metadata), but the built-in fields (when the account was
-    // created, when it last signed in, whether the email is confirmed) are
-    // still real data about the reader that belongs in an "everything"
-    // export regardless.
-    auth: {
-      id: user.id,
-      email: user.email,
-      created_at: user.created_at,
-      last_sign_in_at: user.last_sign_in_at,
-      email_confirmed_at: user.email_confirmed_at,
-      user_metadata: user.user_metadata,
+  return NextResponse.json(
+    {
+      exported_at: new Date().toISOString(),
+      // Auth's record is included alongside the public profile. The built-in
+      // fields are real account data and belong in an "everything" export.
+      auth: {
+        id: user.id,
+        email: user.email,
+        created_at: user.created_at,
+        last_sign_in_at: user.last_sign_in_at,
+        email_confirmed_at: user.email_confirmed_at,
+        user_metadata: user.user_metadata,
+      },
+      profile,
+      issues,
+      resend_delivery_attempts: deliveryAttempts,
+      resend_suppression_events: suppressionEvents,
+      // Merged: tickets linked by id, plus signed-out submissions under either
+      // the current Auth email or the stale public mirror email. The two sets
+      // cannot overlap because the second query requires user_id IS NULL.
+      support_tickets: [...supportTickets, ...orphanedSupportTickets],
     },
-    profile,
-    issues,
-    // Merged: tickets linked by id, plus any signed-out submission under
-    // this same email that was never linked (see the comment above).
-    // user_id IS NULL on the second set and this account's own id on the
-    // first, so the two queries can never overlap -- no dedup needed.
-    support_tickets: [...supportTickets, ...orphanedSupportTickets],
-  });
+    { headers: { "Cache-Control": "private, no-store" } }
+  );
 }

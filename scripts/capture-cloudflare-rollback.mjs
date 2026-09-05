@@ -44,7 +44,7 @@ const capturedAt = new Date().toISOString();
 const safeTimestamp = capturedAt.replace(/[:.]/g, "-");
 const recordDir =
   process.env.ALPHA_RELEASE_RECORD_DIR?.trim() ||
-  "/mnt/c/Users/Algy/Desktop/Files/Alpha-Releases";
+  "backup/release-records";
 mkdirSync(recordDir, { recursive: true });
 const recordPath = path.join(
   recordDir,

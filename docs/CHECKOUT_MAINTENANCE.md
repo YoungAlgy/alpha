@@ -1,8 +1,9 @@
 # Checkout maintenance gate
 
-Alpha has a fail-closed gate at the very start of `POST /api/stripe/checkout`.
-It exists so a schema or billing release can stop new Checkout Sessions while
-existing subscribers keep normal site access.
+Alpha checks invite-only mode first at the start of `POST /api/stripe/checkout`.
+Paid mode then passes through a separate fail-closed maintenance gate. The gate
+lets a schema or billing release stop new Checkout Sessions while existing
+readers keep normal site access.
 
 ## Controls
 

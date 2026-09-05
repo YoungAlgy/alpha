@@ -58,6 +58,7 @@ export function ThemeSwitcher({ compact = false, align = "right" }: { compact?: 
     // Read the theme actually applied to the page (ThemeApplier has already
     // resolved the account row for signed-in users) — not a bare localStorage
     // key, which would show "forest" on a fresh device.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActive(getCurrentTheme());
     // Keep the label in sync when the theme is changed elsewhere (settings,
     // the /theme picker, another tab).

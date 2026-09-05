@@ -56,16 +56,17 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
-console.log("(1) app/api/cron/weekly-send/route.ts: both chunked prefetch queries now warn on a per-chunk failure instead of silently discarding it");
+console.log("(1) app/api/cron/weekly-send/route.ts: chunked prefetch failures remain visible and pending-payload uncertainty fails closed");
 {
   const src = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
   check("(1a) a shared warnOnChunkErrors helper exists", /const warnOnChunkErrors = \(results: Array<\{ error: \{ message: string \} \| null \}>, label: string\) => \{/.test(src));
   check("(1b) it warns with a chunk-failure count and the joined messages", /console\.warn\(\s*\n\s*`\[cron\/weekly-send\] \$\{label\} prefetch: \$\{failed\.length\}\/\$\{results\.length\} chunk\(s\) failed/.test(src));
   check("(1c) stampsPromise's .then() calls it with label \"alreadyDelivered\" before flatMapping", /warnOnChunkErrors\(results, "alreadyDelivered"\);\s*\n\s*return results\.flatMap/.test(src));
-  check("(1d) pendingPromise's .then() calls it with label \"pendingIssues\" before flatMapping", /warnOnChunkErrors\(results, "pendingIssues"\);\s*\n\s*return results\.flatMap/.test(src));
+  check("(1d) pendingIssues chunk failure stops before flattening rows, generation, sends, or cursor progress", /const pendingChunkFailures = pendingChunkResults\.filter\(\(result\) => result\.error\);/.test(src) && /Couldn't fetch pending delivery state\. Try again\./.test(src) && src.indexOf("const pendingChunkFailures = pendingChunkResults.filter") < src.indexOf("const pendingResult = pendingChunkResults.flatMap") && src.indexOf("Couldn't fetch pending delivery state. Try again.") < src.indexOf("for (const row of rows)") && src.indexOf("Couldn't fetch pending delivery state. Try again.") < src.indexOf('"advance_weekly_send_cursor"'));
 }
 
 console.log("(2) components/Digest.tsx: the supplementaryRefs arrow is now aria-hidden, matching the primaryRef link above it");

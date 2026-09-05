@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { supabaseServiceClient } from "@/lib/supabase/server";
-import { sendOpsAlert } from "@/lib/email";
+import { sendOpsWebhookAlert } from "@/lib/email";
 import { isHardBounce, normalizeRecipients } from "@/lib/resend-webhook-guards";
+import { parseResendEventCreatedAt } from "@/lib/resend-suppression-causality";
 
 export const runtime = "nodejs";
 
@@ -60,12 +61,14 @@ export async function POST(req: Request) {
       "svix-timestamp": svixTimestamp,
       "svix-signature": svixSignature,
     }) as ResendWebhookEvent;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Invalid signature";
-    console.warn("[resend-webhook] signature verification failed:", msg);
+  } catch {
+    console.warn("[resend-webhook] signature verification failed");
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  if (!event || typeof event.type !== "string") {
+    return NextResponse.json({ error: "Invalid event" }, { status: 400 });
+  }
   if (event.type !== "email.bounced" && event.type !== "email.complained") {
     // We only subscribed to these two events in the Resend dashboard, but
     // ignore anything else defensively rather than erroring -- a dashboard
@@ -73,41 +76,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true });
   }
 
-  const emailId = event.data.email_id;
-  if (!emailId) {
-    console.warn(`[resend-webhook] ${event.type} event missing data.email_id -- can't dedup, skipping`);
-    return NextResponse.json({ received: true });
-  }
-
-  const sb = await supabaseServiceClient();
-
-  // Structural redelivery guard, same pattern as stripe_webhook_events --
-  // Resend/Svix delivers at-least-once. (email_id, type) is the natural key
-  // since Resend doesn't hand webhooks a top-level event id the way Stripe
-  // does. ignoreDuplicates -> INSERT ... ON CONFLICT DO NOTHING; 0 rows back
-  // means this (email_id, type) pair was already processed.
-  const { data: dedupRows, error: dedupErr } = await sb
-    .from("resend_webhook_events")
-    .upsert({ email_id: emailId, type: event.type }, { onConflict: "email_id,type", ignoreDuplicates: true })
-    .select("email_id");
-  if (dedupErr) {
-    console.warn("[resend-webhook] dedup insert failed, processing without guard:", dedupErr.message);
-  } else if ((dedupRows?.length ?? 0) === 0) {
-    console.warn(`[resend-webhook] duplicate delivery of ${event.type} for email_id ${emailId} -- skipping`);
-    return NextResponse.json({ received: true });
-  }
-  // Only THIS request freshly inserted the row (dedupRows.length > 0) is a
-  // durable "done" marker worth keeping if the suppression write below
-  // fails -- same reasoning as the Stripe webhook's insertedDedupRow (see
-  // app/api/stripe/webhook/route.ts). Without this, a failed bounced_at/
-  // complained_at write still permanently marks (email_id, type) as
-  // "seen": Resend's own retry never fires (this route returns 200
-  // either way), and even a manual replay from the Resend dashboard hits
-  // the same dedup guard and is silently skipped forever -- the dead
-  // address keeps getting sent to indefinitely, the exact outcome this
-  // whole webhook exists to prevent (alpha-drift-r14-03, found in review
-  // 2026-08-06).
-  const insertedDedupRow = !dedupErr && (dedupRows?.length ?? 0) > 0;
+  const emailId = event.data?.email_id;
 
   // Only a HARD (Permanent) bounce suppresses. Transient (mailbox full,
   // greylisting, a temporary receiving-server hiccup) and Undetermined are
@@ -115,57 +84,113 @@ export async function POST(req: Request) {
   // those would silently drop a real subscriber over a blip that isn't
   // actually their fault. Every complaint suppresses -- there's no
   // "soft complaint," a spam report is unambiguous.
-  if (event.type === "email.bounced" && !isHardBounce(event.data.bounce?.type)) {
+  if (event.type === "email.bounced" && !isHardBounce(event.data?.bounce?.type)) {
+    console.warn("[resend-webhook] non-permanent bounce ignored");
+    return NextResponse.json({ received: true });
+  }
+
+  if (typeof emailId !== "string" || !emailId.trim() || emailId.length > 512) {
     console.warn(
-      `[resend-webhook] non-permanent bounce (${event.data.bounce?.type ?? "unknown"}) for email_id ${emailId} -- not suppressing`
+      `[resend-webhook] ${event.type} event missing data.email_id -- refusing an untraceable suppression`
     );
-    return NextResponse.json({ received: true });
+    return NextResponse.json(
+      { received: false, error: "email id missing" },
+      { status: 500 }
+    );
   }
 
-  const recipients = normalizeRecipients(event.data.to);
-  if (recipients.length === 0) {
-    console.warn(`[resend-webhook] ${event.type} event for email_id ${emailId} has no recipient addresses -- nothing to suppress`);
-    return NextResponse.json({ received: true });
+  // Handler receipt time is not causal evidence. A provider retry can arrive
+  // after a newer checkout or explicit delivery re-consent. Use the signed
+  // event clock and fail closed if it is absent, impossible, or implausibly in
+  // the future.
+  const eventAt = parseResendEventCreatedAt(event.created_at);
+  if (!eventAt) {
+    console.warn(
+      "[resend-webhook] event has an invalid created_at"
+    );
+    return NextResponse.json(
+      { received: false, error: "event timestamp invalid" },
+      { status: 500 }
+    );
   }
 
-  const column = event.type === "email.bounced" ? "bounced_at" : "complained_at";
-  const { data: updatedRows, error: updateErr } = await sb
-    .from("users")
-    .update({ [column]: new Date().toISOString() })
-    .in("email", recipients)
-    .select("id");
-  if (updateErr) {
-    console.error(`[resend-webhook] ${column} write failed:`, updateErr.message);
-    // Clear the dedup row so a retry -- Resend's own, or a manual replay
-    // from its dashboard -- can actually reprocess this event instead of
-    // being silently swallowed by the guard forever. Best-effort: a failed
-    // delete here must not change the response Resend sees.
-    if (insertedDedupRow) {
-      const { error: cleanupErr } = await sb
-        .from("resend_webhook_events")
-        .delete()
-        .eq("email_id", emailId)
-        .eq("type", event.type);
-      if (cleanupErr) {
-        console.warn(
-          `[resend-webhook] failed to clear dedup row for ${emailId}/${event.type} after write failure -- retries/replays will be silently skipped:`,
-          cleanupErr.message
-        );
-      }
+  const recipients = normalizeRecipients(event.data?.to);
+  if (recipients.length > 20) {
+    console.warn(
+      "[resend-webhook] event exceeded the recipient bound"
+    );
+    return NextResponse.json(
+      { received: false, error: "recipient count invalid" },
+      { status: 400 }
+    );
+  }
+
+  const sb = await supabaseServiceClient();
+
+  // One service-only database transaction records the audit key and applies a
+  // monotonic suppression update. Duplicate events still execute the update,
+  // so a retained audit row cannot swallow recovery after an earlier failure.
+  const { data: recorded, error: recordError } = await sb.rpc(
+    "record_resend_suppression_event",
+    {
+      p_email_id: emailId,
+      p_event_type: event.type,
+      p_event_at: eventAt,
+      p_recipients: recipients,
     }
-    // Best-effort ops alert, never blocks the response -- a failed
-    // suppression write is a deliverability risk, not a paying-customer
-    // outage, so this doesn't need Stripe's throw-and-retry treatment.
-    await sendOpsAlert(
+  );
+  const result = Array.isArray(recorded) && recorded.length === 1 ? recorded[0] : null;
+  const status = result?.delivery_status;
+  const updatedCount = result?.updated_count;
+  if (
+    recordError ||
+    ![
+      "applied",
+      "causally_ignored",
+      "pending_owner",
+      "manual_review",
+      "legacy_review",
+      "expired_unowned",
+    ].includes(status) ||
+    !Number.isSafeInteger(updatedCount) ||
+    updatedCount < 0 ||
+    updatedCount > 1 ||
+    (status !== "applied" && updatedCount !== 0)
+  ) {
+    // Provider identifiers and database errors can carry recipient material.
+    // Keep external alerts/logs aggregate-only so they cannot bypass expiry.
+    console.error("[resend-webhook] suppression transaction failed");
+    await sendOpsWebhookAlert(
       "alpha. resend suppression write failed",
-      `${event.type} for email_id ${emailId} (${recipients.join(", ")}): ${updateErr.message}`,
-      `alpha-resend-webhook-fail-${emailId}-${event.type}`
+      `Event ${event.type}, recipient_count=${recipients.length}. Check the protected delivery review queue.`
     );
-  } else if ((updatedRows?.length ?? 0) === 0) {
-    // 0 rows matched almost always means the recipient isn't (or is no
-    // longer) a subscriber -- a stray test send, a since-deleted account, or
-    // an address that was never in public.users to begin with. Not an error.
-    console.warn(`[resend-webhook] ${event.type} for email_id ${emailId} matched no subscriber row (${recipients.join(", ")})`);
+    return NextResponse.json(
+      { received: false, error: "suppression write failed" },
+      { status: 500 }
+    );
+  }
+  if (status === "expired_unowned") {
+    // No identity record is created for an expired, still-unowned replay.
+    return NextResponse.json({ received: true });
+  }
+  if (
+    status === "legacy_review" ||
+    status === "pending_owner" ||
+    status === "manual_review"
+  ) {
+    console.warn(
+      `[resend-webhook] delivery-ownership review required (${status})`
+    );
+    await sendOpsWebhookAlert(
+      "alpha. resend suppression needs review",
+      `Event ${event.type}, recipient_count=${recipients.length}, reason=${status}. Check the protected delivery review queue.`,
+    );
+    return NextResponse.json({ received: true, reviewRequired: true });
+  }
+  if (updatedCount === 0) {
+    console.warn(
+      "[resend-webhook] event matched no current causal suppression target"
+    );
   }
 
   return NextResponse.json({ received: true });

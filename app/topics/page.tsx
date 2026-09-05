@@ -13,6 +13,35 @@ import type { TopicId } from "@/lib/types";
 import { clampQuota } from "@/lib/types";
 
 const DEFAULT_TARGET = 5; // unsigned (first-onboarding) flow always picks 5
+const LEGACY_CHECKOUT_RETURN_KEY = "alpha-legacy-checkout-return";
+
+function legacyCheckoutReturnPath(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    if (
+      new URLSearchParams(window.location.search).get("legacy_checkout") !== "1"
+    ) {
+      return null;
+    }
+    const path = window.sessionStorage.getItem(LEGACY_CHECKOUT_RETURN_KEY);
+    return path && /^\/writing\?session_id=cs_[A-Za-z0-9_]+$/.test(path)
+      ? path
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function consumeLegacyCheckoutReturnPath(): string | null {
+  const path = legacyCheckoutReturnPath();
+  if (!path || typeof window === "undefined") return null;
+  try {
+    window.sessionStorage.removeItem(LEGACY_CHECKOUT_RETURN_KEY);
+  } catch {
+    // The validated in-memory path is still safe to use for this navigation.
+  }
+  return path;
+}
 
 export default function TopicsPage() {
   const router = useRouter();
@@ -118,6 +147,8 @@ export default function TopicsPage() {
   }, [suggestedCount]);
 
   useEffect(() => {
+    // The persisted onboarding store becomes available only after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (loaded && state.topics) setPicked(state.topics);
   }, [loaded, state.topics]);
 
@@ -163,7 +194,11 @@ export default function TopicsPage() {
         // user-edited state on this page -- no handler here ever calls
         // setTarget -- so there's no live edit for this write to clobber.
         // Runs unconditionally, unlike the setPicked() below.
-        if (row?.topic_quota && typeof row.topic_quota === "number") {
+        if (
+          row?.topic_quota &&
+          typeof row.topic_quota === "number" &&
+          !legacyCheckoutReturnPath()
+        ) {
           setTarget(clampQuota(row.topic_quota));
         }
         // alpha-drift-r54-02: skip the pool write below once the user has
@@ -210,7 +245,13 @@ export default function TopicsPage() {
   // !signedIn (a signed-in editor's session IS their completeness signal,
   // same exception QuestionStep/app/you already carve out).
   useEffect(() => {
-    if (topicsHydrated && !signedIn && loaded && !state.firstName) {
+    if (
+      topicsHydrated &&
+      !signedIn &&
+      loaded &&
+      !state.firstName &&
+      !legacyCheckoutReturnPath()
+    ) {
       router.replace("/welcome" as never);
     }
   }, [topicsHydrated, signedIn, loaded, state.firstName, router]);
@@ -378,12 +419,12 @@ export default function TopicsPage() {
         if (cancelledRef.current) return;
         confirm();
         update({ topics: picked });
-        router.push("/settings" as never);
+        router.push((consumeLegacyCheckoutReturnPath() || "/settings") as never);
         return;
       }
       confirm();
       update({ topics: picked });
-      router.push("/fun" as never);
+      router.push((consumeLegacyCheckoutReturnPath() || "/fun") as never);
     } finally {
       // Unconditional: every return path above (save failed, save succeeded
       // and navigated, or the unsigned onboarding path) needs the latch

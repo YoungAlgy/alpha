@@ -16,7 +16,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/ThemeSwitcher.tsx: blur backstop no longer closes on a null relatedTarget");
@@ -30,30 +31,17 @@ console.log("(1) components/ThemeSwitcher.tsx: blur backstop no longer closes on
   check("(1d) relatedTarget is still captured as `next`", /const next = e\.relatedTarget as Node \| null;/.test(fn));
 }
 
-console.log("(2) app/api/stripe/webhook/route.ts: dispute alert fires before the (now-conditional) rethrow");
+console.log("(2) app/api/stripe/webhook/route.ts: disputes are structurally limited to Alpha billing");
 {
   const src = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
   const caseMatch = src.match(/case "charge\.dispute\.created": \{([\s\S]*?)case "charge\.dispute\.closed":/);
   check("(2a) the charge.dispute.created case was found", !!caseMatch);
   const block = caseMatch ? caseMatch[1] : "";
-  check("(2b) retrieveError is captured in the catch, not rethrown immediately", /retrieveError = e;/.test(block));
-  const noCustomerMatch = block.match(/if \(!customerId\) \{([\s\S]*?)\n\s*\}/);
-  check("(2c) the !customerId branch was found", !!noCustomerMatch);
-  const noCustomerBlock = noCustomerMatch ? noCustomerMatch[1] : "";
-  check("(2d) the specific 'couldn't identify the subscriber' alert is sent inside that branch", /sendOpsAlert\(\s*"alpha\. dispute opened -- couldn't identify the subscriber"/.test(noCustomerBlock));
-  // alpha-drift-r29-02 (2026-08-14, self-audit): round 29 added a day-bucket
-  // to this alert's key AND narrowed the rethrow to fire only on a
-  // TRANSIENT failure (isTransientStripeError), not unconditionally --
-  // both changes land inside this same branch, so the exact ordering/
-  // conditional-shape assertions this check used to make no longer match
-  // verbatim. The underlying claim this check exists to prove (alert fires
-  // before whatever throw follows) still holds; the precise corrected
-  // shape (day-bucketed key, transient-only rethrow) is now owned by
-  // verify-r29-findings.mts checks 2c-2f, not re-duplicated here.
-  const alertIdx = noCustomerBlock.indexOf("sendOpsAlert(");
-  const throwIdx = noCustomerBlock.indexOf("throw retrieveError;");
-  check("(2e) the alert fires BEFORE whatever rethrow follows (both found, alert first -- exact conditional shape now owned by verify-r29-findings.mts)", alertIdx >= 0 && throwIdx >= 0 && alertIdx < throwIdx);
-  check("(2f) a rethrow of retrieveError still exists in this branch (now gated on isTransientStripeError -- see verify-r29-findings.mts)", /throw retrieveError;/.test(noCustomerBlock));
+  check("(2b) the dispute resolves its PaymentIntent through the Alpha billing-origin classifier", /resolveAlphaBillingOrigin\(\s*stripe,\s*paymentIntentId/.test(block));
+  check("(2c) billing origin follows Stripe's invoice-payment binding", /stripe\.invoicePayments\.list\(/.test(src));
+  check("(2d) immutable invoice lines must all carry the Alpha price", /lineItems\.data\.every[\s\S]{0,350}priceId === STRIPE_PRICE_ID/.test(src));
+  check("(2e) an unproven origin exits without an access or billing mutation", /if \(!origin\) \{[\s\S]{0,250}break;/.test(block));
+  check("(2f) only the exact proven Alpha subscription is cancelled", /stripe\.subscriptions\.cancel\(origin\.subscriptionId\)/.test(block) && !/cancelCustomerSubscriptions\(stripe, customerId\)/.test(block));
 }
 
 console.log("(3) SEO metadata: 6 indexable pages carry siteName + og:image + twitter summary_large_image");
@@ -81,24 +69,27 @@ console.log("(3) SEO metadata: 6 indexable pages carry siteName + og:image + twi
 console.log("(4) app/api/generate/route.ts: unauthenticated sessionId path now rate-limited per-session");
 {
   const src = readFileSync(new URL("../app/api/generate/route.ts", import.meta.url), "utf8");
-  const branchMatch = src.match(/\} else if \(body\.sessionId\) \{([\s\S]*?)\n  \}/);
-  check("(4a) the else-if(body.sessionId) branch was found", !!branchMatch);
-  const branch = branchMatch ? branchMatch[1] : "";
-  check("(4b) keyed on the sessionId itself, not IP or user id", /rateLimit\(`generate-session:\$\{body\.sessionId\}`/.test(branch));
+  const branchStart = src.indexOf('if (paid.kind === "checkout") {');
+  const branchEnd = src.indexOf("// ProfileSchema only bounds theme", branchStart);
+  check("(4a) the verified checkout branch was found", branchStart >= 0 && branchEnd > branchStart);
+  const branch = branchStart >= 0 && branchEnd > branchStart
+    ? src.slice(branchStart, branchEnd)
+    : "";
+  check("(4b) keyed on the verified sessionId itself, not IP or user id", /rateLimit\(`generate-session:\$\{paid\.sessionId\}`/.test(branch));
   check("(4c) limit is 5/hour", /limit: 5,\s*windowMs: 60 \* 60 \* 1000/.test(branch));
-  check("(4d) a 429 with Retry-After is returned when exhausted", /status: 429, headers: \{ "Retry-After": String\(sessionLimited\.retryAfterSec\) \}/.test(branch));
-  // Sanity: this is genuinely a SIBLING branch to the authenticated userLimited
-  // check above (else-if), not a replacement for it.
+  check("(4d) a 429 with Retry-After is returned when exhausted", /status:\s*429,[\s\S]{0,180}Retry-After.*sessionLimited\.retryAfterSec/.test(branch));
+  // Sanity: the authenticated user limiter remains separate from the
+  // same-browser paid Session limiter.
   check("(4e) sanity: the pre-existing authenticated per-user limiter (paid.verifiedUserId) is untouched", /rateLimit\(`generate-user:\$\{paid\.verifiedUserId\}`/.test(src));
 }
 
-console.log("(5) lib/rate-limit.ts: per-isolate concurrent-fan-out gap documented");
+console.log("(5) lib/rate-limit.ts: local and distributed limiter roles are explicit");
 {
   const src = readFileSync(new URL("../lib/rate-limit.ts", import.meta.url), "utf8");
-  check("(5a) the top-of-file comment names Cloudflare running multiple concurrent isolates", /Workers routinely runs MULTIPLE isolates for this same Worker script/.test(src) && /CONCURRENTLY/.test(src));
-  check("(5b) confirms there is no Durable Object/coordination primitive in the request path today", /no Durable Object or other coordination primitive in the API request/.test(src));
-  check("(5c) explicitly flags this as needing Algy's sign-off, not something to ship unilaterally", /need Algy's sign-off/.test(src) && /not\s*\n\/\/ something to build and ship unilaterally/.test(src));
-  check("(5d) the rateLimit() function itself is untouched -- this was a documentation fix, not a behavior change", /export function rateLimit\(\s*key: string,\s*\{ limit, windowMs \}: RateLimitOptions\s*\): RateLimitResult \{/.test(src));
+  check("(5a) the top-of-file comment says the Map is per-isolate rather than global", /per-isolate fast limiter/.test(src) && /never represents a global ceiling/.test(src));
+  check("(5b) cost-sensitive public paths point to the Supabase-backed limiter", /Supabase-backed limiter in lib\/distributed-rate-limit\.ts/.test(src));
+  check("(5c) current durable call sites are named", /Generate, access\s*\n\/\/ requests, support, and quantity updates/.test(src));
+  check("(5d) the local rateLimit() implementation remains available as the first layer", /export function rateLimit\(\s*key: string,\s*\{ limit, windowMs \}: RateLimitOptions\s*\): RateLimitResult \{/.test(src));
 }
 
 console.log("(6) app/api/health/route.ts: GET now rate-limited before the Supabase ping");
@@ -115,44 +106,57 @@ console.log("(6) app/api/health/route.ts: GET now rate-limited before the Supaba
   check("(6e) a 429 is returned on exhaustion with the no-store header preserved (this route's own stale-cache fix from an earlier round)", /status: 429,[\s\S]{0,150}"Cache-Control": "no-store, must-revalidate"/.test(fn));
 }
 
-console.log("(7) app/api/stripe/checkout/route.ts + app/privacy/page.tsx: Subscription metadata copy removed, Session-level retention disclosed");
+console.log("(7) app/api/stripe/checkout/route.ts + app/privacy/page.tsx: profile text is absent from Stripe metadata");
 {
   const checkoutSrc = readFileSync(new URL("../app/api/stripe/checkout/route.ts", import.meta.url), "utf8");
-  check("(7a) subscription_data.metadata block is gone", !/subscription_data:\s*\{\s*metadata:/.test(checkoutSrc));
-  check("(7b) the Checkout Session's own top-level metadata (the one field the SDK actually supports updating -- it doesn't) is still present", /metadata: \{\s*alpha_first_name: body\.firstName \?\? "",\s*alpha_city: body\.city \?\? "",\s*\},/.test(checkoutSrc));
+  const paramsSrc = readFileSync(new URL("../lib/checkout-session-params.ts", import.meta.url), "utf8");
+  check("(7a) subscription_data.metadata block is gone", !/subscription_data:\s*\{\s*metadata:/.test(checkoutSrc) && !/subscription_data:\s*\{\s*metadata:/.test(paramsSrc));
+  check("(7b) Checkout Session metadata contains only the opaque staged-profile id", /metadata:\s*\{\s*alpha_profile_id: input\.profileId,?\s*\}/.test(paramsSrc) && !/alpha_(?:first_name|city)\s*:/.test(`${checkoutSrc}\n${paramsSrc}`));
 
   const privacySrc = readFileSync(new URL("../app/privacy/page.tsx", import.meta.url), "utf8");
-  // alpha-drift-r46-supersedes-r28 (2026-08-19, found while running the full
-  // regression suite during round 46 -- unrelated to round 46's own fixes):
-  // a later copy pass (round 36's sentence-splitting cleanup) capitalized
-  // "Your name and city stay..." as its own sentence, where this assertion
-  // still expected the lowercase mid-sentence "your" from round 28's
-  // original wording. Case-insensitive match on that clause closes the gap
-  // without losing what the assertion actually proves (the disclosure text
-  // is present and intact).
+  const privacyText = privacySrc.replace(/\s+/g, " ");
   check(
-    "(7c) privacy policy discloses that name/city sent to Stripe at checkout survive on the Stripe checkout record permanently, even after account deletion",
-    /Your first name and city also go to Stripe at checkout/.test(privacySrc) &&
-      /own checkout record itself can&apos;t be edited or removed afterward/.test(privacySrc) &&
-      /your name and city stay on that one record\s*\n\s*at Stripe, permanently/i.test(privacySrc)
+    "(7c) privacy policy says profile fields are kept out of Stripe",
+    /Current Alpha checkouts do not copy your profile&apos;s first name, city, topic choices, or profile answers into Stripe\./.test(privacyText) &&
+      /opaque checkout reference/.test(privacyText)
   );
 }
 
-console.log("(8) lib/stripe-cancel.ts + call sites: orphaned (user_id NULL) support tickets now covered by export and delete");
+console.log("(8) account-deletion privacy saga + call sites: orphaned (user_id NULL) support tickets now covered by export and delete");
 {
-  const cancelSrc = readFileSync(new URL("../lib/stripe-cancel.ts", import.meta.url), "utf8");
-  const fnMatch = cancelSrc.match(/export async function deleteSupportTicketsBeforeDelete\(([\s\S]*?)\n\}/);
-  check("(8a) deleteSupportTicketsBeforeDelete was found", !!fnMatch);
-  const fn = fnMatch ? fnMatch[1] : "";
-  check("(8b) signature now takes an optional email param", /email\?: string \| null/.test(cancelSrc));
-  check("(8c) when email is present, ALSO deletes orphaned (user_id IS NULL) rows matching it", /if \(email\) \{[\s\S]*?\.is\("user_id", null\)[\s\S]*?\.ilike\("email", escapedEmail\)/.test(fn));
-  check("(8d) the email is wildcard-escaped before use in ilike (% and _ are ILIKE metacharacters)", /escapedEmail = email\.replace\(\/\[\\\\%_\]\/g, "\\\\\$&"\)/.test(fn));
+  const deletionSrc = readFileSync(new URL("../lib/account-deletion.ts", import.meta.url), "utf8");
+  check("(8a) settleAccountDeletionPrivacy was found", /export async function settleAccountDeletionPrivacy\(/.test(deletionSrc));
+  check(
+    "(8b) the privacy saga requires, normalizes, and deduplicates confirmed emails",
+    /emails: AccountEmail \| readonly AccountEmail\[\]/.test(deletionSrc) &&
+      /const normalizedEmails = normalizeAccountEmails\(/.test(deletionSrc) &&
+      /if \(normalizedEmails\.length === 0\)/.test(deletionSrc)
+  );
+  check("(8c) the saga deletes linked and orphaned (user_id IS NULL) rows matching that email", /delete\(\)\s*\.eq\("user_id", userId\)[\s\S]*?delete\(\)\s*\.is\("user_id", null\)[\s\S]*?\.ilike\("email", escapedEmail\)/.test(deletionSrc));
+  check("(8d) the email is wildcard-escaped before use in ilike (% and _ are ILIKE metacharacters)", /escapedEmail = normalizedEmail\.replace\(\/\[\\\\%_\]\/g, "\\\\\$&"\)/.test(deletionSrc));
 
   const acctDeleteSrc = readFileSync(new URL("../app/api/account/delete/route.ts", import.meta.url), "utf8");
-  check("(8e) account/delete's call site now passes user.email", /deleteSupportTicketsBeforeDelete\(svc, user\.id, "\[account\/delete\]", user\.email\)/.test(acctDeleteSrc));
+  check(
+    "(8e) account/delete's privacy saga receives the confirmed cleanup email without provider unsuppression",
+    /settleAccountDeletionPrivacy\([\s\S]{0,220}cleanupEmails\s*\)/.test(
+      acctDeleteSrc
+    ) && !/settleAccountDeletionPrivacy\([\s\S]{0,260}removeResendSuppression/.test(
+      acctDeleteSrc
+    )
+  );
 
   const adminSrc = readFileSync(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8");
-  check("(8f) admin/users's call site now passes targetUser?.email", /deleteSupportTicketsBeforeDelete\(sb, body\.userId, "\[admin\/delete\]", targetUser\?\.email\)/.test(adminSrc));
+  check(
+    "(8f) admin/users's privacy saga receives normalized Auth and mirror emails",
+    /const cleanupEmails = normalizeAccountEmails\([\s\S]{0,160}targetAuth\?\.user\?\.email,[\s\S]{0,80}targetUser\?\.email/.test(
+      adminSrc
+    ) &&
+      /settleAccountDeletionPrivacy\([\s\S]{0,220}cleanupEmails\s*\)/.test(
+        adminSrc
+      ) && !/settleAccountDeletionPrivacy\([\s\S]{0,260}removeResendSuppression/.test(
+        adminSrc
+      )
+  );
 
   const exportSrc = readFileSync(new URL("../app/api/account/export/route.ts", import.meta.url), "utf8");
   check("(8g) export route queries orphaned support_tickets the same way (user_id IS NULL, escaped ilike on email)", /\.is\("user_id", null\)[\s\S]*?\.ilike\("email", escapedEmail\)/.test(exportSrc));

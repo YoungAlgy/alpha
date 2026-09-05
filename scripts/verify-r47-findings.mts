@@ -51,7 +51,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/checkout/page.tsx: cancelledRef now resets to false on mount, closing the Strict Mode regression");
@@ -66,14 +67,20 @@ console.log("(2) app/signin/page.tsx: sendCode()/verifyCode() now have a cancell
   const src = readFileSync(new URL("../app/signin/page.tsx", import.meta.url), "utf8");
   check("(2a) cancelledRef is declared and reset on mount", /const cancelledRef = useRef\(false\);\s*\n\s*useEffect\(\(\) => \{\s*\n\s*cancelledRef\.current = false;\s*\n\s*return \(\) => \{ cancelledRef\.current = true; \};\s*\n\s*\}, \[\]\);/.test(src));
   check("(2b) sendCode checks it right after signInWithOtp resolves, before the setStep/setCooldown block", /sb\.auth\.signInWithOtp\([\s\S]{0,600}?if \(cancelledRef\.current\) return;\s*\n\s*if \(error\) throw error;/.test(src));
-  check("(2c) verifyCode checks it right after verifyOtp resolves, before router.push", /sb\.auth\.verifyOtp\([\s\S]{0,600}?if \(cancelledRef\.current\) return;\s*\n\s*if \(error\) throw error;\s*\n\s*audioConfirm\(\);\s*\n\s*router\.push\("\/inbox" as never\);/.test(src));
+  check(
+    "(2c) verifyCode checks it right after verifyOtp resolves, before router.push",
+    /sb\.auth\.verifyOtp\([\s\S]{0,600}?if \(cancelledRef\.current\) return;\s*\n\s*if \(error\) throw error;\s*\n\s*audioConfirm\(\);\s*\n\s*router\.push\(\(takeSignInReturnPath\(\) \|\| "\/inbox"\) as never\);/.test(src)
+  );
 }
 
 console.log("(3) app/topics/page.tsx: submit()'s signed-in save now has a cancellation guard, and StepShell's Back disables during it");
 {
   const src = readFileSync(new URL("../app/topics/page.tsx", import.meta.url), "utf8");
   check("(3a) cancelledRef is declared and reset on mount", /const cancelledRef = useRef\(false\);\s*\n\s*useEffect\(\(\) => \{\s*\n\s*cancelledRef\.current = false;\s*\n\s*return \(\) => \{ cancelledRef\.current = true; \};\s*\n\s*\}, \[\]\);/.test(src));
-  check("(3b) it's checked before confirm()/update()/router.push on the save-success path", /if \(cancelledRef\.current\) return;\s*\n\s*confirm\(\);\s*\n\s*update\(\{ topics: picked \}\);\s*\n\s*router\.push\("\/settings" as never\);/.test(src));
+  check(
+    "(3b) it's checked before confirm()/update()/router.push on the save-success path",
+    /if \(cancelledRef\.current\) return;\s*\n\s*confirm\(\);\s*\n\s*update\(\{ topics: picked \}\);\s*\n\s*router\.push\(\(consumeLegacyCheckoutReturnPath\(\) \|\| "\/settings"\) as never\);/.test(src)
+  );
   check("(3c) StepShell now receives backDisabled tied to saving", /<StepShell stepIndex=\{7\} prevPath=\{signedIn \? "settings" : "focus"\} backDisabled=\{saving\}>/.test(src));
 }
 

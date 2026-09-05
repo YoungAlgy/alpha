@@ -34,7 +34,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/globals.css: .alpha-hero's infinite breathe animation is now disabled under prefers-reduced-motion, alongside the intro veil + scroll-fade rules");

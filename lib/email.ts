@@ -1,8 +1,13 @@
 import { Resend } from "resend";
 import type { CreateEmailResponse } from "resend";
+import { createHash } from "node:crypto";
 import type { Issue } from "@/lib/types";
 import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
+import { requireResendMessageId } from "@/lib/resend-response";
+import { removeResendSuppressionWithTransport } from "@/lib/resend-suppression-response";
+import { MANUAL_PROVIDER_SUPPRESSION_REMOVAL_ENABLED } from "@/lib/suppression-recovery-policy";
+import { SUBSCRIBER_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
 
 // Single provider: Resend, sending from the verified everyday.report domain.
 // (We previously carried an AWS SES branch as a dual-provider cutover path,
@@ -65,45 +70,40 @@ export function resendConfigured(): boolean {
   return resendConfiguredInternal();
 }
 
-// alpha-drift-r17-06 (found+fixed 2026-08-07): Resend maintains its OWN
-// account-level suppression list, separate from this app's bounced_at/
-// complained_at columns -- populated automatically on a hard bounce or
-// complaint, per Resend's docs (resend.com/docs/dashboard/emails/email-
-// suppressions): entries are removed "manually only," never auto-expire,
-// and re-adding happens automatically if the underlying cause isn't
-// addressed. Clearing this app's own DB columns (see
-// lib/webhook-user-mutation.ts's checkoutUserMutation) is necessary but NOT
-// sufficient to restore delivery -- Resend would keep silently skipping the
-// send regardless of what this app's own tables say. The `resend` SDK
-// version installed here doesn't wrap this endpoint (confirmed against its
-// own .d.ts -- no `suppressions` client property), so this calls Resend's
-// REST API directly: DELETE https://api.resend.com/suppressions/{email}
-// (resend.com/docs/api-reference/suppressions/remove-suppression).
-// Best-effort by design, matching every other Resend call in this file: a
-// removal failure must never block or fail the caller's own DB write (a
-// real subscriber's re-consent is recorded either way; this is cleanup on
-// top of that, not the source of truth). A 404 (the address was never
-// actually suppressed -- e.g. bounced_at was set by something other than a
-// REAL Resend-side suppression, or it's already been manually removed) is
-// treated as success, not failure, same "already in the end state we
-// wanted" reasoning as lib/gotrue-errors.ts's isUserNotFoundError.
+// Resend's team-wide do-not-email list is independent of Alpha's local
+// bounce/complaint markers. Its docs state no finite suppression expiry.
+// Manual removal is hard-disabled pending late-event review. Deletion, signup,
+// access approval, and automatic maintenance preserve the provider block.
+// A later bounce or complaint can add a provider block again.
+// REST contract: resend.com/docs/api-reference/suppressions/remove-suppression.
+// Returns true only when Resend confirms the structured deletion response.
+// A generic 404, malformed 2xx, permission error, timeout, or other transport
+// failure leaves the provider-side state unconfirmed and returns false.
 export async function removeResendSuppression(email: string): Promise<boolean> {
+  if (!MANUAL_PROVIDER_SUPPRESSION_REMOVAL_ENABLED) return false;
   if (!resendConfiguredInternal()) return false;
-  try {
-    const res = await fetch(`https://api.resend.com/suppressions/${encodeURIComponent(email)}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY!.trim()}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!res.ok && res.status !== 404) {
-      console.warn(`[email] removeResendSuppression failed for an address: HTTP ${res.status}`);
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.warn("[email] removeResendSuppression threw:", e instanceof Error ? e.message : e);
-    return false;
-  }
+  return removeResendSuppressionWithTransport(
+    email,
+    async (requestedEmail, signal) => {
+      const res = await fetch(
+        `https://api.resend.com/suppressions/${encodeURIComponent(requestedEmail)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY!.trim()}` },
+          signal,
+        }
+      );
+      let body: unknown = null;
+      try {
+        body = await res.json();
+      } catch {
+        // A successful status without a parseable structured body is not
+        // confirmation of the provider-side deletion.
+      }
+      return { status: res.status, body };
+    },
+    AbortSignal.timeout(15_000)
+  );
 }
 
 // Retry-with-backoff around a single emails.send() call. Added 2026-08-05
@@ -244,26 +244,47 @@ export interface SendLetterParams {
    *  the email still sends but won't include unsubscribe links/headers — only
    *  use this for legacy callers that don't have a user id available. */
   userId?: string | null;
-  /** Folded into the idempotency key below so a same-(userId,weekOf) retry
-   *  with genuinely DIFFERENT content (e.g. the cron's live send failing on
-   *  our side after Resend already accepted it, then a backup layer sending
-   *  different content for the same day) can never get silently deduped by
-   *  Resend against the earlier attempt. Omit for same-content retries where
-   *  dedup IS the desired behavior (the default, "live", covers that case). */
+  /** Optional lane folded into the provider idempotency key. Keep retries for
+   *  one logical daily letter on the same lane, even when fallback content was
+   *  used, because a lost provider response is ambiguous. Use a different lane
+   *  only for a deliberately independent delivery. The default is "live". */
   idempotencyKind?: string;
+  /** Canonical persisted issue date (YYYY-MM-DD). Staged callers pass this
+   *  separately from the human display date so every route builds the same
+   *  provider key, headers, and rendered payload for one database issue. */
+  deliveryDate?: string;
+}
+
+export interface PreparedSubscriberEmail {
+  recipient: string;
+  requestFingerprint: string;
+  idempotencyKey?: string;
+  payload: {
+    from: string;
+    to: string;
+    replyTo: string;
+    subject: string;
+    html: string;
+    text: string;
+    headers: Record<string, string>;
+  };
 }
 
 // V0 email: a short editorial notification with the editor's note as a teaser
 // and a link to the full letter on web. V1 will render the entire letter as
 // styled HTML (via React Email or similar).
-export async function sendLetterNotification(params: SendLetterParams): Promise<{ id: string }> {
-  if (!resendConfiguredInternal()) throw new Error("No email provider configured");
+export function prepareLetterNotification(
+  params: SendLetterParams
+): PreparedSubscriberEmail {
+  const deliveryDate = params.deliveryDate?.trim() || params.issue.weekOf;
+  const displayWeekOf = fullDeliveryDate(deliveryDate);
+  const recipient = params.to.trim().toLowerCase();
 
   // Subject reads like a newsletter the reader recognizes as theirs —
   // "{first}'s newsletter · Issue N" — NOT a news headline (a reader
   // nearly skimmed past the headline-led version). The content hook moves to
   // the preheader (inbox preview text), so we keep the click pull too.
-  const subject = subjectLine(params.firstName, params.issueNumber, params.issue.weekOf);
+  const subject = subjectLine(params.firstName, params.issueNumber, displayWeekOf);
   const preheader = previewFromIssue(params.issue);
   // alpha-drift-r19-01 (found+fixed 2026-08-07): both renderers used to
   // append an ellipsis to this unconditionally, even when slice() never
@@ -350,7 +371,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     preheader,
     inboxUrl: params.inboxUrl,
     letterUrl: params.letterUrl ?? null,
-    weekOf: params.issue.weekOf,
+    weekOf: displayWeekOf,
     unsubscribeUrl: unsubUrl,
   });
 
@@ -361,7 +382,7 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     preheader,
     inboxUrl: params.inboxUrl,
     letterUrl: params.letterUrl ?? null,
-    weekOf: params.issue.weekOf,
+    weekOf: displayWeekOf,
     unsubscribeUrl: unsubUrl,
   });
 
@@ -379,46 +400,64 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
     // Unique per (subscriber, issue): issue.id alone is firstName+weekOf, which
     // collides across same-named subscribers. Prefix with the user id when we
     // have it so delivery tracing by this header is unambiguous.
-    "X-Alpha-Issue-Id": params.userId ? `${params.userId}:${safeIssueId}` : safeIssueId,
+    "X-Alpha-Issue-Id": params.userId
+      ? `${params.userId}:${deliveryDate}`
+      : safeIssueId,
   };
   if (unsubUrl) {
     resendHeaders["List-Unsubscribe"] = `<${unsubUrl}>`;
     resendHeaders["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
-  // Idempotency key: stable per (subscriber, send date, kind). If a send for
-  // the same (user, week_of, kind) is retried — a GitHub Actions retry cron
+  // Idempotency key: stable per (subscriber, send date, lane). If a send for
+  // the same (user, week_of, lane) is retried — a GitHub Actions retry cron
   // (daily-send.yml's 15:00/18:00 UTC offset schedules) racing the 14:00 UTC
   // primary run, the rollback path re-opening the delivered_at claim, a
   // workflow_dispatch re-trigger — Resend collapses it provider-side and the subscriber
-  // gets ONE letter, not two. `kind` is included (not just user+date) so a
-  // DIFFERENT-content retry — the cron's live send failing on our side after
-  // Resend already accepted it, then a backup layer sending different content
-  // for the same day — gets its own key instead of being silently deduped
-  // against the earlier, different attempt (2026-07-29 review finding: the
-  // three-layer backup system's core guarantee only holds if this can't
-  // happen). Only set when userId is known (the normal cron + generate paths
-  // both pass it); legacy callers without a userId behave exactly as before.
+  // gets ONE letter. The scheduled route deliberately keeps live and fallback
+  // content on the default lane. If a provider accepted a fallback but its
+  // response was lost, the persisted-content retry is then deduped instead of
+  // becoming a second email. A caller may name another lane only for a truly
+  // separate delivery. Keys exist only when userId is known. Legacy callers
+  // without one behave as before.
   const idempotencyKey = params.userId
-    ? `alpha-letter-${params.userId}-${params.issue.weekOf}-${params.idempotencyKind ?? "live"}`
+    ? `alpha-letter-${params.userId}-${deliveryDate}-${params.idempotencyKind ?? "live"}`
     : undefined;
+  const payload = {
+    from: resendFrom,
+    to: recipient,
+    replyTo: REPLY_TO_EMAIL,
+    subject,
+    html,
+    text,
+    headers: resendHeaders,
+  };
+  const requestFingerprint = createHash("sha256")
+    .update(JSON.stringify({ payload, idempotencyKey: idempotencyKey ?? null }))
+    .digest("hex");
+  return { recipient, requestFingerprint, idempotencyKey, payload };
+}
+
+export async function sendPreparedSubscriberEmail(
+  prepared: PreparedSubscriberEmail
+): Promise<{ id: string }> {
+  if (!SUBSCRIBER_LETTERS_ENABLED) throw new Error("Subscriber letters are paused.");
+  if (!resendConfiguredInternal()) throw new Error("No email provider configured");
   const result = await retryResendCall(() =>
     resendClient().emails.send(
-      {
-        from: resendFrom,
-        to: params.to,
-        replyTo: REPLY_TO_EMAIL,
-        subject,
-        html,
-        text,
-        headers: resendHeaders,
-      },
-      resendSendOptions(idempotencyKey)
+      prepared.payload,
+      resendSendOptions(prepared.idempotencyKey)
     )
   );
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);
   }
-  return { id: result.data?.id ?? "" };
+  return { id: requireResendMessageId(result.data) };
+}
+
+export async function sendLetterNotification(
+  params: SendLetterParams
+): Promise<{ id: string }> {
+  return sendPreparedSubscriberEmail(prepareLetterNotification(params));
 }
 
 // ─── Ops alert ────────────────────────────────────────────────────────────
@@ -432,9 +471,9 @@ export async function sendLetterNotification(params: SendLetterParams): Promise<
 // if Resend fails or isn't configured. Without the second channel, a full
 // Resend outage would silently take out the ONE mechanism meant to surface
 // that exact kind of outage — subscriber sends and the alert about them
-// failing together, with nothing left to notice either. OPS_ALERT_WEBHOOK_URL
-// is optional; leave it unset and this is identical to the old Resend-only
-// behavior.
+// failing together, with nothing left to notice either.
+// ALPHA_OPS_ALERT_WEBHOOK_URL must point to an Alpha-only internal channel.
+// It is optional; leave it unset for the Resend-only behavior.
 //
 // idempotencyKey is optional and caller-supplied (unlike sendLetterNotification,
 // there's no single natural key shared by every call site here) -- pass one
@@ -448,6 +487,17 @@ export async function sendOpsAlert(
 ): Promise<void> {
   const viaResend = await sendOpsAlertViaResend(subject, body, idempotencyKey);
   if (!viaResend) await sendOpsAlertViaWebhook(subject, body);
+}
+
+// Resend webhook anomalies must never alert through Resend itself. If the
+// ops mailbox is the address bouncing, an email alert would create another
+// unowned bounce and recurse. This independent channel is optional and the
+// durable database review row remains the source of truth.
+export async function sendOpsWebhookAlert(
+  subject: string,
+  body: string
+): Promise<void> {
+  await sendOpsAlertViaWebhook(subject, body);
 }
 
 async function sendOpsAlertViaResend(
@@ -476,6 +526,7 @@ async function sendOpsAlertViaResend(
       console.warn("[ops-alert] Resend failed:", result.error.message);
       return false;
     }
+    requireResendMessageId(result.data);
     return true;
   } catch (e) {
     console.warn("[ops-alert] Resend failed:", e instanceof Error ? e.message : e);
@@ -483,22 +534,57 @@ async function sendOpsAlertViaResend(
   }
 }
 
-// Discord and Slack incoming webhooks both accept a plain JSON POST; sending
-// both `content` (Discord's field) and `text` (Slack's field) is harmless
-// either way — each platform ignores the field it doesn't recognize, so this
-// works with whichever free webhook Algy sets up without the code needing to
-// know which. No SDK, no signup beyond creating the webhook URL (Discord:
-// Server Settings > Integrations > Webhooks; Slack: api.slack.com/apps >
-// Incoming Webhooks). Same never-throws contract as the Resend path.
+export function isApprovedAlphaOpsWebhookUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    if (
+      process.env.NODE_ENV !== "production" &&
+      process.env.ALPHA_ALLOW_LOCAL_OPS_WEBHOOK_TEST === "1" &&
+      parsed.protocol === "http:" &&
+      parsed.hostname === "127.0.0.1" &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.search === "" &&
+      parsed.hash === ""
+    ) {
+      return true;
+    }
+    const parts = parsed.pathname.split("/");
+    return (
+      parsed.protocol === "https:" &&
+      parsed.hostname === "discord.com" &&
+      parsed.port === "" &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.search === "" &&
+      parsed.hash === "" &&
+      parts.length === 5 &&
+      parts[1] === "api" &&
+      parts[2] === "webhooks" &&
+      /^\d+$/.test(parts[3] ?? "") &&
+      /^[A-Za-z0-9._-]+$/.test(parts[4] ?? "")
+    );
+  } catch {
+    return false;
+  }
+}
+
+// The fallback is restricted to one standard Discord webhook shape. This
+// prevents a mistyped secret from sending private operational details to an
+// arbitrary server. Same never-throws contract as the Resend path.
 async function sendOpsAlertViaWebhook(subject: string, body: string): Promise<boolean> {
   try {
-    const url = process.env.OPS_ALERT_WEBHOOK_URL?.trim();
+    const url = process.env.ALPHA_OPS_ALERT_WEBHOOK_URL?.trim();
     if (!url) return false;
+    if (!isApprovedAlphaOpsWebhookUrl(url)) {
+      console.warn("[ops-alert] webhook URL is not an approved Alpha Discord endpoint");
+      return false;
+    }
     const message = `**[alpha ops alert]** ${subject}\n\n${body}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: message, text: message }),
+      body: JSON.stringify({ content: message }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
@@ -580,6 +666,21 @@ function shortWeek(weekOf: string): string {
   const d = new Date(weekOf.length === 10 ? `${weekOf}T12:00:00Z` : weekOf);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
+}
+
+function fullDeliveryDate(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    return value;
+  }
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 interface RenderArgs {
@@ -827,7 +928,7 @@ export async function sendWelcomeEmail(params: SendWelcomeParams): Promise<{ id:
   if (result.error) {
     throw new Error(`Resend: ${result.error.message}`);
   }
-  return { id: result.data?.id ?? "" };
+  return { id: requireResendMessageId(result.data) };
 }
 
 // Exported (pure, no I/O) so the welcome email can be previewed/snapshot-tested

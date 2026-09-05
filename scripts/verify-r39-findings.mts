@@ -80,7 +80,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) lib/email.ts: sectionList's colon join no longer collides with a colon already inside topicLabel");
@@ -147,17 +148,19 @@ console.log("(2) lib/engine/voice-guard.ts: BANNED_LEXICAL now catches plural/ad
 console.log("(3) app/api/stripe/webhook/route.ts: the 0-row retry-vs-absorb decision now uses the same converged status source as cancelledAt");
 {
   const src = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
-  check("(3a) effectiveStatus computed once from liveSub with a fallback to the event snapshot", /const effectiveStatus = liveSub\?\.status \?\? sub\.status;/.test(src));
-  check("(3b) the terminal-status check now uses effectiveStatus", /if \(isTerminalSubscriptionStatus\(effectiveStatus\)\) \{/.test(src));
-  check("(3c) the old stale-status-only check is gone", !/if \(isTerminalSubscriptionStatus\(sub\.status\)\) \{/.test(src));
-  check("(3d) both log messages reference effectiveStatus, not the stale sub.status", (src.match(/status=\$\{effectiveStatus\}/g) ?? []).length === 2);
+  const branchMatch = src.match(/case "customer\.subscription\.created":[\s\S]*?case "customer\.subscription\.deleted":/);
+  const branch = branchMatch?.[0] ?? "";
+  check("(3a) effectiveStatus is computed from the required fresh Stripe read", /const effectiveStatus = liveSub\.status;/.test(branch));
+  check("(3b) the terminal-status check now uses effectiveStatus", /if \(isTerminalSubscriptionStatus\(effectiveStatus\)\) \{/.test(branch));
+  check("(3c) the retry-vs-absorb decision never uses the stale event snapshot", !/if \(isTerminalSubscriptionStatus\(sub\.status\)\) \{/.test(branch));
+  check("(3d) both 0-row log messages reference effectiveStatus", (branch.match(/status=\$\{effectiveStatus\}/g) ?? []).length === 2);
 }
 
 console.log("(4) Focus management: 3 more unmount-without-restore transitions fixed, matching the established EmailChanger/settings pattern");
 {
   const checkoutSrc = readFileSync(new URL("../app/checkout/page.tsx", import.meta.url), "utf8");
-  check("(4a) checkout: alreadySubscribedHeadingRef declared and focused in an effect keyed on alreadySubscribed", /const alreadySubscribedHeadingRef = useRef<HTMLParagraphElement>\(null\);/.test(checkoutSrc) && /if \(alreadySubscribed\) alreadySubscribedHeadingRef\.current\?\.focus\(\);/.test(checkoutSrc));
-  check("(4b) checkout: the ref is actually attached to the rendered paragraph", /ref=\{alreadySubscribedHeadingRef\}\s*\n\s*tabIndex=\{-1\}/.test(checkoutSrc));
+  check("(4a) checkout: the shared conflict heading ref is focused for both already-subscribed and sign-in-required states", /const checkoutConflictHeadingRef = useRef<HTMLParagraphElement>\(null\);/.test(checkoutSrc) && /if \(alreadySubscribed \|\| signInRequired\) \{\s*\n\s*checkoutConflictHeadingRef\.current\?\.focus\(\);\s*\n\s*\}/.test(checkoutSrc) && /\[alreadySubscribed, signInRequired\]/.test(checkoutSrc));
+  check("(4b) checkout: the shared ref is attached to both rendered conflict paragraphs", (checkoutSrc.match(/ref=\{checkoutConflictHeadingRef\}\s*\n\s*tabIndex=\{-1\}/g) ?? []).length === 2);
 
   const settingsSrc = readFileSync(new URL("../app/settings/page.tsx", import.meta.url), "utf8");
   check("(4c) settings: resumedHeadingRef declared and focused in an effect keyed on resumed", /const resumedHeadingRef = useRef<HTMLParagraphElement>\(null\);/.test(settingsSrc) && /if \(resumed\) resumedHeadingRef\.current\?\.focus\(\);/.test(settingsSrc));

@@ -6,6 +6,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { ShareButton } from "@/components/ShareButton";
 import { SAMPLE_ISSUE } from "@/lib/sample-issue";
 import { PITCH, SHARE_LEAD } from "@/lib/copy";
+import { isInviteOnly } from "@/lib/access-mode";
 
 // Public, indexable sample issue — the trust asset for a pay-before-you-see-it
 // product. Rendered through the exact same <Digest> the real letters use, so
@@ -69,6 +70,7 @@ const JSON_LD = {
 };
 
 export default function SamplePage() {
+  const inviteOnly = isInviteOnly(true);
   return (
     <main className="flex-1">
       <script
@@ -123,7 +125,7 @@ export default function SamplePage() {
             style={{ color: "var(--ink-soft)" }}
           >
             Pick your five topics and we&apos;ll build a letter just for you.
-            $5 a month, cancel anytime, no ads.
+            {inviteOnly ? " Request an invite. No card or monthly payment." : " $5 a month, cancel anytime, no ads."}
           </p>
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/welcome" className="alpha-button alpha-button-accent text-base">

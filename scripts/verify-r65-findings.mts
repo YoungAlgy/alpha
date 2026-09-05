@@ -36,16 +36,10 @@
 //   unlike the 3 sibling pages this exact Promise.all pattern was copied
 //   to (all of which check it). Log-only fix, plus the already-destructured
 //   but never-logged userError on the same line.
-// - lib/stripe-cancel.ts (silent-catch-audit-r11, HIGH): the subscription-
-//   cancel step and the customer-delete step shared one try/catch, so a
-//   throw out of subscriptions.list() skipped customers.del() entirely --
-//   and per Stripe's own documented behavior, deleting the Customer is
-//   what actually cancels a still-live subscription. Split into separate
-//   try/catches (matching the pattern app/api/stripe/webhook/route.ts
-//   already uses for this same function), plus an ops alert if BOTH steps
-//   fail. Extended scripts/verify-stripe-cancel-on-delete.mts with 2 new
-//   tests (listThrows, both-fail) -- neither failure mode had test
-//   coverage before.
+// - lib/stripe-cancel.ts (current safety rule): account deletion cancels only
+//   subscriptions proven to contain one exact Alpha item. It never deletes
+//   the account-wide Stripe Customer because a subscription list cannot prove
+//   another product is not using it for one-time billing or saved methods.
 // - app/api/account/email/reconcile/route.ts + components/EmailChanger.tsx
 //   (form-validation-consistency-audit-r10, LOW): both files' comments
 //   misattributed the reconcile trigger to "the settings page fires this
@@ -61,14 +55,15 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/ScrollFadeIn.tsx + app/globals.css: SSR/hydration mismatch fixed with a CSS-only reduced-motion override");
 {
   const src = readFileSync(new URL("../components/ScrollFadeIn.tsx", import.meta.url), "utf8");
   check("(1a) shown initializes to a bare false (SSR/client parity)", /const \[shown, setShown\] = useState\(false\);/.test(src));
-  check("(1b) the matchMedia check now lives inside the effect, after the window guard", /if \(typeof window === "undefined"\) return;\s*\n\s*const el = ref\.current;\s*\n\s*if \(!el\) return;\s*\n\s*\n\s*if \(window\.matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)\.matches\) \{\s*\n\s*setShown\(true\);\s*\n\s*return;\s*\n\s*\}/.test(src));
+  check("(1b) the matchMedia check now lives inside the effect, after the window guard", /if \(typeof window === "undefined"\) return;\s*\n\s*const el = ref\.current;\s*\n\s*if \(!el\) return;\s*\n\s*\n\s*if \(window\.matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)\.matches\) \{\s*\n\s*(?:\/\/[^\n]*\n\s*)*setShown\(true\);\s*\n\s*return;\s*\n\s*\}/.test(src));
   check("(1c) the wrapper carries a stable class a stylesheet rule can target", /className=\{`alpha-scroll-fade\$\{className \? ` \$\{className\}` : ""\}`\}/.test(src));
 
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -86,7 +81,7 @@ console.log("(3) app/settings/accounts/page.tsx: focus restoration now fires on 
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
   check("(3a) setActionCount is no longer inside the try block's success branch", !/setActionMsg\(`\$\{verb\} \$\{email\}\.`\);\s*\n\s*\/\/ alpha-drift-r61-03[\s\S]{0,80}setActionCount/.test(src));
-  check("(3b) setActionCount now runs in the finally block, after load() resolves", /await load\(activeSearch \? \{ search: activeSearch \} : undefined\);\s*\n[\s\S]{0,700}setActionCount\(\(c\) => c \+ 1\);/.test(src));
+  check("(3b) setActionCount now runs in the finally block, after load() resolves", /\} finally \{[\s\S]{0,1400}await load\([\s\S]{0,800}\);[\s\S]{0,900}setActionCount\(\(c\) => c \+ 1\);/.test(src));
 }
 
 console.log("(4) app/letter/page.tsx: both Promise.all query errors are now logged");
@@ -97,16 +92,19 @@ console.log("(4) app/letter/page.tsx: both Promise.all query errors are now logg
   check("(4c) issueError is now logged with a distinguishable message from the outer catch", /if \(issueError\) console\.error\("\[letter\] issues query error:", issueError\.message\);/.test(src));
 }
 
-console.log("(5) lib/stripe-cancel.ts: the subscription-cancel and customer-delete steps are now independent, with an ops alert if both fail");
+console.log("(5) lib/stripe-cancel.ts: exact Alpha cancellation never deletes the account-wide Customer");
 {
   const src = readFileSync(new URL("../lib/stripe-cancel.ts", import.meta.url), "utf8");
-  check("(5a) cancelCustomerSubscriptions() now has its own try/catch, separate from customers.del()", /let cancelFailed = false;\s*\n\s*try \{\s*\n\s*const \{ cancelled, skipped, errors \} = await cancelCustomerSubscriptions/.test(src));
-  check("(5b) a cancel-step failure does not prevent the customer-delete attempt", /\} catch \(cancelErr\) \{\s*\n\s*cancelFailed = true;/.test(src) && /try \{\s*\n\s*await stripe\.customers\.del\(customerId\);/.test(src));
-  check("(5c) an ops alert fires only when BOTH steps failed", /if \(cancelFailed\) \{\s*\n[\s\S]{0,500}sendOpsAlert\(/.test(src));
+  check("(5a) cancellation still uses the exact Alpha classifier", /await cancelCustomerSubscriptions\(stripe, customerId\)/.test(src));
+  const executable = src
+    .replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")
+    .replace(/(['"])(?:\\.|(?!\1)[^\\])*\1/g, "");
+  check("(5b) customers.del is absent from the implementation", !/customers\.del\(/.test(executable));
+  check("(5c) an uncertain or partial cancellation pages ops", /if \(!cancellationInspected \|\| cancelFailed\) \{[\s\S]{0,450}sendOpsAlert\(/.test(src));
 
   const verify = readFileSync(new URL("../scripts/verify-stripe-cancel-on-delete.mts", import.meta.url), "utf8");
-  check("(5d) the verify script's stub supports simulating subscriptions.list() throwing", /function stub\(subs: Sub\[\], throwOn: string\[\] = \[\], customerDelThrows = false, listThrows = false\)/.test(verify));
-  check("(5e) a new test asserts customers.del() still runs when list() throws", /\(13b\) customers\.del\(\) was still attempted/.test(verify));
+  check("(5d) the verify script's stub supports a subscription-list failure", /listThrows\?: boolean/.test(verify));
+  check("(5e) a focused test proves list uncertainty preserves the Customer", /list failure does not delete the Customer/.test(verify));
 }
 
 console.log("(6) app/api/account/email/reconcile/route.ts + components/EmailChanger.tsx: comments now correctly attribute the trigger to ThemeApplier");

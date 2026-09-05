@@ -4,6 +4,10 @@ import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { resendConfigured, sanitizeDisplayName } from "@/lib/email";
 import { rateLimit, clientKeyFromRequest, isDuplicateSubmission } from "@/lib/rate-limit";
+import {
+  consumeDistributedRateLimit,
+  distributedRateLimitKeyHash,
+} from "@/lib/distributed-rate-limit";
 import { isValidEmail } from "@/lib/validate-email";
 
 export const runtime = "nodejs";
@@ -31,15 +35,16 @@ const SupportPayloadSchema = z.object({
 });
 type SupportPayload = z.infer<typeof SupportPayloadSchema>;
 
-// Writes the ticket to Supabase support_tickets table when configured,
-// otherwise falls back to server-console log. Also notifies youngalgy@gmail.com
-// via Resend when configured (best-effort, doesn't block on email failure).
+// Writes the ticket durably before attempting the owner notification. If the
+// database or shared abuse controls are unavailable, the route fails closed
+// instead of copying support PII into a log or sending an untracked email.
 export async function POST(req: Request) {
   // Rate limit: 5 tickets per IP per hour. support_tickets has ZERO RLS
   // policies (the "anyone insert" policy it started with was dropped in
   // 20260805110000 -- writes only ever go through the service-role client)
-  // and this is an unauthenticated form, so this rate limit is the SOLE
-  // abuse control on this insert path. Resets per cold start (casual-abuse deterrent).
+  // and this is an unauthenticated form. This first limiter sheds bursts in
+  // one isolate. The Supabase-backed IP and global limits below are the
+  // durable abuse controls.
   const ip = clientKeyFromRequest(req);
   const limited = rateLimit(`support:${ip}`, { limit: 5, windowMs: 60 * 60 * 1000 });
   if (!limited.ok) {
@@ -61,6 +66,47 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  let svc: Awaited<ReturnType<typeof supabaseServiceClient>>;
+  try {
+    svc = await supabaseServiceClient();
+  } catch {
+    return NextResponse.json(
+      { error: "Support is temporarily unavailable. Try again shortly." },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+
+  const [distributedIpLimit, distributedGlobalLimit] = await Promise.all([
+    consumeDistributedRateLimit(svc, "support-ip", ip, {
+      limit: 5,
+      windowMs: 60 * 60 * 1000,
+    }),
+    consumeDistributedRateLimit(svc, "support-global", "all", {
+      limit: 100,
+      windowMs: 24 * 60 * 60 * 1000,
+    }),
+  ]);
+  if (!distributedIpLimit.available || !distributedGlobalLimit.available) {
+    return NextResponse.json(
+      { error: "Support is temporarily unavailable. Try again shortly." },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+  const distributedBlock = !distributedIpLimit.ok
+    ? distributedIpLimit
+    : !distributedGlobalLimit.ok
+      ? distributedGlobalLimit
+      : null;
+  if (distributedBlock) {
+    return NextResponse.json(
+      { error: "Support is busy right now. Try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(distributedBlock.retryAfterSec) },
+      }
+    );
+  }
+
   // Dedup, not just rate-limit: a rapid double-click or a double-submit
   // before React's disabled-state render commits sails straight through the
   // 5/hour volume cap above (both requests are well under it) and used to
@@ -68,7 +114,19 @@ export async function POST(req: Request) {
   // for what the user experienced as one submission. ip+email+message is a
   // reasonable identity for "the same submission" without needing a
   // client-generated idempotency key.
-  if (isDuplicateSubmission(`support:${ip}:${body.email}:${body.message}`, 60_000)) {
+  let submissionHash: string;
+  try {
+    submissionHash = distributedRateLimitKeyHash(
+      "support-submission",
+      `${ip}\n${body.email.toLowerCase()}\n${body.message}`
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "Support is temporarily unavailable. Try again shortly." },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+  if (isDuplicateSubmission(`support:${submissionHash}`, 60_000)) {
     return NextResponse.json({ ok: true });
   }
 
@@ -90,32 +148,22 @@ export async function POST(req: Request) {
     // anonymous (userId stays null), matching today's behavior.
   }
 
-  const supabaseConfigured =
-    !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    (!!process.env.SUPABASE_SECRET_KEY || !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-  if (supabaseConfigured) {
-    try {
-      const sb = await supabaseServiceClient();
-      const { error } = await sb.from("support_tickets").insert({
-        user_id: userId,
-        name: body.name || null,
-        email: body.email,
-        message: body.message,
-      });
-      if (error) throw error;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Unknown error";
-      console.error("[support] Supabase insert failed:", msg);
-      // Don't return the raw Supabase error to an unauthenticated caller --
-      // it can leak schema/constraint/RLS details. Match the account/*
-      // routes' pattern: log the detail server-side, return a generic message.
-      return NextResponse.json({ error: "Couldn't save. Try again." }, { status: 500 });
-    }
-  } else {
-    console.log(
-      `[support] ${new Date().toISOString()} from ${body.email}${body.name ? ` (${body.name})` : ""}:\n  ${body.message.replace(/\n/g, "\n  ")}`
-    );
+  try {
+    const { error } = await svc.from("support_tickets").insert({
+      user_id: userId,
+      name: body.name || null,
+      email: body.email,
+      message: body.message,
+    });
+    if (error) throw error;
+  } catch {
+    // Keep support PII and provider/database error payloads out of logs. The
+    // ticket body and reply address are already sensitive enough without an
+    // SDK echoing them through an exception message.
+    console.error("[support] Supabase insert failed");
+    // Do not return the raw Supabase error to an unauthenticated caller. It
+    // can expose schema, constraint, or policy details.
+    return NextResponse.json({ error: "Couldn't save. Try again." }, { status: 500 });
   }
 
   // Best-effort owner notification (don't fail the request if this errors)
@@ -170,16 +218,16 @@ export async function POST(req: Request) {
       // persisted to Supabase above, so nothing is lost -- only the owner
       // notification silently stops arriving with no warning anywhere.
       if (result.error) {
-        // Log only message/name, not the whole error object -- Resend's
-        // documented shape is {message, name} today, but a future/different
-        // error type (e.g. a payload-validation error) could echo request
-        // fields like `to` or the subject (which embeds body.name/body.email
-        // above) back into it, and that would flow straight into the log
-        // with no code change here to notice.
-        console.warn("[support] owner notify failed (Resend returned an error, not a throw):", result.error.name, result.error.message);
+        // Provider messages can echo request fields. Record only the bounded
+        // provider error name so a support address or message cannot leak.
+        const errorName =
+          typeof result.error.name === "string" && result.error.name.length <= 80
+            ? result.error.name
+            : "provider_error";
+        console.warn("[support] owner notify failed:", errorName);
       }
-    } catch (e) {
-      console.warn("[support] owner notify failed:", e);
+    } catch {
+      console.warn("[support] owner notify failed");
     }
   }
 

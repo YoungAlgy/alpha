@@ -7,7 +7,8 @@ import { Wordmark } from "@/components/Wordmark";
 import { topicLabel } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { demographicSummary } from "@/lib/demographics";
-import { hasActiveAccess } from "@/lib/access";
+import { hasActiveAccess, hasReaderAccess } from "@/lib/access";
+import { MANUAL_PROVIDER_SUPPRESSION_REMOVAL_HOLD_MESSAGE } from "@/lib/suppression-recovery-policy";
 
 interface AdminUserRow {
   id: string;
@@ -20,17 +21,23 @@ interface AdminUserRow {
   topics: string[] | null;
   stripe_customer_id: string | null;
   subscribed_at: string | null;
+  access_requested_at: string | null;
+  access_granted_at: string | null;
   cancelled_at: string | null;
   unsubscribed_at: string | null;
   bounced_at: string | null;
   complained_at: string | null;
+  suppression_cleanup_pending_at: string | null;
+  suppression_recovery_started_at: string | null;
   created_at: string;
 }
 
 interface Stats {
   totalUsers: number;
+  pendingRequests: number;
   paying: number;
   freeGranted: number;
+  inviteGranted: number;
   cancelled: number;
   unsubscribed: number;
   notSubscribed: number;
@@ -80,14 +87,13 @@ export default function AdminAccountsPage() {
   // row's removal, not synchronously inside act() before the DOM updates.
   //
   // alpha-drift-r61-03 (2026-08-20, accessibility-resweep-newer-code-round-
-  // 9): originally only incremented for action === "delete" -- but
-  // grant_free/revoke_free/clear_suppression ALSO unmount their own just-
-  // clicked button via this same finally-block reload (isGranted/
-  // isSuppressed flipping swaps one conditionally-rendered button for a
+  // 9): originally only incremented for action === "delete". The other
+  // account actions can also unmount their own just-
+  // clicked button via this same finally-block reload (access status
+  // changes swap one conditionally-rendered button for a
   // different one, or for nothing, not an in-place update), dropping focus
   // to <body> identically. Renamed delete->action and the gate on
-  // act()'s success path removed so all 4 actions restore focus, not just
-  // delete.
+  // act()'s success path removed so account actions restore focus.
   const [actionCount, setActionCount] = useState(0);
   const accountsHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -120,7 +126,7 @@ export default function AdminAccountsPage() {
     if (clearCount > 0) accountsHeadingRef.current?.focus();
   }, [clearCount]);
   // alpha-drift-r32-04 (2026-08-14): act() only ever alert()'d on FAILURE --
-  // a successful grant/revoke/clear/delete gave a sighted admin the visual
+  // a successful account action gave a sighted admin the visual
   // row-list reload as feedback, but a screen reader user got no
   // confirmation an action even happened, unlike settings/page.tsx's own
   // billingMsg pattern for the exact same "did my click work" question.
@@ -130,6 +136,7 @@ export default function AdminAccountsPage() {
   // (non-appendable) page — "Load more" only makes sense on the unfiltered,
   // newest-first list, so we track it separately from the search box's value.
   const [activeSearch, setActiveSearch] = useState("");
+  const [pendingOnly, setPendingOnly] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   // load() is called from several places (mount, search, load-more, the
@@ -168,7 +175,12 @@ export default function AdminAccountsPage() {
   // it's still the MOST RECENTLY ISSUED call by the time it resolves.
   const loadSeqRef = useRef(0);
 
-  async function load(opts?: { search?: string; before?: string; append?: boolean }) {
+  async function load(opts?: {
+    search?: string;
+    before?: string;
+    append?: boolean;
+    pending?: boolean;
+  }) {
     // alpha-drift-r45-04 (2026-08-19): this never cleared a prior `err` on
     // a later successful load -- if the initial mount load() 401'd (e.g.
     // the auth cookie hadn't hydrated yet) and a subsequent retry/search
@@ -194,7 +206,10 @@ export default function AdminAccountsPage() {
     try {
       const params = new URLSearchParams();
       if (opts?.search) params.set("q", opts.search);
-      else if (opts?.before) params.set("before", opts.before);
+      else {
+        if (opts?.pending) params.set("pending", "1");
+        if (opts?.before) params.set("before", opts.before);
+      }
       const res = await fetch(`/api/admin/users${params.toString() ? `?${params}` : ""}`);
       if (isStale()) return;
       if (res.status === 401) {
@@ -253,7 +268,12 @@ export default function AdminAccountsPage() {
   }
 
   useEffect(() => {
-    load();
+    // This mount effect hydrates the admin list from the server.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load({ pending: true });
+    // `load` is intentionally mount-only. It is recreated during render and
+    // adding it here would turn this hydration effect into a request loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // alpha-drift-r47-01 (2026-08-20): these had no busy guard at all, unlike
@@ -271,6 +291,7 @@ export default function AdminAccountsPage() {
     e.preventDefault();
     if (busyRowsRef.current.size > 0) return;
     setActiveSearch(q);
+    setPendingOnly(false);
     load({ search: q });
   }
 
@@ -278,22 +299,53 @@ export default function AdminAccountsPage() {
     if (busyRowsRef.current.size > 0) return;
     setQ("");
     setActiveSearch("");
-    load();
+    setPendingOnly(true);
+    load({ pending: true });
     setClearCount((c) => c + 1);
+  }
+
+  function showPendingRequests() {
+    if (busyRowsRef.current.size > 0) return;
+    setQ("");
+    setActiveSearch("");
+    setPendingOnly(true);
+    load({ pending: true });
+  }
+
+  function showAllAccounts() {
+    if (busyRowsRef.current.size > 0) return;
+    setQ("");
+    setActiveSearch("");
+    setPendingOnly(false);
+    load();
   }
 
   async function loadMore() {
     if (loadingMore || !users || users.length === 0) return;
     setLoadingMore(true);
     try {
-      await load({ before: users[users.length - 1].created_at, append: true });
+      const last = users[users.length - 1];
+      const before = pendingOnly ? last.access_requested_at : last.created_at;
+      if (!before) return;
+      await load({ before, append: true, pending: pendingOnly });
     } finally {
       setLoadingMore(false);
       setLoadMoreCount((c) => c + 1);
     }
   }
 
-  async function act(userId: string, email: string, action: "delete" | "grant_free" | "revoke_free" | "clear_suppression", confirmMsg?: string) {
+  async function act(
+    userId: string,
+    email: string,
+    action:
+      | "delete"
+      | "grant_free"
+      | "revoke_free"
+      | "grant_invite"
+      | "revoke_invite"
+      | "deny_access",
+    confirmMsg?: string
+  ) {
     if (confirmMsg && !confirm(confirmMsg)) return;
     if (busyRowsRef.current.has(userId)) return;
     busyRowsRef.current.add(userId);
@@ -314,28 +366,35 @@ export default function AdminAccountsPage() {
           ? "Granted free access to"
           : action === "revoke_free"
           ? "Revoked free access from"
-          : "Cleared delivery suppression for";
+          : action === "grant_invite"
+          ? "Granted permanent invite access to"
+          : action === "revoke_invite"
+          ? "Revoked permanent invite access from"
+          : "Denied the access request from";
       setActionMsg(`${verb} ${email}.`);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Action failed.");
     } finally {
       // alpha-drift-r46-01 (2026-08-19): this used to only reload on the
-      // clean-success path -- but grant_free's own 502 (alpha-drift-r45-01)
-      // means the DB write already landed even though the response reports
-      // an error, so skipping the reload here left the row list/stats
-      // showing the pre-action snapshot (e.g. still "Not subscribed", or a
-      // SUPPRESSED badge that the DB write actually just cleared) for a
-      // write that had, in fact, already committed. Reload through whatever
+      // clean-success path. An action can commit before a later operation
+      // reports an error, so skipping the reload here can leave the row list
+      // showing a pre-action snapshot after a committed write. Reload through whatever
       // search was active, so acting on a result found past the newest-200
       // window doesn't bounce the admin back to page one -- regardless of
       // whether this action's own response was a full success.
-      await load(activeSearch ? { search: activeSearch } : undefined);
+      await load(
+        activeSearch
+          ? { search: activeSearch }
+          : pendingOnly
+          ? { pending: true }
+          : undefined
+      );
       // alpha-drift-r65-03 (2026-08-21, accessibility-resweep-newer-code-
       // r13): used to sit in the try block's success-only branch (see
       // actionCount's own comment above for the r61-03 "all 4 actions"
       // history) -- but the same r46-01 reasoning above applies here too:
-      // a 502 like grant_free's own already-landed-DB-write case unmounts
-      // the just-clicked row's button on the reload above exactly like a
+      // a committed action can unmount the just-clicked row's button on the
+      // reload above exactly like a
       // clean success does, dropping a keyboard/screen-reader admin's
       // focus to <body> with no restoration. Moved here so it fires
       // whenever this reload actually ran, not just on a clean response.
@@ -357,6 +416,25 @@ export default function AdminAccountsPage() {
   // which is used for non-text accents elsewhere in the app and is a bigger,
   // deliberate design-system question outside this page's scope.
   function statusLabel(u: AdminUserRow): { label: string; color: string } {
+    if (u.access_requested_at && !u.access_granted_at) {
+      return { label: "Access requested", color: "var(--ink)" };
+    }
+    if (u.access_granted_at) {
+      if (u.unsubscribed_at) {
+        return { label: "Invited, letters paused", color: "var(--ink)" };
+      }
+      if (
+        u.stripe_customer_id &&
+        u.cancelled_at &&
+        !hasActiveAccess(u.cancelled_at)
+      ) {
+        return { label: "Invited, billing ended", color: "var(--ink)" };
+      }
+      if (u.stripe_customer_id) {
+        return { label: "Paying + invited", color: "var(--ink)" };
+      }
+      return { label: "Free (granted)", color: "var(--ink)" };
+    }
     if (u.unsubscribed_at) return { label: "Unsubscribed", color: "var(--ink-soft)" };
     // "Cancelled" = actually churned (cancel date in the PAST). A FUTURE
     // cancelled_at is cancel-at-period-end: still paying, still getting
@@ -400,7 +478,14 @@ export default function AdminAccountsPage() {
           </h1>
           {users && (
             <span className="alpha-mono" style={{ color: "var(--ink-soft)" }}>
-              {users.length} SHOWN{stats ? ` OF ${stats.totalUsers}${statsStale ? " (unverified)" : ""}` : ""}
+              {users.length} SHOWN
+              {stats
+                ? ` OF ${
+                    pendingOnly ? stats.pendingRequests : stats.totalUsers
+                  } ${pendingOnly ? "PENDING" : "ACCOUNTS"}${
+                    statsStale ? " (unverified)" : ""
+                  }`
+                : ""}
             </span>
           )}
         </div>
@@ -459,6 +544,34 @@ export default function AdminAccountsPage() {
           )}
         </form>
 
+        <div className="flex gap-4 -mt-6 mb-10">
+          <button
+            type="button"
+            disabled={busyRows.size > 0 || pendingOnly}
+            onClick={showPendingRequests}
+            className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
+            style={{
+              color: "var(--ink)",
+              opacity: busyRows.size > 0 || pendingOnly ? 0.5 : 1,
+            }}
+          >
+            Pending requests{stats ? ` (${stats.pendingRequests})` : ""}
+          </button>
+          <button
+            type="button"
+            disabled={busyRows.size > 0 || (!pendingOnly && !activeSearch)}
+            onClick={showAllAccounts}
+            className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
+            style={{
+              color: "var(--ink-soft)",
+              opacity:
+                busyRows.size > 0 || (!pendingOnly && !activeSearch) ? 0.5 : 1,
+            }}
+          >
+            All accounts
+          </button>
+        </div>
+
         {stats && (
           <div
             className="alpha-card p-5 mb-10"
@@ -489,6 +602,8 @@ export default function AdminAccountsPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               <Stat label="Paying" value={stats.paying} />
               <Stat label="Free (granted)" value={stats.freeGranted} />
+              <Stat label="Invite access" value={stats.inviteGranted} />
+              <Stat label="Pending requests" value={stats.pendingRequests} />
               <Stat label="Cancelled" value={stats.cancelled} />
               <Stat label="Unsubscribed" value={stats.unsubscribed} />
               <Stat
@@ -549,7 +664,7 @@ export default function AdminAccountsPage() {
 
         {users && users.length === 0 && (
           <p className="alpha-display text-lg" style={{ color: "var(--ink-soft)" }}>
-            Nobody yet.
+            {pendingOnly ? "No pending access requests." : "Nobody yet."}
           </p>
         )}
 
@@ -563,13 +678,32 @@ export default function AdminAccountsPage() {
                 .filter(Boolean)
                 .join(" · ");
               const created = new Date(u.created_at).toLocaleDateString();
-              const isGranted = !!u.subscribed_at && !u.stripe_customer_id;
+              const readerAccess = hasReaderAccess(
+                u.subscribed_at,
+                u.cancelled_at,
+                u.access_granted_at
+              );
+              const isGranted = readerAccess && !u.stripe_customer_id;
+              const isInviteGranted = !!u.access_granted_at;
+              const hasPendingAccessRequest =
+                !!u.access_requested_at && !isInviteGranted;
               const isBusy = busyRows.has(u.id);
+              const canGrantFree = !u.stripe_customer_id && !readerAccess;
+              const canGrantInvite =
+                !!u.stripe_customer_id && !!u.subscribed_at && !isInviteGranted;
+              const needsBillingReview =
+                hasPendingAccessRequest &&
+                !!u.stripe_customer_id &&
+                !u.subscribed_at;
               // alpha-drift-r20-06: deliverability suppression is orthogonal
               // to billing status (statusLabel above) -- a Paying subscriber
               // can be silently bounce-suppressed too, so this is its own
               // badge, not folded into status.label.
-              const isSuppressed = !!u.bounced_at || !!u.complained_at;
+              const isSuppressed =
+                !!u.bounced_at ||
+                !!u.complained_at ||
+                !!u.suppression_cleanup_pending_at;
+              const recoveryInProgress = !!u.suppression_recovery_started_at;
               return (
                 <li
                   key={u.id}
@@ -589,7 +723,29 @@ export default function AdminAccountsPage() {
                       </span>
                     </div>
                     <span className="flex items-center gap-2 shrink-0">
-                      {isSuppressed && (
+                      {hasPendingAccessRequest && (
+                        <span
+                          className="alpha-mono text-xs"
+                          style={{ color: "var(--ink)" }}
+                          title={`Access requested ${new Date(
+                            u.access_requested_at as string
+                          ).toLocaleDateString()}`}
+                        >
+                          REQUESTED
+                        </span>
+                      )}
+                      {isInviteGranted && (
+                        <span
+                          className="alpha-mono text-xs"
+                          style={{ color: "var(--ink)" }}
+                          title={`Permanent invite access granted ${new Date(
+                            u.access_granted_at as string
+                          ).toLocaleDateString()}`}
+                        >
+                          INVITED
+                        </span>
+                      )}
+                      {(isSuppressed || recoveryInProgress) && (
                         <span
                           className="alpha-mono text-xs"
                           style={{ color: "var(--ink)" }}
@@ -604,9 +760,23 @@ export default function AdminAccountsPage() {
                           title={[
                             u.bounced_at ? `Bounced ${new Date(u.bounced_at).toLocaleDateString()}` : null,
                             u.complained_at ? `Complained ${new Date(u.complained_at).toLocaleDateString()}` : null,
+                            u.suppression_cleanup_pending_at
+                              ? `Reviewed recovery required since ${new Date(
+                                  u.suppression_cleanup_pending_at
+                                ).toLocaleDateString()}`
+                              : null,
+                            u.suppression_recovery_started_at
+                              ? `Recovery started ${new Date(
+                                  u.suppression_recovery_started_at
+                                ).toLocaleDateString()}. Delivery and deletion stay blocked until reviewed settlement.`
+                              : null,
                           ].filter(Boolean).join(" · ")}
                         >
-                          SUPPRESSED
+                          {recoveryInProgress
+                            ? "RECOVERY IN PROGRESS"
+                            : u.suppression_cleanup_pending_at
+                            ? "DELIVERY REVIEW"
+                            : "SUPPRESSED"}
                         </span>
                       )}
                       <span
@@ -645,8 +815,8 @@ export default function AdminAccountsPage() {
                       page.tsx, you/page.tsx). py-2 -my-2 (vertical-only, not
                       p-2 -m-2) deliberately avoids colliding with this row's
                       own gap-3 horizontal spacing. */}
-                  <div className="flex gap-3 mt-3">
-                    {!u.subscribed_at && (
+                  <div className="flex flex-wrap gap-3 mt-3">
+                    {canGrantFree && (
                       <button
                         type="button"
                         disabled={isBusy}
@@ -655,7 +825,7 @@ export default function AdminAccountsPage() {
                             u.id,
                             u.email,
                             "grant_free",
-                            `Grant ${u.email} a free alpha. subscription?`
+                            `${u.access_requested_at ? "Approve" : "Grant"} ${u.email} ${u.access_requested_at ? "for Alpha access" : "a free Alpha account"}?`
                           )
                         }
                         className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
@@ -664,7 +834,7 @@ export default function AdminAccountsPage() {
                           opacity: isBusy ? 0.4 : 1,
                         }}
                       >
-                        Grant free
+                        {u.access_requested_at ? "Approve access" : "Grant free"}
                       </button>
                     )}
                     {isGranted && (
@@ -676,7 +846,7 @@ export default function AdminAccountsPage() {
                             u.id,
                             u.email,
                             "revoke_free",
-                            `Revoke ${u.email}'s free subscription?`
+                            `Revoke ${u.email}'s free access?`
                           )
                         }
                         className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
@@ -685,7 +855,7 @@ export default function AdminAccountsPage() {
                         Revoke free
                       </button>
                     )}
-                    {isSuppressed && (
+                    {canGrantInvite && (
                       <button
                         type="button"
                         disabled={isBusy}
@@ -693,19 +863,76 @@ export default function AdminAccountsPage() {
                           act(
                             u.id,
                             u.email,
-                            "clear_suppression",
-                            `Clear delivery suppression for ${u.email}? Their next send will go through normally.`
+                            "grant_invite",
+                            `Give ${u.email} permanent invite access? This does not cancel Stripe billing. Turn renewal off separately.`
                           )
                         }
                         className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
                         style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
                       >
-                        Clear suppression
+                        {hasPendingAccessRequest
+                          ? "Approve invite access"
+                          : "Keep invite access"}
                       </button>
+                    )}
+                    {hasPendingAccessRequest && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          act(
+                            u.id,
+                            u.email,
+                            "deny_access",
+                            `Deny ${u.email}'s Alpha access request? They can request again later.`
+                          )
+                        }
+                        className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
+                        style={{
+                          color: "var(--ink-soft)",
+                          opacity: isBusy ? 0.4 : 1,
+                        }}
+                      >
+                        Deny request
+                      </button>
+                    )}
+                    {needsBillingReview && (
+                      <span
+                        className="alpha-ui text-xs basis-full"
+                        style={{ color: "var(--ink-soft)" }}
+                      >
+                        Review billing before approval
+                      </span>
+                    )}
+                    {u.stripe_customer_id && isInviteGranted && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          act(
+                            u.id,
+                            u.email,
+                            "revoke_invite",
+                            `Remove ${u.email}'s permanent invite access? Any paid access stays active through its Stripe end date.`
+                          )
+                        }
+                        className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
+                        style={{ color: "var(--ink-soft)", opacity: isBusy ? 0.4 : 1 }}
+                      >
+                        Revoke invite
+                      </button>
+                    )}
+                    {isSuppressed && !recoveryInProgress && (
+                      <span
+                        className="alpha-ui text-xs basis-full"
+                        style={{ color: "var(--ink-soft)" }}
+                      >
+                        {MANUAL_PROVIDER_SUPPRESSION_REMOVAL_HOLD_MESSAGE}
+                      </span>
                     )}
                     <button
                       type="button"
-                      disabled={isBusy}
+                      disabled={isBusy || recoveryInProgress}
                       onClick={() =>
                         act(
                           u.id,
@@ -715,9 +942,17 @@ export default function AdminAccountsPage() {
                         )
                       }
                       className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
-                      style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
+                      style={{
+                        color: "var(--ink)",
+                        opacity: isBusy || recoveryInProgress ? 0.4 : 1,
+                      }}
+                      title={
+                        recoveryInProgress
+                          ? "Deletion stays blocked until the reviewed delivery recovery settles."
+                          : undefined
+                      }
                     >
-                      Delete
+                      {recoveryInProgress ? "Deletion blocked" : "Delete"}
                     </button>
                   </div>
                 </li>

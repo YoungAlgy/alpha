@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Footer } from "@/components/Footer";
 import { Wordmark } from "@/components/Wordmark";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { hasActiveAccess } from "@/lib/access";
+import { hasReaderAccess } from "@/lib/access";
+import { currentPeriodIso } from "@/lib/cadence";
 import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
@@ -131,9 +132,10 @@ export default function ArchivePage() {
             sb
               .from("issues")
               .select("id, week_of, editor_intro")
+              .lte("week_of", currentPeriodIso())
               .order("week_of", { ascending: false })
               .range(0, PAGE_SIZE - 1),
-            sb.from("users").select("cancelled_at").eq("id", session.user.id).maybeSingle(),
+            sb.from("users").select("subscribed_at, cancelled_at, access_granted_at").eq("id", session.user.id).maybeSingle(),
           ]);
           if (!mountedRef.current) return;
           // alpha-drift-r16-15: same app-level defense-in-depth as /inbox
@@ -143,15 +145,24 @@ export default function ArchivePage() {
           //
           // alpha-drift-r20-05: same deleted-account gap as /inbox -- see
           // that file's comment. A cascade-deleted `users` row makes
-          // userRow null, which hasActiveAccess(undefined) misreads as
-          // "active." !userError && !userRow is a genuine zero-row
-          // result, not a query failure (that's handled below by the
-          // separate `error` check on the issues query).
-          if (!userError && !userRow) {
+          // userRow null, which the old cancellation-only helper misread as
+          // "active." Handle userError as a retryable load failure first.
+          // A clean !userRow after that is a genuine zero-row result.
+          if (userError) {
+            setState("error");
+            return;
+          }
+          if (!userRow) {
             setState("ended");
             return;
           }
-          if (!hasActiveAccess(userRow?.cancelled_at)) {
+          if (
+            !hasReaderAccess(
+              userRow.subscribed_at,
+              userRow.cancelled_at,
+              userRow.access_granted_at
+            )
+          ) {
             setState("ended");
             return;
           }
@@ -208,7 +219,7 @@ export default function ArchivePage() {
       if (!mountedRef.current || !session) return;
       const from = items.length;
       // alpha-drift-r17-10 (found+fixed 2026-08-07): loadMore only ever
-      // checked session existence, not hasActiveAccess -- load() (above)
+      // checked session existence, not current subscriber access -- load() (above)
       // already gates on it, but load() only runs once at mount. If a
       // subscriber's access is revoked (a dispute, a cancellation) WHILE
       // they have this page open with more pages available, "Load more"
@@ -218,18 +229,26 @@ export default function ArchivePage() {
         sb
           .from("issues")
           .select("id, week_of, editor_intro")
+          .lte("week_of", currentPeriodIso())
           .order("week_of", { ascending: false })
           .range(from, from + PAGE_SIZE - 1),
-        sb.from("users").select("cancelled_at").eq("id", session.user.id).maybeSingle(),
+        sb.from("users").select("subscribed_at, cancelled_at, access_granted_at").eq("id", session.user.id).maybeSingle(),
       ]);
       if (!mountedRef.current) return;
       // alpha-drift-r20-05: same deleted-account gap as load() above.
-      if (!userError && !userRow) {
+      if (userError) return; // fail closed; leave the existing list intact so the reader can retry
+      if (!userRow) {
         setState("ended");
         setItems([]);
         return;
       }
-      if (!hasActiveAccess(userRow?.cancelled_at)) {
+      if (
+        !hasReaderAccess(
+          userRow.subscribed_at,
+          userRow.cancelled_at,
+          userRow.access_granted_at
+        )
+      ) {
         setState("ended");
         setItems([]);
         return;
@@ -257,7 +276,9 @@ export default function ArchivePage() {
   }, [items.length, loadingMore]);
 
   useEffect(() => {
-    load();
+    // Initial client data loading is the external synchronization owned here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   return (
@@ -303,7 +324,7 @@ export default function ArchivePage() {
         {state === "ended" && (
           <div className="space-y-5">
             <p className="alpha-display text-lg" style={{ color: "var(--ink)" }}>
-              Your subscription has ended.
+              Your Alpha access has ended.
             </p>
             <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
               Want back in? Start a new letter, or reach out if something looks wrong.

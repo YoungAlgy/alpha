@@ -115,7 +115,7 @@ export async function GET(req: Request) {
   return new NextResponse(
     htmlPage(
       "Unsubscribe from alpha. letters?",
-      `<p>Confirm below and we'll stop sending letters to this address. Your Stripe subscription is separate and unaffected. Manage or cancel billing separately from settings if you also want to stop paying.</p>
+      `<p>Confirm below and we'll stop sending letters to this address. If this is an older paid Alpha account, email delivery and billing are separate. Turn off renewal in settings if you also want billing to end.</p>
       <form method="POST" action="${actionUrl}" style="margin: 24px 0 0;">
         <input type="hidden" name="source" value="confirm-page">
         <button type="submit" style="font: inherit; font-size: 16px; font-weight: 700; background: #1F3D2E; color: #F4EFE0; border: none; border-radius: 8px; padding: 12px 28px; cursor: pointer;">Yes, stop my letters</button>
@@ -169,7 +169,7 @@ export async function POST(req: Request) {
     return new NextResponse(
       htmlPage(
         "You're unsubscribed.",
-        `<p>We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. Your Stripe subscription is separate and unaffected, so manage or cancel billing from <a href="${settingsUrl}" rel="noreferrer">settings</a> if you also want to stop paying. Changed your mind? Sign in and hit <a href="${settingsUrl}" rel="noreferrer">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20alpha.%20letters">youngalgy@gmail.com</a>.</p>`
+        `<p>We won't send any more letters to <strong>${escapeHtml(result.email)}</strong>. If this is an older paid account, turn off renewal from <a href="${settingsUrl}" rel="noreferrer">settings</a> because email delivery and billing are separate. Changed your mind? Sign in and hit <a href="${settingsUrl}" rel="noreferrer">Resume my letters in settings</a>, or email <a href="mailto:youngalgy@gmail.com?subject=Resume%20my%20alpha.%20letters">youngalgy@gmail.com</a>.</p>`
       ),
       {
         status: 200,
@@ -245,4 +245,3 @@ function htmlPage(title: string, bodyHtml: string): string {
 </body>
 </html>`;
 }
-

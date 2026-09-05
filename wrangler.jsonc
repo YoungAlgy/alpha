@@ -18,9 +18,15 @@
   // it on, it's the fastest way to verify a deploy before DNS even points here.
   "workers_dev": true,
   "vars": {
-    // The release guard fails closed before any checkout provider or database
-    // access. A separate reviewed release will reopen this after migration.
+    // Round 80 releases fail closed until a separately reviewed reopen commit
+    // changes this exact value to "open". Missing or misspelled values also
+    // pause POST /api/stripe/checkout before database or Stripe access.
     "ALPHA_CHECKOUT_MODE": "paused",
+    // LEGACY_CHECKOUT_ROOT_CUTOFF_ISO is intentionally absent from this local
+    // preparation tree. Add the exact versioned UTC value only after the
+    // paused guard is live, the old Stripe key is revoked, and two provider
+    // reads prove legacy Session creation has stopped. Health fails closed
+    // while it is missing.
     // OpenNext's DO revalidation queue bills the full timeout as Durable
     // Object "duration" on every ISR revalidation, regardless of how fast
     // the fetch actually completes (acknowledged upstream as "problematic"

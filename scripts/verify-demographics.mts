@@ -7,7 +7,11 @@ const {
 } = await import("../lib/demographics.ts");
 
 let pass = 0, fail = 0;
-const check = (label: string, cond: boolean) => { console.log(`  ${cond ? "OK " : "XX "} ${label}`); cond ? pass++ : fail++; };
+const check = (label: string, cond: boolean) => {
+  console.log(`  ${cond ? "OK " : "XX "} ${label}`);
+  if (cond) pass++;
+  else fail++;
+};
 
 // parseBirthday
 console.log("(1) parseBirthday");

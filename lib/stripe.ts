@@ -99,3 +99,12 @@ export function isTransientStripeError(e: unknown): boolean {
   }
   return false;
 }
+
+/** A stored exact Stripe object was deleted or no longer exists. */
+export function isStripeResourceMissing(e: unknown): boolean {
+  return (
+    !!e &&
+    typeof e === "object" &&
+    (e as { code?: unknown }).code === "resource_missing"
+  );
+}

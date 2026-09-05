@@ -23,12 +23,21 @@ if (error) {
 }
 
 const rows = data ?? [];
+type UserRow = {
+  first_name: string | null;
+  city: string | null;
+  topics: unknown;
+  subscribed_at: string | null;
+  cancelled_at: string | null;
+  stripe_customer_id: string | null;
+  created_at: string | null;
+};
 console.log(`total public.users rows: ${rows.length}`);
 let subscribed = 0,
   deliverable = 0,
   subNoName = 0,
   subNoTopics = 0;
-for (const r of rows as any[]) {
+for (const r of rows as UserRow[]) {
   const hasName = !!(r.first_name && String(r.first_name).trim());
   const topicCount = Array.isArray(r.topics) ? r.topics.length : 0;
   const isSub = !!r.subscribed_at;

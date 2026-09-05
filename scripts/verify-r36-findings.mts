@@ -21,7 +21,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/EmailChanger.tsx + app/settings/page.tsx: focus-return fix actually works (ref=, not a captured node)");
@@ -85,7 +86,7 @@ console.log("(3) app/privacy/page.tsx: voice pass -- em dashes, semicolon, contr
   // that the specific facts/promises are still present, just reworded.
   check("(3i) sanity: the Zodiac/birthday-unlocks-topic fact still stated", /Your birthday unlocks the\s*\n\s*daily Zodiac topic/.test(src));
   check("(3j) sanity: the 30-day encrypted-backup disclosure (a genuinely important prior-round fix) is untouched", /encrypted daily backup of the database\s*\n\s*for up to 30 days/.test(src));
-  check("(3k) sanity: the Stripe permanent-record disclosure (prior round's own fix) survives with its full meaning intact", /Your name and city stay on that one record\s*\n\s*at Stripe, permanently, the same way a receipt would\./.test(src));
+  check("(3k) sanity: the Stripe disclosure now states profile data minimization and the opaque checkout reference", /Current Alpha checkouts do not copy your profile&apos;s first name, city,\s*\n\s*topic choices, or profile answers into Stripe\. Alpha sends Stripe an\s*\n\s*opaque checkout reference/.test(src) && !/Your name and city stay on that one record/.test(src));
 }
 
 console.log("(4) app/support/page.tsx + app/terms/page.tsx: remaining voice-pass fixes");
@@ -141,7 +142,7 @@ console.log("(6) app/you/page.tsx + app/topics/page.tsx: the firstName upstream-
   check("(6a) app/you/page.tsx now bounces to /welcome when firstName is missing", /if \(loaded && !state\.firstName\) router\.replace\("\/welcome" as never\);/.test(youSrc));
 
   const topicsSrc = readFileSync(new URL("../app/topics/page.tsx", import.meta.url), "utf8");
-  check("(6b) app/topics/page.tsx now has the same guard, gated on topicsHydrated && !signedIn (doesn't bounce a signed-in editor)", /if \(topicsHydrated && !signedIn && loaded && !state\.firstName\) \{\s*\n\s*router\.replace\("\/welcome" as never\);\s*\n\s*\}/.test(topicsSrc));
+  check("(6b) app/topics/page.tsx now has the same guard, gated on topicsHydrated && !signedIn (doesn't bounce a signed-in editor)", /if \(\s*topicsHydrated\s*&&\s*!signedIn\s*&&\s*loaded\s*&&\s*!state\.firstName\s*&&\s*!legacyCheckoutReturnPath\(\)\s*\)\s*\{\s*router\.replace\("\/welcome" as never\);\s*\}/.test(topicsSrc));
 
   const questionStepSrc = readFileSync(new URL("../components/onboarding/QuestionStep.tsx", import.meta.url), "utf8");
   check("(6c) sanity: QuestionStep's own original guard (the one being mirrored) is untouched", /if \(currentPath !== "name" && !state\.firstName\) \{/.test(questionStepSrc));

@@ -1,6 +1,10 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import {
+  exactAlphaSupabaseOrigin,
+  isExactAlphaSupabaseUrl,
+} from "@/lib/alpha-supabase-url";
 
 let _client: ReturnType<typeof createBrowserClient> | null = null;
 
@@ -15,12 +19,13 @@ export function supabaseClient() {
       "Supabase env vars missing (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)"
     );
   }
+  const alphaUrl = exactAlphaSupabaseOrigin(url);
   // Bound every request this client makes (no override = an unbounded fetch —
   // e.g. a merely-slow, not-erroring auth call — could stall a caller
   // indefinitely with nothing to catch it). Matches the AbortSignal.timeout
   // pattern used by every other fetch-based client in the app (lib/email.ts,
   // lib/engine/*-client.ts, lib/brave.ts, lib/you-search.ts).
-  _client = createBrowserClient(url, key, {
+  _client = createBrowserClient(alphaUrl, key, {
     global: {
       fetch: (input, init) =>
         fetch(input, { ...init, signal: AbortSignal.timeout(10_000) }),
@@ -34,7 +39,7 @@ export function supabaseClient() {
 
 export function supabaseConfigured(): boolean {
   return (
-    !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    isExactAlphaSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
     (!!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
       !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
   );

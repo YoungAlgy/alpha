@@ -3,13 +3,14 @@ import { youConfigured, youSearch } from "@/lib/you-search";
 import { rankAndDedup } from "./source-rank";
 import { fetchArticleText, deepReadEnabled } from "./fetch-content";
 import { TOPIC_QUERIES, zodiacQueries } from "./topic-queries";
-import { getSignal } from "./mock-signals";
 import { normalizeUrl } from "./url-guard";
 import { geminiConfigured } from "./gemini-client";
 import { resolveTopicSignalViaGemini } from "./gemini-search";
 import { isCustomTopic, customTopicText, isZodiacTopicId } from "@/lib/topics";
 import { stripPromptFenceChars } from "@/lib/prompt-fence";
 import { cleanField } from "./text-clean";
+import { publicFeedFallbackEnabled, publicFeedSearch } from "./public-feed-search";
+import { noModelModeEnabled } from "./provider-policy";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal } from "./types";
 
@@ -27,7 +28,10 @@ const PER_QUERY_COUNT = 10;
 // even reaches the model as prose it might copy into a body.
 
 // Resolves a TopicSignal for (topicId, weekOf). Tries Brave Search first
-// when configured, falls back to hand-written mock signals otherwise.
+// when configured, then independent live-search providers when Brave cannot
+// be used. A complete, healthy Brave response with no usable results stays a
+// genuine quiet-topic result. Absence, quota exhaustion, total failure, or an
+// incomplete empty result opens the fallback cascade.
 // Cache-friendly: blurbs persist to topic_blurbs so every subscriber to a
 // topic (including identical custom text) shares the generation cost.
 
@@ -47,6 +51,28 @@ async function tryFallback(
     console.warn(`[source-resolver] ${label} failed for ${topicId}:`, e);
     return undefined;
   }
+}
+
+type LiveSearchAttempt =
+  | { state: "signal"; signal: TopicSignal }
+  | { state: "healthy-empty" }
+  | { state: "unavailable" };
+
+type BraveFallbackReason = "rate-limited" | "unavailable" | "not configured";
+
+// gemini-search.ts predates the broader outage fallback and writes the trigger
+// reason into the model-facing context. Keep that context factual when this
+// resolver reaches Gemini because Brave is absent or unavailable rather than
+// quota-limited.
+function withBraveFallbackReason(signal: TopicSignal, reason: BraveFallbackReason): TopicSignal {
+  if (reason === "rate-limited") return signal;
+  return {
+    ...signal,
+    context: signal.context.replace(
+      "Brave was rate-limited this run",
+      `Brave was ${reason} this run`
+    ),
+  };
 }
 
 // A custom ("your own thing") topic has no catalog query set — derive a few
@@ -93,7 +119,7 @@ export async function resolveTopicSignal(
       ? zodiacQueries(topicId)
       : TOPIC_QUERIES[topicId as FixedTopicId];
 
-  if (braveConfigured() && queries && queries.length > 0) {
+  if (queries && queries.length > 0) {
     // Track whether THIS topic's OWN queries got rate-limited, via a
     // per-call callback (lib/brave.ts's onRateLimited) rather than the
     // module-level braveRateLimitedCount(). Multiple topics run concurrently
@@ -103,33 +129,46 @@ export async function resolveTopicSignal(
     // — that would misroute a genuinely quiet topic (Brave fine, nothing new)
     // into the Gemini fallback instead of the existing backup-topic behavior.
     let rateLimitedThisTopic = false;
-    try {
-      const live = await fetchLiveSignal(
-        topicId,
-        queries,
-        weekOf,
-        opts?.freshness,
-        opts?.excludeUrls,
-        () => { rateLimitedThisTopic = true; }
-      );
-      if (live) return live;
-    } catch (e) {
-      console.warn(`[source-resolver] Brave failed for ${topicId}:`, e);
-      // fall through to mock (fixed topics only)
+    let shouldTryFallback = !braveConfigured();
+    let fallbackReason: BraveFallbackReason = "not configured";
+
+    if (braveConfigured()) {
+      try {
+        const live = await fetchLiveSignal(
+          topicId,
+          queries,
+          weekOf,
+          opts?.freshness,
+          opts?.excludeUrls,
+          () => { rateLimitedThisTopic = true; }
+        );
+        if (live.state === "signal") return live.signal;
+        if (live.state === "unavailable") {
+          shouldTryFallback = true;
+          fallbackReason = "unavailable";
+        }
+      } catch (e) {
+        console.warn(`[source-resolver] Brave failed for ${topicId}:`, e);
+        shouldTryFallback = true;
+        fallbackReason = "unavailable";
+      }
+      if (rateLimitedThisTopic) {
+        shouldTryFallback = true;
+        fallbackReason = "rate-limited";
+      }
     }
-    // Gemini's grounded search and You.com are both genuinely separate
-    // providers from Brave — worth trying ONLY when Brave's OWN quota is the
-    // actual problem. A topic that came back dry because Brave is fine but
-    // there is truly nothing new should still fall through to a fresher
-    // backup topic (the existing dry-topic behavior in select-sections.ts),
-    // not get force-filled here.
-    if (rateLimitedThisTopic) {
-      if (geminiConfigured()) {
-        console.warn(`[source-resolver] Brave rate-limited for ${topicId}, trying Gemini grounded search`);
+
+    // Gemini's grounded search and You.com are independent from Brave. Try
+    // them when Brave is absent, quota-limited, or wholly unavailable. A
+    // healthy Brave response with no usable results remains a quiet topic and
+    // still falls through to a fresher backup topic in select-sections.ts.
+    if (shouldTryFallback) {
+      if (geminiConfigured() && !noModelModeEnabled()) {
+        console.warn(`[source-resolver] Brave ${fallbackReason} for ${topicId}, trying Gemini grounded search`);
         const grounded = await tryFallback(topicId, "Gemini grounded search", () =>
           resolveTopicSignalViaGemini(topicId, weekOf, queries.join("; "), opts?.excludeUrls)
         );
-        if (grounded) return grounded;
+        if (grounded) return withBraveFallbackReason(grounded, fallbackReason);
       }
       // You.com is tried LAST, after Gemini — Gemini's grounded search is a
       // richer signal (a synthesized answer, not just headlines) when it
@@ -144,7 +183,7 @@ export async function resolveTopicSignal(
       // deadline, so snippet-only headlines (same as the "MORE THIS WEEK"
       // breadth list elsewhere) trade a bit of prose depth for guaranteed speed.
       if (youConfigured()) {
-        console.warn(`[source-resolver] Brave rate-limited for ${topicId}, trying You.com search`);
+        console.warn(`[source-resolver] Brave ${fallbackReason} for ${topicId}, trying You.com search`);
         const viaYou = await tryFallback(topicId, "You.com search", () =>
           fetchLiveSignal(
             topicId,
@@ -156,28 +195,33 @@ export async function resolveTopicSignal(
             youSearch,
             "You.com Search",
             false
-          )
+          ).then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaYou) return viaYou;
+      }
+      if (publicFeedFallbackEnabled()) {
+        console.warn(`[source-resolver] configured search tiers unavailable for ${topicId}, trying public RSS search`);
+        const viaPublicFeed = await tryFallback(topicId, "public RSS search", () =>
+          fetchLiveSignal(
+            topicId,
+            queries,
+            weekOf,
+            opts?.freshness,
+            opts?.excludeUrls,
+            undefined,
+            publicFeedSearch,
+            "Public RSS Search",
+            false
+          ).then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaPublicFeed) return viaPublicFeed;
       }
     }
   }
   // liveOnly: caller wants to know if this topic has FRESH signal this period
   // (the ranked-pool selector skips topics with nothing new and backfills from
   // a backup that does). Return undefined when there's no live signal.
-  if (opts?.liveOnly) return undefined;
-  // Custom topics have no curated mock — if Brave gave nothing, return
-  // undefined so assemble drops just this section (the letter still ships).
-  if (custom) return undefined;
-  return getSignal(topicId, weekOf) || getSignal(topicId);
-}
-
-// Last-resort filler for a topic with no fresh live signal (catalog topics
-// only — customs have no mock). Used to keep a letter full when the whole
-// ranked pool was quiet that period.
-export function resolveMockSignal(topicId: TopicId, weekOf: string): TopicSignal | undefined {
-  if (isCustomTopic(topicId)) return undefined;
-  return getSignal(topicId, weekOf) || getSignal(topicId);
+  return undefined;
 }
 
 async function fetchLiveSignal(
@@ -210,17 +254,22 @@ async function fetchLiveSignal(
   // WEEK" breadth list) — trading prose depth for guaranteed speed is the
   // right call for a tier whose whole reason to exist is racing a deadline.
   deepRead = true
-): Promise<TopicSignal | undefined> {
-  if (!queries || queries.length === 0) return undefined;
+): Promise<LiveSearchAttempt> {
+  if (!queries || queries.length === 0) return { state: "healthy-empty" };
 
   // 1. Cast a wide net — every query in parallel, more candidates than we'll
   //    use, so the ranker has something to choose from. Brave/You.com both
   //    allow bursts.
+  let successfulQueries = 0;
+  let failedQueries = 0;
   const perQuery = await Promise.all(
     queries.map(async (q) => {
       try {
-        return await search(q, { count: PER_QUERY_COUNT, freshness, onRateLimited });
+        const results = await search(q, { count: PER_QUERY_COUNT, freshness, onRateLimited });
+        successfulQueries += 1;
+        return results;
       } catch (e) {
+        failedQueries += 1;
         console.warn(
           `[source-resolver] ${providerLabel} query failed (${topicId}): "${q}": ${e instanceof Error ? e.message : e}`
         );
@@ -228,6 +277,15 @@ async function fetchLiveSignal(
       }
     })
   );
+
+  // Distinguish an unavailable provider from a valid empty search response.
+  // Total failure is unavailable immediately. A partial failure can still use
+  // Brave when its successful queries produced a ranked result, but it cannot
+  // prove the topic is genuinely quiet when that incomplete result set is
+  // empty. That case opens the independent fallback search below.
+  if (successfulQueries === 0 && failedQueries > 0) {
+    return { state: "unavailable" };
+  }
 
   // 2. Dedup + diversity-rank into a shortlist, dropping anything this topic
   //    already cited recently (the cross-send repeat guard — Brave's freshness
@@ -239,8 +297,14 @@ async function fetchLiveSignal(
   //    a match can't be dodged by a fragment.
   const ranked = rankAndDedup(perQuery.flat(), 2, excludeUrls);
   if (ranked.length === 0) {
-    console.warn(`[source-resolver] live signal for ${topicId} had 0 results — falling back to mock`);
-    return undefined;
+    if (failedQueries > 0) {
+      console.warn(
+        `[source-resolver] ${providerLabel} returned no usable result after ${failedQueries} of ${queries.length} queries failed (${topicId})`
+      );
+      return { state: "unavailable" };
+    }
+    console.warn(`[source-resolver] live signal for ${topicId} had 0 results`);
+    return { state: "healthy-empty" };
   }
   // Deep-read TRUSTED sources only — reading an unknown/neutral domain risks
   // amplifying junk (a confident write-up of an unreliable page is the worst
@@ -255,7 +319,7 @@ async function fetchLiveSignal(
   // 3. Read the top trusted sources IN FULL (parallel, best-effort). A failed /
   //    timed-out / non-article fetch falls back to that source's snippet, so the
   //    letter is written from real article text where possible and never blocks.
-  const contents = deepReadEnabled() && deepRead
+  const contents = deepReadEnabled() && deepRead && !noModelModeEnabled()
     ? await Promise.all(deep.map((s) => fetchArticleText(s.url).catch(() => null)))
     : deep.map(() => null);
   const readCount = contents.filter(Boolean).length;
@@ -309,13 +373,15 @@ async function fetchLiveSignal(
       .filter((n): n is string => n !== null)
   );
 
-  // No real URLs this period → "no live signal" so the caller falls back to the
-  // curated mock (which always has real URLs). Without this the strict URL guard
-  // would drop every link and ship a link-less section.
+  // No real URLs this period means no usable live signal. Keep it as a healthy
+  // empty result so the selector can move to another fresh topic.
   if (citableUrls.size === 0) {
-    console.warn(`[source-resolver] live signal for ${topicId} had 0 URLs — falling back to mock`);
-    return undefined;
+    console.warn(`[source-resolver] live signal for ${topicId} had 0 URLs`);
+    return { state: "healthy-empty" };
   }
 
-  return { topicId: topicId as TopicId, weekOf, context, citableUrls };
+  return {
+    state: "signal",
+    signal: { topicId: topicId as TopicId, weekOf, context, citableUrls },
+  };
 }

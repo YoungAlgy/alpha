@@ -10,20 +10,45 @@
 //      never throws (the never-throws contract the whole alert path depends on).
 // Run: npx tsx scripts/verify-ops-alert-fallback.mts
 import { createServer } from "node:http";
-import { loadEnvLocal } from "./_load-env.mts";
-loadEnvLocal();
+
+// Keep the verification fully local. Older versions loaded .env.local and
+// used an intentionally-invalid key against the real Resend endpoint. Stub
+// only Resend while allowing the loopback webhook request through.
+const nativeFetch = globalThis.fetch;
+let blockedResendCalls = 0;
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+  if (url.startsWith("https://api.resend.com/")) {
+    blockedResendCalls += 1;
+    return new Response(
+      JSON.stringify({
+        statusCode: 401,
+        name: "validation_error",
+        message: "offline forced failure",
+      }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  return nativeFetch(input, init);
+};
 
 let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 // --- 1) Zero-config: today's real prod state (no webhook set yet) -----------
 console.log("(1) Zero-config — matches current real prod state");
 delete process.env.RESEND_API_KEY;
-delete process.env.OPS_ALERT_WEBHOOK_URL;
+delete process.env.ALPHA_OPS_ALERT_WEBHOOK_URL;
 {
   const { sendOpsAlert } = await import("../lib/email.ts?t=1");
   let threw = false;
@@ -52,7 +77,8 @@ console.log("(2) Resend forced down (invalid key) + real local webhook server");
   const port = (server.address() as { port: number }).port;
 
   process.env.RESEND_API_KEY = "re_invalid_key_to_force_failure";
-  process.env.OPS_ALERT_WEBHOOK_URL = `http://127.0.0.1:${port}/webhook`;
+  process.env.ALPHA_OPS_ALERT_WEBHOOK_URL = `http://127.0.0.1:${port}/webhook`;
+  process.env.ALPHA_ALLOW_LOCAL_OPS_WEBHOOK_TEST = "1";
 
   const { sendOpsAlert } = await import("../lib/email.ts?t=2");
   const subject = `alpha ops-alert verify ${Date.now()}`;
@@ -67,10 +93,9 @@ console.log("(2) Resend forced down (invalid key) + real local webhook server");
   check("(2) our local server actually received a POST", received !== null);
 
   const r = received as { body: string; contentType: string | undefined } | null;
-  const parsed = r ? (JSON.parse(r.body) as { content?: string; text?: string }) : null;
+  const parsed = r ? (JSON.parse(r.body) as { content?: string }) : null;
   check("(2) content-type is application/json", r?.contentType === "application/json");
   check("(2) payload has Discord `content` field with our subject", !!parsed?.content?.includes(subject));
-  check("(2) payload has Slack `text` field with our subject too", !!parsed?.text?.includes(subject));
   check("(2) payload includes the alert body", !!parsed?.content?.includes(body));
 
   await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -78,7 +103,8 @@ console.log("(2) Resend forced down (invalid key) + real local webhook server");
 
 // --- 3) Resend forced down, no webhook configured ---------------------------
 console.log("(3) Resend forced down, no webhook — must still never throw");
-delete process.env.OPS_ALERT_WEBHOOK_URL;
+delete process.env.ALPHA_OPS_ALERT_WEBHOOK_URL;
+delete process.env.ALPHA_ALLOW_LOCAL_OPS_WEBHOOK_TEST;
 {
   const { sendOpsAlert } = await import("../lib/email.ts?t=3");
   let threw = false;
@@ -87,8 +113,24 @@ delete process.env.OPS_ALERT_WEBHOOK_URL;
   } catch {
     threw = true;
   }
-  check("(3) no webhook configured → still resolves, never throws", !threw);
+check("(3) no webhook configured → still resolves, never throws", !threw);
 }
+
+check("all Resend attempts were intercepted locally", blockedResendCalls === 2);
+{
+  const { isApprovedAlphaOpsWebhookUrl } = await import("../lib/email.ts?t=4");
+  check(
+    "arbitrary HTTPS endpoints are rejected",
+    !isApprovedAlphaOpsWebhookUrl("https://example.com/collect")
+  );
+  check(
+    "standard Discord Alpha webhook shape is accepted",
+    isApprovedAlphaOpsWebhookUrl(
+      "https://discord.com/api/webhooks/1234567890/offline_test_token"
+    )
+  );
+}
+globalThis.fetch = nativeFetch;
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

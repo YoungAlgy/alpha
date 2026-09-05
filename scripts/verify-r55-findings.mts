@@ -71,7 +71,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/topics/page.tsx: the curated-suggestion button now arms userEditedRef, matching the other 4 live-edit paths");
@@ -85,7 +86,12 @@ console.log("(2) app/topics/page.tsx: setTarget now runs unconditionally on hydr
 {
   const src = readFileSync(new URL("../app/topics/page.tsx", import.meta.url), "utf8");
   check("(2a) setTarget is no longer inside the userEditedRef-gated block", !/if \(!userEditedRef\.current\) \{\s*\n\s*if \(row\?\.topic_quota/.test(src));
-  check("(2b) setTarget(clampQuota(...)) now runs before the userEditedRef check, unconditionally", /if \(row\?\.topic_quota && typeof row\.topic_quota === "number"\) \{\s*\n\s*setTarget\(clampQuota\(row\.topic_quota\)\);\s*\n\s*\}\s*\n(?:[^\n]*\n){0,6}?\s*if \(!userEditedRef\.current\) \{/.test(src));
+  const targetIndex = src.indexOf("setTarget(clampQuota(row.topic_quota));");
+  const editedGateIndex = src.indexOf("if (!userEditedRef.current) {");
+  check(
+    "(2b) setTarget(clampQuota(...)) now runs before the userEditedRef check, unconditionally",
+    targetIndex >= 0 && editedGateIndex > targetIndex
+  );
   check("(2c) setPicked(row.topics) is still gated behind userEditedRef", /if \(!userEditedRef\.current\) \{\s*\n(?:[^\n]*\n){0,4}?\s*setPicked\(row\.topics as TopicId\[\]\);/.test(src));
 }
 

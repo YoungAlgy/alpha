@@ -18,7 +18,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/ThemeSwitcher.tsx + call sites: truncation fix actually works (min-w-0 on the real flex item)");
@@ -87,7 +88,7 @@ console.log("(3) app/api/account/email/reconcile/route.ts: sendOpsAlert() calls 
   const src = readFileSync(new URL("../app/api/account/email/reconcile/route.ts", import.meta.url), "utf8");
   check("(3a) after imported from next/server", /import \{ NextResponse, after \} from "next\/server";/.test(src));
   const afterCalls = (src.match(/after\(\s*\n\s*sendOpsAlert\(/g) ?? []).length;
-  check("(3b) both sendOpsAlert call sites are now wrapped in after(...)", afterCalls === 2);
+  check("(3b) every sendOpsAlert call site is wrapped in after(...)", afterCalls >= 2);
   check("(3c) no bare unawaited sendOpsAlert(...).catch call remains outside after()", !/^\s*sendOpsAlert\(/m.test(src.replace(/after\(\s*\n\s*sendOpsAlert\(/g, "")));
 }
 
@@ -115,14 +116,29 @@ console.log("(4) app/topics/page.tsx: reorder buttons use aria-disabled, never l
 console.log("(5) Copy-voice fixes: house style violations removed, wording matches suggested fixes");
 {
   const writingSrc = readFileSync(new URL("../app/writing/page.tsx", import.meta.url), "utf8");
-  check("(5a) 'the engine' removed from the error card", !/The\s*\n\s*engine just stumbled/.test(writingSrc) && /The\s*\n\s*writing just hit a snag/.test(writingSrc));
-  check("(5b) 'the engine' removed from the slow-generation notice", !/The engine is still working in the background/.test(writingSrc) && /We're still writing it in the background/.test(writingSrc));
-  check("(5c) '/inbox' as a bare route-path word removed from reader prose", !/appear on \/inbox when it's ready/.test(writingSrc) && /land in your inbox when it's ready/.test(writingSrc));
+  const errorCardStart = writingSrc.indexOf("{error && (");
+  const errorCardEnd = writingSrc.indexOf("        {!error &&", errorCardStart);
+  const errorCard =
+    errorCardStart >= 0 && errorCardEnd > errorCardStart
+      ? writingSrc.slice(errorCardStart, errorCardEnd)
+      : "";
+  const readerFacingErrorCard = errorCard.replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  const recoverableErrorCopy = readerFacingErrorCard.match(
+    /: "(We couldn't finish your letter\. Try again, or open your inbox to read any saved letters\.)"\}/
+  )?.[1];
+  check("(5a) the error card removes internal 'engine' copy and gives a readable saved-letter recovery", !/\bthe\s+engine\b/i.test(readerFacingErrorCard) && recoverableErrorCopy === "We couldn't finish your letter. Try again, or open your inbox to read any saved letters.");
+  check("(5a2) the unclaimed-error recovery makes no unsupported payment, subscription, or future-save promise", typeof recoverableErrorCopy === "string" && !/\b(?:Stripe|payment|paid|subscription|subscribed|active|saved\s+soon|on\s+the\s+way|ready\s+soon)\b/i.test(recoverableErrorCopy));
+  check("(5b) 'the engine' removed from the slow-generation notice", !/The engine is still working in the background/.test(writingSrc) && /We(?:'|&apos;)re still writing it in the background/.test(writingSrc));
+  check("(5c) '/inbox' as a bare route-path word removed from reader prose", !/appear on \/inbox when (?:it's|it&apos;s) ready/.test(writingSrc) && /land in your inbox when (?:it's|it&apos;s) ready/.test(writingSrc));
 
   const settingsSrc = readFileSync(new URL("../app/settings/page.tsx", import.meta.url), "utf8");
   check("(5d) add-topics confirm panel: 'nothing is charged today' now leads, comma splice gone", /Nothing is charged today\. The extra for the rest of this month just shows up on your next bill\./.test(settingsSrc));
   check("(5e) delete-account confirm no longer tells the reader to verify something not yet true", !/To be safe you can confirm it's gone in \\"Manage subscription\\" above first/.test(settingsSrc));
-  check("(5f) delete-account confirm states the billing guarantee plainly", /Your \$\$\{monthlyDollars\}\/mo subscription is cancelled too, so billing stops\./.test(settingsSrc));
+  check(
+    "(5f) delete-account confirm states the billing guarantee plainly without quoting a stale monthly price",
+    /Any remaining Alpha subscription is cancelled too, so billing stops\./.test(settingsSrc) &&
+      !/Your \$\$\{monthlyDollars\}\/mo subscription is cancelled too/.test(settingsSrc)
+  );
   // alpha-drift-r63-05 (2026-08-21, silent-catch-audit-r9) added a THIRD
   // call site with the identical message (a genuine getSession() failure
   // now alerts the same way the !res.ok branch already did) -- loosened

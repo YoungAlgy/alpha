@@ -5,7 +5,8 @@ import { Wordmark } from "@/components/Wordmark";
 import { verifyLetterToken } from "@/lib/letter-token";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { coerceThemeId } from "@/lib/themes";
-import { hasActiveAccess } from "@/lib/access";
+import { hasReaderAccess } from "@/lib/access";
+import { currentPeriodIso } from "@/lib/cadence";
 import type { Issue, ThemeId } from "@/lib/types";
 
 // The weekly email's "Read the full letter" target — the view-in-browser
@@ -57,6 +58,7 @@ export default async function LetterPage({
     let issueQuery = sb
       .from("issues")
       .select("week_of, volume, number, editor_intro, sections")
+      .lte("week_of", currentPeriodIso())
       .eq("user_id", userId);
     if (weekOf) {
       issueQuery = issueQuery.eq("week_of", weekOf);
@@ -74,18 +76,18 @@ export default async function LetterPage({
     // appropriately non-committal for both cases. userError was already
     // destructured but never logged either -- same gap, same fix.
     const [{ data: userRow, error: userError }, { data: issueRow, error: issueError }] = await Promise.all([
-      sb.from("users").select("first_name, city, theme, cancelled_at").eq("id", userId).maybeSingle(),
+      sb.from("users").select("first_name, city, theme, subscribed_at, cancelled_at, access_granted_at").eq("id", userId).maybeSingle(),
       issueQuery.order("week_of", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (userError) console.error("[letter] users query error:", userError.message);
     if (issueError) console.error("[letter] issues query error:", issueError.message);
     // alpha-drift-r15-03: this route uses the service-role client (a signed
     // token, not a session), which bypasses the issues table's RLS policy
-    // entirely -- so the cancelled_at check that policy now enforces for
+    // entirely -- so the subscription/access-window check that policy now enforces for
     // /inbox, /archive, and /inbox/[issueId] has to be done explicitly here
     // too, or a disputed/cancelled subscriber's 90-day-lived email links
     // would keep working long after every other read path correctly cuts
-    // them off. Matches hasActiveAccess()'s exact rule (lib/access.ts).
+    // them off. Matches hasSubscriberAccess()'s exact rule (lib/access.ts).
     //
     // alpha-drift-r21-07 (found+fixed 2026-08-14, self-audit): the round-20
     // deleted-account-access fix (!userError && !userRow) only reached the
@@ -94,29 +96,42 @@ export default async function LetterPage({
     // WORSE blast radius: its token is valid for up to 90 days with no
     // session to invalidate, and it reads via the service-role client,
     // which bypasses RLS entirely. A cascade-deleted `users` row makes
-    // userRow null; hasActiveAccess(undefined) reads that as "never
+    // userRow null; the old cancellation-only helper read that as "never
     // cancelled" i.e. active -- if issues.user_id ever survives the account
     // delete (no CASCADE, or a future schema change), this would have
     // rendered a deleted reader's orphaned letter to anyone still holding
-    // the link. !userError && !userRow is a genuine zero-row result
-    // (.maybeSingle()'s error is null on a real "not found"), not a query
-    // failure -- so this can't misread a transient hiccup as deletion.
-    const accountDeleted = !userError && !userRow;
-    if (issueRow && (accountDeleted || !hasActiveAccess(userRow?.cancelled_at))) {
-      accessEnded = true;
-    } else if (issueRow) {
-      const row = issueRow as IssueRow;
-      theme = coerceThemeId(userRow?.theme) ?? "forest";
-      issue = {
-        id: `${userId}-${row.week_of}`,
-        volume: row.volume,
-        number: row.number,
-        weekOf: row.week_of,
-        recipientFirstName: userRow?.first_name || "you",
-        recipientCity: userRow?.city || "",
-        editorIntro: row.editor_intro,
-        sections: row.sections,
-      };
+    // the link. Once userError has been ruled out below, !userRow is a
+    // genuine zero-row result (.maybeSingle()'s error is null on a real
+    // "not found"), so a transient hiccup is never misread as deletion.
+    // A users-table query failure is unverifiable access, so fail closed to
+    // the existing generic load-problem state. It is distinct from a clean
+    // missing row or revoked subscription, which gets the access-ended state.
+    if (!userError) {
+      const accountDeleted = !userRow;
+      if (
+        issueRow &&
+        (accountDeleted ||
+          !hasReaderAccess(
+            userRow?.subscribed_at,
+            userRow?.cancelled_at,
+            userRow?.access_granted_at
+          ))
+      ) {
+        accessEnded = true;
+      } else if (issueRow) {
+        const row = issueRow as IssueRow;
+        theme = coerceThemeId(userRow?.theme) ?? "forest";
+        issue = {
+          id: `${userId}-${row.week_of}`,
+          volume: row.volume,
+          number: row.number,
+          weekOf: row.week_of,
+          recipientFirstName: userRow?.first_name || "you",
+          recipientCity: userRow?.city || "",
+          editorIntro: row.editor_intro,
+          sections: row.sections,
+        };
+      }
     }
   } catch (e) {
     // Logged, not silent: this is the actual link paying subscribers click
@@ -204,7 +219,7 @@ function LinkProblem({ reason }: { reason: "expired" | "no-letter" | "access-end
             This letter isn&apos;t available anymore.
           </h1>
           <p className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
-            Your subscription has ended, so this link no longer opens. Want
+            Your Alpha access has ended, so this link no longer opens. Want
             back in?
           </p>
           <div className="pt-2">

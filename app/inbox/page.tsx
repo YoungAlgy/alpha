@@ -14,9 +14,9 @@ import { FirstLetterCelebration } from "@/components/FirstLetterCelebration";
 import { LetterTOC } from "@/components/LetterTOC";
 import { ShareButton } from "@/components/ShareButton";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { hasActiveAccess } from "@/lib/access";
+import { hasReaderAccess } from "@/lib/access";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { nextSendIso, SEND_HOUR_UTC } from "@/lib/cadence";
+import { currentPeriodIso, nextSendIso, SEND_HOUR_UTC } from "@/lib/cadence";
 import { fanfare } from "@/lib/audio";
 import { SHARE_LEAD } from "@/lib/copy";
 import type { Issue } from "@/lib/types";
@@ -86,12 +86,13 @@ export default function InboxPage() {
               sb
                 .from("issues")
                 .select("week_of, volume, number, editor_intro, sections")
+                .lte("week_of", currentPeriodIso())
                 .order("week_of", { ascending: false })
                 .limit(1)
                 .maybeSingle(),
               sb
                 .from("users")
-                .select("first_name, city, theme, cancelled_at")
+                .select("first_name, city, theme, subscribed_at, cancelled_at, access_granted_at")
                 .eq("id", session.user.id)
                 .maybeSingle(),
             ]);
@@ -111,17 +112,27 @@ export default function InboxPage() {
             // auth.users -- so a signed-in tab on another device can still
             // "work" well after the account itself was deleted elsewhere. A
             // deleted account's cascade-deleted `users` row makes userRow
-            // null, and hasActiveAccess(undefined) reads that as "never
+            // null, and the old cancellation-only helper read that as "never
             // cancelled" i.e. active -- the opposite of what a missing row
             // means. .maybeSingle() returns error:null on a genuine
-            // zero-row result (that's its whole purpose vs .single()), so
-            // "!userError && !userRow" is a real "this account is gone"
-            // signal, not a network/RLS hiccup misread as deletion.
-            if (!userError && !userRow) {
+            // zero-row result (that's its whole purpose vs .single()). Handle
+            // userError first as a retryable load failure, then a clean
+            // !userRow as a real "this account is gone" signal.
+            if (userError) {
+              setLoadError(true);
+              return;
+            }
+            if (!userRow) {
               setAccessEnded(true);
               return;
             }
-            if (!hasActiveAccess(userRow?.cancelled_at)) {
+            if (
+              !hasReaderAccess(
+                userRow.subscribed_at,
+                userRow.cancelled_at,
+                userRow.access_granted_at
+              )
+            ) {
               setAccessEnded(true);
               return;
             }
@@ -209,7 +220,9 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!loaded) return;
-    load();
+    // Onboarding hydration gates the initial external data load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [loaded, load]);
 
   // Clear any session, then HARD-navigate. This client-side redirect (below,
@@ -313,7 +326,7 @@ export default function InboxPage() {
               only heading a screen-reader user navigating by heading (NVDA/
               JAWS "H" key) would ever find here. */}
           <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
-            Your subscription has ended.
+            Your Alpha access has ended.
           </h1>
           <p className="alpha-display text-base md:text-lg leading-relaxed" style={{ color: "var(--ink-soft)" }}>
             Want back in? Start a new letter, or reach out if something looks wrong.

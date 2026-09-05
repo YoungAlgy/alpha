@@ -2,6 +2,8 @@ import { anthropicClient, anthropicConfigured, BLURB_MODEL, BLURB_CHEAP_MODEL } 
 import { geminiConfigured, geminiGenerateText, GeminiTruncatedError } from "./gemini-client";
 import { groqConfigured, groqGenerateText, GroqTruncatedError } from "./groq-client";
 import { deepseekConfigured, deepseekGenerateText, DeepSeekTruncatedError } from "./deepseek-client";
+import { noModelModeEnabled, paidAiEnabled } from "./provider-policy";
+import { buildDeterministicBlurb } from "./deterministic-fallback";
 import { topicLabel } from "@/lib/topics";
 import { extractSignalUrls, enforceSignalUrls } from "./url-guard";
 import { sanitizeVoice, containsMetaLeak, findLexicalTells } from "./voice-guard";
@@ -187,11 +189,26 @@ Output is JSON only. No prose before or after.`;
 export async function generateTopicBlurb(
   topicId: TopicId,
   weekOf: string,
-  signal: TopicSignal
+  signal: TopicSignal,
+  options: {
+    /** Awaited immediately before every paid model attempt. */
+    paidCallAllowed?: () => boolean | Promise<boolean>;
+  } = {}
 ): Promise<TopicBlurb> {
   // Catalog label, or the user's own text for a custom topic (never throws —
   // a custom "your own thing" topic must generate, not be skipped).
   const label = topicLabel(topicId);
+
+  // Strict zero-cost runs skip every writer provider before any request can
+  // start. The resolver has already established a live signal, so the local
+  // formatter can preserve grounded source material without consuming model
+  // quota. A signal that cannot be parsed remains a hard failure for the
+  // caller's existing backup path.
+  if (noModelModeEnabled()) {
+    const deterministic = buildDeterministicBlurb(signal);
+    if (deterministic) return deterministic;
+    throw new Error(`${topicId} ${weekOf}: no-model mode could not parse safe source material`);
+  }
 
   const userPrompt = `Topic: <topic-request>${label}</topic-request>
 Date: ${weekOf}
@@ -238,6 +255,14 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   // smaller, more personal editor's-note call deliberately stays on the
   // strong model as the letter's "final edit," not tiered.
 
+  async function requirePaidCallBudget(provider: string): Promise<void> {
+    if ((await options.paidCallAllowed?.()) === false) {
+      throw new PaidTopicCallBudgetExceededError(
+        `${topicId} ${weekOf}: paid-call ceiling reached before ${provider}`
+      );
+    }
+  }
+
   // Gemini attempt, with ONE retry on a parse-shaped failure (mirrors Claude's
   // own retry-once pattern below). Free, so a second try costs nothing and
   // meaningfully raises Gemini's effective success rate before paying for the
@@ -282,8 +307,9 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   // Haiku (2026-07-29, per Algy: Anthropic must stay optional, so the chain
   // needs a real shot at fresh content that doesn't depend on it being
   // funded). Same retry-once-on-parse-failure shape as tryGemini above,
-  // never throws — a failure here just means "escalate to Haiku (or, if
-  // Anthropic isn't configured, this topic is done)".
+  // never throws — a failure here just means "escalate to the next enabled
+  // tier". If paid AI is disabled, the assembler's deterministic source
+  // formatter becomes the final no-cost fallback.
   async function tryGroq(): Promise<ParsedBlurb | null> {
     async function attempt(): Promise<ParsedBlurb> {
       const text = await groqGenerateText(SYSTEM_PROMPT, userPrompt, 4000);
@@ -300,6 +326,17 @@ Up to three items, and ship two or even one rather than padding with a weak or r
         // Same reasoning as tryGemini's 429-skip above — deterministic within
         // this request window, an immediate retry can't succeed.
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq quota exhausted (429), skipping the retry, escalating to DeepSeek`);
+        return null;
+      }
+      if (
+        typeof e === "object" &&
+        e !== null &&
+        "status" in e &&
+        (e as { status?: unknown }).status === 413
+      ) {
+        // groqGenerateText already made its full bounded 413 correction loop.
+        // Retrying here would repeat that entire loop with the same payload.
+        console.warn(`[topic-blurb] ${topicId} ${weekOf}: Groq still rejected the reduced payload (413), skipping the outer retry, escalating to DeepSeek`);
         return null;
       }
       if (e instanceof BlurbParseError) {
@@ -335,16 +372,21 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   // daily/per-minute cap to run into — this is the tier that makes "the
   // letters keep going out no matter what" actually true rather than
   // "usually true." Same retry-once-on-parse-failure shape as tryGroq above,
-  // never throws — a failure here just means "escalate to Haiku (or, if
-  // Anthropic isn't configured, this topic is done)".
+  // never throws — a failure here just means "escalate to Haiku when paid AI
+  // is explicitly enabled". Otherwise the deterministic source formatter is
+  // the final no-cost fallback.
   async function tryDeepSeek(): Promise<ParsedBlurb | null> {
     async function attempt(): Promise<ParsedBlurb> {
+      // deepseekGenerateText increments the shared DeepSeek counter
+      // synchronously before its first await, immediately after this guard.
+      await requirePaidCallBudget("DeepSeek");
       const text = await deepseekGenerateText(SYSTEM_PROMPT, userPrompt, 4000);
       return extractJson(text);
     }
     try {
       return await attempt();
     } catch (e) {
+      if (e instanceof PaidTopicCallBudgetExceededError) throw e;
       if (e instanceof DeepSeekTruncatedError) {
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek draft truncated, escalating to Haiku`);
         return null;
@@ -358,6 +400,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       try {
         return await attempt();
       } catch (e2) {
+        if (e2 instanceof PaidTopicCallBudgetExceededError) throw e2;
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: DeepSeek retry also failed, escalating to Haiku: ${e2 instanceof Error ? e2.message : e2}`);
         return null;
       }
@@ -367,6 +410,9 @@ Up to three items, and ship two or even one rather than padding with a weak or r
   // Claude, parameterized by model — shared by both the Haiku (cheap) and
   // Sonnet (last-resort) tiers below, same call shape either way.
   async function callClaudeAndParse(model: string): Promise<ParsedBlurb> {
+    // Reserve the shared ceiling before incrementing or yielding. Parallel
+    // topics therefore cannot both observe the final open slot.
+    await requirePaidCallBudget(`Anthropic ${model}`);
     paidCallCount += 1;
     const response = await anthropicClient().messages.create({
       model,
@@ -409,6 +455,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     try {
       return await callClaudeAndParse(BLURB_CHEAP_MODEL);
     } catch (e) {
+      if (e instanceof PaidTopicCallBudgetExceededError) throw e;
       if (e instanceof BlurbTruncatedError) {
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Haiku draft truncated, escalating to Sonnet`);
         return null;
@@ -426,6 +473,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       try {
         return await callClaudeAndParse(BLURB_CHEAP_MODEL);
       } catch (e2) {
+        if (e2 instanceof PaidTopicCallBudgetExceededError) throw e2;
         console.warn(`[topic-blurb] ${topicId} ${weekOf}: Haiku retry also failed, escalating to Sonnet: ${e2 instanceof Error ? e2.message : e2}`);
         return null;
       }
@@ -440,6 +488,7 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     try {
       return await callClaudeAndParse(BLURB_MODEL);
     } catch (e) {
+      if (e instanceof PaidTopicCallBudgetExceededError) throw e;
       if (e instanceof BlurbTruncatedError) {
         // alpha-drift-r79-02 (2026-08-21, silent-catch-audit): this used to
         // rethrow with zero logging, the only truncation branch in the
@@ -674,10 +723,9 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     }
   }
 
-  // DeepSeek — the uncapped backstop, tried regardless of whether Anthropic
-  // is configured (2026-07-29): cheap either way, and there's no reason to
-  // skip a working tier just because a later one also exists.
-  if (deepseekConfigured()) {
+  // DeepSeek — the paid backstop. It is tried only when explicitly enabled by
+  // the zero-cost policy, even if a key is present in the environment.
+  if (deepseekConfigured() && paidAiEnabled()) {
     const deepseekParsed = await tryDeepSeek();
     if (deepseekParsed) {
       const finalized = finalizeBlurb(deepseekParsed);
@@ -692,17 +740,17 @@ Up to three items, and ship two or even one rather than padding with a weak or r
     }
   }
 
-  // Haiku/Sonnet only attempted when Anthropic is actually funded. When
-  // Algy deliberately isn't funding it (key removed — the clean way to turn
-  // it off), skip straight past two guaranteed-failing tiers instead of
-  // paying for two wasted attempts (each with its own internal retry) before
-  // reaching the same "nothing left" outcome. This is what makes "the
-  // Anthropic option exists but the system doesn't depend on it" real: with
-  // it off, the topic just ends here and select-sections.ts backfills a
-  // fresher one, exactly like any other tier running dry — never a crash,
-  // never silently shipping nothing.
-  if (!anthropicConfigured()) {
-    throw new Error(`${topicId} ${weekOf}: every configured free tier failed and Anthropic is not configured`);
+  // Haiku/Sonnet are attempted only when Anthropic is configured AND paid AI
+  // is explicitly enabled. When the policy is off, skip both tiers and let
+  // assemble.ts use its deterministic source formatter instead of spending
+  // or silently dropping a topic.
+  if (!anthropicConfigured() || !paidAiEnabled()) {
+    const lastTier = !anthropicConfigured()
+      ? "Anthropic is not configured"
+      : "paid AI is disabled";
+    throw new Error(
+      `${topicId} ${weekOf}: every configured free tier failed and ${lastTier}`
+    );
   }
 
   const haikuParsed = await tryHaiku();
@@ -765,6 +813,8 @@ interface ParsedBlurb {
 
 // Thrown when the model hit its output ceiling — deterministic, never retried.
 export class BlurbTruncatedError extends Error {}
+
+export class PaidTopicCallBudgetExceededError extends Error {}
 
 // Thrown by extractJson for every one of its own failure modes (no JSON
 // object found, JSON.parse itself failing, or a shape-invalid result) — a

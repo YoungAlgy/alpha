@@ -17,7 +17,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 function normalize(src: string): string {
@@ -28,7 +29,9 @@ console.log("(1) app/api/admin/users/route.ts: all 4 maybeSingle() reads now che
 {
   const src = readFileSync(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8");
   check("(1a) delete branch destructures error and bails before any destructive step", /const \{ data: targetUser, error: targetUserError \} = await sb[\s\S]{0,150}if \(targetUserError\)/.test(src));
-  check("(1b) delete branch's ternary distinguishing missing-row from omitted-arg is unchanged (round 25's own fix)", /targetUser \? targetUser\.stripe_customer_id : null/.test(src));
+  const deletePrefetchIdx = src.indexOf('.select("email")');
+  const deleteSagaIdx = src.indexOf("settleAccountDeletionBilling(sb, body.userId)");
+  check("(1b) delete branch keeps the confirmed email pre-fetch separate from the durable billing saga", deletePrefetchIdx > -1 && deleteSagaIdx > deletePrefetchIdx);
   // grant_free/revoke_free interleave an existing round-17 comment between
   // the error check and the !existing/!row check, pushing them further
   // apart than a tight proximity window -- check each piece exists and
@@ -42,16 +45,37 @@ console.log("(1) app/api/admin/users/route.ts: all 4 maybeSingle() reads now che
   check("(1c) grant_free destructures error, checks it, THEN checks !existing (in that order)", grantIdx.destructure > -1 && grantIdx.destructure < grantIdx.errorCheck && grantIdx.errorCheck < grantIdx.notFoundCheck);
 
   const revokeIdx = {
-    destructure: src.indexOf('const { data: row, error: rowError } = await sb\n      .from("users")\n      .select("stripe_customer_id")'),
+    branch: src.indexOf('if (body.action === "revoke_free")'),
+    destructure: src.indexOf('const { data: row, error: rowError } = await sb', src.indexOf('if (body.action === "revoke_free")')),
     errorCheck: src.indexOf('console.error("[admin/users] revoke_free: pre-fetch failed:'),
   };
-  check("(1d) revoke_free destructures error and logs on it (has its own dedicated error branch)", revokeIdx.destructure > -1 && revokeIdx.errorCheck > revokeIdx.destructure);
+  const revokePrefetch = src.slice(revokeIdx.destructure, revokeIdx.errorCheck);
+  check(
+    "(1d) revoke_free destructures error and logs on it (has its own dedicated error branch)",
+    revokeIdx.branch > -1 &&
+      revokeIdx.destructure > revokeIdx.branch &&
+      /\.select\(\s*"stripe_customer_id, stripe_subscription_id,[^"]+"\s*\)/.test(revokePrefetch) &&
+      revokeIdx.errorCheck > revokeIdx.destructure &&
+      /if \(rowError\) \{/.test(src.slice(revokeIdx.destructure, revokeIdx.errorCheck))
+  );
 
-  check("(1e) clear_suppression destructures error and logs on it (has its own dedicated error branch)", src.includes('console.error("[admin/users] clear_suppression: pre-fetch failed:'));
-  // Every error branch must actually log -- an error check that doesn't log
-  // reintroduces exactly the "invisible in production" gap this fix closes.
+  const clearGuardStart = src.indexOf('if (body.action === "clear_suppression")');
+  const postGuardServiceStart = src.indexOf(
+    "const sb = await supabaseServiceClient();",
+    clearGuardStart
+  );
+  check(
+    "(1e) clear_suppression remains validated but is hard-held after request validation and before the service client",
+    src.includes('"clear_suppression",') &&
+      clearGuardStart > src.indexOf("body = ActionBodySchema.parse(raw);") &&
+      clearGuardStart < postGuardServiceStart &&
+      src.includes('code: "manual_recovery_disabled"') &&
+      !src.includes("recoverResendSuppression({")
+  );
+  // The held route performs no target lookup. The remaining branches retain
+  // their own logged maybeSingle() errors.
   const errorLogCount = (src.match(/console\.error\("\[admin\/users\][^"]*pre-fetch failed:/g) || []).length;
-  check("(1f) all 4 new error branches log via console.error (not silent)", errorLogCount === 4);
+  check("(1f) the remaining maybeSingle() error branches still log via console.error", errorLogCount === 3);
 }
 
 console.log("(2) lib/email.ts: previewFromIssue is UTF-16-safe AND preserves the original 90-vs-87 buffer");
@@ -121,15 +145,23 @@ console.log("(4) app/api/account/email/reconcile/route.ts: the mirror read now c
   // string. Widened to allow anything in between, still anchored on the
   // same rowError-before-!row ordering this assertion exists to prove.
   check("(4b) checks rowError and returns 500 before the !row check", /if \(rowError\) \{ console\.error\("\[account\/email\/reconcile\] mirror read failed:", rowError\.message\);[\s\S]{0,500}?sendOpsAlert\(/.test(src));
-  check("(4c) the original !row-or-synced 200 short-circuit is still intact for the real no-op case", /if \(!row \|\| \(row\.email \?\? ""\)\.toLowerCase\(\) === authEmail\) \{ return NextResponse\.json\(\{ ok: true, changed: false \}\); \}/.test(src));
+  check(
+    "(4c) missing rows stay a no-op and a synced email reports any separate delivery review",
+    /if \(!row\) \{ return NextResponse\.json\(\{ ok: true, changed: false \}\); \}/.test(
+      src
+    ) &&
+      /if \(!row\.stripe_customer_id \|\| !pendingAt\) \{ return NextResponse\.json\(\{ ok: true, changed: mirrorChanged, deliveryReviewRequired, \}\); \}/.test(
+        src
+      )
+  );
 }
 
-console.log("(5) .github/workflows/daily-send.yml: coverage check reads *Total fields, falls back to .length");
+console.log("(5) .github/workflows/daily-send.yml: blank profiles stay uncovered in the paginated delivery contract");
 {
   const src = readFileSync(new URL("../.github/workflows/daily-send.yml", import.meta.url), "utf8");
-  check("(5a) blankCount prefers skippedBlankSubscribersTotal", /skippedBlankSubscribersTotal/.test(src));
-  check("(5b) deferredCount prefers deferredTotal", /deferredTotal/.test(src));
-  check("(5c) still falls back to .length when the *Total field is absent", /s\.skippedBlankSubscribers \? s\.skippedBlankSubscribers\.length : 0/.test(src) && /s\.deferred \? s\.deferred\.length : 0/.test(src));
+  check("(5a) only delivered or proved-ineligible rows are excused, so a blank profile remains uncovered", /const excused=s\.skippedAlreadyDelivered\+s\.unsubscribedMidRunSkips\+s\.cancelledMidRunSkips\+s\.suppressedMidRunSkips;/.test(src) && /const uncovered=Math\.max\(s\.subscribers-covered-excused,0\);/.test(src) && !/const blankCount/.test(src));
+  check("(5b) every page validates the exact retry-required total", /!integer\(s\.deliveryRetryRequiredTotal\)/.test(src) && /if \(uncovered!==s\.deliveryRetryRequiredTotal\) throw new Error\('coverage'\);/.test(src));
+  check("(5c) retry-required outcomes make the workflow fail after maintenance", /DELIVERY_BLOCKED_PAGE/.test(src) && /DELIVERY_RETRY_REQUIRED_TOTAL/.test(src) && /retry-required page outcome\(s\) were observed/.test(src));
 }
 
 console.log("(6) shared isValidCalendarDate helper exists and both weekOf validators use it");
@@ -143,7 +175,7 @@ console.log("(6) shared isValidCalendarDate helper exists and both weekOf valida
   check("(6d) generate route's weekOf refine calls isValidCalendarDateString before the date-math check", /if \(!isValidCalendarDateString\(s\)\) return false;/.test(genSrc));
 
   const cronSrc = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
-  check("(6e) weekly-send's ?weekOf= override also calls isValidCalendarDateString", /weekOfOverride && \/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/\.test\(weekOfOverride\) && isValidCalendarDateString\(weekOfOverride\)/.test(cronSrc));
+  check("(6e) weekly-send rejects an invalid supplied ?weekOf= instead of substituting today", /weekOfOverride !== null[\s\S]{0,220}!isValidCalendarDateString\(weekOfOverride\)[\s\S]{0,220}status: 400/.test(cronSrc));
 
   // Behavioral proof, not just source presence: April 31 must actually be
   // rejected, and a real date must actually be accepted.
@@ -167,17 +199,18 @@ console.log("(7) round-25 migration's date stamp corrected (filename + comment) 
   }
 }
 
-console.log("(8) src/worker-entry.ts: CSRF endpoint count corrected to 9, matching CSRF_GUARDED_SUFFIXES");
+console.log("(8) src/worker-entry.ts: CSRF endpoint coverage stays single-sourced in CSRF_GUARDED_SUFFIXES");
 {
   const src = readFileSync(new URL("../src/worker-entry.ts", import.meta.url), "utf8");
-  check("(8a) no longer says \"8 state-changing endpoints\" anywhere", !/8 state-changing endpoints/.test(src));
-  const nineCount = (src.match(/9 state-changing endpoints/g) || []).length;
-  check("(8b) both occurrences now say \"9 state-changing endpoints\"", nineCount === 2);
+  // Round 80 added another guarded route. The worker deliberately carries no
+  // duplicated numeric claim now, so this check cannot become stale again.
+  check("(8a) worker entry has no duplicated hardcoded CSRF endpoint count", !/\d+ state-changing endpoints/.test(src));
+  check("(8b) worker entry points at the shared guard module", /lib\/csrf-guard/.test(src));
 
   const guardSrc = readFileSync(new URL("../lib/csrf-guard.ts", import.meta.url), "utf8");
   const arrMatch = guardSrc.match(/export const CSRF_GUARDED_SUFFIXES = \[([\s\S]*?)\]/);
   const entryCount = arrMatch ? (arrMatch[1].match(/'\/api\//g) || []).length : 0;
-  check("(8c) sanity: CSRF_GUARDED_SUFFIXES really does have 9 entries (the count this comment must match)", entryCount === 9);
+  check("(8c) shared CSRF guard list is present and includes current generation and renewal endpoints", entryCount > 0 && guardSrc.includes("'/api/generate'") && guardSrc.includes("'/api/stripe/cancel-renewal'"));
 }
 
 console.log("(9) app/api/admin/users/route.ts: `before` cursor validated, `q` ILIKE wildcards escaped");
@@ -210,7 +243,7 @@ console.log("(9) app/api/admin/users/route.ts: `before` cursor validated, `q` IL
   check("(9a-7) behavioral: another rollover case (2026-02-30, no such day) is rejected", validateBefore("2026-02-30T00:00:00.000Z") === false);
 
   check("(9b) escapedQ is derived from q with wildcard escaping", /const escapedQ = q\?\.replace\(\/\[\\\\%_\]\/g, "\\\\\$&"\);/.test(src));
-  check("(9c) the ilike call now uses escapedQ, not the raw q", /usersQuery = usersQuery\.ilike\("email", `%\$\{escapedQ\}%`\);/.test(src));
+  check("(9c) the ilike call now uses escapedQ, not the raw q", /usersQuery = usersQuery[\s\S]{0,80}\.ilike\("email", `%\$\{escapedQ\}%`\)/.test(src));
   check("(9d) no remaining raw, unescaped `%${q}%` interpolation", !/ilike\("email", `%\$\{q\}%`\)/.test(src));
 
   // Behavioral proof of the escape regex itself.

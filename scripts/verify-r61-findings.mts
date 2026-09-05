@@ -54,7 +54,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/api/admin/users/route.ts: a gatherStats() failure no longer discards a successful user-list fetch");
@@ -107,21 +108,51 @@ console.log("(6) app/api/cron/weekly-send/route.ts: the Layer-2 backup-issue loo
 {
   const src = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
   check("(6a) error is destructured from the prior-issue read", /const \{ data: prior, error: priorErr \} = await sb/.test(src));
-  check("(6b) a real error is logged distinctly", /if \(priorErr\) \{\s*\n\s*console\.error\(`\[cron\/weekly-send\] backup lookup query failed → \$\{row\.id\}: \$\{priorErr\.message\}`\);\s*\n\s*\}/.test(src));
+  check(
+    "(6b) a real error is logged distinctly without a subscriber identifier",
+    /if \(priorErr\) \{[\s\S]{0,180}\[cron\/weekly-send\] backup lookup query failed: \$\{priorErr\.message\}/.test(src) &&
+      !src.includes("backup lookup query failed → ${row.id}")
+  );
 }
 
 console.log("(7) app/api/stripe/update-quantity/route.ts: the round-59 fresh topics re-read now logs a real error");
 {
   const src = readFileSync(new URL("../app/api/stripe/update-quantity/route.ts", import.meta.url), "utf8");
   check("(7a) error is destructured from the fresh re-read", /const \{ data: freshRow, error: freshErr \} = await svc/.test(src));
-  check("(7b) a real error is logged", /if \(freshErr\) \{\s*\n\s*console\.error\("\[update-quantity\] topics re-read failed:", freshErr\.message\);\s*\n\s*\}/.test(src));
+  const freshErrorGuard = src.indexOf("if (freshErr)");
+  const freshErrorReturn = src.indexOf("return NextResponse.json(", freshErrorGuard);
+  const quotaMutation = src.indexOf("const { data: quotaRow, error: quotaErr }", freshErrorGuard);
+  check(
+    "(7b) a real error is logged and returns a retriable 500 before the quota mutation",
+    /if \(freshErr\) \{\s*\n\s*console\.error\("\[update-quantity\] topics re-read failed:", freshErr\.message\);[\s\S]{0,360}\{ status: 500 \}[\s\S]{0,30}\);\s*\n\s*\}/.test(src) &&
+      freshErrorGuard >= 0 &&
+      freshErrorReturn > freshErrorGuard &&
+      quotaMutation > freshErrorReturn
+  );
 }
 
 console.log("(8) app/api/stripe/webhook/route.ts: the topics-cap read now checks error explicitly, matching its own comment's intent");
 {
   const src = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
-  check("(8a) error is destructured from the topics-cap read", /const \{ data: topicsRow, error: topicsErr \} = await sb/.test(src));
-  check("(8b) a real error is explicitly checked and logged before the Array.isArray branch", /if \(topicsErr\) \{\s*\n\s*console\.warn\("\[stripe-webhook\] topics-cap read failed, writing topic_quota only:", topicsErr\.message\);\s*\n\s*\} else if \(Array\.isArray\(topicsRow\?\.topics\)\) \{/.test(src));
+  check(
+    "(8a) exact-owner and bounded legacy-candidate reads both select topics and reject read errors",
+    /const \{ data: exactBoundUser, error: exactBoundUserError \} = await sb\s*\.from\("users"\)\s*\.select\("id, stripe_subscription_id, cancelled_at, topics"\)[\s\S]{0,180}\.maybeSingle\(\);\s*\n\s*if \(exactBoundUserError\) \{\s*\n\s*throw new Error\(/.test(src) &&
+      /const \{ data: customerCandidates, error: customerCandidatesError \} =\s*\n\s*await sb\s*\.from\("users"\)\s*\.select\("id, stripe_subscription_id, cancelled_at, topics"\)\s*\.eq\("stripe_customer_id", customerId\)\s*\.limit\(3\);\s*\n\s*if \(customerCandidatesError\) \{\s*\n\s*throw new Error\(/.test(src)
+  );
+  const cappedTopicsRead = src.indexOf(
+    "const cappedTopics = Array.isArray(boundUser?.topics)"
+  );
+  const guardedMirrorWrite = src.indexOf(
+    "let subscriptionMirrorQuery = sb",
+    cappedTopicsRead
+  );
+  check(
+    "(8b) topic capping uses only the resolved bound user's topics before the guarded mirror write",
+    /const cappedTopics = Array\.isArray\(boundUser\?\.topics\)\s*\n\s*\? \(boundUser\.topics as TopicId\[\]\)\.slice\(0, poolCap\(topicQuota\)\)\s*\n\s*: undefined;/.test(src) &&
+      /\.update\(\{[\s\S]{0,220}\.\.\.\(cappedTopics \? \{ topics: cappedTopics \} : \{\}\),/.test(src) &&
+      cappedTopicsRead >= 0 &&
+      guardedMirrorWrite > cappedTopicsRead
+  );
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

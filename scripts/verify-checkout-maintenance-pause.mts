@@ -23,6 +23,7 @@ const stripeIndex = route.indexOf("process.env.STRIPE_SECRET_KEY");
 assert.ok(gateIndex > 0);
 assert.ok(gateIndex < rateLimitIndex);
 assert.ok(gateIndex < stripeIndex);
+assert.match(route, /withDeadline\(req\.json\(\), 5_000, "checkout request body"\)/);
 assert.match(route, /error: "checkout_temporarily_paused"/);
 assert.match(route, /"Cache-Control": "no-store, must-revalidate"/);
 assert.match(route, /"Retry-After": "300"/);
@@ -43,4 +44,4 @@ assert.match(runbook, /post-rotation\s+paused guard Worker is the only later rol
 assert.match(runbook, /20-second attempts and at most one retry/);
 assert.match(runbook, /Add that exact non-secret value to the full Round 80 `wrangler\.jsonc`/);
 
-console.log("PASS verify-checkout-maintenance-pause (offline, 20 assertions)");
+console.log("PASS verify-checkout-maintenance-pause (offline, 21 assertions)");

@@ -71,6 +71,25 @@ function faviconUrl(url: string): string | null {
   }
 }
 
+function SourceFavicon({ sourceUrl }: { sourceUrl: string }) {
+  const src = faviconUrl(sourceUrl);
+  if (!src) return null;
+  return (
+    // Tiny decorative icons stay browser-loaded to avoid server image work.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      width={14}
+      height={14}
+      className="alpha-src-favicon"
+    />
+  );
+}
+
 // Only ever render http(s) links. Letter URLs originate from Brave results
 // (untrusted) routed through Claude, so a poisoned/hallucinated `javascript:`
 // or `data:` URL could otherwise reach an <a href> and execute on click.
@@ -228,16 +247,7 @@ function Item({ item }: { item: DigestItem }) {
           className="alpha-ui mt-4 inline-flex items-center gap-1 font-semibold underline underline-offset-4 decoration-1"
           style={{ color: "var(--accent-ink)" }}
         >
-          {faviconUrl(item.primaryRef.url) && (
-            <img
-              src={faviconUrl(item.primaryRef.url)!}
-              alt=""
-              loading="lazy"
-              width={14}
-              height={14}
-              className="alpha-src-favicon"
-            />
-          )}
+          <SourceFavicon sourceUrl={item.primaryRef.url} />
           <span>{kindLabel || "Open"}: {item.primaryRef.label}</span>
           <span aria-hidden>↗</span>
         </a>
@@ -261,16 +271,7 @@ function Item({ item }: { item: DigestItem }) {
                   className="inline-flex items-center gap-1 underline underline-offset-4 decoration-1"
                   style={{ color: "var(--ink-soft)" }}
                 >
-                  {faviconUrl(ref.url) && (
-                    <img
-                      src={faviconUrl(ref.url)!}
-                      alt=""
-                      loading="lazy"
-                      width={14}
-                      height={14}
-                      className="alpha-src-favicon"
-                    />
-                  )}
+                  <SourceFavicon sourceUrl={ref.url} />
                   {/* alpha-drift-r70-02 (2026-08-21, accessibility-resweep-
                       newer-code-r18): the arrow used to be baked into this
                       same text node, unlike the primaryRef link 32 lines

@@ -14,7 +14,7 @@ import type { Metadata } from "next";
 const PATH = "/welcome";
 const TITLE = "Start your letter";
 const DESCRIPTION =
-  "Set up your alpha. in a couple of minutes: pick your topics, choose a look, and get your first personal letter on the spot. $5 a month.";
+  "Set up your alpha. in a couple of minutes: pick your topics, choose a look, and request an invite for your personal daily letter.";
 
 export const metadata: Metadata = {
   title: TITLE,

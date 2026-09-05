@@ -1,9 +1,15 @@
 // Verify checkout.session.completed never clobbers subscription-owned state on
 // a re-delivered / out-of-order event. The core invariant: an UPDATE to an
 // existing row must never carry topic_quota or cancelled_at.
-// Run: npx tsx scripts/verify-webhook-mutation.mts
-import { loadEnvLocal } from "./_load-env.mts";
-const { checkoutUserMutation, isFirstSubscription, deriveCancelledAt } = await import("../lib/webhook-user-mutation.ts");
+// Local-only. Loads no environment file and contacts no external system.
+// Run with the repository's installed tsx executable.
+const {
+  checkoutUserMutation,
+  isFirstSubscription,
+  deriveCancelledAt,
+  isTerminalSubscriptionStatus,
+  subscriptionStatusGrantsAccess,
+} = await import("../lib/webhook-user-mutation.ts");
 
 const idn = {
   userId: "u-123",
@@ -11,15 +17,19 @@ const idn = {
   firstName: "Sam",
   city: "Tampa, FL",
   customerId: "cus_ABC",
+  subscriptionId: "sub_ALPHA",
+  priorBindingReplaceable: false,
   nowIso: "2026-06-02T12:00:00.000Z",
   subscriptionLive: true, // genuine new/resubscribe checkout (subscription is live)
+  suppressionCleared: true, // provider-side cleanup succeeded before DB mutation
 };
 
 let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 // (1) No row yet → full insert with base quota + cleared cancel.
@@ -31,6 +41,7 @@ if (m1.kind === "insert") {
   check("row.cancelled_at === null", m1.row.cancelled_at === null);
   check("row.subscribed_at set", m1.row.subscribed_at === idn.nowIso);
   check("row.stripe_customer_id linked", m1.row.stripe_customer_id === "cus_ABC");
+  check("row.stripe_subscription_id linked", m1.row.stripe_subscription_id === "sub_ALPHA");
   check("row identity present", m1.row.email === idn.email && m1.row.first_name === "Sam" && m1.row.city === "Tampa, FL");
 }
 
@@ -41,6 +52,7 @@ console.log("(2) existing row, subscribed_at null → update:");
 check("kind == update", m2.kind === "update");
 if (m2.kind === "update") {
   check("patch has stripe_customer_id", m2.patch.stripe_customer_id === "cus_ABC");
+  check("patch has stripe_subscription_id", m2.patch.stripe_subscription_id === "sub_ALPHA");
   check("patch sets subscribed_at (was null)", m2.patch.subscribed_at === idn.nowIso);
   check("patch has NO topic_quota", !("topic_quota" in m2.patch));
   check("patch has NO cancelled_at (existing was null)", !("cancelled_at" in m2.patch));
@@ -53,6 +65,7 @@ console.log("(3) re-delivered for established sub → update:");
 check("kind == update", m3.kind === "update");
 if (m3.kind === "update") {
   check("patch has stripe_customer_id", m3.patch.stripe_customer_id === "cus_ABC");
+  check("patch has stripe_subscription_id", m3.patch.stripe_subscription_id === "sub_ALPHA");
   check("patch does NOT re-stamp subscribed_at", !("subscribed_at" in m3.patch));
   check("patch has NO topic_quota (no clobber)", !("topic_quota" in m3.patch));
   check("patch has NO cancelled_at (nothing stale to clear)", !("cancelled_at" in m3.patch));
@@ -95,15 +108,61 @@ check(
   "FUTURE cancelled_at (cancel-at-period-end) → PRESERVED (absent from patch)",
   mFuture.kind === "update" && !("cancelled_at" in mFuture.patch)
 );
-// Re-delivered ORIGINAL checkout for a SINCE-ENDED sub (subscription NOT live) +
-// past cancelled_at → PRESERVED (must not resurrect a churned reader).
+// Re-delivered ORIGINAL checkout for a SINCE-ENDED sub is rejected before any
+// mutation, including an INSERT when the old account row has already gone.
 const mRedeliver = checkoutUserMutation(
   { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: "2026-05-20T00:00:00.000Z" },
   { ...idn, subscriptionLive: false }
 );
 check(
-  "PAST cancelled_at + subscription NOT live (redelivery) → PRESERVED (no resurrect)",
-  mRedeliver.kind === "update" && !("cancelled_at" in mRedeliver.patch)
+  "subscription NOT live (redelivery) → mutation skipped (no resurrect)",
+  mRedeliver.kind === "skip" && mRedeliver.reason === "subscription-not-live"
+);
+const mMissingRowRedeliver = checkoutUserMutation(null, { ...idn, subscriptionLive: false });
+check(
+  "subscription NOT live + missing row → no active INSERT",
+  mMissingRowRedeliver.kind === "skip" && mMissingRowRedeliver.reason === "subscription-not-live"
+);
+
+const mLiveBindingConflict = checkoutUserMutation(
+  {
+    subscribed_at: "2026-05-01T00:00:00.000Z",
+    cancelled_at: null,
+    stripe_subscription_id: "sub_OTHER_LIVE",
+  },
+  idn
+);
+check(
+  "different still-live exact subscription binding → mutation skipped",
+  mLiveBindingConflict.kind === "skip" &&
+    mLiveBindingConflict.reason === "subscription-binding-conflict"
+);
+const mEndedBindingReplacement = checkoutUserMutation(
+  {
+    subscribed_at: "2026-05-01T00:00:00.000Z",
+    cancelled_at: "2026-07-20T00:00:00.000Z",
+    stripe_subscription_id: "sub_OLD_ENDED",
+  },
+  { ...idn, priorBindingReplaceable: true }
+);
+check(
+  "fresh Stripe proof that the prior binding ended → verified new checkout replaces it",
+  mEndedBindingReplacement.kind === "update" &&
+    mEndedBindingReplacement.patch.stripe_subscription_id === "sub_ALPHA" &&
+    mEndedBindingReplacement.patch.cancelled_at === null
+);
+const mStaleCancellationAlone = checkoutUserMutation(
+  {
+    subscribed_at: "2026-05-01T00:00:00.000Z",
+    cancelled_at: "2026-05-20T00:00:00.000Z",
+    stripe_subscription_id: "sub_UNVERIFIED_OLD",
+  },
+  idn
+);
+check(
+  "stale local cancelled_at without fresh Stripe proof → binding stays blocked",
+  mStaleCancellationAlone.kind === "skip" &&
+    mStaleCancellationAlone.reason === "subscription-binding-conflict"
 );
 
 // (4c) Re-subscribe after one-click unsubscribe: checkout must CLEAR
@@ -127,42 +186,6 @@ console.log("(4b) isFirstSubscription gate:");
 check("no row yet → first subscription (send welcome)", isFirstSubscription(null) === true);
 check("row exists, not yet subscribed → first subscription", isFirstSubscription({ subscribed_at: null }) === true);
 check("row already subscribed → NOT first (no resend)", isFirstSubscription({ subscribed_at: "2026-05-01T00:00:00.000Z" }) === false);
-
-// (5) Live, READ-ONLY: against a REAL subscribed user, a re-delivered checkout
-//     must resolve to a clean update (no quota/cancel clobber). Proves the
-//     SELECT shape + branch hold against the actual schema. No writes.
-console.log("(5) live read-only tie-in (real subscribed user):");
-try {
-  loadEnvLocal();
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    console.log("  -- no service creds; skipping live tie-in (pure tests already cover logic)");
-  } else {
-    const { createClient } = await import("@supabase/supabase-js");
-    const sb = createClient(url, key, { auth: { persistSession: false } });
-    const { data: real } = await sb
-      .from("users")
-      .select("id, subscribed_at, cancelled_at")
-      .not("subscribed_at", "is", null)
-      .limit(1)
-      .maybeSingle();
-    if (!real) {
-      console.log("  -- no subscribed users in DB; skipping (nothing to clobber yet)");
-    } else {
-      const m = checkoutUserMutation(
-        { subscribed_at: real.subscribed_at, cancelled_at: real.cancelled_at },
-        { ...idn, userId: real.id }
-      );
-      // topic_quota is the hard never-clobber invariant; cancelled_at is cleared
-      // only for a stale past date, so assert just the quota invariant here.
-      const clean = m.kind === "update" && !("topic_quota" in m.patch);
-      check("re-delivered checkout for a real subscriber → no topic_quota clobber", clean);
-    }
-  }
-} catch (e) {
-  console.log(`  -- live tie-in skipped (${e instanceof Error ? e.message : e})`);
-}
 
 // (6) deriveCancelledAt — round 15 finding #2 (alpha-drift-r15-02): the
 //     bug this replaced gated cancel_at behind cancel_at_period_end being
@@ -205,6 +228,25 @@ check(
   deriveCancelledAt("unpaid", null, NOW) === NOW
 );
 check(
+  "unpaid revokes access but remains revivable for billing identity",
+  !subscriptionStatusGrantsAccess("unpaid") &&
+    !isTerminalSubscriptionStatus("unpaid")
+);
+for (const status of ["incomplete", "paused"] as const) {
+  check(
+    `${status} revokes access but keeps the exact billing reservation`,
+    deriveCancelledAt(status, null, NOW) === NOW &&
+      !subscriptionStatusGrantsAccess(status) &&
+      !isTerminalSubscriptionStatus(status)
+  );
+}
+for (const status of ["active", "trialing", "past_due"] as const) {
+  check(
+    `${status} remains an access-granting billing status`,
+    subscriptionStatusGrantsAccess(status)
+  );
+}
+check(
   "terminal status wins even if a stale future cancel_at is also present",
   deriveCancelledAt("canceled", 9999999999, NOW) === NOW
 );
@@ -213,32 +255,75 @@ check(
   deriveCancelledAt("trialing", null, NOW) === null
 );
 
-// (11) alpha-drift-r17-05: bounced_at/complained_at must be cleared on every
-// checkout completion (paid re-consent), regardless of whether the
-// subscription happens to be live right now -- unlike cancelled_at, this
-// isn't a billing-access decision, so it isn't gated by subscriptionLive.
-console.log("(11) bounced_at/complained_at cleared on checkout re-consent:");
-for (const live of [true, false]) {
-  const m = checkoutUserMutation(
-    { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: null },
-    { ...idn, subscriptionLive: live }
-  );
-  check(
-    `subscriptionLive=${live} → patch clears bounced_at`,
-    m.kind === "update" && "bounced_at" in m.patch && m.patch.bounced_at === null
-  );
-  check(
-    `subscriptionLive=${live} → patch clears complained_at`,
-    m.kind === "update" && "complained_at" in m.patch && m.patch.complained_at === null
-  );
-}
+// (11) generic cleanup callers may clear bounce/complaint only after provider
+// success, while paid checkout explicitly preserves all suppression state.
+console.log("(11) suppression state changes require verified cleanup or explicit preservation:");
+const mSuppressionClear = checkoutUserMutation(
+  { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: null },
+  idn
+);
+check(
+  "verified-live + provider cleanup succeeded → patch clears bounced_at",
+  mSuppressionClear.kind === "update" && mSuppressionClear.patch.bounced_at === null
+);
+check(
+  "verified-live + provider cleanup succeeded → patch clears complained_at",
+  mSuppressionClear.kind === "update" && mSuppressionClear.patch.complained_at === null
+);
+const mSuppressionFailed = checkoutUserMutation(
+  { subscribed_at: "2026-05-01T00:00:00.000Z", cancelled_at: null },
+  { ...idn, suppressionCleared: false }
+);
+check(
+  "provider cleanup failed → access persists behind a delivery block",
+  mSuppressionFailed.kind === "update" &&
+    mSuppressionFailed.patch.suppression_cleanup_pending_at === idn.nowIso &&
+    !("bounced_at" in mSuppressionFailed.patch) &&
+    !("complained_at" in mSuppressionFailed.patch)
+);
+const mCheckoutPreservesSuppression = checkoutUserMutation(
+  {
+    subscribed_at: "2026-05-01T00:00:00.000Z",
+    cancelled_at: null,
+    unsubscribed_at: "2026-05-01T00:00:00.000Z",
+    bounced_at: "2026-05-02T00:00:00.000Z",
+    complained_at: "2026-05-03T00:00:00.000Z",
+    suppression_cleanup_pending_at: "2026-05-04T00:00:00.000Z",
+    delivery_suppression_cleared_at: "2026-05-05T00:00:00.000Z",
+  },
+  {
+    ...idn,
+    checkoutStartedAtIso: "2026-06-01T00:00:00.000Z",
+    suppressionCleared: false,
+    preserveSuppressionState: true,
+  }
+);
+check(
+  "paid checkout preserves provider suppression evidence, pending marker, and causal watermark",
+  mCheckoutPreservesSuppression.kind === "update" &&
+    !("bounced_at" in mCheckoutPreservesSuppression.patch) &&
+    !("complained_at" in mCheckoutPreservesSuppression.patch) &&
+    !("suppression_cleanup_pending_at" in mCheckoutPreservesSuppression.patch) &&
+    !("delivery_suppression_cleared_at" in mCheckoutPreservesSuppression.patch)
+);
+check(
+  "paid checkout still clears an older explicit unsubscribe as re-consent",
+  mCheckoutPreservesSuppression.kind === "update" &&
+    mCheckoutPreservesSuppression.patch.unsubscribed_at === null
+);
 // Insert path (brand-new row) starts clean by construction -- no suppression
 // columns to clear, but confirm the row itself has no stray suppression value.
 {
-  const m = checkoutUserMutation(null, idn);
+  const m = checkoutUserMutation(null, {
+    ...idn,
+    preserveSuppressionState: true,
+  });
   check(
-    "insert path: no bounced_at/complained_at set on a fresh row",
-    m.kind === "insert" && !("bounced_at" in m.row) && !("complained_at" in m.row)
+    "paid checkout insert path creates no new suppression-pending marker",
+    m.kind === "insert" &&
+      !("bounced_at" in m.row) &&
+      !("complained_at" in m.row) &&
+      m.row.suppression_cleanup_pending_at === null
   );
 }
 

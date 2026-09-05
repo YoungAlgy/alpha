@@ -38,25 +38,19 @@ name: Daily letter watchdog
 #   crash partway through the per-subscriber send loop (Worker CPU/wall-
 #   clock limit, an unhandled exception) would never reach the app's own
 #   internal ops-alert either, since that only fires after the full loop
-#   finishes. Now compares delivered count against active subscriber count.
+#   finishes. Now checks direct per-subscriber uncovered coverage.
 # - Nothing anywhere checked whether the OTHER half of this exact incident
 #   (3 resilience-tier secrets that never migrated off the old host) could
 #   recur -- the app's own /api/health route already computes
 #   checks.groq/deepseek/you/gemini/brave, it just never gated anything and
 #   nothing ever read it. Added a second job that does.
 #
-# Second hardening pass, same day, after a fresh independent review of the
-# FIRST pass's own fixes (not just the original bugs):
-# - The partial-send threshold used integer division (ACTIVE_COUNT / 2),
-#   which truncates -- at alpha's actual small subscriber count this made
-#   the detector literally unreachable (no DELIVERED_COUNT value could ever
-#   trip it) at ACTIVE_COUNT in {1,2,3}, and let an exact 50% loss slip
-#   through even at ACTIVE_COUNT=4. Rewritten as an exact integer
-#   comparison (DELIVERED_COUNT*2 <= ACTIVE_COUNT) with no truncation.
-# - The DELIVERED_COUNT==0 branch alerted unconditionally, with no check
-#   for ACTIVE_COUNT also being 0 -- if the subscriber base ever
-#   legitimately hits zero, this would've alerted forever with nothing
-#   actually wrong. Now treated as OK.
+# Later hardening passes kept tightening those checks:
+# - The RPC now returns a direct per-subscriber uncovered_count. Any value
+#   above zero is an alert. The old partial-send percentage threshold could
+#   still report success while a real subscriber remained uncovered.
+# - Delivery issues close only after uncovered_count reaches zero. A zero
+#   active-subscriber day naturally returns zero uncovered and is still OK.
 # - None of the curl calls set a timeout, so a stalled connection (TCP
 #   accepted, response never completes) could hang the job for hours
 #   instead of failing fast into the alert path. All curls now bound.
@@ -75,6 +69,7 @@ permissions:
 jobs:
   check-delivery:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check Supabase for real, complete delivery in the last 20 hours
         env:
@@ -179,18 +174,31 @@ jobs:
           # unchanged while a SPECIFIC active subscriber quietly had no
           # letter (e.g. someone unsubscribes the same window someone else
           # signs up), which is exactly the blind spot a delivery watchdog
-          # exists to catch. COVERED_COUNT below is derived as
-          # ACTIVE_COUNT - UNCOVERED_COUNT and substitutes everywhere this
-          # script previously used DELIVERED_COUNT -- same three alert
-          # tiers, same thresholds, just fed a number that can't be fooled
-          # by unrelated churn netting to zero.
-          RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
-            -H "apikey: ${SUPABASE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"cutoff\": \"${CUTOFF}\"}" \
-            "${SUPABASE_URL}/rest/v1/rpc/watchdog_delivery_check")
-          CURL_EXIT=$?
+          # exists to catch. A covered count below is derived as
+          # ACTIVE_COUNT - UNCOVERED_COUNT for alert detail, while the alert
+          # decision itself uses UNCOVERED_COUNT directly. One uncovered
+          # subscriber is enough to fail the check.
+          if ! SUPABASE_URL_TO_CHECK="${SUPABASE_URL}" node -e "
+            try {
+              const u = new URL(process.env.SUPABASE_URL_TO_CHECK || '');
+              if (u.protocol !== 'https:' ||
+                  u.hostname !== 'xpqxhdciaoicsnyyfshy.supabase.co' ||
+                  u.port || u.username || u.password ||
+                  !['', '/'].includes(u.pathname) || u.search || u.hash) process.exit(1);
+            } catch { process.exit(1); }
+          "; then
+            echo "ERROR: WATCHDOG_SUPABASE_URL does not match Alpha's dedicated project. Value withheld."
+            RESPONSE=''
+            CURL_EXIT=90
+          else
+            RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "{\"cutoff\": \"${CUTOFF}\"}" \
+              "${SUPABASE_URL}/rest/v1/rpc/watchdog_delivery_check")
+            CURL_EXIT=$?
+          fi
           echo "Supabase RPC response (curl exit ${CURL_EXIT}): ${RESPONSE}"
 
           # Node instead of jq for this one -- the expected shape is a
@@ -226,11 +234,10 @@ jobs:
           fi
           echo "Active subscriber count: ${ACTIVE_COUNT}, uncovered: ${UNCOVERED_COUNT}"
 
-          # DELIVERED_COUNT's replacement: a clean per-subscriber-coverage
-          # count instead of a raw row count, bounded to [0, ACTIVE_COUNT]
-          # by construction. Preserves the -1 "couldn't verify" sentinel
-          # whenever either input is unverifiable, so the tiers below still
-          # can't mistake "unknown" for "zero delivered."
+          # Derive the covered count only for alert detail. The pass/fail
+          # decision below is based directly on UNCOVERED_COUNT, so even one
+          # missed subscriber alerts. Preserve the -1 "couldn't verify"
+          # sentinel whenever either input is unverifiable.
           if [ "${UNCOVERED_COUNT}" -lt 0 ] || [ "${ACTIVE_COUNT}" -lt 0 ]; then
             DELIVERED_COUNT=-1
           else
@@ -250,60 +257,37 @@ jobs:
             exit 1
           fi
 
-          if [ "${DELIVERED_COUNT}" -eq 0 ]; then
-            # ACTIVE_COUNT==0 alongside DELIVERED_COUNT==0 means there was
-            # legitimately no one to send to (not "the send is broken") --
-            # without this, a subscriber base that ever hits zero would
-            # alert forever with nothing actually wrong.
-            if [ "${ACTIVE_COUNT}" -eq 0 ]; then
-              echo "OK: zero active subscribers right now, so zero deliveries is expected."
-              close_issue_if_open "${SEARCH_PHRASE}" "Resolved: zero active subscribers as of $(date -u +%Y-%m-%dT%H:%M:%SZ), so zero deliveries is expected, not a broken send. Closing automatically."
-              close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Resolved: zero active subscribers as of $(date -u +%Y-%m-%dT%H:%M:%SZ). Closing automatically."
-              exit 0
+          if [ "${UNCOVERED_COUNT}" -gt 0 ]; then
+            if [ "${DELIVERED_COUNT}" -eq 0 ]; then
+              echo "ALERT: ${UNCOVERED_COUNT}/${ACTIVE_COUNT} active subscribers are uncovered since ${CUTOFF}, with no covered deliveries -- the daily send may be broken."
+              ALERT_BODY="The daily digest watchdog found ${UNCOVERED_COUNT} uncovered subscribers out of ${ACTIVE_COUNT} active subscribers, with no covered deliveries since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: did GitHub Actions' daily-send.yml run on schedule, are the SEND_* secrets it uses still present, and did that run actually complete (the Cloudflare Cron Trigger is deliberately disarmed as of 2026-08-05, so it's not the thing to check anymore). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              send_resend_alert "[alpha] No letters delivered in the last 20 hours" "${ALERT_BODY}"
+              open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+            else
+              echo "ALERT: ${UNCOVERED_COUNT}/${ACTIVE_COUNT} active subscribers are still uncovered since ${CUTOFF} -- possible partial/crashed send."
+              ALERT_BODY="The daily digest watchdog found ${UNCOVERED_COUNT} uncovered subscribers out of ${ACTIVE_COUNT} active subscribers since ${CUTOFF}. ${DELIVERED_COUNT} were covered (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Some letters clearly went out, but every uncovered subscriber is a missed delivery. This can indicate a crashed or interrupted send, which alpha's own internal ops-alert also would not catch if the process died before the full per-subscriber loop finished. Check GitHub Actions' daily-send.yml run history for the last invocation. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              send_resend_alert "[alpha] Incomplete letter send (${DELIVERED_COUNT}/${ACTIVE_COUNT} covered)" "${ALERT_BODY}"
+              open_or_update_issue "${PARTIAL_SEARCH_PHRASE}" "${PARTIAL_ISSUE_TITLE}" "${ALERT_BODY}"
             fi
-            echo "ALERT: no delivered issues found since ${CUTOFF} -- the daily send may be broken."
-            ALERT_BODY="The daily digest watchdog found no issues.delivered_at since ${CUTOFF} against ${ACTIVE_COUNT} active subscribers (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: did GitHub Actions' daily-send.yml run on schedule, are the SEND_* secrets it uses still present, and did that run actually complete (the Cloudflare Cron Trigger is deliberately disarmed as of 2026-08-05, so it's not the thing to check anymore). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            send_resend_alert "[alpha] No letters delivered in the last 20 hours" "${ALERT_BODY}"
-            open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
-            close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Superseded: the full send now appears to have failed outright (0 delivered), not just partially. See the linked broken-send issue instead."
             exit 1
           fi
 
-          # Full failure would already have been caught above (DELIVERED_COUNT
-          # would be 0). This catches the OTHER half of a crash mid-send: some
-          # subscribers got their letter and the run died before finishing the
-          # rest -- something a bare existence check can't distinguish from a
-          # clean run, and something the app's own internal ops-alert also
-          # can't catch (it only fires after the full per-subscriber loop
-          # completes, so a hard kill mid-loop skips it too). Only judged when
-          # ACTIVE_COUNT itself was verified (>0); an unverifiable active
-          # count isn't treated as evidence of a partial send.
-          #
-          # DELIVERED_COUNT*2 <= ACTIVE_COUNT, not DELIVERED_COUNT <
-          # ACTIVE_COUNT/2 -- bash integer division truncates ACTIVE_COUNT/2
-          # toward zero, which at alpha's actual small subscriber count made
-          # this check unreachable (no DELIVERED_COUNT could ever trip it)
-          # for ACTIVE_COUNT in {1,2,3}, and let an exact 50% loss slip
-          # through even at ACTIVE_COUNT=4. Multiplying DELIVERED_COUNT by 2
-          # instead of dividing ACTIVE_COUNT is an exact integer comparison
-          # with no rounding loss, and <= (not <) means an exact half-loss
-          # -- itself a real, worth-investigating signal for a "did the send
-          # crash mid-loop" detector -- correctly fires instead of being
-          # waved through.
-          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ $(( DELIVERED_COUNT * 2 )) -le "${ACTIVE_COUNT}" ]; then
-            echo "ALERT: only ${DELIVERED_COUNT}/${ACTIVE_COUNT} active subscribers got a letter since ${CUTOFF} -- possible partial/crashed send."
-            ALERT_BODY="The daily digest watchdog found only ${DELIVERED_COUNT} delivered issues.delivered_at since ${CUTOFF}, against ${ACTIVE_COUNT} active subscribers (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Some letters clearly went out, so this isn't a total outage -- but this looks like a crashed or interrupted send (Worker CPU/wall-clock limit, an unhandled exception mid-loop), which alpha's own internal ops-alert also would not have caught (it only fires after the full per-subscriber loop finishes). Check GitHub Actions' daily-send.yml run history for the last invocation. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            send_resend_alert "[alpha] Possible partial letter send (${DELIVERED_COUNT}/${ACTIVE_COUNT})" "${ALERT_BODY}"
-            open_or_update_issue "${PARTIAL_SEARCH_PHRASE}" "${PARTIAL_ISSUE_TITLE}" "${ALERT_BODY}"
-            exit 1
+          if [ "${UNCOVERED_COUNT}" -eq 0 ]; then
+            echo "OK: 0/${ACTIVE_COUNT} active subscribers uncovered since ${CUTOFF} (${DELIVERED_COUNT} covered)."
+            close_issue_if_open "${SEARCH_PHRASE}" "Resolved: zero active subscribers are uncovered since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+            close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Resolved: zero active subscribers are uncovered since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+            exit 0
           fi
 
-          echo "OK: ${DELIVERED_COUNT} delivered since ${CUTOFF} (${ACTIVE_COUNT} active subscribers)."
-          close_issue_if_open "${SEARCH_PHRASE}" "Resolved: a real, apparently-complete delivery landed since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
-          close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Resolved: today's delivery count looks complete (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+          echo "ALERT: delivery counts fell outside the expected integer shape."
+          ALERT_BODY="The daily digest watchdog received unexpected delivery counts (active=${ACTIVE_COUNT}, uncovered=${UNCOVERED_COUNT}) as of $(date -u +%Y-%m-%dT%H:%M:%SZ). Treating this as an unverifiable delivery state. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          send_resend_alert "[alpha] Watchdog received invalid delivery counts" "${ALERT_BODY}"
+          open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+          exit 1
 
   check-resilience-secrets:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check the SEND_* secrets the real send actually uses, not Cloudflare's
         env:
@@ -320,24 +304,32 @@ jobs:
           # leave this job reporting green forever while the real send's
           # fallback chain quietly lost a tier -- exactly the "second half
           # of the 2026-08-05 outage" class this job exists to catch, aimed
-          # at the wrong host. Also now covers resend + anthropic, the two
-          # providers that can kill a send outright and which the old
-          # Cloudflare-health check never watched at all.
-          SEND_ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
+          # at the wrong host. The lists below deliberately mirror
+          # scripts/verify-send-preflight.mjs: fixed hard requirements and
+          # individually soft resilience tiers. Zero configured generators
+          # enters backup-only delivery mode instead of blocking the send.
+          SEND_CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
           SEND_RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
+          SEND_RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
+          SEND_UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
+          SEND_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
+          SEND_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+          SEND_SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          SEND_CHECKOUT_BINDING_SECRET: ${{ secrets.SEND_CHECKOUT_BINDING_SECRET }}
+          SEND_ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
+          SEND_GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
           SEND_GROQ_API_KEY: ${{ secrets.SEND_GROQ_API_KEY }}
           SEND_DEEPSEEK_API_KEY: ${{ secrets.SEND_DEEPSEEK_API_KEY }}
-          SEND_YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
-          SEND_GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
           SEND_BRAVE_SEARCH_API_KEY: ${{ secrets.SEND_BRAVE_SEARCH_API_KEY }}
+          SEND_YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
           # Added when the ops-alert webhook fallback was wired 2026-08-05 --
-          # resilience-tier like the five above: sendOpsAlert() still works
+          # resilience-tier like the provider/search keys above. sendOpsAlert() still works
           # via Resend without it, this only covers the case where Resend
           # itself is what's down. Worth watching for the same reason as any
           # other resilience-tier secret: it can silently go missing later
           # (a Discord webhook getting deleted/regenerated) with nothing else
           # here to notice.
-          SEND_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_OPS_ALERT_WEBHOOK_URL }}
+          SEND_ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
         run: |
           set -uo pipefail
           # Same set +e requirement as check-delivery's job -- GitHub Actions
@@ -402,56 +394,54 @@ jobs:
 
           # Direct presence check against THIS job's own env -- no network
           # call, nothing to fail to reach, nothing that can silently drift
-          # from what it's supposed to be watching (that drift was the
-          # entire bug this job used to have). resend + anthropic are HARD
-          # required (a send cannot happen at all without them); the other
-          # five are resilience-tier fallbacks (missing one degrades the
-          # chain, doesn't block the send outright) -- same severity split
-          # scripts/verify-send-preflight.mjs already uses.
+          # from what it's supposed to be watching. These fixed hard and
+          # soft lists mirror scripts/verify-send-preflight.mjs. Generator
+          # keys are individually soft. With all of them absent, an already
+          # usable persisted issue or bounded prior-issue backup remains.
           HARD_MISSING=""
-          for name in SEND_ANTHROPIC_API_KEY SEND_RESEND_API_KEY; do
+          for name in SEND_CRON_SECRET SEND_RESEND_API_KEY SEND_RESEND_FROM SEND_UNSUBSCRIBE_SECRET SEND_SUPABASE_URL SEND_SUPABASE_PUBLISHABLE_KEY SEND_SUPABASE_SECRET_KEY SEND_CHECKOUT_BINDING_SECRET; do
             val="${!name:-}"
             [ -n "${val}" ] || HARD_MISSING="${HARD_MISSING}${HARD_MISSING:+, }${name}"
           done
 
+          GENERATOR_CONFIGURED=0
+          for name in SEND_ANTHROPIC_API_KEY SEND_GEMINI_API_KEY SEND_GROQ_API_KEY SEND_DEEPSEEK_API_KEY; do
+            val="${!name:-}"
+            if [ -n "${val}" ]; then
+              GENERATOR_CONFIGURED=$(( GENERATOR_CONFIGURED + 1 ))
+            fi
+          done
           SOFT_MISSING=""
-          for name in SEND_GROQ_API_KEY SEND_DEEPSEEK_API_KEY SEND_YOU_API_KEY SEND_GEMINI_API_KEY SEND_BRAVE_SEARCH_API_KEY SEND_OPS_ALERT_WEBHOOK_URL; do
+          for name in SEND_ANTHROPIC_API_KEY SEND_GEMINI_API_KEY SEND_GROQ_API_KEY SEND_DEEPSEEK_API_KEY SEND_BRAVE_SEARCH_API_KEY SEND_YOU_API_KEY SEND_ALPHA_OPS_ALERT_WEBHOOK_URL; do
             val="${!name:-}"
             [ -n "${val}" ] || SOFT_MISSING="${SOFT_MISSING}${SOFT_MISSING:+, }${name}"
           done
 
           if [ -z "${HARD_MISSING}" ] && [ -z "${SOFT_MISSING}" ]; then
-            echo "OK: all SEND_* secrets present (anthropic, resend hard-required; groq/deepseek/you/gemini/brave/ops-alert-webhook resilience-tier)."
+            echo "OK: all fixed hard SEND_* secrets present, ${GENERATOR_CONFIGURED} generators configured, and every resilience-tier secret present."
             close_issue_if_open "${SEARCH_PHRASE}" "Resolved: all SEND_* secrets present (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
             exit 0
           fi
 
           if [ -n "${HARD_MISSING}" ]; then
-            echo "ALERT: hard-required secret(s) missing: ${HARD_MISSING} -- the daily send cannot work at all."
-            ALERT_BODY="These GitHub Actions secrets are missing, and daily-send.yml's own pre-flight (scripts/verify-send-preflight.mjs) will fail the very next scheduled run because of it: ${HARD_MISSING}. Fix: repo Settings -> Secrets and variables -> Actions, add the missing SEND_* secret(s) (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            send_resend_alert "[alpha] HARD-required send secret(s) missing: ${HARD_MISSING}" "${ALERT_BODY}"
+            echo "ALERT: hard send configuration missing: ${HARD_MISSING} -- the daily send cannot work at all."
+            ALERT_BODY="This GitHub Actions send configuration is missing, and daily-send.yml's own pre-flight (scripts/verify-send-preflight.mjs) will fail the next scheduled run because of it: ${HARD_MISSING}. Fix: repo Settings -> Secrets and variables -> Actions, add the missing fixed SEND_* secret(s) (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            send_resend_alert "[alpha] HARD send configuration missing: ${HARD_MISSING}" "${ALERT_BODY}"
             open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
             exit 1
           fi
 
           echo "ALERT: resilience-tier secret(s) missing: ${SOFT_MISSING}"
-          ALERT_BODY="These resilience-tier GitHub Actions secrets are missing: ${SOFT_MISSING} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The primary send can still succeed via its remaining providers while this stays broken, so nothing else here would catch it -- this is exactly the second half of the 2026-08-05 outage. Fix: repo Settings -> Secrets and variables -> Actions, add the missing SEND_* secret(s). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          ALERT_BODY="These resilience-tier GitHub Actions secrets are missing: ${SOFT_MISSING} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The primary send can still succeed through remaining providers, an already usable persisted issue, or a bounded prior-issue backup, so nothing else here would catch this reduced resilience -- this is exactly the second half of the 2026-08-05 outage. Fix: repo Settings -> Secrets and variables -> Actions, add the missing SEND_* secret(s). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           send_resend_alert "[alpha] Resilience-tier send secret(s) missing: ${SOFT_MISSING}" "${ALERT_BODY}"
           open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
           exit 1
 
   heartbeat:
-    # Free third-party dead-man's-switch (healthchecks.io free tier) -- closes
-    # the meta-gap found in a 2026-08-05 adversarial review: nothing before
-    # this confirmed letter-watchdog.yml ITSELF still runs. repo-keepalive.yml
-    # only stops GitHub's 60-day-inactivity auto-disable of scheduled
-    # workflows; it does nothing for someone manually clicking "Disable
-    # workflow" in the Actions tab, a GitHub Actions platform outage pausing
-    # scheduled runs across the board, or this YAML itself becoming invalid
-    # after a bad merge/copy-paste. All three are invisible from inside
-    # GitHub Actions -- the same way the original 5-day cron outage was
-    # invisible, just one level up the stack, with nothing meta-watching the
-    # watchdog.
+    # Optional third-party dead-man receiver. The no-cost Codex heartbeat
+    # named "Alpha daily delivery monitor" checks live health and public run
+    # state after the final retry. WATCHDOG_HEARTBEAT_PING_URL remains
+    # supported as a second Alpha-only observer if one is added later.
     #
     # `needs:` still orders this job after both checks (so it reports on a
     # COMPLETE run, not one still in flight), but `if: always()` is load-
@@ -466,24 +456,19 @@ jobs:
     needs: [check-delivery, check-resilience-secrets]
     if: always()
     runs-on: ubuntu-latest
-    # This job only does an outbound curl to a healthchecks.io ping URL --
+    timeout-minutes: 5
+    # This job only does an outbound curl to an optional heartbeat URL --
     # it never touches the GitHub API. The workflow-level `issues: write`
     # above exists for check-delivery/check-resilience-secrets' `gh issue`
     # calls; this job doesn't need it, so zero it out rather than inherit it.
     permissions: {}
     steps:
-      - name: Ping healthchecks.io to confirm this workflow actually ran
-        # Optional -- inert until Algy signs up for a free healthchecks.io
-        # account and adds WATCHDOG_HEARTBEAT_PING_URL as a repo secret (same
-        # "unset = skip cleanly, never fail the run" convention as
-        # OPS_ALERT_WEBHOOK_URL elsewhere in this repo). Without this guard,
-        # curl with an empty URL argument fails immediately, and every single
-        # daily run would show a red X until that setup step happens.
+      - name: Ping optional external heartbeat receiver
         env:
           PING_URL: ${{ secrets.WATCHDOG_HEARTBEAT_PING_URL }}
         run: |
           if [ -z "${PING_URL}" ]; then
-            echo "WATCHDOG_HEARTBEAT_PING_URL not set -- skipping heartbeat ping (see this step's comment to enable)."
+            echo "::notice:: WATCHDOG_HEARTBEAT_PING_URL is not configured. The Alpha Codex delivery monitor is the current independent observer."
             exit 0
           fi
           curl -fsS --max-time 10 --retry 3 "${PING_URL}"

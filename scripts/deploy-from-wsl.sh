@@ -34,6 +34,30 @@ if [ ! -d .git ]; then
   exit 1
 fi
 
+current_branch="$(git symbolic-ref --quiet --short HEAD || true)"
+if [ "${current_branch}" != "master" ]; then
+  echo "error: refusing to deploy from a non-master or detached checkout" >&2
+  exit 1
+fi
+
+origin_url="$(git remote get-url origin 2>/dev/null || true)"
+origin_url="${origin_url%/}"
+case "${origin_url}" in
+  https://github.com/YoungAlgy/alpha.git|https://github.com/YoungAlgy/alpha|git@github.com:YoungAlgy/alpha.git|git@github.com:YoungAlgy/alpha|ssh://git@github.com/YoungAlgy/alpha.git|ssh://git@github.com/YoungAlgy/alpha)
+    ;;
+  *)
+    echo "error: refusing to deploy from an unexpected origin remote" >&2
+    exit 1
+    ;;
+esac
+
+dirty="$(git status --porcelain --untracked-files=all)"
+if [ -n "${dirty}" ]; then
+  echo "error: refusing to hard-reset a dirty checkout. Review or save these paths first:" >&2
+  printf '%s\n' "${dirty}" >&2
+  exit 1
+fi
+
 echo "==> Syncing WSL checkout to origin/master..."
 git fetch origin master --quiet
 before="$(git rev-parse HEAD)"

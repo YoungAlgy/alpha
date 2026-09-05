@@ -46,6 +46,8 @@ export default function ThemePage() {
   useEffect(() => {
     if (loaded && state.theme) {
       const safe = coerceThemeId(state.theme);
+      // This effect hydrates the picker from the persisted onboarding store.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (safe) setPicked(safe);
     }
   }, [loaded, state.theme]);

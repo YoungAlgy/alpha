@@ -23,6 +23,8 @@ export default function YouPage() {
 
   useEffect(() => {
     if (!loaded) return;
+    // This effect hydrates the form from the persisted onboarding store.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (state.birthday) setBirthday(state.birthday);
     if (state.gender) setGender(state.gender);
   }, [loaded, state.birthday, state.gender]);

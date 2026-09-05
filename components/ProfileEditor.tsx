@@ -62,6 +62,8 @@ export function ProfileEditor() {
 
   useEffect(() => {
     if (!supabaseConfigured()) {
+      // Configuration is client-visible and this one-time branch ends hydrate.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoaded(true);
       return;
     }
@@ -276,7 +278,7 @@ export function ProfileEditor() {
           value={form.city}
           onChange={(v) => set("city", v)}
           placeholder="St. Petersburg, FL"
-          hint="Lets the letter flag what's nearby. Never shared."
+          hint="Lets the letter flag what's nearby. Alpha does not send this profile field to Stripe."
           disabled={!loaded || busy}
           maxLength={120}
         />

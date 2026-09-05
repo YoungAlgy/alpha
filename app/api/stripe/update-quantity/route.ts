@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import type Stripe from "stripe";
-import { getStripeClient, describeStripeError } from "@/lib/stripe";
+import { STRIPE_PRICE_ID, getStripeClient, describeStripeError } from "@/lib/stripe";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/access";
 import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS, type TopicId } from "@/lib/types";
 import { rateLimit } from "@/lib/rate-limit";
 import { nextQuantity, isLiveForManagement } from "@/lib/update-quantity-guards";
 import { poolCap } from "@/lib/engine/select-sections";
+import { consumeDistributedRateLimit } from "@/lib/distributed-rate-limit";
+import {
+  claimQuantityUpdateLease,
+  releaseQuantityUpdateLease,
+} from "@/lib/quantity-update-lease";
+import { isInviteOnly } from "@/lib/access-mode";
 
 export const runtime = "nodejs";
 
@@ -28,9 +35,44 @@ export const runtime = "nodejs";
 
 interface Body {
   direction?: "up" | "down";
+  expectedQuantity?: number;
+}
+
+function stripeCustomerId(customer: Stripe.Subscription["customer"]): string | null {
+  if (typeof customer === "string") return customer;
+  return customer?.id ?? null;
+}
+
+function isExactAlphaSubscription(
+  sub: Stripe.Subscription,
+  customerId: string
+): boolean {
+  if (stripeCustomerId(sub.customer) !== customerId) return false;
+  if (!sub.items || sub.items.has_more || !Array.isArray(sub.items.data)) return false;
+  if (sub.items.data.length !== 1) return false;
+
+  const item = sub.items.data[0];
+  const priceId = typeof item.price === "string" ? item.price : item.price?.id;
+  const quantity = item.quantity;
+  return (
+    priceId === STRIPE_PRICE_ID &&
+    Number.isInteger(quantity) &&
+    (quantity as number) >= 1 &&
+    (quantity as number) <= 5
+  );
 }
 
 export async function POST(req: Request) {
+  if (isInviteOnly(true)) {
+    return NextResponse.json(
+      {
+        error:
+          "Alpha is invite-only now. Paid plan changes are closed. You can still turn off renewal from Settings.",
+      },
+      { status: 410, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   const secret = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secret) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
@@ -41,6 +83,12 @@ export async function POST(req: Request) {
   const { data: { user }, error: authErr } = await sb.auth.getUser();
   if (authErr || !user) {
     return NextResponse.json({ error: "Sign in first" }, { status: 401 });
+  }
+  if (!user.email_confirmed_at) {
+    return NextResponse.json(
+      { error: "Confirm your email before changing billing." },
+      { status: 403 }
+    );
   }
 
   // Rate limit per user: each call is a real Stripe proration charge/credit,
@@ -76,6 +124,16 @@ export async function POST(req: Request) {
   if (body.direction !== "up" && body.direction !== "down") {
     return NextResponse.json({ error: "direction must be 'up' or 'down'" }, { status: 400 });
   }
+  if (
+    !Number.isInteger(body.expectedQuantity) ||
+    (body.expectedQuantity as number) < 1 ||
+    (body.expectedQuantity as number) > 5
+  ) {
+    return NextResponse.json(
+      { error: "expectedQuantity must be an integer from 1 through 5" },
+      { status: 400 }
+    );
+  }
 
   // alpha-drift-r55-05 (2026-08-20, rls-migration-drift-audit-r4): service
   // role, not the session client -- and not because the SELECT itself is
@@ -89,13 +147,65 @@ export async function POST(req: Request) {
   // column_lock.sql) pins back to its old value for any non-service_role
   // caller. Using the service role for both the read and the write keeps
   // one client for the whole round trip.
-  const svc = await supabaseServiceClient();
+  let svc: Awaited<ReturnType<typeof supabaseServiceClient>>;
+  try {
+    svc = await supabaseServiceClient();
+  } catch {
+    return NextResponse.json(
+      { error: "Billing protection is temporarily unavailable. Try again shortly." },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+  const distributedLimit = await consumeDistributedRateLimit(
+    svc,
+    "quantity-update-user",
+    user.id,
+    { limit: 10, windowMs: 60 * 60 * 1000 }
+  );
+  if (!distributedLimit.available) {
+    return NextResponse.json(
+      { error: "Billing protection is temporarily unavailable. Try again shortly." },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+  if (!distributedLimit.ok) {
+    return NextResponse.json(
+      { error: "Too many billing changes. Try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(distributedLimit.retryAfterSec) },
+      }
+    );
+  }
+
+  const leaseToken = randomUUID();
+  let leaseClaimed = false;
+  try {
+    leaseClaimed = await claimQuantityUpdateLease(
+      svc,
+      user.id,
+      leaseToken
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "Billing protection is temporarily unavailable. Try again shortly." },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+  if (!leaseClaimed) {
+    return NextResponse.json(
+      { error: "Another billing change is still running. Try again shortly." },
+      { status: 409, headers: { "Retry-After": "15" } }
+    );
+  }
+
+  try {
   const { data: row, error: rowErr } = await svc
     .from("users")
     // alpha-drift-r59-01: `topics` deliberately dropped from this early
     // SELECT -- it's re-read fresh right before the write further down,
     // see that fetch's own comment for why reusing this snapshot was a bug.
-    .select("stripe_customer_id, topic_quota, subscribed_at, cancelled_at")
+    .select("stripe_customer_id, stripe_subscription_id, topic_quota, subscribed_at, cancelled_at")
     .eq("id", user.id)
     .maybeSingle();
   if (rowErr) {
@@ -121,52 +231,153 @@ export async function POST(req: Request) {
 
   const stripe = getStripeClient();
 
-  // Find this customer's live subscription. See lib/update-quantity-guards.ts's
-  // isLiveForManagement for why status:"active" alone isn't enough (trialing
-  // comp checkouts, past_due Smart Retry window) and why this matches
-  // lib/stripe-cancel.ts's own status:"all" + explicit-status-set pattern.
+  // Resolve the exact Alpha subscription bound to this account. New accounts
+  // carry stripe_subscription_id. A legacy row without it gets one bounded
+  // lookup, which succeeds only when Stripe returns one current subscription
+  // with exactly one Alpha line item and a valid quantity.
   //
   // Both Stripe calls below (list, then update) are wrapped so a Stripe-side
   // slowdown or hiccup surfaces as a clean 500 instead of an unhandled 80s+
   // SDK timeout or an uncaught TypeError — matches checkout/route.ts and
   // portal/route.ts, which both guard their Stripe calls the same way.
   let sub: Stripe.Subscription | undefined;
-  try {
-    const subs = await stripe.subscriptions.list({
-      customer: row.stripe_customer_id,
-      status: "all",
-      limit: 10,
-    });
-    // Array.isArray guard: a malformed 200 (missing/non-array `data`) must
-    // fail into the clean "no subscription" branch below, not throw
-    // .find-of-undefined out of the route.
-    sub = Array.isArray(subs.data)
-      ? subs.data.find((s) => isLiveForManagement(s.status))
-      : undefined;
-  } catch (e) {
-    // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
-    console.error("[update-quantity] subscriptions.list failed:", describeStripeError(e));
-    return NextResponse.json(
-      { error: "Couldn't reach Stripe. Try again in a moment." },
-      { status: 500 }
-    );
+  const storedSubscriptionId =
+    typeof row.stripe_subscription_id === "string"
+      ? row.stripe_subscription_id.trim()
+      : null;
+
+  if (typeof row.stripe_subscription_id === "string" && !storedSubscriptionId) {
+    console.error("[update-quantity] stored subscription id is empty");
+    return NextResponse.json({ error: "Couldn't verify your Alpha subscription." }, { status: 500 });
   }
+
+  if (storedSubscriptionId) {
+    try {
+      const candidate = await stripe.subscriptions.retrieve(storedSubscriptionId);
+      if (
+        candidate.id !== storedSubscriptionId ||
+        !isLiveForManagement(candidate.status) ||
+        !isExactAlphaSubscription(candidate, row.stripe_customer_id)
+      ) {
+        console.error("[update-quantity] stored subscription binding did not resolve to one current exact Alpha subscription");
+        return NextResponse.json(
+          { error: "No active Alpha subscription on file." },
+          { status: 400 }
+        );
+      }
+      sub = candidate;
+    } catch (e) {
+      console.error("[update-quantity] subscriptions.retrieve failed:", describeStripeError(e));
+      return NextResponse.json(
+        { error: "Couldn't reach Stripe. Try again in a moment." },
+        { status: 500 }
+      );
+    }
+  } else {
+    let legacyMatches: Stripe.Subscription[] = [];
+    try {
+      const subs = await stripe.subscriptions.list({
+        customer: row.stripe_customer_id,
+        price: STRIPE_PRICE_ID,
+        status: "all",
+        limit: 100,
+      });
+      if (subs.has_more || !Array.isArray(subs.data)) {
+        console.error("[update-quantity] legacy subscription lookup was paginated or malformed");
+        return NextResponse.json(
+          { error: "Couldn't safely identify your Alpha subscription." },
+          { status: 500 }
+        );
+      }
+
+      for (const candidate of subs.data) {
+        if (!isExactAlphaSubscription(candidate, row.stripe_customer_id)) {
+          console.error("[update-quantity] legacy lookup found an invalid or mixed Alpha subscription shape");
+          return NextResponse.json(
+            { error: "Couldn't safely identify your Alpha subscription." },
+            { status: 500 }
+          );
+        }
+      }
+      legacyMatches = subs.data.filter((candidate) => isLiveForManagement(candidate.status));
+    } catch (e) {
+      console.error("[update-quantity] subscriptions.list failed:", describeStripeError(e));
+      return NextResponse.json(
+        { error: "Couldn't reach Stripe. Try again in a moment." },
+        { status: 500 }
+      );
+    }
+
+    if (legacyMatches.length > 1) {
+      console.error("[update-quantity] legacy lookup found multiple current Alpha subscriptions");
+      return NextResponse.json(
+        { error: "Multiple Alpha subscriptions need support review before changing this plan." },
+        { status: 409 }
+      );
+    }
+    sub = legacyMatches[0];
+
+    if (sub) {
+      const { data: boundRow, error: bindErr } = await svc
+        .from("users")
+        .update({ stripe_subscription_id: sub.id })
+        .eq("id", user.id)
+        .is("stripe_subscription_id", null)
+        .select("stripe_subscription_id")
+        .maybeSingle();
+      if (bindErr) {
+        console.error("[update-quantity] exact subscription binding write failed:", bindErr.message);
+        return NextResponse.json(
+          { error: "Couldn't save your verified Alpha subscription." },
+          { status: 500 }
+        );
+      }
+      if (!boundRow) {
+        const { data: racedRow, error: racedErr } = await svc
+          .from("users")
+          .select("stripe_subscription_id")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (racedErr || racedRow?.stripe_subscription_id !== sub.id) {
+          console.error("[update-quantity] exact subscription binding changed during legacy resolution");
+          return NextResponse.json(
+            { error: "Your subscription changed while this request was running. Refresh and try again." },
+            { status: 409 }
+          );
+        }
+      }
+    }
+  }
+
   if (!sub) {
     return NextResponse.json(
-      { error: "No active subscription on file." },
+      { error: "No active Alpha subscription on file." },
       { status: 400 }
     );
   }
 
   const item = sub.items.data[0];
-  if (!item) {
+  if (!item || !isExactAlphaSubscription(sub, row.stripe_customer_id)) {
     return NextResponse.json(
-      { error: "Subscription has no line items. Contact support." },
+      { error: "Couldn't verify the Alpha subscription line item." },
       { status: 500 }
     );
   }
 
   const currentQty = item.quantity ?? 1;
+  // The client confirms the exact quantity shown in its billing panel. If a
+  // prior request reached Stripe but its response was lost, a retry still
+  // carries the old expectation and stops here instead of applying a second
+  // paid change under a newly computed idempotency key.
+  if (currentQty !== body.expectedQuantity) {
+    return NextResponse.json(
+      {
+        error:
+          "Your Alpha plan changed before this request finished. Refresh before changing it again.",
+      },
+      { status: 409 }
+    );
+  }
   const nextQty = nextQuantity(body.direction, currentQty);
 
   if (nextQty === currentQty) {
@@ -204,39 +415,41 @@ export async function POST(req: Request) {
     );
   }
 
-  // alpha-drift-r17-04 (found+fixed 2026-08-07): there's no lock serializing
-  // overlapping requests for the same user -- two tabs clicking OPPOSITE
-  // directions within the same 30s window compute different nextQty values
-  // (different idempotency keys, so Stripe applies BOTH updates instead of
-  // deduping them), and whichever HTTP call happens to reach Stripe last
-  // wins the item's real quantity, decided by network timing, not
-  // application logic. Trusting the LOCALLY COMPUTED nextQty for the DB
-  // write-through below (the old code) made this worse: whichever of the
-  // two concurrent DB writes landed last stuck, independently of which
-  // Stripe update actually won -- so the DB could represent a value NEITHER
-  // Stripe call nor the other request intended. Re-fetching the subscription
-  // fresh right after this request's own update call and writing/returning
-  // THAT converges the DB (and this response) to whatever Stripe's real
-  // final state is, regardless of request ordering -- the exact same
-  // self-healing principle the customer.subscription.updated webhook
-  // already uses (re-reads live quantity rather than trusting a snapshot).
-  // Doesn't eliminate the race entirely (a per-user mutex would, at much
-  // higher complexity for a narrow two-tabs-clicking-fast scenario) but
-  // means the DB can never end up holding a value Stripe never actually
-  // confirmed.
-  let confirmedQty = nextQty;
+  // A database-backed per-user lease now serializes app-side quantity
+  // changes. Re-fetch anyway because Stripe remains the source of truth and
+  // an operator or provider-side change can still occur outside this route.
+  // Writing only the confirmed quantity keeps the local mirror honest.
+  let confirmedQty: number;
   try {
     const fresh = await stripe.subscriptions.retrieve(sub.id);
-    const freshItem = fresh.items.data[0];
-    if (typeof freshItem?.quantity === "number") {
-      confirmedQty = freshItem.quantity;
+    if (
+      fresh.id !== sub.id ||
+      !isLiveForManagement(fresh.status) ||
+      !isExactAlphaSubscription(fresh, row.stripe_customer_id)
+    ) {
+      console.error("[update-quantity] post-update subscription no longer matched the exact Alpha binding");
+      return NextResponse.json(
+        { error: "Plan changed with Stripe, but its Alpha subscription shape needs support review." },
+        { status: 500 }
+      );
     }
+    const freshItem = fresh.items.data[0];
+    if (typeof freshItem?.quantity !== "number") {
+      return NextResponse.json(
+        { error: "Plan changed with Stripe, but confirmation was incomplete. Refresh in a minute." },
+        { status: 500 }
+      );
+    }
+    confirmedQty = freshItem.quantity;
   } catch (e) {
-    // Best-effort: the update above already succeeded, so fall back to the
-    // locally-computed nextQty rather than failing a request whose Stripe-
-    // side mutation is already real. The webhook still reconciles later.
-    // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
-    console.warn("[update-quantity] post-update retrieve failed, using locally-computed quantity:", describeStripeError(e));
+    // The mutation may already be real, but writing a locally-computed value
+    // can diverge from Stripe if another provider-side change landed. Leave
+    // the mirror untouched and let the live-reading webhook converge it.
+    console.warn("[update-quantity] post-update retrieve failed:", describeStripeError(e));
+    return NextResponse.json(
+      { error: "Plan changed with Stripe, but confirmation is delayed. Refresh in a minute." },
+      { status: 500 }
+    );
   }
 
   // Write through to public.users immediately so the UI reflects without
@@ -286,14 +499,25 @@ export async function POST(req: Request) {
     .maybeSingle();
   if (freshErr) {
     console.error("[update-quantity] topics re-read failed:", freshErr.message);
+    return NextResponse.json(
+      {
+        error:
+          "Plan updated with Stripe, but the app couldn't safely sync it yet. Refresh in a minute.",
+      },
+      { status: 500 }
+    );
   }
   const cappedTopics = Array.isArray(freshRow?.topics)
     ? (freshRow.topics as TopicId[]).slice(0, poolCap(newQuota))
     : undefined;
-  const { error: quotaErr } = await svc
+  const { data: quotaRow, error: quotaErr } = await svc
     .from("users")
     .update({ topic_quota: newQuota, ...(cappedTopics ? { topics: cappedTopics } : {}) })
-    .eq("id", user.id);
+    .eq("id", user.id)
+    .eq("stripe_customer_id", row.stripe_customer_id)
+    .eq("stripe_subscription_id", sub.id)
+    .select("id")
+    .maybeSingle();
   if (quotaErr) {
     console.error("[update-quantity] quota write-through failed:", quotaErr.message);
     return NextResponse.json(
@@ -302,6 +526,18 @@ export async function POST(req: Request) {
           "Plan updated with Stripe, but the app didn't sync yet. It will reflect within a minute. Refresh to check.",
       },
       { status: 500 }
+    );
+  }
+  if (!quotaRow) {
+    console.error(
+      "[update-quantity] billing binding changed before local quota sync"
+    );
+    return NextResponse.json(
+      {
+        error:
+          "Your subscription changed while this request was running. Refresh before changing it again.",
+      },
+      { status: 409 }
     );
   }
 
@@ -317,4 +553,18 @@ export async function POST(req: Request) {
     topicQuota: newQuota,
     monthlyCents,
   });
+  } finally {
+    try {
+      const released = await releaseQuantityUpdateLease(
+        svc,
+        user.id,
+        leaseToken
+      );
+      if (!released) {
+        console.warn("[update-quantity] quantity lease was already expired or replaced");
+      }
+    } catch {
+      console.warn("[update-quantity] quantity lease release failed; it will expire automatically");
+    }
+  }
 }

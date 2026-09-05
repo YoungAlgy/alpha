@@ -2,7 +2,7 @@
 // lib/csrf-guard.ts) that src/worker-entry.ts calls on every request.
 // typecheck:worker only proves the caller compiles -- it says nothing about
 // whether this logic is right. These two pure functions gate CSRF defense on
-// 9 state-changing endpoints (account deletion, both Stripe endpoints,
+// state-changing endpoints (account deletion, Stripe account mutations,
 // admin/users, /api/generate's authed branch, etc.) and are explicitly
 // called out in worker-entry.ts's own header comment as security-critical
 // and NOT redundant with anything else,
@@ -23,7 +23,8 @@ let pass = 0,
 function check(label: string, got: boolean, want: boolean) {
   const ok = got === want;
   console.log(`  ${ok ? "OK " : "XX "} ${label} → ${got} (want ${want})`);
-  ok ? pass++ : fail++;
+  if (ok) pass++;
+  else fail++;
 }
 
 // ---- (A) isCsrfGuarded: every guarded suffix caught, an unguarded route isn't ----
@@ -34,8 +35,10 @@ const GUARDED_SUFFIXES = [
   "/api/account/profile",
   "/api/account/email/reconcile",
   "/api/account/topics",
+  "/api/access/request",
   "/api/admin/users",
   "/api/stripe/portal",
+  "/api/stripe/cancel-renewal",
   "/api/stripe/update-quantity",
   // Added 2026-08-06 (round 12): verifyPaid()'s live session-cookie-authed
   // branch fits this guard's own criteria — see lib/csrf-guard.ts's comment
@@ -58,6 +61,26 @@ check("POST, Sec-Fetch-Site=cross-site", blocksCsrf("POST", "cross-site", GUARDE
 check("GET, cross-site", blocksCsrf("GET", "cross-site", GUARDED), false);
 check("GET, same-site", blocksCsrf("GET", "same-site", GUARDED), false);
 check("GET, null", blocksCsrf("GET", null, GUARDED), false);
+
+// ---- (B2) invite requests now ride a confirmed session cookie. The real
+// checkout fetch is same-origin, while a form or fetch from another site must
+// never be able to rewrite that reader's profile or access-request marker. ----
+console.log("\n(B2) blocksCsrf on /api/access/request:");
+check(
+  "POST, same-origin invite request",
+  blocksCsrf("POST", "same-origin", "/api/access/request"),
+  false
+);
+check(
+  "POST, cross-site invite request",
+  blocksCsrf("POST", "cross-site", "/api/access/request"),
+  true
+);
+check(
+  "POST, same-site invite request",
+  blocksCsrf("POST", "same-site", "/api/access/request"),
+  true
+);
 
 // ---- (C) blocksCsrf: an unguarded route is never blocked, even cross-site POST ----
 console.log("\n(C) blocksCsrf on an unguarded route (/api/stripe/webhook):");

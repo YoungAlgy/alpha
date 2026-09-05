@@ -8,7 +8,7 @@ import { topicLabel, topicEmoji } from "@/lib/topics";
 import { THEMES, SWATCHES, coerceThemeId } from "@/lib/themes";
 import { track } from "@/lib/analytics";
 import { isProfileComplete } from "@/lib/checkout-guards";
-import type { ThemeId } from "@/lib/types";
+import { isInviteOnly } from "@/lib/access-mode";
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -17,6 +17,8 @@ export default function CheckoutPage() {
   const [subscribing, setSubscribing] = useState(false);
   const [stripeErr, setStripeErr] = useState<string | null>(null);
   const [alreadySubscribed, setAlreadySubscribed] = useState(false);
+  const [signInRequired, setSignInRequired] = useState(false);
+  const [accessRequested, setAccessRequested] = useState(false);
   // alpha-drift-r39-04 (2026-08-19): a 409 unmounts the focused Subscribe
   // button (the ternary swaps its whole branch) and replaces it with this
   // "already subscribed" block -- with no ref/focus management, the browser
@@ -24,10 +26,16 @@ export default function CheckoutPage() {
   // highest-stakes page in the funnel. Same unmount-without-focus-restore
   // class already fixed for EmailChanger.tsx and app/settings/page.tsx's
   // confirmHeadingRef/billingHeadingRef.
-  const alreadySubscribedHeadingRef = useRef<HTMLParagraphElement>(null);
+  const checkoutConflictHeadingRef = useRef<HTMLParagraphElement>(null);
+  const accessSignInHeadingRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
-    if (alreadySubscribed) alreadySubscribedHeadingRef.current?.focus();
-  }, [alreadySubscribed]);
+    if (alreadySubscribed || signInRequired) {
+      checkoutConflictHeadingRef.current?.focus();
+    }
+  }, [alreadySubscribed, signInRequired]);
+  useEffect(() => {
+    if (signInRequired) accessSignInHeadingRef.current?.focus();
+  }, [signInRequired]);
 
   // alpha-drift-r46-02 (2026-08-19): subscribe() had no cancellation guard
   // at all, unlike every other async flow in this funnel that touches
@@ -87,6 +95,16 @@ export default function CheckoutPage() {
     }
   }, [loaded, state, router]);
 
+  function rememberCheckoutSignIn() {
+    try {
+      window.sessionStorage.setItem("alpha-signin-return", "/checkout");
+      window.localStorage.setItem("alpha-signin-email", state.email || "");
+    } catch {
+      // The sign-in page still works without storage; the reader can enter the
+      // same address again and return to the saved onboarding profile manually.
+    }
+  }
+
   async function subscribe() {
     setSubscribing(true);
     setStripeErr(null);
@@ -99,33 +117,98 @@ export default function CheckoutPage() {
           email: state.email,
           firstName: state.firstName,
           city: state.city,
+          jobBlurb: state.jobBlurb,
+          projectBlurb: state.projectBlurb,
+          funBlurb: state.funBlurb,
+          birthday: state.birthday,
+          gender: state.gender,
           topics: state.topics,
+          theme: state.theme,
         }),
       });
-      const data = await res.json();
+      const data = await res
+        .json()
+        .catch(() => ({} as { url?: string; error?: string; message?: string }));
       if (cancelledRef.current) return;
-      if (res.status === 503) {
-        // Stripe env not set — fall back to V0 stub flow
+      if (
+        res.status === 503 &&
+        process.env.NODE_ENV === "development" &&
+        data.error === "stripe_not_configured"
+      ) {
+        // Keep the no-Stripe convenience strictly inside `next dev`. A
+        // production deployment with a missing Stripe secret must fail closed
+        // instead of marking an unverified browser as paid.
         update({ paid: true, completedAt: new Date().toISOString() });
         router.push("/writing" as never);
         return;
       }
       if (res.status === 409) {
-        // Already an active subscriber — refuse to create a second
-        // subscription. Show the "you're already in" state, not the retry
-        // error (telling them to "try again" would invite a double charge).
-        setSubscribing(false);
-        setAlreadySubscribed(true);
-        return;
+        if (data.error === "already_subscribed") {
+          setSubscribing(false);
+          setAlreadySubscribed(true);
+          return;
+        }
+        if (data.error === "identity_verification_required") {
+          rememberCheckoutSignIn();
+          setSubscribing(false);
+          setSignInRequired(true);
+          return;
+        }
       }
       if (!res.ok || !data.url) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(
+          data.message || data.error || "Couldn't start checkout. Try again in a moment."
+        );
       }
       window.location.href = data.url;
     } catch (e) {
       if (cancelledRef.current) return;
       setSubscribing(false);
       setStripeErr(e instanceof Error ? e.message : "Checkout failed.");
+    }
+  }
+
+  async function requestAccess() {
+    setSubscribing(true);
+    setStripeErr(null);
+    try {
+      const res = await fetch("/api/access/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: state.email,
+          firstName: state.firstName,
+          city: state.city,
+          jobBlurb: state.jobBlurb,
+          projectBlurb: state.projectBlurb,
+          funBlurb: state.funBlurb,
+          birthday: state.birthday,
+          gender: state.gender,
+          topics: state.topics,
+          theme: state.theme,
+        }),
+      });
+      const data = await res
+        .json()
+        .catch(() => ({} as { error?: string; message?: string }));
+      if (cancelledRef.current) return;
+      if (res.status === 401 && data.error === "identity_verification_required") {
+        rememberCheckoutSignIn();
+        setSubscribing(false);
+        setSignInRequired(true);
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(
+          data.message || data.error || "Couldn't send your request. Try again."
+        );
+      }
+      setAccessRequested(true);
+      setSubscribing(false);
+    } catch (e) {
+      if (cancelledRef.current) return;
+      setSubscribing(false);
+      setStripeErr(e instanceof Error ? e.message : "Couldn't send your request.");
     }
   }
 
@@ -139,13 +222,13 @@ export default function CheckoutPage() {
       <div className="space-y-10">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
-            Almost there, {firstName}.
+            {loaded ? `Almost there, ${firstName}.` : "Almost there."}
           </h1>
           <p
             className="alpha-display text-lg md:text-xl leading-relaxed"
             style={{ color: "var(--ink-soft)" }}
           >
-            Subscribe and we&apos;ll write your first letter on the spot.
+            {isInviteOnly() ? "Request access and we'll review your profile." : "Subscribe and we'll write your first letter on the spot."}
           </p>
         </div>
 
@@ -247,19 +330,61 @@ export default function CheckoutPage() {
             borderRadius: "var(--radius-card)",
           }}
         >
-          <div className="flex items-baseline gap-3">
-            <span className="alpha-display text-5xl font-bold">$5</span>
-            <span
-              className="alpha-ui text-base"
-              style={{ color: "var(--ink-soft)" }}
-            >
-              per month · cancel anytime
-            </span>
-          </div>
-          {alreadySubscribed ? (
+          {isInviteOnly() ? (
+            accessRequested ? (
+              <div className="space-y-3" role="status">
+                <p className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>
+                  Your request is in. Alex will review it personally. Come back after access is approved.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push("/" as never)}
+                  className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
+                >
+                  Back to Alpha →
+                </button>
+              </div>
+            ) : signInRequired ? (
+              <div className="space-y-3" role="status">
+                <p
+                  ref={accessSignInHeadingRef}
+                  tabIndex={-1}
+                  className="alpha-ui text-sm text-center"
+                  style={{ color: "var(--ink)", outline: "none" }}
+                >
+                  Confirm this email before requesting access. This keeps the request tied to the right account.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push("/signin" as never)}
+                  className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
+                >
+                  Email me a code →
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-3">
+                  <span className="alpha-display text-4xl font-bold">Invite only</span>
+                </div>
+                <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
+                  No card or monthly payment. Request access and Alex will decide who gets in.
+                </p>
+                <button
+                  type="button"
+                  onClick={requestAccess}
+                  disabled={subscribing}
+                  className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
+                  style={{ opacity: subscribing ? 0.6 : 1 }}
+                >
+                  {subscribing ? "Sending request…" : "Request access →"}
+                </button>
+              </>
+            )
+          ) : alreadySubscribed ? (
             <div className="space-y-3" role="status">
               <p
-                ref={alreadySubscribedHeadingRef}
+                ref={checkoutConflictHeadingRef}
                 tabIndex={-1}
                 className="alpha-ui text-sm text-center"
                 style={{ color: "var(--ink)", outline: "none" }}
@@ -272,6 +397,24 @@ export default function CheckoutPage() {
                 className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
               >
                 Go to your letters →
+              </button>
+            </div>
+          ) : signInRequired ? (
+            <div className="space-y-3" role="status">
+              <p
+                ref={checkoutConflictHeadingRef}
+                tabIndex={-1}
+                className="alpha-ui text-sm text-center"
+                style={{ color: "var(--ink)", outline: "none" }}
+              >
+                Confirm your email before payment. This keeps the subscription tied to the right account.
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push("/signin" as never)}
+                className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
+              >
+                Email me a code →
               </button>
             </div>
           ) : (
@@ -301,12 +444,12 @@ export default function CheckoutPage() {
               {stripeErr} Try again, or email youngalgy@gmail.com.
             </p>
           )}
-          <p
+          {!isInviteOnly() && <p
             className="alpha-ui text-xs text-center"
             style={{ color: "var(--ink-soft)" }}
           >
             Secured by Stripe · billed monthly · cancel from settings · no ads
-          </p>
+          </p>}
         </div>
       </div>
     </StepShell>

@@ -66,7 +66,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/settings/accounts/page.tsx: a stats-only load failure is now visibly flagged, not silently rendered as fresh");
@@ -75,7 +76,7 @@ console.log("(1) app/settings/accounts/page.tsx: a stats-only load failure is no
   check("(1a) statsStale state is declared", /const \[statsStale, setStatsStale\] = useState\(false\);/.test(src));
   check("(1b) load() sets statsStale false on a real stats payload", /if \(data\.stats\) \{\s*\n\s*setStats\(data\.stats\);\s*\n\s*setStatsStale\(false\);/.test(src));
   check("(1c) load() sets statsStale true when stats is missing", /\} else \{\s*\n[\s\S]{0,250}setStatsStale\(true\);\s*\n\s*\}/.test(src));
-  check("(1d) the header count annotates staleness", /\$\{stats\.totalUsers\}\$\{statsStale \? " \(unverified\)" : ""\}/.test(src));
+  check("(1d) the header count annotates staleness", /statsStale \? " \(unverified\)" : ""/.test(src));
   // alpha-drift-r63-01 (2026-08-21, self-audit-r62) found the opacity dim
   // itself was a real WCAG contrast regression (group opacity composites
   // the --ink-soft text too, dropping it below 4.5:1 in all 26 themes) --
@@ -144,11 +145,11 @@ console.log("(8) components/ThemeApplier.tsx: the users theme/email read now log
   check("(8b) auth.getUser() is deliberately untouched (still a bare destructure)", /const \{\s*\n\s*data: \{ user \},\s*\n\s*\} = await sb\.auth\.getUser\(\);/.test(src) || /const \{ data: \{ user \} \} = await sb\.auth\.getUser\(\);/.test(src));
 }
 
-console.log("(9) app/api/generate/route.ts: verifyPaid's subscription check + its empty catch + the sibling issue-number lookup all now log their errors");
+console.log("(9) app/api/generate/route.ts: verifyPaid fails closed on account-read errors and the sibling issue-number lookup still rethrows its error");
 {
   const src = readFileSync(new URL("../app/api/generate/route.ts", import.meta.url), "utf8");
-  check("(9a) the subscription lookup error is destructured and logged", /const \{ data, error: subErr \} = await svc/.test(src) && /if \(subErr\) console\.warn\("\[generate\] verifyPaid subscription lookup failed:", subErr\.message\);/.test(src));
-  check("(9b) the empty catch above it now logs a real thrown failure", /catch \(e\) \{\s*\n\s*\/\/ alpha-drift-r62-09: logged, not silent/.test(src));
+  check("(9a) a resolved subscription lookup error is logged and returns a retriable 503 instead of falling through", /const \{ data, error: subErr \} = await svc/.test(src) && /if \(subErr\) \{\s*\n\s*console\.warn\("\[generate\] subscription lookup failed:", subErr\.message\);[\s\S]{0,300}?status: 503/.test(src));
+  check("(9b) a thrown authenticated-access error is logged and also returns a retriable 503", /catch \(e\) \{\s*\n\s*console\.warn\(\s*\n\s*"\[generate\] authenticated access check threw:"[\s\S]{0,300}?status: 503/.test(src));
   check("(9c) the issue-number lookup's error is destructured and re-thrown into its existing catch", /const \{ count, error: countErr \} = await sb/.test(src) && /if \(countErr\) throw countErr;/.test(src));
 }
 

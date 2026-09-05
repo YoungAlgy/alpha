@@ -19,10 +19,11 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
-const { hasActiveAccess } = await import("../lib/access.ts");
+const { hasReaderAccess } = await import("../lib/access.ts");
 
 console.log("(1) pure boundary table: the exact scenarios a 90-day-old letter link can be opened against");
 {
@@ -31,15 +32,26 @@ console.log("(1) pure boundary table: the exact scenarios a 90-day-old letter li
   // hasn't expired.
   function letterOpenable(
     issueRow: object | null,
-    userRow: { cancelled_at?: string | null } | null,
+    userRow: {
+      subscribed_at?: string | null;
+      cancelled_at?: string | null;
+      access_granted_at?: string | null;
+    } | null,
     userError: unknown
   ): boolean {
     if (!issueRow) return false;
-    const accountDeleted = !userError && !userRow;
-    return !(accountDeleted || !hasActiveAccess(userRow?.cancelled_at));
+    if (userError) return false;
+    const accountDeleted = !userRow;
+    return !(
+      accountDeleted ||
+      !hasReaderAccess(
+        userRow?.subscribed_at,
+        userRow?.cancelled_at,
+        userRow?.access_granted_at
+      )
+    );
   }
 
-  const now = new Date("2026-08-14T12:00:00.000Z");
   const past = new Date("2026-07-01T00:00:00.000Z").toISOString();
   const dbError = { message: "connection reset", code: "08006" };
 
@@ -49,19 +61,35 @@ console.log("(1) pure boundary table: the exact scenarios a 90-day-old letter li
   );
   check(
     "(1) genuinely active reader (row exists, never cancelled) -> letter openable",
-    letterOpenable({}, { cancelled_at: null }, null) === true
+    letterOpenable({}, { subscribed_at: "2026-08-01T00:00:00.000Z", cancelled_at: null }, null) === true
   );
   check(
     "(1) cancellation already past its end date -> letter NOT openable",
-    letterOpenable({}, { cancelled_at: past }, null) === false
+    letterOpenable({}, { subscribed_at: "2026-08-01T00:00:00.000Z", cancelled_at: past }, null) === false
   );
   check(
-    "(1) THE CRITICAL CASE: a transient users-query failure must NOT be misread as deletion",
-    letterOpenable({}, null, dbError) === true
+    "(1) invite grant keeps a letter open after billing ends",
+    letterOpenable(
+      {},
+      {
+        subscribed_at: "2026-08-01T00:00:00.000Z",
+        cancelled_at: past,
+        access_granted_at: "2026-08-28T00:00:00.000Z",
+      },
+      null
+    ) === true
+  );
+  check(
+    "(1) revoked comp with no cancellation date -> letter NOT openable",
+    letterOpenable({}, { subscribed_at: null, cancelled_at: null }, null) === false
+  );
+  check(
+    "(1) transient users-query failure -> letter fails closed to load-problem state",
+    letterOpenable({}, null, dbError) === false
   );
   check(
     "(1) no issue row at all (legitimately nothing to show) -> not openable, regardless of account state",
-    letterOpenable(null, { cancelled_at: null }, null) === false
+    letterOpenable(null, { subscribed_at: "2026-08-01T00:00:00.000Z", cancelled_at: null }, null) === false
   );
 }
 
@@ -69,8 +97,9 @@ console.log("(2) source-level regression guard: the fix is actually wired into a
 {
   const src = readFileSync(new URL("../app/letter/page.tsx", import.meta.url), "utf8");
   check("(2) the users-query destructures its own error, not just data", /error: userError/.test(src));
-  check("(2) an accountDeleted flag is derived from !userError && !userRow", /const accountDeleted = !userError && !userRow/.test(src));
-  check("(2) accessEnded's condition actually includes accountDeleted, not just the pre-existing hasActiveAccess check", /accountDeleted \|\| !hasActiveAccess\(userRow\?\.cancelled_at\)/.test(src));
+  check("(2) a users-query failure is ruled out before access is evaluated", /if \(!userError\) \{/.test(src));
+  check("(2) an accountDeleted flag is derived from a clean missing row", /const accountDeleted = !userRow/.test(src));
+  check("(2) accessEnded includes the shared paid-or-invite reader predicate", /!hasReaderAccess\([\s\S]*userRow\?\.access_granted_at/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

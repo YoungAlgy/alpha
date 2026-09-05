@@ -48,6 +48,8 @@ export function ScrollFadeIn({
     if (!el) return;
 
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      // Reduced-motion readers should see the content immediately.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShown(true);
       return;
     }

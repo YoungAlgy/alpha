@@ -7,15 +7,16 @@
 // the original comments this is ported from.
 //
 // Two jobs carried over unchanged:
-//   1. CSRF defense on 9 state-changing endpoints (alpha-drift-r26-07,
-//      2026-08-14: this said "8" -- stale since /api/generate was added to
-//      lib/csrf-guard.ts's CSRF_GUARDED_SUFFIXES in a later review pass.
-//      That array is the actual source of truth; count it directly rather
-//      than trusting this comment if the two ever drift again) — this is NOT redundant
+//   1. CSRF defense on the state-changing endpoints (alpha-drift-r26-07,
+//      2026-08-14: this once carried a hardcoded count that went stale when
+//      /api/generate was added, and the exact-subscription cancel-renewal
+//      fallback added another endpoint in Round 80. lib/csrf-guard.ts now
+//      remains the only count/source of truth.
+//      This is NOT redundant
 //      with anything else. None of those routes have their own Sec-Fetch-Site
 //      check, so dropping this (the way pitchroom's genuinely-redundant auth
 //      gate was dropped) would be a real security regression on account
-//      deletion and both Stripe endpoints.
+//      deletion and the Stripe account endpoints.
 //   2. Supabase session refresh — implemented here with plain cookie
 //      parsing/serialization instead of NextResponse, since nothing
 //      Next-specific is actually required by @supabase/ssr's cookie
@@ -30,7 +31,7 @@ import openNextWorker from '../.open-next/worker.js'
 
 export { DOQueueHandler, DOShardedTagCache, BucketCachePurge } from '../.open-next/worker.js'
 
-// CSRF defense on 9 state-changing endpoints — see lib/csrf-guard.ts for the
+// CSRF defense on state-changing endpoints — see lib/csrf-guard.ts for the
 // guard logic itself and why it lives there instead of here (short version:
 // testability — this file's own top-level import above pulls in the built
 // Workers bundle, which a plain node/tsx script can't load).
@@ -88,7 +89,7 @@ export function serializeCookie(name: string, value: string, options: CookieOpti
   return parts.join('; ')
 }
 
-export default {
+const worker = {
   // Cloudflare's equivalent of Vercel's vercel.json cron: this fires the
   // scheduled() handler directly (NOT an HTTP call from outside), so it
   // calls the same /api/cron/weekly-send route the app already has via the
@@ -104,6 +105,7 @@ export default {
   // sat unwired before that, and don't let this comment go stale again the
   // way that one did.
   async scheduled(controller: unknown, env: unknown, ctx: unknown): Promise<void> {
+    void ctx
     const e = env as { WORKER_SELF_REFERENCE?: { fetch: typeof fetch }; CRON_SECRET?: string }
     if (!e.WORKER_SELF_REFERENCE || !e.CRON_SECRET) {
       // Silent by design of the surrounding try-less scheduled() contract --
@@ -121,7 +123,7 @@ export default {
       headers: { Authorization: `Bearer ${e.CRON_SECRET}` },
     })
     if (!response.ok) {
-      console.error(`[scheduled] cron route returned ${response.status}: ${await response.text()}`)
+      console.error(`[scheduled] cron route returned ${response.status}`)
     }
   },
 
@@ -277,3 +279,5 @@ export default {
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   },
 }
+
+export default worker

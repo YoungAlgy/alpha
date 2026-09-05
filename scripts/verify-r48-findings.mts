@@ -42,7 +42,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/onboarding/QuestionStep.tsx: the signed-in bounce effect now has a cancellation guard");
@@ -57,7 +58,7 @@ console.log("(2) app/settings/accounts/page.tsx: per-row busy tracking replaces 
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
   check("(2a) busyRowsRef (synchronous) and busyRows (React state) both declared as Set<string>", /const busyRowsRef = useRef<Set<string>>\(new Set\(\)\);\s*\n\s*const \[busyRows, setBusyRows\] = useState<Set<string>>\(new Set\(\)\);/.test(src));
-  check("(2b) act() bails synchronously if this row is already in flight", /async function act\([\s\S]{0,220}?\) \{\s*\n\s*if \(confirmMsg && !confirm\(confirmMsg\)\) return;\s*\n\s*if \(busyRowsRef\.current\.has\(userId\)\) return;\s*\n\s*busyRowsRef\.current\.add\(userId\);\s*\n\s*setBusyRows\(new Set\(busyRowsRef\.current\)\);/.test(src));
+  check("(2b) act() bails synchronously if this row is already in flight", /async function act\([\s\S]{0,500}?\) \{\s*\n\s*if \(confirmMsg && !confirm\(confirmMsg\)\) return;\s*\n\s*if \(busyRowsRef\.current\.has\(userId\)\) return;\s*\n\s*busyRowsRef\.current\.add\(userId\);\s*\n\s*setBusyRows\(new Set\(busyRowsRef\.current\)\);/.test(src));
   check("(2c) the finally block removes this row from both the ref and the mirrored state", /busyRowsRef\.current\.delete\(userId\);\s*\n\s*setBusyRows\(new Set\(busyRowsRef\.current\)\);/.test(src));
   check("(2d) per-row isBusy now reads from the Set, not a single-slot comparison", /const isBusy = busyRows\.has\(u\.id\);/.test(src));
   check("(2e) the page-level search/clear guards now check the ref's size, not a single busy slot", /function runSearch\(e: React\.FormEvent\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*if \(busyRowsRef\.current\.size > 0\) return;/.test(src) && /function clearSearch\(\) \{\s*\n\s*if \(busyRowsRef\.current\.size > 0\) return;/.test(src));
@@ -101,13 +102,13 @@ console.log("(4) stale 'Vercel' platform references reworded to the actual curre
   check("(4d) weekly-send's after() comment no longer says 'Vercel is told to keep this invocation's lambda alive'", !/so Vercel is told to keep this invocation's lambda alive/.test(weeklySendSrc) && /this plain Node\.js process is kept alive/.test(weeklySendSrc));
 }
 
-console.log("(5) sanity: the refuted app/you/page.tsx and app/signin/page.tsx findings were deliberately left unchanged (differentiated verdicts, not misses)");
+console.log("(5) current session-redirect effects retain their cancellation guards");
 {
   const youSrc = readFileSync(new URL("../app/you/page.tsx", import.meta.url), "utf8");
-  check("(5a) app/you/page.tsx's getSession bounce-effect is unchanged from before round 48 (no cancelled guard added)", /const \{ data: \{ session \} \} = await/.test(youSrc));
+  check("(5a) app/you/page.tsx still reads the session and bails after unmount", /const \{ data: \{ session \} \} = await/.test(youSrc) && /if \(cancelled\) return;/.test(youSrc));
 
   const signinSrc = readFileSync(new URL("../app/signin/page.tsx", import.meta.url), "utf8");
-  check("(5b) app/signin/page.tsx's session-redirect effect still has no cancelledRef check before router.replace(\"/inbox\") (only sendCode/verifyCode do)", /if \(session\) \{[\s\S]{0,250}?router\.replace\("\/inbox" as never\);/.test(signinSrc));
+  check("(5b) app/signin/page.tsx's session-redirect effect checks cancelledRef before its redirect", /if \(cancelledRef\.current\) return;\s*\n\s*if \(session\) \{[\s\S]{0,350}?router\.replace\(\(takeSignInReturnPath\(\) \|\| "\/inbox"\) as never\);/.test(signinSrc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -13,12 +13,10 @@
 // device kept rendering the reader's last-cached issue (or the localStorage
 // fallback) indefinitely.
 //
-// Fix: at each call site, also destructure the users-query's own `error`
-// and treat a GENUINELY missing row (!userError && !userRow -- .maybeSingle()
-// returns error:null on a real zero-row result, unlike a query failure) as
-// "access ended," same as an expired cancellation. A transient query failure
-// (network/RLS hiccup) still falls through unchanged, exactly as before --
-// this must never misread a hiccup as "this account was deleted."
+// Round 80 follow-up: reader access now also requires subscribed_at through
+// hasSubscriberAccess(). Each page handles userError as a retryable load
+// failure, then treats a clean missing row or missing subscription grant as
+// access ended. This fails closed without mislabeling a DB hiccup as deletion.
 //
 // These are client React components with no DOM test harness in this repo,
 // so (like verify-access-window.mts does for hasActiveAccess itself) this
@@ -34,21 +32,37 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
-const { hasActiveAccess } = await import("../lib/access.ts");
+const { hasActiveAccess, hasReaderAccess } = await import("../lib/access.ts");
 
 // The exact boolean the fix adds at each call site.
 function isGenuinelyMissingRow(userRow: unknown, userError: unknown): boolean {
   return !userError && !userRow;
 }
 
-// The full per-page decision, combining the new check with the existing
-// hasActiveAccess call in the same order the real pages now use.
-function accessEnded(userRow: { cancelled_at?: string | null } | null, userError: unknown, now: Date): boolean {
-  if (isGenuinelyMissingRow(userRow, userError)) return true;
-  return !hasActiveAccess(userRow?.cancelled_at, now);
+// The full per-page outcome in the same order the real pages now use.
+function accessOutcome(
+  userRow: {
+    subscribed_at?: string | null;
+    cancelled_at?: string | null;
+    access_granted_at?: string | null;
+  } | null,
+  userError: unknown,
+  now: Date
+): "error" | "ended" | "active" {
+  if (userError) return "error";
+  if (isGenuinelyMissingRow(userRow, userError)) return "ended";
+  return hasReaderAccess(
+    userRow?.subscribed_at,
+    userRow?.cancelled_at,
+    userRow?.access_granted_at,
+    now
+  )
+    ? "active"
+    : "ended";
 }
 
 console.log("(1) pure boundary table: the exact scenarios a signed-in tab can be in");
@@ -60,23 +74,39 @@ console.log("(1) pure boundary table: the exact scenarios a signed-in tab can be
 
   check(
     "(1) deleted account (row genuinely gone, query succeeded) -> access ended",
-    accessEnded(null, null, now) === true
+    accessOutcome(null, null, now) === "ended"
   );
   check(
     "(1) genuinely active reader (row exists, never cancelled) -> access NOT ended",
-    accessEnded({ cancelled_at: null }, null, now) === false
+    accessOutcome({ subscribed_at: "2026-08-01T00:00:00.000Z", cancelled_at: null }, null, now) === "active"
   );
   check(
     "(1) cancel-at-period-end, still inside the paid window -> access NOT ended",
-    accessEnded({ cancelled_at: future }, null, now) === false
+    accessOutcome({ subscribed_at: "2026-08-01T00:00:00.000Z", cancelled_at: future }, null, now) === "active"
   );
   check(
     "(1) cancellation already past its end date -> access ended",
-    accessEnded({ cancelled_at: past }, null, now) === true
+    accessOutcome({ subscribed_at: "2026-08-01T00:00:00.000Z", cancelled_at: past }, null, now) === "ended"
   );
   check(
-    "(1) THE CRITICAL CASE: a transient query failure must NOT be misread as deletion",
-    accessEnded(null, dbError, now) === false
+    "(1) permanent invite remains active after the paid period ends",
+    accessOutcome(
+      {
+        subscribed_at: "2026-08-01T00:00:00.000Z",
+        cancelled_at: past,
+        access_granted_at: "2026-08-12T00:00:00.000Z",
+      },
+      null,
+      now
+    ) === "active"
+  );
+  check(
+    "(1) revoked comp (subscribed_at null, cancellation null) -> access ended",
+    accessOutcome({ subscribed_at: null, cancelled_at: null }, null, now) === "ended"
+  );
+  check(
+    "(1) transient query failure -> retryable error state",
+    accessOutcome(null, dbError, now) === "error"
   );
   check(
     "(1) the OLD buggy behavior is what this replaces: hasActiveAccess(undefined) alone reads a missing row as active",
@@ -96,16 +126,15 @@ console.log("(2) source-level regression guard: the fix is wired into all 4 real
     const userErrorDestructures = (src.match(/error:\s*userError/g) ?? []).length;
     // Match the real `if (...)` guard specifically, not the explanatory
     // comment above it that also quotes the expression in prose.
-    const guardChecks = (src.match(/if \(!userError && !userRow\)/g) ?? []).length;
+    const errorChecks = (src.match(/if \(userError\)/g) ?? []).length;
+    const guardChecks = (src.match(/if \(!userRow\)/g) ?? []).length;
     check(`(2) ${f.label}: userError is destructured from every users-table query (${f.expectedSites} expected)`, userErrorDestructures === f.expectedSites);
+    check(`(2) ${f.label}: users-query errors get an explicit retry/error branch (${f.expectedSites} expected)`, errorChecks === f.expectedSites);
     check(`(2) ${f.label}: the genuinely-missing-row guard actually runs (${f.expectedSites} expected)`, guardChecks === f.expectedSites);
-    // Ordering: the new guard must run BEFORE the existing hasActiveAccess
-    // call at each site, mirroring the fix's intent (catch the deleted-
-    // account case as its own signal, not as a side effect of the
-    // cancellation-date check).
-    const guardIdx = src.indexOf("!userError && !userRow");
-    const hasActiveAccessIdx = src.indexOf("hasActiveAccess(userRow?.cancelled_at)");
-    check(`(2) ${f.label}: the new guard is checked before hasActiveAccess, not after`, guardIdx > -1 && hasActiveAccessIdx > -1 && guardIdx < hasActiveAccessIdx);
+    const errorIdx = src.indexOf("if (userError)");
+    const guardIdx = src.indexOf("if (!userRow)");
+    const subscriberAccessIdx = src.indexOf("hasReaderAccess(", guardIdx);
+    check(`(2) ${f.label}: error, missing-row, and subscribed-access checks run in fail-closed order`, errorIdx > -1 && guardIdx > errorIdx && subscriberAccessIdx > guardIdx);
   }
 }
 

@@ -25,7 +25,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 const src = readFileSync(new URL("../components/GlobalErrorListeners.tsx", import.meta.url), "utf8");
@@ -34,7 +35,6 @@ const src = readFileSync(new URL("../components/GlobalErrorListeners.tsx", impor
 // with no DOM dependency, so this is real behavior, not a hand-copy.
 const fnMatch = src.match(/function isChunkLoadFailure\(reason: unknown\): boolean \{[\s\S]*?\n\}/);
 if (!fnMatch) throw new Error("isChunkLoadFailure not found in source -- can't verify its real logic");
-// eslint-disable-next-line no-new-func
 const isChunkLoadFailure: (reason: unknown) => boolean = new Function(
   "reason",
   fnMatch[0].replace(/^function isChunkLoadFailure\(reason: unknown\): boolean \{/, "").replace(/\n\}$/, "")

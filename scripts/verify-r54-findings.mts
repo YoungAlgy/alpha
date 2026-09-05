@@ -45,7 +45,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/api/cron/weekly-send/route.ts: DeepSeek's ops-alert now covers 429 AND 402, Groq's is deliberately unchanged");

@@ -3,15 +3,13 @@
 // A reader pays for a LETTER SIZE (sections per issue) and ranks a deeper POOL
 // of topics. Each issue we fill the letter with their highest-ranked topics
 // that have FRESH info this period, skip any that are quiet, and pull from the
-// next-ranked backup so the letter is always full. As a last resort (the whole
-// pool was quiet) we fill remaining slots with filler so the reader still gets
-// a complete letter rather than a stub.
+// next-ranked backup. Production uses only fresh live sections and can return a
+// shorter issue when the whole bounded pool is quiet.
 //
-// This orchestration is the risky part, so it takes the two generators as
-// arguments (live + filler) and is generic over the section type — it can be
-// unit-tested with stubs, no Claude/Brave. Cost stays ≈ letterSize: dry topics
-// return null from genLive WITHOUT generating a blurb (no model call), so each
-// slot costs one generation whether it ends up live or filler.
+// This orchestration is the risky part, so it takes the live generator and an
+// optional filler hook and is generic over the section type. The filler hook is
+// retained for deterministic selection tests and legacy callers. assemble.ts
+// passes null so historical fixtures cannot enter a production issue.
 
 export type SectionSource = "live" | "filler";
 
@@ -47,7 +45,7 @@ export async function selectLetterSections<T>(
   rawPool: string[],
   letterSize: number,
   genLive: (topicId: string) => Promise<T | null>,
-  genFiller: (topicId: string) => Promise<T | null>,
+  genFiller: ((topicId: string) => Promise<T | null>) | null,
   // alpha-drift-r16-12 (found+fixed 2026-08-07): getRecentlyCitedUrls (in
   // lib/engine/blurb-cache.ts, upstream of genLive) only excludes a TOPIC's
   // OWN citations from PRIOR periods -- nothing stopped two DIFFERENT
@@ -93,7 +91,9 @@ export async function selectLetterSections<T>(
   const size = Math.max(1, Math.floor(letterSize));
   const chosen: ChosenSection<T>[] = [];
   const live = (id: string) => genLive(id).catch(() => null);
-  const filler = (id: string) => genFiller(id).catch(() => null);
+  const filler = genFiller
+    ? (id: string) => genFiller(id).catch(() => null)
+    : null;
   // Which pool ids Pass 1 actually generated against — distinct from "not
   // chosen." A pool longer than `size` (e.g. a generic-fallback tail appended
   // past the reader's own topics) often has entries the cursor never reaches
@@ -137,16 +137,12 @@ export async function selectLetterSections<T>(
     (id) => attempted.has(id) && !chosen.some((c) => c.topicId === id) && !dedupedByUrl.has(id)
   );
 
-  // Pass 2 — last resort. The pool's live signal didn't fill the letter (a
-  // quiet period). Fill remaining slots with filler for the top dry topics so
-  // the reader still gets a full letter. PARALLEL waves like pass 1 — the old
-  // sequential walk meant a fully-dry pool (an everyday event at daily
-  // cadence's 1-day windows) could not fit even two 75s-deadline filler
-  // generations inside the cron's 110s per-user budget, and the reader got NO
-  // letter instead of a filler letter.
+  // Pass 2 is an optional compatibility hook for deterministic selection tests
+  // and non-production callers. Production passes null and leaves a quiet slot
+  // empty instead of filling it from a historical snapshot.
   const usedFiller: string[] = [];
   let fillCursor = 0;
-  while (chosen.length < size && fillCursor < pool.length) {
+  while (filler && chosen.length < size && fillCursor < pool.length) {
     const candidates: Array<{ topicId: string; rank: number }> = [];
     while (candidates.length < size - chosen.length && fillCursor < pool.length) {
       const topicId = pool[fillCursor];

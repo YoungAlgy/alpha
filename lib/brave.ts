@@ -1,8 +1,7 @@
 // Thin client over the Brave Search API.
-// VOLUME (daily cadence, 2026-07-03): ~60-100 queries/day ≈ 1,800-3,000/mo —
-// pressing against the free tier's 2,000/mo cap. If letters start degrading
-// (rateLimited429 below trips, sections go filler-heavy), the fix is Brave's
-// paid tier (~$5-10/mo at this volume), not code.
+// Brave is one bounded source tier. Quota exhaustion falls through to Gemini
+// grounded search, You.com, and the optional public RSS tier. No tier is
+// treated as unlimited, and a paid-plan change requires a separate decision.
 
 const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 
@@ -91,14 +90,12 @@ export async function braveSearch(
   if (opts.freshness) params.set("freshness", opts.freshness);
   if (opts.country) params.set("country", opts.country);
 
-  // Bound the request (no AbortController = a hung Brave call could stall the
-  // whole letter). On abort the throw is caught per-query in the source-resolver
-  // and degrades to an empty result set for that query.
+  // Keep the five-second budget active through body consumption. Receiving
+  // headers alone does not mean the provider finished its response.
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
-  let res: Response;
   try {
-    res = await fetch(`${ENDPOINT}?${params}`, {
+    const res = await fetch(`${ENDPOINT}?${params}`, {
       headers: {
         Accept: "application/json",
         "Accept-Encoding": "gzip",
@@ -106,22 +103,19 @@ export async function braveSearch(
       },
       signal: ctrl.signal,
     });
+    if (!res.ok) {
+      // Preserve quota reporting even if reading the error body times out.
+      if (res.status === 429 || res.status === 402) {
+        rateLimited429 += 1;
+        opts.onRateLimited?.();
+      }
+      const text = await res.text().catch(() => "");
+      throw new Error(`Brave Search ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    const data = (await res.json()) as { web?: { results?: BraveResult[] } };
+    return data.web?.results ?? [];
   } finally {
     clearTimeout(timer);
   }
-
-  if (!res.ok) {
-    // 429 = per-request rate limit. 402 = the plan's spend cap exceeded for
-    // the billing period (USAGE_LIMIT_EXCEEDED) — verified live against the
-    // real API. Both mean Brave will not serve this query; both must count.
-    if (res.status === 429 || res.status === 402) {
-      rateLimited429 += 1;
-      opts.onRateLimited?.();
-    }
-    const text = await res.text().catch(() => "");
-    throw new Error(`Brave Search ${res.status}: ${text.slice(0, 200)}`);
-  }
-
-  const data = (await res.json()) as { web?: { results?: BraveResult[] } };
-  return data.web?.results ?? [];
 }

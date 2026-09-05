@@ -18,7 +18,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) lib/onboarding-state.ts: emailSavedAt is field-specific, not a whole-blob timestamp");
@@ -51,7 +52,7 @@ console.log("(1) lib/onboarding-state.ts: emailSavedAt is field-specific, not a 
 console.log("(2) app/settings/page.tsx: the billingHeadingRef focus target can no longer be null when confirmingTier is set");
 {
   const src = readFileSync(new URL("../app/settings/page.tsx", import.meta.url), "utf8");
-  check("(2a) the Add/Drop trigger buttons are now gated on quotaLoaded, not just !confirmingTier", /\{!confirmingTier && quotaLoaded && \(\s*\n\s*<div className="flex flex-wrap gap-4 mb-3">/.test(src));
+  check("(2a) the Add/Drop trigger buttons are gated on paid mode and quotaLoaded", /\{!isInviteOnly\(\) && !confirmingTier && quotaLoaded && \(\s*\n\s*<div className="flex flex-wrap gap-4 mb-3">/.test(src));
   check("(2b) the billing heading paragraph (carrying the ref) is still gated on quotaLoaded, matching the trigger gate", /\{quotaLoaded \? \(\s*\n\s*<>\s*\n\s*<p ref=\{billingHeadingRef\}/.test(src));
 
   // Behavioral proof: with the shared quotaLoaded gate, requestTier (which

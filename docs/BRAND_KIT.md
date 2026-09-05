@@ -1,11 +1,11 @@
 # Alpha Brand Kit
 
-The north star. Alpha's look is the house style. Fishing, Worksites, the Toggle hub,
-trading, and youngalgy.com all match this. When in doubt, open Alpha and copy it.
+Alpha's own visual and writing system. Keep it self-contained. Do not use
+another product's branding, account context, copy, or roadmap as Alpha source material.
 
 Source of truth in code: `app/globals.css` (tokens + components), `lib/themes.ts`
 (theme skins), `app/layout.tsx` (fonts), `public/favicon.svg` + `public/og-image.png`
-+ `scripts/gen-og-image.mjs` (logo assets), `~/.claude/CLAUDE.md` (the writing voice).
++ `scripts/gen-og-image.mjs` (logo assets), and the repository instructions (the writing voice).
 This doc extracts those into one place. If code and doc ever disagree, the code wins,
 then update the doc.
 
@@ -160,8 +160,8 @@ The whole motion language is "settle," not "pop." Small, slow, calm.
 ## 8. Voice (writing)
 
 This is as much the brand as the color. Hard rules, always on for anything a reader,
-customer, or the public sees. Canonical copy: `~/.claude/CLAUDE.md`. Enforced in the
-generation prompts (`lib/engine/topic-blurb.ts`, `editor-note.ts`).
+customer, or the public sees. Current repository instructions are canonical. The
+generation prompts enforce the same rules (`lib/engine/topic-blurb.ts`, `editor-note.ts`).
 
 Write like a plain-spoken person, never like AI:
 - Open with the point. Short, plain, declarative sentences. One idea each.
@@ -226,17 +226,7 @@ Fonts via Google Fonts: Source Serif 4, Newsreader, Inter, weights 400 to 700, l
 
 ---
 
-## 11. How each app applies it
+## 11. Applying the system
 
-- **youngalgy.com** — Alpha is the in-house standard, so the portfolio should read like
-  the same person made it: cream, green, gold, the serif display, sentence case, the
-  voice. The α can nod to the portfolio without copying it.
-- **Toggle hub** — Alpha is in the everything-bundle and reachable at `toggle.town/news`.
-  The hub's listing for Alpha uses the Forest palette and the α mark. Toggle's own
-  "endorsed house" chrome should not fight Alpha's; keep Alpha's card on-brand.
-- **Fishing (Bay Bite), Worksites, Trading** — adopt the Forest tokens and the
-  type/component recipes as the base skin. Keep each app's function, but the surfaces,
-  buttons, cards, eyebrows, and voice match Alpha. One gold accent, calm motion,
-  plain copy.
-
-Match the feeling first (calm, editorial, one accent, plain voice), then the tokens.
+Use these tokens and patterns only on Alpha surfaces. Match the feeling first
+(calm, editorial, one accent, plain voice), then the tokens.

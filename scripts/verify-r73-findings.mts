@@ -40,7 +40,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/topics/page.tsx: the curated-suggestion button now restores focus to the topics heading, via a separate counter from removedCount");
@@ -55,7 +56,7 @@ console.log("(2) app/settings/accounts/page.tsx: the Clear button now restores f
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
   check("(2a) a separate clearCount state + effect exists, targeting accountsHeadingRef", /const \[clearCount, setClearCount\] = useState\(0\);\s*\n\s*useEffect\(\(\) => \{\s*\n\s*if \(clearCount > 0\) accountsHeadingRef\.current\?\.focus\(\);\s*\n\s*\}, \[clearCount\]\);/.test(src));
-  check("(2b) clearSearch() increments it, and its own busy-guard first line is untouched (verify-r47/r48 depend on this)", /function clearSearch\(\) \{\s*\n\s*if \(busyRowsRef\.current\.size > 0\) return;\s*\n\s*setQ\(""\);\s*\n\s*setActiveSearch\(""\);\s*\n\s*load\(\);\s*\n\s*setClearCount\(\(c\) => c \+ 1\);\s*\n\s*\}/.test(src));
+  check("(2b) clearSearch() increments it, keeps the busy guard, and returns to the pending queue", /function clearSearch\(\) \{\s*\n\s*if \(busyRowsRef\.current\.size > 0\) return;\s*\n\s*setQ\(""\);\s*\n\s*setActiveSearch\(""\);\s*\n\s*setPendingOnly\(true\);\s*\n\s*load\(\{ pending: true \}\);\s*\n\s*setClearCount\(\(c\) => c \+ 1\);\s*\n\s*\}/.test(src));
 }
 
 console.log("(3) scripts/audit-topic-signal.mts: the header no longer claims Brave-only/cheap-fast, but still correctly says no Claude");

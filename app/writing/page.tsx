@@ -44,6 +44,8 @@ export default function WritingPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkoutAlreadyUsed, setCheckoutAlreadyUsed] = useState(false);
+  const [deliveryPaused, setDeliveryPaused] = useState(false);
   const startedRef = useRef(false);
   const steps = personalizedSteps(state.topics, state.theme, state.firstName);
 
@@ -51,7 +53,18 @@ export default function WritingPage() {
 
   useEffect(() => {
     if (!loaded || startedRef.current) return;
-    if (!state.firstName || !state.topics || state.topics.length === 0) {
+    // A current paid checkout has a complete immutable server-side profile.
+    // Let it recover even when localStorage was cleared during Stripe's
+    // redirect. The API still requires the HttpOnly same-browser nonce before
+    // it will load that copy.
+    const sessionId =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("session_id") || undefined
+        : undefined;
+    if (
+      !sessionId &&
+      (!state.firstName || !state.topics || state.topics.length === 0)
+    ) {
       // alpha-drift-r16-06 (found+fixed 2026-08-07): replace, not push --
       // see app/checkout/page.tsx's matching gate for the full back-button-
       // trap reasoning. A push here meant Back from /welcome landed right
@@ -77,22 +90,25 @@ export default function WritingPage() {
       });
     }, 6000);
 
-    const profile: UserProfile = {
-      firstName: state.firstName,
-      city: state.city || "",
-      jobBlurb: state.jobBlurb,
-      projectBlurb: state.projectBlurb,
-      funBlurb: state.funBlurb,
-      // Carry birthday + gender so the PAID first letter tones correctly and the
-      // zodiac section (which onboarding just forced a birthday for) actually
-      // ships. Without these the first letter falls back to the neutral voice and
-      // silently drops zodiac until the cron self-heals from the DB on send 2.
-      birthday: state.birthday,
-      gender: state.gender,
-      topics: state.topics,
-      theme: state.theme || "forest",
-      email: state.email,
-    };
+    const profile: UserProfile | undefined =
+      state.firstName && state.topics && state.topics.length > 0
+        ? {
+            firstName: state.firstName,
+            city: state.city || "",
+            jobBlurb: state.jobBlurb,
+            projectBlurb: state.projectBlurb,
+            funBlurb: state.funBlurb,
+            // Carry birthday + gender so the PAID first letter tones correctly and the
+            // zodiac section (which onboarding just forced a birthday for) actually
+            // ships. Without these the first letter falls back to the neutral voice and
+            // silently drops zodiac until the cron self-heals from the DB on send 2.
+            birthday: state.birthday,
+            gender: state.gender,
+            topics: state.topics,
+            theme: state.theme || "forest",
+            email: state.email,
+          }
+        : undefined;
 
     // Stripe Checkout drops the user here as /writing?session_id=cs_... — pass
     // it to the generate API so it can confirm the first letter was paid for.
@@ -111,11 +127,6 @@ export default function WritingPage() {
     // instead (lib/analytics.ts's redactValue now strips session_id= from
     // any captured property, including autocapture's $current_url), which
     // closes the actual leak-to-PostHog without touching page behavior.
-    const sessionId =
-      typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search).get("session_id") || undefined
-        : undefined;
-
     // Guards every setState call below against firing after this effect's
     // cleanup has run (back button, fast re-render) -- without it a slow/
     // retried generate call whose response arrives post-unmount still writes
@@ -145,15 +156,36 @@ export default function WritingPage() {
     // writing animation.
     async function attemptGenerate(retriesLeft: number): Promise<void> {
       try {
-        const requestProfile = demographicsStripped
-          ? { ...profile, birthday: undefined, gender: undefined }
-          : profile;
+        const requestProfile = profile
+          ? demographicsStripped
+            ? { ...profile, birthday: undefined, gender: undefined }
+            : profile
+          : undefined;
         const r = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profile: requestProfile, sessionId }),
+          body: JSON.stringify({
+            ...(requestProfile ? { profile: requestProfile } : {}),
+            sessionId,
+          }),
         });
         if (cancelled) return;
+        let failure: { error?: string; message?: string } | null = null;
+        if (!r.ok) {
+          try {
+            failure = (await r.json()) as { error?: string; message?: string };
+          } catch {
+            // A proxy or platform error may not return JSON. The status remains
+            // enough for the bounded generic retry below.
+          }
+        }
+        if (r.status === 503 && failure?.error === "subscriber_delivery_paused") {
+          clearInterval(stepTimer);
+          clearTimeout(escapeTimer);
+          setDeliveryPaused(true);
+          setError(failure.message || "New letters are paused. Your saved letters remain in your inbox.");
+          return;
+        }
         if (r.status === 402) {
           // Payment gate — they reached /writing without a paid session.
           // Send them to checkout rather than the generic retry card.
@@ -161,9 +193,69 @@ export default function WritingPage() {
           router.push("/checkout" as never);
           return;
         }
+        if (r.status === 409 && failure?.error === "checkout_already_used") {
+          clearInterval(stepTimer);
+          setCheckoutAlreadyUsed(true);
+          setError(
+            failure.message ||
+              "This checkout link has already been used. Sign in to read your letter."
+          );
+          return;
+        }
+        if (
+          r.status === 409 &&
+          failure?.error === "legacy_profile_required"
+        ) {
+          clearInterval(stepTimer);
+          if (typeof window !== "undefined") {
+            const returnPath = `${window.location.pathname}${window.location.search}`;
+            if (/^\/writing\?session_id=cs_[A-Za-z0-9_]+$/.test(returnPath)) {
+              window.sessionStorage.setItem(
+                "alpha-legacy-checkout-return",
+                returnPath
+              );
+            }
+          }
+          router.push("/topics?legacy_checkout=1" as never);
+          return;
+        }
+        if (
+          r.status === 409 &&
+          (failure?.error === "legacy_checkout_sign_in_required" ||
+            failure?.error === "paid_checkout_needs_support")
+        ) {
+          clearInterval(stepTimer);
+          if (
+            failure.error === "legacy_checkout_sign_in_required" &&
+            typeof window !== "undefined"
+          ) {
+            const returnPath = `${window.location.pathname}${window.location.search}`;
+            if (/^\/writing\?session_id=cs_[A-Za-z0-9_]+$/.test(returnPath)) {
+              window.sessionStorage.setItem(
+                "alpha-legacy-checkout-return",
+                returnPath
+              );
+            }
+          }
+          setCheckoutAlreadyUsed(true);
+          setError(
+            failure.message ||
+              "Your payment is on file. Sign in with the email used at checkout."
+          );
+          return;
+        }
+        if (
+          r.status === 409 &&
+          failure?.error === "checkout_in_progress" &&
+          retriesLeft > 0
+        ) {
+          retryTimer = setTimeout(() => attemptGenerate(retriesLeft - 1), 15000);
+          return;
+        }
         if (
           r.status === 400 &&
           !demographicsStripped &&
+          profile &&
           (profile.birthday || profile.gender)
         ) {
           console.warn("[writing] generate 400'd, retrying once without birthday/gender");
@@ -171,7 +263,7 @@ export default function WritingPage() {
           retryTimer = setTimeout(() => attemptGenerate(retriesLeft), 0);
           return;
         }
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (!r.ok) throw new Error(failure?.message || failure?.error || `HTTP ${r.status}`);
         const data = (await r.json()) as { issue: Issue; signedIn?: boolean };
         if (cancelled) return;
         clearInterval(stepTimer);
@@ -183,17 +275,9 @@ export default function WritingPage() {
         // Funnel terminal event — the moment a paid subscriber's first letter
         // lands. The conversion the whole funnel exists to produce.
         track("letter_generated");
-        // Auto sign-in after checkout: /api/generate already verified the
-        // sign-in token server-side and set the Supabase session cookie
-        // directly on that response (found in review 2026-08-06 -- the old
-        // version shipped the raw token in this JSON body and navigated the
-        // browser to it, a live, fully-authenticating bearer credential
-        // sitting in a JS-readable fetch response). By the time this fetch()
-        // resolved, the cookie is already set -- no separate navigation
-        // through a token URL is needed, just go to /inbox. If verifyOtp
-        // failed server-side (data.signedIn false, rare), the reader still
-        // lands on /inbox same as always; they just aren't signed in yet and
-        // can use the normal sign-in flow.
+        // The paid first issue opens from this device's local copy. Checkout
+        // never creates a browser session from Stripe. The email-code session
+        // confirmed before payment owns durable inbox access on any device.
         finishTimer = setTimeout(() => {
           if (cancelled) return;
           // Wipe onboarding answers (name, email, birthday, etc.) now that
@@ -253,7 +337,9 @@ export default function WritingPage() {
             className="alpha-display alpha-writing-mark text-7xl md:text-8xl font-bold inline-block"
             style={{
               color: "var(--accent-ink)",
-              animation: done
+              animation: deliveryPaused
+                ? "none"
+                : done
                 ? "alpha-writing-settle 700ms ease-out forwards"
                 : "alpha-writing-breathe 3200ms ease-in-out infinite",
               display: "inline-block",
@@ -275,7 +361,7 @@ export default function WritingPage() {
           aria-valuenow={pct}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuetext={done ? "Your letter is ready." : `Writing your letter, ${pct}% done`}
+          aria-valuetext={deliveryPaused ? "New letters are paused." : done ? "Your letter is ready." : `Writing your letter, ${pct}% done`}
         >
           <div
             style={{
@@ -295,20 +381,22 @@ export default function WritingPage() {
             aria-live="polite"
             className="alpha-display text-2xl md:text-3xl font-bold tracking-tight mb-2"
           >
-            {done ? "Your letter is ready." : "Writing your letter…"}
+            {deliveryPaused ? "New letters are paused." : done ? "Your letter is ready." : "Writing your letter…"}
           </p>
           {state.firstName && (
             <p
               className="alpha-ui text-sm"
               style={{ color: "var(--ink-soft)" }}
             >
-              {done
+              {deliveryPaused
+                ? "Your saved letters are still available."
+                : done
                 ? "Opening it now."
                 : `Hi ${state.firstName}. Sit tight. About a minute.`}
             </p>
           )}
         </div>
-        <ul className="text-left space-y-3">
+        {!deliveryPaused && <ul className="text-left space-y-3">
           {steps.map((label, i) => {
             const status =
               done || i < currentStep
@@ -354,7 +442,7 @@ export default function WritingPage() {
               </li>
             );
           })}
-        </ul>
+        </ul>}
         {error && (
           <div
             role="alert"
@@ -366,7 +454,11 @@ export default function WritingPage() {
             }}
           >
             <p className="alpha-display text-base font-semibold">
-              Hiccup writing your first letter.
+              {deliveryPaused
+                ? "Your inbox is still open."
+                : checkoutAlreadyUsed
+                ? "Your letter is already saved."
+                : "Hiccup writing your first letter."}
             </p>
             {/* alpha-drift-r35-05 (2026-08-14): "the engine" is internal
                 machinery talk -- the funnel around this card personifies a
@@ -378,39 +470,51 @@ export default function WritingPage() {
               className="alpha-ui text-sm leading-relaxed"
               style={{ color: "var(--ink-soft)" }}
             >
-              Your subscription is active. Stripe got the payment fine. The
-              writing just hit a snag. Try again now, or head to your inbox
-              and it'll show up there in a few minutes.
+              {deliveryPaused
+                ? error
+                : checkoutAlreadyUsed
+                ? "Sign in with the email you paid with to open your inbox."
+                : "We couldn't finish your letter. Try again, or open your inbox to read any saved letters."}
             </p>
             {/* alpha-drift-r62-03 (2026-08-20, accessibility-resweep-newer-
                 code-round-10): opacity 0.7 on --ink-soft fails WCAG AA
                 4.5:1 in 22 of 26 themes -- --ink-soft alone already clears
                 it everywhere, so dropping the opacity is the fix. */}
-            <p
-              className="alpha-ui text-xs leading-relaxed"
-              style={{ color: "var(--ink-soft)" }}
-            >
-              Technical: {error}
-            </p>
+            {!checkoutAlreadyUsed && !deliveryPaused && (
+              <p
+                className="alpha-ui text-xs leading-relaxed"
+                style={{ color: "var(--ink-soft)" }}
+              >
+                Technical: {error}
+              </p>
+            )}
             <div className="flex flex-wrap gap-3 pt-1">
               <button
                 type="button"
-                onClick={() => window.location.reload()}
+                onClick={() =>
+                  deliveryPaused
+                    ? router.push("/inbox" as never)
+                    : checkoutAlreadyUsed
+                    ? router.push("/signin" as never)
+                    : window.location.reload()
+                }
                 className="alpha-button"
               >
-                Try again →
+                {deliveryPaused ? "Go to inbox" : checkoutAlreadyUsed ? "Sign in →" : "Try again →"}
               </button>
               {/* alpha-drift-r59-04 (2026-08-20, accessibility-resweep-
                   newer-code-round-7): under the WCAG 2.5.8 24px
                   touch-target minimum, this app's actual failure/retry UI. */}
-              <button
-                type="button"
-                onClick={() => router.push("/inbox" as never)}
-                className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
-                style={{ color: "var(--ink-soft)" }}
-              >
-                Go to inbox
-              </button>
+              {!checkoutAlreadyUsed && !deliveryPaused && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/inbox" as never)}
+                  className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
+                  style={{ color: "var(--ink-soft)" }}
+                >
+                  Go to inbox
+                </button>
+              )}
               <a
                 href="mailto:youngalgy@gmail.com?subject=alpha%20generate%20failure"
                 className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
@@ -430,7 +534,7 @@ export default function WritingPage() {
                 error card above, plus "/inbox" (a route path) was reading as
                 a word in reader-facing prose -- no other copy in the app
                 does this. */}
-            <p>Taking longer than usual. We're still writing it in the background. Your letter will land in your inbox when it's ready.</p>
+            <p>Taking longer than usual. We&apos;re still writing it in the background. Your letter will land in your inbox when it&apos;s ready.</p>
             {/* alpha-drift-r59-04 (2026-08-20, accessibility-resweep-newer-
                 code-round-7): same touch-target fix as the error card's
                 controls above. */}

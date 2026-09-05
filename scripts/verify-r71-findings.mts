@@ -35,13 +35,14 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) scripts/smoke-test-deploy.mjs: the SOFT resilience-tier list now includes brave, matching every sibling list");
 {
   const src = readFileSync(new URL("../scripts/smoke-test-deploy.mjs", import.meta.url), "utf8");
-  check("(1a) SOFT now includes brave alongside the original 4 fields", /const SOFT = \["gemini", "you", "groq", "deepseek", "brave"\];/.test(src));
+  check("(1a) SOFT mirrors every optional provider and fallback field", /const SOFT = \["anthropic", "gemini", "you", "groq", "deepseek", "brave"\];/.test(src));
   check("(1b) it's still warn-only, not a hard failure (no new hardFailures/exit-code coupling)", /if \(softBad\.length > 0\) \{\s*\n\s*console\.warn\(`  \(soft warning, not failing\)/.test(src));
 }
 

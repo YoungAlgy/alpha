@@ -14,7 +14,11 @@ const { extractSignalUrls, normalizeUrl, isAllowedUrl } = await import("../lib/e
 const { cleanField } = await import("../lib/engine/text-clean.ts");
 
 let pass = 0, fail = 0;
-const check = (label: string, cond: boolean) => { console.log(`  ${cond ? "OK " : "XX "} ${label}`); cond ? pass++ : fail++; };
+const check = (label: string, cond: boolean) => {
+  console.log(`  ${cond ? "OK " : "XX "} ${label}`);
+  if (cond) pass++;
+  else fail++;
+};
 
 // (1) SACRED — body URLs are stripped; only the SOURCE url is citable.
 console.log("(1) url-guard: fetched body URLs are never citable");

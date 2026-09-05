@@ -37,7 +37,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) lib/engine/topic-blurb.ts: null array elements in supplementaryRefs no longer crash finalizeBlurb");
@@ -69,20 +70,18 @@ console.log("(1) lib/engine/topic-blurb.ts: null array elements in supplementary
   check("(1j) behavioral: the OLD r28 guard's `some()` predicate evaluates to false for a null element (confirms it did NOT flag/drop it)", oldBuggyGuard(null) === false);
 }
 
-console.log("(2) app/api/stripe/webhook/route.ts: dispute alert day-bucketed + only rethrows on a transient failure");
+console.log("(2) app/api/stripe/webhook/route.ts: dispute origin is proven before Alpha mutation");
 {
   const src = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
   const caseMatch = src.match(/case "charge\.dispute\.created": \{([\s\S]*?)case "charge\.dispute\.closed":/);
   check("(2a) the charge.dispute.created case was found", !!caseMatch);
   const block = caseMatch ? caseMatch[1] : "";
-  const noCustomerMatch = block.match(/if \(!customerId\) \{([\s\S]*?)\n\s*\}/);
-  check("(2b) the !customerId branch was found", !!noCustomerMatch);
-  const noCustomerBlock = noCustomerMatch ? noCustomerMatch[1] : "";
-  check("(2c) a UTC day bucket is computed inside this branch", /const dayBucket = new Date\(\)\.toISOString\(\)\.slice\(0, 10\);/.test(noCustomerBlock));
-  check("(2d) the alert key now includes the day bucket", /`alpha-dispute-unresolved-\$\{dispute\.id\}-\$\{dayBucket\}`/.test(noCustomerBlock));
-  check("(2e) the old flat key (no day bucket) is gone from this call site", !/`alpha-dispute-unresolved-\$\{dispute\.id\}`/.test(noCustomerBlock));
-  check("(2f) the rethrow is now gated on isTransientStripeError, not unconditional", /if \(retrieveError && isTransientStripeError\(retrieveError\)\) throw retrieveError;/.test(noCustomerBlock));
-  check("(2g) isTransientStripeError is imported from lib/stripe", /import \{ getStripeClient, describeStripeError, isTransientStripeError \} from "@\/lib\/stripe";/.test(src));
+  check("(2b) dispute handling calls the shared Alpha billing-origin classifier", /resolveAlphaBillingOrigin\(\s*stripe,\s*paymentIntentId/.test(block));
+  check("(2c) the classifier follows PaymentIntent to invoice through Stripe's binding", /stripe\.invoicePayments\.list\(/.test(src));
+  check("(2d) all immutable invoice lines must use STRIPE_PRICE_ID", /lineItems\.data\.every[\s\S]{0,350}priceId === STRIPE_PRICE_ID/.test(src));
+  check("(2e) an unproven origin is absorbed without changing Alpha", /if \(!origin\) \{[\s\S]{0,250}break;/.test(block));
+  check("(2f) transient subscription-origin failures still rethrow for delivery retry", /if \(isTransientStripeError\(e\)\) throw e;/.test(src));
+  check("(2g) only the proven subscription id is cancelled", /stripe\.subscriptions\.cancel\(origin\.subscriptionId\)/.test(block));
 }
 
 console.log("(3) app/settings/changelog/page.tsx + app/globals.css: TagChip theme tokens, WCAG-compliant on dark themes");
@@ -166,17 +165,18 @@ console.log("(3) app/settings/changelog/page.tsx + app/globals.css: TagChip them
   // the gap this comment names.
 }
 
-console.log("(4) app/api/cron/weekly-send/route.ts: mid-run re-check now covers cancelled_at/bounced_at/complained_at, not just unsubscribed_at");
+console.log("(4) app/api/cron/weekly-send/route.ts: mid-run re-check covers every delivery/access block");
 {
   const src = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
-  check("(4a) hasActiveAccess imported from lib/access", /import \{ hasActiveAccess \} from "@\/lib\/access";/.test(src));
-  check("(4b) the re-check query now selects all 4 eligibility columns in one round trip", /\.select\("unsubscribed_at, cancelled_at, bounced_at, complained_at"\)/.test(src));
+  check("(4a) hasReaderAccess imported from lib/access", /import \{ hasReaderAccess \} from "@\/lib\/access";/.test(src));
+  check("(4b) the re-check query selects the current email, paid and invite access, plus every eligibility column in one round trip", /\.select\(\s*"email, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"\s*\)/.test(src));
   check("(4c) the old single-column select is gone", !/\.select\("unsubscribed_at"\)\s*\n\s*\.eq\("id", row\.id\)/.test(src));
-  check("(4d) skips on hasActiveAccess(freshUser.cancelled_at) being false", /else if \(freshUser && !hasActiveAccess\(freshUser\.cancelled_at\)\) \{/.test(src));
-  check("(4e) skips on bounced_at OR complained_at being set", /else if \(freshUser\?\.bounced_at \|\| freshUser\?\.complained_at\) \{/.test(src));
+  check("(4d) missing users and read errors fail closed", /if \(freshUserErr \|\| !freshUser\) \{/.test(src));
+  check("(4e) access needs a grant stamp plus invite or live paid access", /!hasReaderAccess\([\s\S]{0,180}freshUser\.subscribed_at,[\s\S]{0,100}freshUser\.cancelled_at,[\s\S]{0,100}freshUser\.access_granted_at/.test(src));
   check("(4f) new skip counters exist and are threaded into the run summary", /cancelledMidRunSkips,/.test(src) && /suppressedMidRunSkips,/.test(src));
   check("(4g) the renamed failure counter (broader scope than just unsubscribed_at) is used consistently", /eligibilityRecheckFailures\+\+;/.test(src) && /eligibilityRecheckFailures > 0/.test(src));
-  check("(4h) sanity: the pre-existing unsubscribed_at check is untouched, still the first branch checked", /else if \(freshUser\?\.unsubscribed_at\) \{\s*unsubscribedMidRunSkips\+\+;/.test(src));
+  check("(4h) unsubscribe remains the first delivery block after access proof", /else if \(freshUser\.unsubscribed_at\) \{\s*unsubscribedMidRunSkips\+\+;/.test(src));
+  check("(4i) the provider target uses the just-in-time address instead of the page snapshot", /currentDeliveryEmail = freshUser\.email\.trim\(\);/.test(src) && /to: currentDeliveryEmail,/.test(src) && !/to: row\.email,/.test(src));
 }
 
 console.log("(5) lib/stripe.ts: describeStripeError/isTransientStripeError classify real Stripe SDK errors");

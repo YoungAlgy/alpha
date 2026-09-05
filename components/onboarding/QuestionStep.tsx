@@ -75,6 +75,8 @@ export function QuestionStep({
   }, [router]);
 
   useEffect(() => {
+    // The persisted onboarding store becomes available only after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (loaded) setValue((state[field] as string) || "");
   }, [loaded, field, state]);
 
@@ -167,6 +169,8 @@ export function QuestionStep({
         <textarea
           autoFocus
           aria-labelledby="alpha-question"
+          required={!optional || undefined}
+          aria-required={!optional || undefined}
           value={value}
           onChange={(e) => {
             setValue(e.target.value);
@@ -186,6 +190,8 @@ export function QuestionStep({
         <input
           autoFocus
           aria-labelledby="alpha-question"
+          required={!optional || undefined}
+          aria-required={!optional || undefined}
           type={field === "email" ? "email" : "text"}
           value={value}
           onChange={(e) => {

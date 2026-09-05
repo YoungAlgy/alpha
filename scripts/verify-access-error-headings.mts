@@ -19,7 +19,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 // Requires the space before an attribute (the real JSX opening tag shape,
@@ -42,9 +43,9 @@ console.log("(1) app/inbox/page.tsx: both error/empty states now render a real <
   // actually catch a future regression instead of only ever failing.
   check("(1) exactly 3 <h1> tags (loadError + accessEnded + no-letter-on-device states)", h1Count(src) === 3);
   check("(1) the loadError headline is an <h1> with role=\"alert\"", /<h1[^>]*role="alert">\s*\n\s*Couldn&apos;t load your letters\./.test(src));
-  check("(1) the accessEnded headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*Your subscription has ended\.\s*<\/h1>/.test(src));
+  check("(1) the accessEnded headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*Your Alpha access has ended\.\s*<\/h1>/.test(src));
   check("(1) the no-letter-on-device headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*No letter on this device yet\.\s*<\/h1>/.test(src));
-  check("(1) no dangling styled-<p> pretending to be these headlines anymore", !/<p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">\s*(Your subscription has ended|No letter on this device yet)/.test(src));
+  check("(1) no dangling styled-<p> pretending to be these headlines anymore", !/<p className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">\s*(Your Alpha access has ended|No letter on this device yet)/.test(src));
 }
 
 console.log("(2) app/inbox/[issueId]/page.tsx: both error/empty states now render a real <h1>");
@@ -54,7 +55,7 @@ console.log("(2) app/inbox/[issueId]/page.tsx: both error/empty states now rende
   // <h1> round 42 added here too, never reflected in this script's count.
   check("(2) exactly 3 <h1> tags (accessEnded + loadError + missing states)", h1Count(src) === 3);
   check("(2) the loadError headline is an <h1> with role=\"alert\"", /<h1[^>]*role="alert">\s*\n\s*Couldn&apos;t load that letter\./.test(src));
-  check("(2) the accessEnded headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*Your subscription has ended\.\s*<\/h1>/.test(src));
+  check("(2) the accessEnded headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*Your Alpha access has ended\.\s*<\/h1>/.test(src));
   check("(2) the missing-letter headline is an <h1>, not a styled <p>", /<h1[^>]*>\s*Can&apos;t find that letter\.\s*<\/h1>/.test(src));
 }
 

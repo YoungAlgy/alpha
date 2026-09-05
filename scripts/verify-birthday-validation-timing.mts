@@ -37,7 +37,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) parseBirthday rejects the exact class of value the OLD /you gate let through");
@@ -73,7 +74,7 @@ console.log("(3) source: app/writing/page.tsx self-heals a 400 by stripping birt
   check("(3b) the request body honors that flag by omitting birthday/gender", /demographicsStripped\s*\?\s*\{\s*\.\.\.profile,\s*birthday:\s*undefined,\s*gender:\s*undefined\s*\}\s*:\s*profile/.test(src));
   check(
     "(3c) a 400 (and only a 400 -- not other statuses) triggers the self-heal, gated to fire once",
-    /r\.status === 400 &&\s*\n\s*!demographicsStripped &&\s*\n\s*\(profile\.birthday \|\| profile\.gender\)/.test(src)
+    /if\s*\(\s*r\.status === 400\s*&&\s*!demographicsStripped\s*&&\s*profile\s*&&\s*\(profile\.birthday \|\| profile\.gender\)\s*\)/.test(src)
   );
   check("(3d) the self-heal actually flips the flag before retrying", /demographicsStripped = true;\s*\n\s*retryTimer = setTimeout\(\(\) => attemptGenerate\(retriesLeft\), 0\)/.test(src));
   // The generic recovery card ("Try again", "Go to inbox") must still exist

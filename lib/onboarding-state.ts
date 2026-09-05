@@ -58,6 +58,7 @@ function read(): OnboardingState {
     const parsed = JSON.parse(raw) as OnboardingState;
     if (parsed.email && (!parsed.emailSavedAt || Date.now() - parsed.emailSavedAt > EMAIL_STALE_AFTER_MS)) {
       const { email: _stale, ...rest } = parsed;
+      void _stale;
       return rest;
     }
     return parsed;
@@ -82,6 +83,8 @@ export function useOnboarding() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    // Hydrate the browser-only store after the initial server/client render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState(read());
     setLoaded(true);
   }, []);

@@ -26,6 +26,8 @@ export function Footer() {
   // all, only in the post-mount correction below.
   const [year, setYear] = useState(() => Number(process.env.NEXT_PUBLIC_BUILD_YEAR) || new Date().getFullYear());
   useEffect(() => {
+    // Correct the build-time year against the visitor's current calendar year.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setYear(new Date().getFullYear());
   }, []);
 

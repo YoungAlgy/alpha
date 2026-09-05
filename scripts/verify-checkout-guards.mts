@@ -12,20 +12,22 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) isProfileComplete");
 const EMAIL = "algy@example.com";
-check("(1a) complete profile passes", isProfileComplete({ firstName: "Algy", topics: ["ai-news"], email: EMAIL }));
-check("(1b) missing firstName fails", !isProfileComplete({ topics: ["ai-news"], email: EMAIL }));
-check("(1c) blank/whitespace firstName fails", !isProfileComplete({ firstName: "   ", topics: ["ai-news"], email: EMAIL }));
+const BASE_TOPICS = ["ai-news", "music", "personal-finance", "mental-health", "gardening-plants"] as const;
+check("(1a) complete five-topic base profile passes", isProfileComplete({ firstName: "Algy", topics: [...BASE_TOPICS], email: EMAIL }));
+check("(1b) missing firstName fails", !isProfileComplete({ topics: [...BASE_TOPICS], email: EMAIL }));
+check("(1c) blank/whitespace firstName fails", !isProfileComplete({ firstName: "   ", topics: [...BASE_TOPICS], email: EMAIL }));
 check("(1d) missing topics fails", !isProfileComplete({ firstName: "Algy", email: EMAIL }));
 check("(1e) empty topics array fails", !isProfileComplete({ firstName: "Algy", topics: [], email: EMAIL }));
 check("(1f) topics not an array fails", !isProfileComplete({ firstName: "Algy", topics: "ai-news" as never, email: EMAIL }));
 check(
-  "(1g) exactly 25 valid topics passes (the real MAX_TOPIC_QUOTA boundary)",
-  isProfileComplete({
+  "(1g) 25 topics fails because checkout sells one five-topic base bundle",
+  !isProfileComplete({
     firstName: "Algy",
     email: EMAIL,
     topics: [
@@ -53,16 +55,20 @@ check(
     ] as never,
   })
 );
-check("(1i) a garbage/invalid topic id fails", !isProfileComplete({ firstName: "Algy", topics: ["not-a-real-topic"] as never, email: EMAIL }));
-check("(1j) a well-formed custom: topic passes", isProfileComplete({ firstName: "Algy", topics: ["custom:vintage synths"] as never, email: EMAIL }));
-check("(1k) zodiac passes (a real, always-valid topic id)", isProfileComplete({ firstName: "Algy", topics: ["zodiac"] as never, email: EMAIL }));
+check("(1i) a garbage/invalid topic id fails inside an otherwise valid base pool", !isProfileComplete({ firstName: "Algy", topics: ["not-a-real-topic", "ai-news", "music", "mental-health", "gardening-plants"] as never, email: EMAIL }));
+check("(1j) a well-formed custom: topic passes inside a five-topic base pool", isProfileComplete({ firstName: "Algy", topics: ["custom:vintage synths", "ai-news", "music", "mental-health", "gardening-plants"] as never, email: EMAIL }));
+check("(1k) zodiac passes inside a five-topic base pool", isProfileComplete({ firstName: "Algy", topics: ["zodiac", "ai-news", "music", "mental-health", "gardening-plants"] as never, email: EMAIL }));
 check(
-  "(1l) missing email fails -- the bug this finding caught (checkout used to require no email at all)",
-  !isProfileComplete({ firstName: "Algy", topics: ["ai-news"] })
+  "(1l) duplicate topics fail even when the array has five entries",
+  !isProfileComplete({ firstName: "Algy", topics: ["ai-news", "ai-news", "music", "mental-health", "gardening-plants"] as never, email: EMAIL })
 );
 check(
-  "(1m) malformed email fails (same bar /email step itself enforces)",
-  !isProfileComplete({ firstName: "Algy", topics: ["ai-news"], email: "not-an-email" })
+  "(1m) missing email fails -- the bug this finding caught (checkout used to require no email at all)",
+  !isProfileComplete({ firstName: "Algy", topics: [...BASE_TOPICS] })
+);
+check(
+  "(1n) malformed email fails (same bar /email step itself enforces)",
+  !isProfileComplete({ firstName: "Algy", topics: [...BASE_TOPICS], email: "not-an-email" })
 );
 
 console.log("\n(2) shouldBlockDoubleSubscription");

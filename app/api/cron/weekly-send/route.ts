@@ -1,10 +1,16 @@
 import { NextResponse, after } from "next/server";
+import { SUBSCRIBER_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
 import crypto from "crypto";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { generateIssue, formatWeekOf } from "@/lib/engine/assemble";
 import { poolCap } from "@/lib/engine/select-sections";
 import { getCachedBlurbs } from "@/lib/engine/blurb-cache";
-import { sendLetterNotification, resendConfigured, sendOpsAlert } from "@/lib/email";
+import {
+  prepareLetterNotification,
+  resendConfigured,
+  sendOpsAlert,
+  sendPreparedSubscriberEmail,
+} from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
 import { braveRateLimitedCount } from "@/lib/brave";
@@ -13,15 +19,23 @@ import { geminiRateLimitedCount } from "@/lib/engine/gemini-client";
 import { groqRateLimitedCount } from "@/lib/engine/groq-client";
 import { deepseekRateLimitedCount, deepseekCallCount } from "@/lib/engine/deepseek-client";
 import { topicBlurbPaidCallCount } from "@/lib/engine/topic-blurb";
+import { editorNoteAnthropicCallCount } from "@/lib/engine/editor-note";
+import {
+  paidCallsSinceBaseline,
+  type PaidCallSnapshot,
+} from "@/lib/engine/paid-call-budget";
+import { createDailyPaidCallGuard } from "@/lib/paid-call-reservation";
 import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
-import { hasActiveAccess } from "@/lib/access";
+import { hasReaderAccess } from "@/lib/access";
 import type { UserProfile, TopicId, Issue } from "@/lib/types";
 import type { TopicBlurb } from "@/lib/engine/types";
 import { clampQuota } from "@/lib/types";
 import { coerceGender, isValidCalendarDateString } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
 import { RECLAIM_GRANDFATHER_CUTOFF } from "@/lib/delivery-proof";
+import { scrubExpiredCheckoutProfiles } from "@/lib/checkout-profile-retention";
+import { sendWithResendDeliveryAttempt } from "@/lib/resend-delivery-attempt";
 
 export const runtime = "nodejs";
 // This value no longer means what its name implies. It WAS a Vercel Pro
@@ -29,7 +43,7 @@ export const runtime = "nodejs";
 // now runs via `next start` on GitHub Actions (.github/workflows/
 // daily-send.yml), which reads nothing here and enforces nothing here — the
 // real ceiling is that workflow's own `curl --max-time` (1500s) and job
-// `timeout-minutes` (30). Kept only because CRON_TIME_BUDGET_MS below is
+// `timeout-minutes` (90). Kept only because CRON_TIME_BUDGET_MS below is
 // still derived from it for the in-route deferral safety valve. Found stale
 // live 2026-08-05: the old value (800, Vercel Pro's real cap) meant the
 // route stopped starting new subscribers at ~630s while the actual host had
@@ -94,7 +108,7 @@ const FAST_FALLBACK_TOPIC_COUNT = 3;
 // succeeds. Before this, that tail had NO timeout at all — a genuinely hung
 // Supabase or Resend call would park the whole per-subscriber loop until the
 // real host ceiling kills it (the GitHub Actions workflow's own `curl
-// --max-time` (1500s) / job `timeout-minutes` (30) — see the `maxDuration`
+// --max-time` (1500s) / job `timeout-minutes` (90) — see the `maxDuration`
 // comment above for why that value no longer means a Vercel platform
 // directive), silently dropping every later subscriber in the same run with
 // no ops alert (that code never runs after a kill). Safe to
@@ -107,27 +121,29 @@ const FAST_FALLBACK_TOPIC_COUNT = 3;
 // couple of Supabase round trips +, since retryResendCall's 2026-08-05
 // backoff-retry addition, up to 3 Resend attempts with ~2.4s of backoff
 // delay between them on transient errors — still comfortably inside this
-// budget), tight relative to CRON_SAFETY_MARGIN_MS below (110s generation +
-// 45s here = 155s max real per-subscriber time, under the 170s reserved).
+  // budget), and included in the full worst-case safety margin below.
 const PERSIST_AND_SEND_DEADLINE_MS = 45_000;
 
 // Time-budget safety valve. The loop below is sequential (topic-blurb caching
 // is what bounds cost, not parallelism), so at enough subscribers a run of
 // near-deadline generations can approach the real host ceiling (the GitHub
-// Actions workflow's 1500s curl budget / 30min job timeout — see the
+// Actions workflow's 1500s curl budget / 90min job timeout — see the
 // `maxDuration` comment above; this constant's own name is legacy from when
 // that value was a Vercel platform directive). Reserve enough of it to (a)
-// let the LAST subscriber we DO start run its full PER_USER_DEADLINE_MS
-// before we'd hit the wall, and (b) leave real margin after that for the
-// summary + ops-alert email. Past this point, remaining subscribers are
+// let the LAST subscriber we DO start exhaust primary generation, the fast
+// generation fallback, and persistence/delivery before we'd hit the wall,
+// then leave real margin for the summary + ops-alert email. Past this point,
+// remaining subscribers are
 // DEFERRED (recorded, not attempted) rather than risking a hard kill
-// mid-loop — which would silently truncate the send with no ops alert (that
-// code never runs after a kill) and no auto-resume (tomorrow's cron computes
-// a NEW weekOf, so it never revisits today's unprocessed tail).
-// This is an interim safety net, not the full fix (chunked sends via a cursor
-// param + multiple cron slots) — sufficient at the current subscriber count,
-// revisit if the list grows enough to actually hit it in practice.
-const CRON_SAFETY_MARGIN_MS = PER_USER_DEADLINE_MS + 60_000;
+// mid-loop, which would silently truncate the send before the ops alert can
+// run. Deferred readers remain visibly uncovered. The inspected-position
+// cursor still moves through the classified page, and later same-day slots
+// wrap around to retry any reader without proof of delivery.
+const CRON_SAFETY_MARGIN_MS =
+  PER_USER_DEADLINE_MS +
+  FAST_FALLBACK_DEADLINE_MS +
+  PERSIST_AND_SEND_DEADLINE_MS +
+  30_000;
 const CRON_TIME_BUDGET_MS = maxDuration * 1000 - CRON_SAFETY_MARGIN_MS;
 
 // Cost-aware brake, alongside the wall-clock one above (alpha-spend-cap-01,
@@ -136,9 +152,10 @@ const CRON_TIME_BUDGET_MS = maxDuration * 1000 - CRON_SAFETY_MARGIN_MS;
 // stops a runaway (they just start 429ing); DeepSeek/Haiku/Sonnet don't — a
 // real funded balance with no automatic backstop (see deepseek-client.ts's
 // own header comment). This bounds the genuinely uncapped-cost tiers
-// specifically: topicBlurbPaidCallCount() (Haiku+Sonnet, incremented once
-// per real anthropicClient().messages.create() call, retries included) plus
-// deepseekCallCount(). A normal run's topic-blurb cache means most days stay
+// specifically: topicBlurbPaidCallCount() (Haiku+Sonnet),
+// editorNoteAnthropicCallCount() (Opus, including its optional retry), plus
+// deepseekCallCount(). Each increments before a real paid attempt. A normal
+// run's topic-blurb cache means most days stay
 // a small fraction of this (only DISTINCT topics across the whole
 // subscriber list ever reach a paid tier, and most drafts succeed at the
 // free Gemini/Groq tiers first) — this is a circuit breaker for the
@@ -150,6 +167,60 @@ const CRON_TIME_BUDGET_MS = maxDuration * 1000 - CRON_SAFETY_MARGIN_MS;
 // large bill. Revisit once a real run's totals are observed (the summary
 // below logs them every run specifically so this can be tuned later).
 const PAID_CALL_CEILING = 400;
+
+function currentPaidCallSnapshot(): PaidCallSnapshot {
+  return {
+    topicBlurbAnthropic: topicBlurbPaidCallCount(),
+    editorNoteAnthropic: editorNoteAnthropicCallCount(),
+    deepseek: deepseekCallCount(),
+  };
+}
+
+const PERSISTED_ITEM_KINDS = new Set([
+  "read",
+  "watch",
+  "listen",
+  "try",
+  "post",
+  "book",
+  "event",
+  "note",
+]);
+
+function isValidPersistedReference(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as { label?: unknown; url?: unknown; note?: unknown };
+  return (
+    typeof ref.label === "string" &&
+    typeof ref.url === "string" &&
+    (ref.note === undefined || typeof ref.note === "string")
+  );
+}
+
+function isValidPersistedItem(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const item = value as {
+    kind?: unknown;
+    headline?: unknown;
+    body?: unknown;
+    primaryRef?: unknown;
+    supplementaryRefs?: unknown;
+    source?: unknown;
+    sourceUrl?: unknown;
+  };
+  return (
+    typeof item.kind === "string" &&
+    PERSISTED_ITEM_KINDS.has(item.kind) &&
+    typeof item.headline === "string" &&
+    typeof item.body === "string" &&
+    (item.primaryRef === undefined || isValidPersistedReference(item.primaryRef)) &&
+    (item.supplementaryRefs === undefined ||
+      (Array.isArray(item.supplementaryRefs) &&
+        item.supplementaryRefs.every(isValidPersistedReference))) &&
+    (item.source === undefined || typeof item.source === "string") &&
+    (item.sourceUrl === undefined || typeof item.sourceUrl === "string")
+  );
+}
 
 // Shape guard for a persisted `issues.sections` row before the RETRY-SAFETY
 // path (below) trusts it enough to skip generateIssue() entirely and email
@@ -164,13 +235,17 @@ const PAID_CALL_CEILING = 400;
 function isValidPersistedSections(sections: unknown): sections is Issue["sections"] {
   return (
     Array.isArray(sections) &&
+    sections.length > 0 &&
     sections.every(
       (s) =>
         s &&
         typeof s === "object" &&
+        typeof (s as { topicId?: unknown }).topicId === "string" &&
         typeof (s as { topicLabel?: unknown }).topicLabel === "string" &&
         typeof (s as { intro?: unknown }).intro === "string" &&
-        Array.isArray((s as { items?: unknown }).items)
+        Array.isArray((s as { items?: unknown }).items) &&
+        ((s as { items: unknown[] }).items.length > 0) &&
+        (s as { items: unknown[] }).items.every(isValidPersistedItem)
     )
   );
 }
@@ -189,6 +264,14 @@ interface SubscriberRow {
   topics: string[] | null;
   topic_quota: number | null;
 }
+
+type DeliveryAttemptOutcome = "settled" | "retry-required";
+type DeliveryCursorState =
+  | "advanced"
+  | "advanced_with_retry"
+  | "override_read_only"
+  | "empty"
+  | "advance_failed";
 
 // Daily send entrypoint (every day since 2026-07-03; previously Sun/Tue/Thu).
 // GitHub Actions' daily-send.yml sends the Authorization header of
@@ -223,6 +306,67 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!SUBSCRIBER_LETTERS_ENABLED) {
+    return NextResponse.json(
+      { ok: true, paused: true, reason: "subscriber_delivery_paused" },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  const url = new URL(req.url);
+  const weekOfOverride = url.searchParams.get("weekOf");
+  if (
+    weekOfOverride !== null &&
+    (!/^\d{4}-\d{2}-\d{2}$/.test(weekOfOverride) ||
+      !isValidCalendarDateString(weekOfOverride))
+  ) {
+    return NextResponse.json(
+      { error: "weekOf must be a real calendar date in YYYY-MM-DD format." },
+      { status: 400 }
+    );
+  }
+
+  // A forced resend is a protected operator action, but it still needs
+  // provider-level retry safety. The operator supplies one UUID per intended
+  // resend. Retrying the same action reuses the same lane, while a genuinely
+  // new resend requires a new UUID. This keeps an ambiguous provider response
+  // from turning a transport retry into another email.
+  const forceRaw = url.searchParams.get("force");
+  const force = forceRaw === "1";
+  const forceIdRaw = url.searchParams.get("forceId");
+  const forceId = forceIdRaw?.trim().toLowerCase() || null;
+  if (
+    (forceRaw !== null && forceRaw !== "0" && forceRaw !== "1") ||
+    (force &&
+      (!forceId ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          forceId
+        ))) ||
+    (!force && forceIdRaw !== null)
+  ) {
+    return NextResponse.json(
+      { error: "force=1 requires a valid forceId UUID." },
+      { status: 400 }
+    );
+  }
+  const deliveryIdempotencyKind = force ? `force-${forceId}` : "live";
+
+  const sb = await supabaseServiceClient();
+  const retentionNow = new Date().toISOString();
+  // Keep the pre-send maintenance leg database-only. Provider-backed Stripe
+  // and deletion repair runs through the separate maintenance endpoint after
+  // delivery, so an outage there cannot delay active subscribers' letters.
+  const retentionErrors = await scrubExpiredCheckoutProfiles(
+    sb,
+    retentionNow,
+    false
+  );
+  for (const retentionError of retentionErrors) {
+    console.warn(
+      "[cron/weekly-send] checkout retention cleanup failed:",
+      retentionError
+    );
+  }
   // alpha-drift-r22-01 (found+fixed 2026-08-14): every per-subscriber email
   // list this route builds used to go into the ops-alert email AND the
   // CRON_SECRET-gated JSON response completely unbounded -- fine on an
@@ -258,18 +402,18 @@ export async function GET(req: Request) {
   // to only mention two of the three, README.md already had the correct
   // count). The handler derives the period from today's date, so one
   // schedule set covers every send day.
-  const url = new URL(req.url);
-  const weekOfOverride = url.searchParams.get("weekOf");
+  // Spend is incurred on the invocation date, even when an explicitly
+  // authorized backfill targets an older issue date. Keying the hard budget
+  // to weekOf would let repeated historical overrides open a fresh 400-call
+  // allowance for every date in one real day.
+  const paidCallBudgetDate = currentPeriodIso();
   // alpha-drift-r26-06 (2026-08-14): a shape-only regex check accepts an
   // impossible calendar date (e.g. "2026-04-31") that JS's Date parser
   // silently rolls over rather than rejecting -- the same gap fixed in
   // app/api/generate/route.ts's weekOf schema. Lower real exposure here
   // (CRON_SECRET-gated, trusted-operator-only), but the fix is one shared
   // helper call away, so there's no reason to leave the weaker check.
-  const weekOf =
-    weekOfOverride && /^\d{4}-\d{2}-\d{2}$/.test(weekOfOverride) && isValidCalendarDateString(weekOfOverride)
-      ? weekOfOverride
-      : currentPeriodIso();
+  const weekOf = weekOfOverride ?? paidCallBudgetDate;
   // Cadence gate. CADENCE_UTC_DAYS is every day today, so this is currently a
   // no-op -- but nothing else in this route or the GitHub Actions schedule
   // that drives it (daily-send.yml fires every calendar day, no day-of-week
@@ -281,11 +425,19 @@ export async function GET(req: Request) {
   if (!weekOfOverride && !isSendDay(weekOf)) {
     return NextResponse.json({ skipped: "not a scheduled cadence day", weekOf });
   }
+  // Paid provider attempts reserve from one database-backed ceiling keyed by
+  // the real invocation date. The guard is lazy, so a run satisfied by cache/free
+  // providers performs no reservation. Small chunks keep a killed process
+  // from stranding more than a bounded amount of the day's allowance.
+  const dailyPaidCallBudget = createDailyPaidCallGuard(
+    sb,
+    paidCallBudgetDate,
+    25
+  );
   // Search window for this send: everything new since the previous send, which
   // at daily cadence is always exactly 1 day back. A topic with nothing new in
   // that window reads as empty and gets backfilled.
   const freshness = sinceLastSendWindow(weekOf);
-  const sb = await supabaseServiceClient();
 
   // Access runs through the end of the paid period. The webhook stores
   // cancelled_at as the date access ENDS, so a *future* cancelled_at means
@@ -295,7 +447,41 @@ export async function GET(req: Request) {
   // null)` cut these paying customers off weeks early. Mirrors
   // lib/access.hasActiveAccess().
   const nowIso = new Date().toISOString();
-  // Paginated fetch -- an unbounded .select() here silently truncates at
+  // Bounded ordered fetch. Each route call processes one page. The workflow
+  // drains pages in the same run. The explicit read-only afterUserId view is
+  // reserved for a cursor compare-and-swap conflict so later readers still get
+  // an attempt without claiming another runner's durable progress.
+  const SUBSCRIBER_BATCH_SIZE = 250;
+  // One-row lookahead makes deliveryHasMore exact. Without it, an exact final
+  // page of 250 looked indistinguishable from a page with another reader after
+  // it and forced an unnecessary probe request.
+  const SUBSCRIBER_QUERY_LIMIT = SUBSCRIBER_BATCH_SIZE + 1;
+  const cursorOverrideRaw = url.searchParams.get("afterUserId");
+  const cursorOverride = cursorOverrideRaw?.trim() || null;
+  if (
+    cursorOverrideRaw !== null &&
+    (!cursorOverride ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        cursorOverride
+      ))
+  ) {
+    return NextResponse.json({ error: "afterUserId must be a UUID." }, { status: 400 });
+  }
+  let persistedDeliveryCursor: string | null = null;
+  if (!cursorOverride) {
+    const { data: cursorRow, error: cursorError } = await sb
+      .from("weekly_send_delivery_cursors")
+      .select("cursor_user_id")
+      .eq("week_of", weekOf)
+      .maybeSingle();
+    if (cursorError) {
+      console.error("[cron/weekly-send] delivery cursor fetch failed:", cursorError.message);
+      return NextResponse.json({ error: "Couldn't fetch delivery cursor. Try again." }, { status: 500 });
+    }
+    persistedDeliveryCursor = cursorRow?.cursor_user_id ?? null;
+  }
+  const deliveryCursor = cursorOverride ?? persistedDeliveryCursor;
+  // The former unbounded .select() silently truncated at
   // PostgREST's default db.max_rows (1,000), and does so with error === null,
   // so nothing downstream would ever see a failure. Every guard built on top
   // of `rows` further down (alreadyDelivered's and pendingIssues' own
@@ -308,16 +494,16 @@ export async function GET(req: Request) {
   // and those subscribers get zero letter, zero `deferred` entry, and zero
   // ops alert. Same fix, same reasoning as gatherStats() in
   // app/api/admin/users/route.ts.
-  const SUBSCRIBER_PAGE_SIZE = 1000;
-  const rows: SubscriberRow[] = [];
-  for (let from = 0; ; from += SUBSCRIBER_PAGE_SIZE) {
-    const { data: page, error } = await sb
+  const fetchSubscriberPage = async (afterUserId: string | null) => {
+    let query = sb
       .from("users")
       .select(
         "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, theme, topics, topic_quota"
       )
       .not("subscribed_at", "is", null)
-      .or(`cancelled_at.is.null,cancelled_at.gt.${nowIso}`)
+      .or(
+        `access_granted_at.not.is.null,cancelled_at.is.null,cancelled_at.gt.${nowIso}`
+      )
       .is("unsubscribed_at", null)
       // alpha-deliverability-01: a hard bounce or spam complaint (Resend
       // webhook, app/api/webhooks/resend/route.ts) means this address is
@@ -326,16 +512,40 @@ export async function GET(req: Request) {
       // sender reputation for every other subscriber too.
       .is("bounced_at", null)
       .is("complained_at", null)
+      .is("suppression_cleanup_pending_at", null)
       .order("id")
-      .range(from, from + SUBSCRIBER_PAGE_SIZE - 1);
+      .limit(SUBSCRIBER_QUERY_LIMIT);
+    if (afterUserId) query = query.gt("id", afterUserId);
+    return query;
+  };
+
+  const rows: SubscriberRow[] = [];
+  let deliveryWrapped = false;
+  let deliveryHasMore = false;
+  {
+    let { data: page, error } = await fetchSubscriberPage(deliveryCursor);
+
+    // UUIDs are not chronological. A reader approved after this run's cursor
+    // can sort before it, and an earlier failed reader also remains before it.
+    // Once the tail is exhausted, wrap to the start on the same date so later
+    // slots can retry uncovered readers instead of getting stuck on an empty
+    // tail until tomorrow.
+    if (
+      !error &&
+      !cursorOverride &&
+      deliveryCursor &&
+      (!page || page.length === 0)
+    ) {
+      deliveryWrapped = true;
+      ({ data: page, error } = await fetchSubscriberPage(null));
+    }
 
     if (error) {
       console.error("[cron/weekly-send] subscriber fetch failed:", error.message);
       return NextResponse.json({ error: "Couldn't fetch subscribers. Try again." }, { status: 500 });
     }
-    if (!page || page.length === 0) break;
-    rows.push(...(page as SubscriberRow[]));
-    if (page.length < SUBSCRIBER_PAGE_SIZE) break;
+    deliveryHasMore = (page?.length ?? 0) > SUBSCRIBER_BATCH_SIZE;
+    if (page) rows.push(...((page as SubscriberRow[]).slice(0, SUBSCRIBER_BATCH_SIZE)));
   }
 
   // Kick off the PRIOR DELIVERED issue count RPC right away, unawaited --
@@ -392,9 +602,9 @@ export async function GET(req: Request) {
   const groqBaseline = groqRateLimitedCount();
   const deepseekBaseline = deepseekRateLimitedCount();
   // Baselined the same way as the four rate-limit counters above, but this
-  // pair feeds an actual mid-loop brake (PAID_CALL_CEILING below), not just
+  // snapshot feeds an actual mid-loop brake (PAID_CALL_CEILING below), not just
   // the post-run summary — see that constant's comment for why.
-  const paidCallBaseline = topicBlurbPaidCallCount() + deepseekCallCount();
+  const paidCallBaseline = currentPaidCallSnapshot();
   let sent = 0;
   // Live generation failed/timed out but a backup layer covered it (see the
   // catch block below) — counted separately from `sent`/`failed` so the
@@ -415,9 +625,9 @@ export async function GET(req: Request) {
   const backupSharedSentEmails: string[] = [];
   const backupFreshSentEmails: string[] = [];
   const backupStaleSentEmails: string[] = [];
-  // Emails of ACTIVE PAID subscribers who got NOTHING this send (blank name or
-  // empty topic pool). Every row in this loop already passed the subscribed +
-  // live-access filter, so anything here is a paying reader silently receiving
+  // Emails of eligible readers who got NOTHING this send (blank name or empty
+  // topic pool). Every row in this loop already passed the subscribed +
+  // live-access filter, so anything here is a reader silently receiving
   // no letter — surfaced in the summary + an ops alert so it can't go unnoticed.
   const skippedBlankSubscribers: string[] = [];
   // Subscribers who WOULD have gotten a real send but the time budget ran out
@@ -425,13 +635,26 @@ export async function GET(req: Request) {
   // starts approaching the cap is loud instead of a silent hard kill (the
   // GitHub Actions workflow's own curl --max-time / job timeout-minutes --
   // see the `maxDuration` comment near the top of this file).
-  // Also holds anyone deferred by PAID_CALL_CEILING (paidCallCeilingHit
-  // below distinguishes which one, for the ops alert) — same recovery path
-  // either way (?weekOf= backfill), so one shared list is enough.
+  // Paid-call exhaustion does not add subscribers here. They continue through
+  // cached content, free tiers, deterministic intro, and prior-issue backup.
   const deferred: string[] = [];
-  // Set once PAID_CALL_CEILING trips, so the ops alert below can name the
-  // real cause instead of lumping a cost-brake defer in with a scale one.
+  // Exact per-page retry state. Aggregate counters are not enough here: one
+  // reader can fail generation and then become ineligible during the backup
+  // attempt, while another reader can become ineligible without any failure.
+  // Tracking the row itself keeps cursor advancement tied to real coverage
+  // without exposing the retrying readers in logs or the JSON response.
+  const deliveryRetryRequiredUserIds = new Set<string>();
+  // Set once PAID_CALL_CEILING trips, so the ops alert below can distinguish
+  // paid-tier degradation from a scale-driven time-budget deferral.
   let paidCallCeilingHit = false;
+  // Passed through assembly into both topic and editor generation. Every paid
+  // Anthropic or DeepSeek attempt, including retries, reserves against the
+  // same durable date-level ceiling immediately before its provider starts.
+  const paidCallAllowed = async (): Promise<boolean> => {
+    const allowed = await dailyPaidCallBudget.allow();
+    if (!allowed) paidCallCeilingHit = true;
+    return allowed;
+  };
   // Three counters for today's (2026-08-06) new code, added in review the
   // same day per the "if this breaks, would anyone notice" pass -- each of
   // these paths already fails safe/self-heals on its own, but previously had
@@ -450,7 +673,6 @@ export async function GET(req: Request) {
   let cancelledMidRunSkips = 0;
   let suppressedMidRunSkips = 0;
   let eligibilityRecheckFailures = 0;
-  let persistedRetryShapeMismatches = 0;
 
   // ONE dry-topic cache shared across every subscriber in THIS run — passed
   // into each generateIssue call so a topic with no fresh news spends its
@@ -473,11 +695,6 @@ export async function GET(req: Request) {
   // full waterfall again for the filler pass, the fast-fallback layer below,
   // or any later subscriber sharing that topic this run.
   const failedCache = new Set<string>();
-
-  // Allow ?force=1 to override the delivered_at idempotency gate (only the
-  // admin will ever hit this with the CRON_SECRET in hand; useful for explicit
-  // resend-this-week ops, never set by the scheduled GitHub Actions run itself).
-  const force = url.searchParams.get("force") === "1";
 
   console.log(
     `[cron/weekly-send] weekOf=${weekOf} subscribers=${rows.length} force=${force}`
@@ -528,10 +745,8 @@ export async function GET(req: Request) {
         `[cron/weekly-send] stuck-claim reclaim query failed: ${reclaimErr.message} — continuing without reclaiming.`
       );
     } else if ((reclaimed?.length ?? 0) > 0) {
-      const ids = reclaimed!.map((r) => r.user_id);
-      const idsLine = capListLine(ids);
       console.warn(
-        `[cron/weekly-send] RECLAIMED ${reclaimed!.length} stuck claim(s) for weekOf=${weekOf} (delivered_at was set with no proof of send, older than ${RECLAIM_SAFETY_MARGIN_MS / 60000}min): ${idsLine}`
+        `[cron/weekly-send] RECLAIMED ${reclaimed!.length} stuck claim(s) for weekOf=${weekOf} (delivered_at was set with no proof of send, older than ${RECLAIM_SAFETY_MARGIN_MS / 60000}min)`
       );
       // Visible on purpose: a reclaim means a PRIOR run genuinely died
       // mid-send. That's worth Algy knowing happened even though this run
@@ -539,7 +754,7 @@ export async function GET(req: Request) {
       // "nothing noticed" gap one step over. Best-effort, never blocks.
       await sendOpsAlert(
         `[alpha] Reclaimed ${reclaimed!.length} stuck claim(s)`,
-        `weekOf=${weekOf}: ${reclaimed!.length} subscriber(s) had delivered_at set with no proof of send (older than ${RECLAIM_SAFETY_MARGIN_MS / 60000} minutes) -- a prior run likely died between claiming and Resend confirming. Reclaimed and will be retried this run. user_id(s): ${idsLine}`
+        `weekOf=${weekOf}: ${reclaimed!.length} subscriber(s) had delivered_at set with no proof of send (older than ${RECLAIM_SAFETY_MARGIN_MS / 60000} minutes). A prior run likely died between claiming and Resend confirming. The claims were reclaimed and will be retried this run. Use the protected issue records for exact subscribers.`
       );
     }
   }
@@ -625,34 +840,79 @@ export async function GET(req: Request) {
     // per-subscriber lookup inside the loop, mirroring the alreadyDelivered
     // fix above.
     const pendingPromise = Promise.all(
-      idChunks.map((ids) =>
-        sb
+      idChunks.map((ids) => {
+        let query = sb
           .from("issues")
           .select("user_id, volume, number, editor_intro, sections")
           .eq("week_of", weekOf)
-          .is("delivered_at", null)
-          .in("user_id", ids)
-      )
-    ).then((results) => {
-      warnOnChunkErrors(results, "pendingIssues");
-      return results.flatMap((r) => r.data ?? []);
-    });
+          .in("user_id", ids);
+        // Normal delivery only needs rows without proof of delivery. A forced
+        // resend must replay the already-persisted issue body, including rows
+        // already delivered, so a retry with the same forceId stays stable.
+        if (!force) query = query.is("delivered_at", null);
+        return query;
+      })
+    );
 
-    const [stampsResult, pendingResult] = await Promise.all([
+    const [stampsResult, pendingChunkResults] = await Promise.all([
       stampsPromise ?? Promise.resolve(null),
       pendingPromise,
     ]);
-    for (const s of (stampsResult ?? []) as Array<{ user_id: string }>) {
-      alreadyDelivered.add(s.user_id);
+    const pendingChunkFailures = pendingChunkResults.filter((result) => result.error);
+    if (pendingChunkFailures.length > 0) {
+      // A missing pending row is not equivalent to no retry. Regenerating in
+      // this uncertain state could overwrite the exact payload from an email
+      // Resend accepted before its response was lost, then make the stable-key
+      // retry fail as a payload mismatch. Stop before generation or cursor CAS.
+      console.error(
+        `[cron/weekly-send] pendingIssues prefetch failed in ${pendingChunkFailures.length}/${pendingChunkResults.length} chunk(s)`
+      );
+      return NextResponse.json(
+        { error: "Couldn't fetch pending delivery state. Try again." },
+        { status: 500 }
+      );
     }
-    for (const p of (pendingResult ?? []) as Array<{
+    const pendingResult = pendingChunkResults.flatMap((result) => result.data ?? []) as Array<{
       user_id: string;
       volume: number;
       number: number;
       editor_intro: string;
-      sections: Issue["sections"];
-    }>) {
-      pendingIssues.set(p.user_id, p);
+      sections: unknown;
+    }>;
+    const invalidPendingRows = pendingResult.filter(
+      (row) =>
+        typeof row?.user_id !== "string" ||
+        !Number.isFinite(row.volume) ||
+        !Number.isFinite(row.number) ||
+        typeof row.editor_intro !== "string" ||
+        !isValidPersistedSections(row.sections)
+    );
+    const pendingUserIds = new Set(pendingResult.map((row) => row.user_id));
+    const forceMissingRows = force
+      ? rows.filter((row) => !pendingUserIds.has(row.id)).length
+      : 0;
+    if (invalidPendingRows.length > 0 || forceMissingRows > 0) {
+      // Any row returned here is the canonical provider payload for this
+      // reader/date. Regenerating over a malformed row, or inventing content
+      // for a requested resend, could mismatch an accepted-but-unconfirmed
+      // send. Stop the whole page before generation, writes, sends, or cursor
+      // progress. The protected data stays available for operator repair.
+      console.error(
+        `[cron/weekly-send] stable issue payload unavailable: invalid=${invalidPendingRows.length} missing_for_force=${forceMissingRows}`
+      );
+      return NextResponse.json(
+        { error: "Couldn't prove a stable issue payload for this delivery. Try again." },
+        { status: 500 }
+      );
+    }
+    for (const s of (stampsResult ?? []) as Array<{ user_id: string }>) {
+      alreadyDelivered.add(s.user_id);
+    }
+    for (const p of pendingResult) {
+      pendingIssues.set(p.user_id, {
+        ...p,
+        sections: p.sections as Issue["sections"],
+      });
     }
   }
 
@@ -678,39 +938,37 @@ export async function GET(req: Request) {
   if (priorIssueCountsPromise) {
     const { data: counts, error: countsErr } = await priorIssueCountsPromise;
     if (countsErr) {
-      // Fail soft, not hard: a missing/wrong "Issue N" is a cosmetic subject-
-      // line problem, never a reason to block the actual send. Every
-      // subscriber just falls back to priorCount=0 (issueNumber=1) for this
-      // run only -- annoying if it happens, but self-corrects the next time
-      // this query succeeds since it's recomputed fresh every run, not
-      // persisted state that could get stuck wrong.
-      console.warn(`[cron/weekly-send] prior_issue_counts RPC failed: ${countsErr.message} — "Issue N" will read 1 for everyone this run.`);
-    } else {
-      for (const c of (counts ?? []) as Array<{ user_id: string; prior_count: number }>) {
-        priorIssueCount.set(c.user_id, c.prior_count);
-      }
+      // Issue N is part of the provider payload. Guessing 1 here could change
+      // the subject on a stable-key retry after Resend accepted the prior send
+      // but its response was lost. Stop before any send or cursor CAS.
+      console.error(
+        `[cron/weekly-send] prior_issue_counts RPC failed: ${countsErr.message}`
+      );
+      return NextResponse.json(
+        { error: "Couldn't determine stable issue numbers. Try again." },
+        { status: 500 }
+      );
+    }
+    for (const c of (counts ?? []) as Array<{ user_id: string; prior_count: number }>) {
+      priorIssueCount.set(c.user_id, c.prior_count);
     }
   }
 
   // Sequential per-subscriber, but topic blurbs cache across subscribers so
   // total Claude time is bounded by topics-this-week, not users × topics.
-  // NOTE for scale: "~100+ subscribers" undersells where the real ceiling
-  // is. Even with every topic cached (zero generation cost), each
-  // subscriber still pays runPersistAndSend's ~3-4 sequential network round
-  // trips (issue upsert, delivered_at claim, Resend call, proof-of-send
-  // write) — at a conservative ~400-600ms combined, that alone is a fixed
-  // floor of roughly 2,200-3,300 subscribers before CRON_TIME_BUDGET_MS
-  // (below) is exhausted by overhead, independent of and well before any
-  // generation cost becomes the bottleneck. CRON_TIME_BUDGET_MS is the
-  // interim safety net — it stops starting new subscribers before that
-  // becomes a silent hard kill, deferring the rest loudly instead (though
-  // a deferred subscriber is effectively skipped, not delayed: tomorrow's
-  // cron computes a new weekOf and never revisits today's unprocessed
-  // tail). The real fix at that scale is still chunked sends (cursor param
-  // + multiple cron slots) — not parallelizing generation (Claude rate
-  // limits bind first there), though batching the persist+send tail alone
-  // would push the overhead floor above out further — not built yet.
+  // Scale is bounded explicitly rather than estimated from optimistic request
+  // latency. This route handles one 250-candidate page. daily-send.yml drains
+  // pages until MAX_DELIVERY_PAGES or DELIVERY_DRAIN_SECONDS is reached. Each
+  // fully classified normal page advances the fair scan position, including a
+  // page with retry-required readers. Coverage stays red until later slots wrap
+  // and recover them. A cursor CAS conflict uses read-only continuation. Any
+  // retry outcome or undrained tail makes the workflow fail after maintenance.
+  // CRON_TIME_BUDGET_MS remains the per-page hard-kill safety valve.
   for (const row of rows) {
+    // Starts from the bounded page snapshot, then updates from the just-in-time
+    // account read immediately before a provider call. Protected summaries use
+    // the same value so they identify the address that was actually targeted.
+    let currentDeliveryEmail = row.email;
     // letterSize = sections they pay for. The topics array is their ranked
     // POOL — clamp it to poolCap (letterSize + backups, ≤25) so generation
     // stays bounded and a topics array written straight to the DB (the RLS
@@ -724,15 +982,16 @@ export async function GET(req: Request) {
     // hard generateIssue failure later (generateIssue maps the same way).
     const effectivePool = mapTopicsForUser(pool, row.birthday ?? undefined);
     if (!row.first_name || effectivePool.length === 0) {
-      // This is an ACTIVE PAID subscriber getting NOTHING this send — exactly
+      // This is an eligible reader getting NOTHING this send, exactly
       // how a blanked profile (e.g. a fresh-device sign-in that nulled
       // first_name / topics) drops a reader off every letter unnoticed. Never
       // silent: count which case, record the email, and warn per-subscriber.
       if (!row.first_name) skippedNoName++;
       else skippedEmptyPool++;
-      skippedBlankSubscribers.push(row.email);
+      skippedBlankSubscribers.push(currentDeliveryEmail);
+      deliveryRetryRequiredUserIds.add(row.id);
       console.warn(
-        `[cron/weekly-send] SKIPPED PAID SUBSCRIBER (got nothing) → ${row.id} ` +
+        `[cron/weekly-send] SKIPPED ELIGIBLE READER (got nothing): ` +
           `first_name=${row.first_name ? "ok" : "MISSING"} pool=${effectivePool.length}`
       );
       continue;
@@ -744,7 +1003,7 @@ export async function GET(req: Request) {
     // scheduled run, ?weekOf= backfill, etc.). Override with ?force=1.
     if (!force && alreadyDelivered.has(row.id)) {
       skippedAlreadyDelivered++;
-      console.log(`[cron/weekly-send] skipped (already delivered this period) → ${row.id}`);
+      console.log("[cron/weekly-send] skipped (already delivered this period)");
       continue;
     }
 
@@ -754,19 +1013,9 @@ export async function GET(req: Request) {
     // so a subscriber who didn't actually need work isn't misreported as
     // deferred.
     if (Date.now() - startedAt > CRON_TIME_BUDGET_MS) {
-      deferred.push(row.email);
-      console.warn(`[cron/weekly-send] DEFERRED (time budget exhausted) → ${row.id}`);
-      continue;
-    }
-
-    // Cost budget: same defer-not-crash treatment as the time budget above,
-    // but for real spend instead of wall-clock (see PAID_CALL_CEILING).
-    // Checked every iteration (cheap — two counter reads) so a mid-run spike
-    // stops the bleeding immediately rather than waiting for the next batch.
-    if (topicBlurbPaidCallCount() + deepseekCallCount() - paidCallBaseline > PAID_CALL_CEILING) {
-      paidCallCeilingHit = true;
-      deferred.push(row.email);
-      console.warn(`[cron/weekly-send] DEFERRED (paid-call ceiling exhausted) → ${row.id}`);
+      deferred.push(currentDeliveryEmail);
+      deliveryRetryRequiredUserIds.add(row.id);
+      console.warn("[cron/weekly-send] DEFERRED (time budget exhausted)");
       continue;
     }
 
@@ -780,7 +1029,7 @@ export async function GET(req: Request) {
       gender: coerceGender(row.gender) ?? undefined,
       topics: pool,
       theme: coerceThemeId(row.theme) ?? "forest",
-      email: row.email,
+      email: currentDeliveryEmail,
     };
 
     // Persist + send ONE issue for this subscriber, bounded by
@@ -789,7 +1038,10 @@ export async function GET(req: Request) {
     // live-generated send below AND both backup layers in the catch block —
     // identical idempotency/claim/rollback guarantees every time; the only
     // difference is which Issue gets persisted and which counter it credits.
-    async function runPersistAndSend(issue: Issue, kind: "live" | "backup-shared" | "backup-fresh" | "backup-stale"): Promise<void> {
+    async function runPersistAndSend(
+      issue: Issue,
+      kind: "live" | "backup-shared" | "backup-fresh" | "backup-stale"
+    ): Promise<DeliveryAttemptOutcome> {
       // Ensure the row EXISTS so the atomic claim below (an UPDATE) has
       // something to match — but never overwrite content here.
       // ignoreDuplicates makes this INSERT ... ON CONFLICT DO NOTHING: if the
@@ -876,52 +1128,58 @@ export async function GET(req: Request) {
       // "did we win, now also write content" step is needed or possible to
       // get wrong.
       let claimedAt: string | null = null;
+      // Re-check access, suppression, and the CURRENT delivery address right
+      // before every provider call, including a forced resend. `rows` is a
+      // snapshot and one page can run long enough for any of those fields to
+      // change. Sending to its stale address after the account email moved is
+      // a privacy failure, so a missing current address also fails closed.
+      const { data: freshUser, error: freshUserErr } = await sb
+        .from("users")
+        .select(
+          "email, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"
+        )
+        .eq("id", row.id)
+        .maybeSingle();
+      if (freshUserErr || !freshUser) {
+        // Eligibility is a privacy and access decision. If the current row
+        // cannot be checked or no longer exists, do not guess that an access
+        // grant or delivery permission still exists. The persisted issue stays
+        // retryable and the watchdog keeps this subscriber visible.
+        eligibilityRecheckFailures++;
+        console.warn("[cron/weekly-send] eligibility re-check could not prove access");
+        return "retry-required";
+      } else if (freshUser.unsubscribed_at) {
+        unsubscribedMidRunSkips++;
+        console.log("[cron/weekly-send] skipped (unsubscribed mid-run)");
+        return "settled";
+      } else if (
+        !hasReaderAccess(
+          freshUser.subscribed_at,
+          freshUser.cancelled_at,
+          freshUser.access_granted_at
+        )
+      ) {
+        cancelledMidRunSkips++;
+        console.log("[cron/weekly-send] skipped (access ended mid-run)");
+        return "settled";
+      } else if (freshUser.bounced_at || freshUser.complained_at) {
+        suppressedMidRunSkips++;
+        console.log("[cron/weekly-send] skipped (bounced/complained mid-run)");
+        return "settled";
+      } else if (freshUser.suppression_cleanup_pending_at) {
+        suppressedMidRunSkips++;
+        console.log(
+          "[cron/weekly-send] skipped (provider suppression cleanup pending)"
+        );
+        return "settled";
+      } else if (typeof freshUser.email !== "string" || !freshUser.email.trim()) {
+        eligibilityRecheckFailures++;
+        console.warn("[cron/weekly-send] delivery address re-check returned no address");
+        return "retry-required";
+      }
+      currentDeliveryEmail = freshUser.email.trim();
+
       if (!force) {
-        // Re-check eligibility RIGHT before the claim (alpha-spend-cap-
-        // adjacent finding, round 12, 2026-08-06; broadened alpha-drift-
-        // r29-04, 2026-08-14): `rows` is a snapshot taken once at the top of
-        // the run (filtered on subscribed_at/cancelled_at/unsubscribed_at/
-        // bounced_at/complained_at), but a run can span the loop's full
-        // sequential duration — a subscriber whose eligibility changes after
-        // being snapshotted but before their own turn would otherwise still
-        // get sent that day's letter (including a resend of a PRIOR letter,
-        // if a backup layer below ends up covering them). Originally only
-        // re-checked unsubscribed_at; a dispute or subscription-deleted
-        // webhook writes cancelled_at as an IMMEDIATE date (not a future
-        // cancel-at-period-end one -- app/api/stripe/webhook/route.ts's own
-        // comments on both those handlers say as much), and a bounce/
-        // complaint mid-run is the identical deliverability-suppression gap
-        // the initial snapshot's own bounced_at/complained_at filter exists
-        // to close -- both left open by only checking unsubscribed_at here.
-        // Can't fold this into the atomic claim UPDATE below -- these columns
-        // live on `users`, that UPDATE targets `issues`, and PostgREST
-        // doesn't support a cross-table filter on an UPDATE. One extra read
-        // (now covering all 4 columns in one round trip, not just one)
-        // narrows the race window from "the whole run" to "one Supabase
-        // round trip" instead.
-        const { data: freshUser, error: freshUserErr } = await sb
-          .from("users")
-          .select("unsubscribed_at, cancelled_at, bounced_at, complained_at")
-          .eq("id", row.id)
-          .maybeSingle();
-        if (freshUserErr) {
-          // Fail open, same reasoning as every other best-effort guard in
-          // this file: a lookup hiccup must never block a legitimate send.
-          eligibilityRecheckFailures++;
-          console.warn(`[cron/weekly-send] eligibility re-check failed → ${row.id}: ${freshUserErr.message}`);
-        } else if (freshUser?.unsubscribed_at) {
-          unsubscribedMidRunSkips++;
-          console.log(`[cron/weekly-send] skipped (unsubscribed mid-run) → ${row.id}`);
-          return;
-        } else if (freshUser && !hasActiveAccess(freshUser.cancelled_at)) {
-          cancelledMidRunSkips++;
-          console.log(`[cron/weekly-send] skipped (access ended mid-run) → ${row.id}`);
-          return;
-        } else if (freshUser?.bounced_at || freshUser?.complained_at) {
-          suppressedMidRunSkips++;
-          console.log(`[cron/weekly-send] skipped (bounced/complained mid-run) → ${row.id}`);
-          return;
-        }
 
         claimedAt = new Date().toISOString();
         const { data: claimRows, error: claimErr } = await sb
@@ -942,13 +1200,13 @@ export async function GET(req: Request) {
         }
         if ((claimRows?.length ?? 0) === 0) {
           skippedAlreadyDelivered++;
-          console.log(`[cron/weekly-send] skipped (claimed by a concurrent run) → ${row.id}`);
-          return;
+          console.log("[cron/weekly-send] skipped (claimed by a concurrent run)");
+          return "settled";
         }
       } else {
-        // force=1 bypasses the claim entirely (admin one-off) -- write this
-        // call's content unconditionally, matching the original explicit-
-        // override intent (force means "just do it", not "only if I win").
+        // force=1 bypasses the ordinary delivered_at claim. The page-level
+        // preflight already proved this is the persisted issue requested for
+        // replay, and forceId supplies a distinct provider retry lane.
         const { error: forceWriteErr } = await sb
           .from("issues")
           .update({
@@ -966,29 +1224,41 @@ export async function GET(req: Request) {
 
       const origin = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://alpha.everyday.report";
       const inboxUrl = `${origin}/inbox`;
-      let resendMessageId: string | undefined;
+      let providerSent = false;
       try {
-        const sendResult = await sendLetterNotification({
-          to: row.email,
-          // profile.firstName, not row.first_name: the null-check guard
-          // above narrows row.first_name in the outer loop body, but that
-          // narrowing doesn't carry into this nested function, and
-          // profile.firstName is already the guaranteed-non-null string.
+        const preparedEmail = prepareLetterNotification({
+          to: currentDeliveryEmail,
           firstName: profile.firstName,
           issue,
           inboxUrl,
-          // Tokenized view-in-browser link: the CTA opens the letter directly
-          // with no session — no more "No letter yet" on a signed-out device.
+          // Tokenized view-in-browser CTA. Opens the letter with no session.
           letterUrl: buildLetterUrl(row.id, origin, weekOf),
           issueNumber: (priorIssueCount.get(row.id) ?? 0) + 1,
           userId: row.id,
-          // A backup kind must never share the live send's idempotency key —
-          // see the comment on idempotencyKey in lib/email.ts. "live" is the
-          // default there, so this is only needed for the backup kinds, but
-          // passing it always keeps the two call sites obviously in sync.
-          idempotencyKind: kind,
+          idempotencyKind: deliveryIdempotencyKind,
+          deliveryDate: weekOf,
         });
-        resendMessageId = sendResult.id || undefined;
+        const delivery = await sendWithResendDeliveryAttempt({
+          sb,
+          userId: row.id,
+          weekOf,
+          recipient: preparedEmail.recipient,
+          deliveryLane: deliveryIdempotencyKind,
+          payloadFingerprint: preparedEmail.requestFingerprint,
+          expectedClaimedAt: force ? null : claimedAt,
+          send: (storedRecipient) => {
+            if (storedRecipient !== preparedEmail.recipient) {
+              throw new Error("staged recipient changed before provider send");
+            }
+            return sendPreparedSubscriberEmail(preparedEmail);
+          },
+        });
+        providerSent = delivery.providerSent;
+        if (delivery.suppressionReviewRequired) {
+          console.warn(
+            "[cron/weekly-send] provider accepted the letter but its suppression evidence needs review"
+          );
+        }
       } catch (sendErr) {
         if (!force && claimedAt) {
           // Release the claim so the next run retries this user cleanly.
@@ -1003,78 +1273,64 @@ export async function GET(req: Request) {
             .eq("delivered_at", claimedAt);
           if (rollbackErr) {
             console.warn(
-              `[cron/weekly-send] send failed AND claim rollback failed for ${row.id}: ${rollbackErr.message} — may be skipped (missed) next run.`
+              `[cron/weekly-send] send failed AND claim rollback failed: ${rollbackErr.message}. The subscriber may be skipped next run.`
             );
           }
         }
         throw sendErr;
       }
-
-      // Proof of send -- the fix for the "stuck claim" gap flagged by the
-      // 2026-08-05 resilience audit as the biggest remaining single point of
-      // failure: delivered_at is stamped as a CLAIM before this point, so a
-      // process that dies between winning the claim and Resend confirming
-      // (a killed runner, an OOM) leaves a row that reads as "delivered" to
-      // every check in the system forever, with no email ever having gone
-      // out. Only ever set here, AFTER sendLetterNotification has already
-      // returned successfully -- this column existing (or not) on a
-      // delivered_at-set row is exactly what the reclaim step near the top
-      // of this handler uses to tell a genuine success from a stuck claim.
-      // Best-effort: the email already sent, so a failure to record this
-      // must never fail the request -- it only means this row looks like a
-      // stuck claim until the NEXT run's reclaim step, which is always safe
-      // (a spurious reclaim just costs one redundant Resend call, which
-      // Resend's own idempotency key collapses harmlessly).
-      if (resendMessageId) {
-        const { error: proofErr } = await sb
-          .from("issues")
-          .update({ resend_message_id: resendMessageId })
-          .eq("user_id", row.id)
-          .eq("week_of", weekOf);
-        if (proofErr) {
-          console.warn(
-            `[cron/weekly-send] sent OK but proof-of-send write failed for ${row.id}: ${proofErr.message} — row will look like a stuck claim until the next reclaim pass (harmless, Resend idempotency covers the redundant retry).`
-          );
-        }
-      }
-
-      if (force) {
-        // The force path skipped the claim; stamp after a successful resend so
-        // a later normal run doesn't treat this user as undelivered and send
-        // again. Best-effort — force is an admin-driven one-off.
-        const { error: stampErr } = await sb
-          .from("issues")
-          .update({ delivered_at: new Date().toISOString() })
-          .eq("user_id", row.id)
-          .eq("week_of", weekOf);
-        if (stampErr) {
-          console.warn(
-            `[cron/weekly-send] force resend sent but delivered_at stamp failed for ${row.id}: ${stampErr.message}`
-          );
-        }
+      if (!providerSent) {
+        console.log(
+          "[cron/weekly-send] skipped provider call (delivery lane already finalized)"
+        );
+        return "settled";
       }
 
       // Count + log only on an ACTUAL send — inside resendConfigured's
       // early-return above so a dev/misconfig run with Resend unset doesn't
       // over-report for letters that never went out.
-      const labels = issue.sections.map((s) => s.topicLabel).filter(Boolean).join(" · ");
       if (kind === "backup-shared") {
         backupSharedSent++;
-        backupSharedSentEmails.push(row.email);
-        console.log(`[cron/weekly-send] sent BACKUP-SHARED (borrowed from today's cache) → ${row.id} (${labels})`);
+        backupSharedSentEmails.push(currentDeliveryEmail);
+        console.log(
+          `[cron/weekly-send] sent BACKUP-SHARED (borrowed from today's cache, ${issue.sections.length} section(s))`
+        );
       } else if (kind === "backup-fresh") {
         backupFreshSent++;
-        backupFreshSentEmails.push(row.email);
-        console.log(`[cron/weekly-send] sent BACKUP-FRESH (small fast retry) → ${row.id} (${labels})`);
+        backupFreshSentEmails.push(currentDeliveryEmail);
+        console.log(
+          `[cron/weekly-send] sent BACKUP-FRESH (small fast retry, ${issue.sections.length} section(s))`
+        );
       } else if (kind === "backup-stale") {
         backupStaleSent++;
-        backupStaleSentEmails.push(row.email);
-        console.log(`[cron/weekly-send] sent BACKUP-STALE (resend of a prior letter) → ${row.id} (${labels})`);
+        backupStaleSentEmails.push(currentDeliveryEmail);
+        console.log(
+          `[cron/weekly-send] sent BACKUP-STALE (resend of a prior letter, ${issue.sections.length} section(s))`
+        );
       } else {
         sent++;
-        console.log(`[cron/weekly-send] sent → ${row.id} (${labels})`);
+        console.log(
+          `[cron/weekly-send] sent (${issue.sections.length} section(s))`
+        );
       }
+      return "settled";
     }
+
+    // withDeadline stops waiting but does not cancel the provider/Supabase
+    // tail. If a timed-out attempt settles before this route builds its
+    // summary, reconcile the row-level retry set with that final outcome so
+    // response coverage cannot disagree with counters the same tail updated.
+    const trackDeliveryOutcome = (
+      attempt: Promise<DeliveryAttemptOutcome>
+    ): Promise<DeliveryAttemptOutcome> =>
+      attempt.then((outcome) => {
+        if (outcome === "settled") {
+          deliveryRetryRequiredUserIds.delete(row.id);
+        } else {
+          deliveryRetryRequiredUserIds.add(row.id);
+        }
+        return outcome;
+      });
 
     // RETRY-SAFETY: if a PRIOR run already generated and persisted this
     // subscriber's issue but never successfully delivered it (a same-day
@@ -1082,8 +1338,8 @@ export async function GET(req: Request) {
     // reuse that exact persisted content instead of regenerating. Found live
     // 2026-08-05: the per-user editor's note (assemble.ts's
     // generateEditorNote) is never cached, so a regenerated retry produces a
-    // DIFFERENT payload — but sendLetterNotification's Resend idempotency
-    // key is stable per (user, week_of, kind) (lib/email.ts), so Resend
+    // DIFFERENT payload, but sendLetterNotification's Resend idempotency key
+    // is stable per (user, week_of) for every scheduled content kind, so Resend
     // correctly 409s the mismatched retry as invalid_idempotent_request,
     // meaning the retry built specifically to rescue a transient Resend
     // error was GUARANTEED to fail on exactly that case. Reusing the
@@ -1091,34 +1347,40 @@ export async function GET(req: Request) {
     // idempotency key works as designed and the retry costs zero new AI
     // calls on top of being correct.
     const persistedRetry = pendingIssues.get(row.id);
-    let reusableSections: Issue["sections"] | undefined;
-    if (persistedRetry && isValidPersistedSections(persistedRetry.sections)) {
-      reusableSections = persistedRetry.sections;
-    } else if (persistedRetry) {
-      persistedRetryShapeMismatches++;
-      console.warn(`[cron/weekly-send] persisted retry content failed shape validation, regenerating → ${row.id}`);
-    }
 
+    let usableIssue: Issue | null = null;
     try {
       const issue: Issue =
-        reusableSections && reusableSections.length > 0
+        persistedRetry
           ? {
               id: `${profile.firstName.toLowerCase()}-${weekOf}`,
-              volume: persistedRetry!.volume,
-              number: persistedRetry!.number,
+              volume: persistedRetry.volume,
+              number: persistedRetry.number,
               weekOf: formatWeekOf(weekOf),
               recipientFirstName: profile.firstName,
               recipientCity: profile.city,
-              editorIntro: persistedRetry!.editor_intro,
-              sections: reusableSections,
+              editorIntro: persistedRetry.editor_intro,
+              sections: persistedRetry.sections,
             }
           : await withDeadline(
-              generateIssue(profile, weekOf, letterSize, freshness, dryCache, inFlight, failedCache),
+              generateIssue(
+                profile,
+                weekOf,
+                letterSize,
+                freshness,
+                dryCache,
+                inFlight,
+                failedCache,
+                paidCallAllowed
+              ),
               PER_USER_DEADLINE_MS,
-              `generateIssue(${row.id})`
+              "generateIssue(subscriber)"
             );
-      if (reusableSections && reusableSections.length > 0) {
-        console.log(`[cron/weekly-send] reusing already-generated issue (retry, zero new AI cost) → ${row.id}`);
+      usableIssue = issue;
+      if (persistedRetry) {
+        console.log(
+          "[cron/weekly-send] reusing already-generated issue (retry, zero new AI cost)"
+        );
       }
 
       // alpha-drift-r49-01 (2026-08-20, self-audit-r48 -- round 48's own
@@ -1151,14 +1413,36 @@ export async function GET(req: Request) {
       // them as failed) — accepted: the actual delivered_at claim and the
       // actual email are correct either way, this only risks a cosmetic
       // inaccuracy in one day's summary, not a duplicate or a silent miss.
-      const persistAndSend = runPersistAndSend(issue, "live");
+      const persistAndSend = trackDeliveryOutcome(
+        runPersistAndSend(issue, "live")
+      );
       after(persistAndSend.catch(() => undefined));
-      await withDeadline(persistAndSend, PERSIST_AND_SEND_DEADLINE_MS, `persist+send(${row.id})`);
+      const deliveryOutcome = await withDeadline(
+        persistAndSend,
+        PERSIST_AND_SEND_DEADLINE_MS,
+        "persist+send(subscriber)"
+      );
+      if (deliveryOutcome === "retry-required") {
+        deliveryRetryRequiredUserIds.add(row.id);
+      }
     } catch (e) {
       failed++;
       const msg = e instanceof Error ? e.message : "unknown";
-      failures.push({ email: row.email, error: msg });
-      console.error(`[cron/weekly-send] FAILED → ${row.id}: ${msg}`);
+      failures.push({ email: currentDeliveryEmail, error: msg });
+      console.error(`[cron/weekly-send] FAILED: ${msg}`);
+
+      // Once a complete issue exists, a persistence or delivery failure must
+      // never replace it with different content in this same run. Keep the
+      // live issue as the durable retry candidate. The next scheduled attempt
+      // reuses the exact persisted payload and the same provider idempotency
+      // key, which is safe even when the prior transport outcome was unclear.
+      if (usableIssue) {
+        console.warn(
+          "[cron/weekly-send] preserving completed issue for exact retry; content backups skipped"
+        );
+        deliveryRetryRequiredUserIds.add(row.id);
+        continue;
+      }
 
       // Three-layer backup (incident 2026-07-29 — see memory). A stale
       // resend ALONE isn't good enough: if the underlying problem persists
@@ -1178,7 +1462,10 @@ export async function GET(req: Request) {
       // above being one shared function instead of two near-copies.
       function buildBackupIssue(editorIntro: string, sections: Issue["sections"]): Issue {
         return {
-          id: `${profile.firstName.toLowerCase()}-${weekOf}-backup`,
+          // Keep the delivery-visible issue identity identical to the pending
+          // issue reconstructed on a later slot. Resend compares the full
+          // payload when the stable idempotency key is reused.
+          id: `${profile.firstName.toLowerCase()}-${weekOf}`,
           volume: 1,
           number: 1,
           weekOf: formatWeekOf(weekOf),
@@ -1223,11 +1510,13 @@ export async function GET(req: Request) {
             }))
           );
           backupKind = "backup-shared";
-          console.warn(`[cron/weekly-send] cache-borrow succeeded → ${row.id} (${chosen.length} shared topics)`);
+          console.warn(
+            `[cron/weekly-send] cache-borrow succeeded (${chosen.length} shared topics)`
+          );
         }
       } catch (cacheErr) {
         console.warn(
-          `[cron/weekly-send] cache-borrow check failed → ${row.id}: ${cacheErr instanceof Error ? cacheErr.message : cacheErr}`
+          `[cron/weekly-send] cache-borrow check failed: ${cacheErr instanceof Error ? cacheErr.message : cacheErr}`
         );
       }
 
@@ -1242,16 +1531,27 @@ export async function GET(req: Request) {
           const smallPool = pool.slice(0, FAST_FALLBACK_TOPIC_COUNT);
           if (smallPool.length > 0) {
             backupIssue = await withDeadline(
-              generateIssue({ ...profile, topics: smallPool }, weekOf, smallPool.length, freshness, dryCache, inFlight, failedCache),
+              generateIssue(
+                { ...profile, topics: smallPool },
+                weekOf,
+                smallPool.length,
+                freshness,
+                dryCache,
+                inFlight,
+                failedCache,
+                paidCallAllowed
+              ),
               FAST_FALLBACK_DEADLINE_MS,
-              `fast-fallback(${row.id})`
+              "fast-fallback(subscriber)"
             );
             backupKind = "backup-fresh";
-            console.warn(`[cron/weekly-send] fast fallback succeeded → ${row.id} (${smallPool.length} topics)`);
+            console.warn(
+              `[cron/weekly-send] fast fallback succeeded (${smallPool.length} topics)`
+            );
           }
         } catch (fastErr) {
           console.warn(
-            `[cron/weekly-send] fast fallback ALSO failed → ${row.id}: ${fastErr instanceof Error ? fastErr.message : fastErr}`
+            `[cron/weekly-send] fast fallback ALSO failed: ${fastErr instanceof Error ? fastErr.message : fastErr}`
           );
         }
       }
@@ -1286,7 +1586,9 @@ export async function GET(req: Request) {
             .limit(1)
             .maybeSingle();
           if (priorErr) {
-            console.error(`[cron/weekly-send] backup lookup query failed → ${row.id}: ${priorErr.message}`);
+            console.error(
+              `[cron/weekly-send] backup lookup query failed: ${priorErr.message}`
+            );
           }
           if (prior?.sections) {
             backupIssue = buildBackupIssue(
@@ -1297,21 +1599,33 @@ export async function GET(req: Request) {
           }
         } catch (lookupErr) {
           console.error(
-            `[cron/weekly-send] backup lookup failed → ${row.id}: ${lookupErr instanceof Error ? lookupErr.message : lookupErr}`
+            `[cron/weekly-send] backup lookup failed: ${lookupErr instanceof Error ? lookupErr.message : lookupErr}`
           );
         }
       }
 
       if (backupIssue && backupKind) {
         try {
-          const backupSend = runPersistAndSend(backupIssue, backupKind);
+          const backupSend = trackDeliveryOutcome(
+            runPersistAndSend(backupIssue, backupKind)
+          );
           after(backupSend.catch(() => undefined));
-          await withDeadline(backupSend, PERSIST_AND_SEND_DEADLINE_MS, `backup-send(${row.id})`);
+          const backupOutcome = await withDeadline(
+            backupSend,
+            PERSIST_AND_SEND_DEADLINE_MS,
+            "backup-send(subscriber)"
+          );
+          if (backupOutcome === "retry-required") {
+            deliveryRetryRequiredUserIds.add(row.id);
+          }
         } catch (backupErr) {
+          deliveryRetryRequiredUserIds.add(row.id);
           console.error(
-            `[cron/weekly-send] backup send failed → ${row.id}: ${backupErr instanceof Error ? backupErr.message : backupErr}`
+            `[cron/weekly-send] backup send failed: ${backupErr instanceof Error ? backupErr.message : backupErr}`
           );
         }
+      } else {
+        deliveryRetryRequiredUserIds.add(row.id);
       }
     }
   }
@@ -1332,7 +1646,56 @@ export async function GET(req: Request) {
   // Logged every run (not just when the ceiling trips) specifically so a
   // real day's totals can calibrate PAID_CALL_CEILING's first-pass estimate
   // — see that constant's comment.
-  const paidCallsThisRun = topicBlurbPaidCallCount() + deepseekCallCount() - paidCallBaseline;
+  const paidCallCounterDelta = paidCallsSinceBaseline(
+    paidCallBaseline,
+    currentPaidCallSnapshot()
+  );
+  const paidCallBudget = dailyPaidCallBudget.snapshot();
+  // The durable guard is invocation-scoped and therefore remains exact even
+  // if two requests share one warm process and its legacy module counters.
+  const paidCallsThisRun = paidCallBudget.used;
+  const deliveryRetryRequiredTotal = deliveryRetryRequiredUserIds.size;
+  const deliveryPageComplete = deliveryRetryRequiredTotal === 0;
+  const deliveryPageLastUserId = rows.length > 0 ? rows[rows.length - 1].id : null;
+  let deliveryCursorNext = deliveryCursor;
+  let deliveryCursorAdvanceFailed = false;
+  let deliveryCursorState: DeliveryCursorState;
+
+  // An explicit afterUserId is a read-only recovery view. It never moves
+  // scheduled progress. A normal page records the last inspected row even
+  // when one reader needs retry. The exact retry count keeps the workflow red,
+  // and proof-of-delivery coverage makes later same-day slots wrap and retry
+  // unresolved readers without starving readers beyond a bounded page cap.
+  if (cursorOverride) {
+    deliveryCursorState = "override_read_only";
+  } else if (!deliveryPageLastUserId) {
+    deliveryCursorState = "empty";
+  } else {
+    const { data: cursorAdvanced, error: cursorWriteError } = await sb.rpc(
+      "advance_weekly_send_cursor",
+      {
+        p_week_of: weekOf,
+        p_expected_cursor_user_id: persistedDeliveryCursor,
+        p_cursor_user_id: deliveryPageLastUserId,
+      }
+    );
+    if (cursorWriteError || cursorAdvanced !== true) {
+      console.error(
+        "[cron/weekly-send] delivery cursor advance failed:",
+        cursorWriteError?.message ?? "cursor changed concurrently"
+      );
+      deliveryCursorAdvanceFailed = true;
+      deliveryCursorState = "advance_failed";
+    } else {
+      deliveryCursorNext = deliveryPageLastUserId;
+      deliveryCursorState = deliveryPageComplete
+        ? "advanced"
+        : "advanced_with_retry";
+    }
+  }
+
+  const deliveryPageBlocked =
+    !deliveryPageComplete || deliveryCursorAdvanceFailed;
   const summary = {
     weekOf,
     subscribers: rows.length,
@@ -1360,7 +1723,14 @@ export async function GET(req: Request) {
     groqRateLimited,
     deepseekRateLimited,
     paidCallsThisRun,
+    paidCallCounterDelta,
+    paidCallBudgetDate,
     paidCallCeilingHit,
+    paidCallReservationsGranted: paidCallBudget.granted,
+    paidCallReservationsUsed: paidCallBudget.used,
+    paidCallReservationsUnused: paidCallBudget.remaining,
+    paidCallReservationExhausted: paidCallBudget.exhausted,
+    paidCallReservationError: paidCallBudget.error,
     // hardFailedTopics: distinct topics that exhausted every generation tier
     // this run (failedCache, alpha-spend-cap-02) — a systemic provider
     // outage failing topics before paidCallCount climbs enough to trip
@@ -1371,10 +1741,24 @@ export async function GET(req: Request) {
     cancelledMidRunSkips,
     suppressedMidRunSkips,
     eligibilityRecheckFailures,
-    persistedRetryShapeMismatches,
+    checkoutRetentionErrors: retentionErrors.length,
+    suppressionReconciliation: { deferredToPostSendMaintenance: true },
     elapsedMs,
     failures: cappedFailures,
     failuresTotal: failures.length,
+    deliveryCursor,
+    deliveryWrapped,
+    deliveryCursorNext,
+    deliveryCursorState,
+    deliveryCursorAdvanceFailed,
+    deliveryBatchSize: SUBSCRIBER_BATCH_SIZE,
+    deliveryPageCount: rows.length,
+    deliveryPageComplete,
+    deliveryRetryRequired: !deliveryPageComplete,
+    deliveryRetryRequiredTotal,
+    deliveryPageBlocked,
+    deliveryPageLastUserId,
+    deliveryHasMore,
   };
   // Log a redacted copy -- `summary` itself (with real emails) stays intact
   // below for the CRON_SECRET-gated JSON response and the ops-alert email,
@@ -1389,12 +1773,13 @@ export async function GET(req: Request) {
     skippedBlankSubscribers: skippedBlankSubscribers.length,
     deferred: deferred.length,
     failures: failures.length,
+    deliveryCursor: deliveryCursor ? "[redacted]" : null,
+    deliveryCursorNext: deliveryCursorNext ? "[redacted]" : null,
+    deliveryPageLastUserId: deliveryPageLastUserId ? "[redacted]" : null,
   }));
 
-  // A paid subscriber getting nothing, a hard send failure, Brave quota
-  // exhaustion (letters silently degrade to stale filler — a subscriber
-  // reported exactly this class of repeat content), or subscribers deferred
-  // for time should be LOUD — not buried in logs the owner won't read until a
+  // An eligible reader getting nothing, a hard send failure, search quota
+  // exhaustion, or readers deferred for time should be loud and visible.
   // letter is noticed missing. Best-effort single email per run (sendOpsAlert
   // never throws), only when something actually went wrong.
   if (
@@ -1406,12 +1791,14 @@ export async function GET(req: Request) {
     deepseekRateLimited > 0 ||
     deferred.length > 0 ||
     paidCallCeilingHit ||
-    eligibilityRecheckFailures > 0
+    eligibilityRecheckFailures > 0 ||
+    retentionErrors.length > 0 ||
+    deliveryCursorAdvanceFailed
   ) {
-    // A "failed" subscriber isn't necessarily one who got nothing anymore —
-    // some were caught by a backup layer. genuinelyMissed is the real
-    // severity signal: failed minus however many were rescued either way.
-    const genuinelyMissed = failed - backupSharedSent - backupFreshSent - backupStaleSent;
+    // This exact set is also the cursor-advance guard. It avoids inferring
+    // coverage from aggregate counters when a failed generation was rescued,
+    // or when a reader became ineligible during a backup attempt.
+    const genuinelyMissed = deliveryRetryRequiredTotal;
     const lines = [
       `weekOf=${weekOf}  sent=${sent}  backupSharedSent=${backupSharedSent}  backupFreshSent=${backupFreshSent}  backupStaleSent=${backupStaleSent}  subscribers=${rows.length}  failed=${failed}  genuinelyMissed=${genuinelyMissed}`,
       backupSharedSent > 0
@@ -1424,13 +1811,13 @@ export async function GET(req: Request) {
         ? `${backupStaleSent} subscriber(s) needed the true last resort — their most recent prior letter, resent (they were told it's a repeat): ${capListLine(backupStaleSentEmails)}. Worth a closer look if this keeps happening — it means even the cache-borrow and the fast retry are both failing, not just the full generation.`
         : "",
       skippedBlankSubscribers.length
-        ? `PAID subscribers who got NOTHING (blank name / empty topics): ${capListLine(skippedBlankSubscribers)}`
+        ? `Eligible readers who got NOTHING (blank name / empty topics): ${capListLine(skippedBlankSubscribers)}`
         : "",
       failures.length
         ? `Underlying generation failures (root cause, investigate this even if a backup layer covered it): ${cappedFailures.map((f) => `${f.email} (${f.error})`).join("; ")}${failures.length > EMAIL_LIST_CAP ? ` (+${failures.length - EMAIL_LIST_CAP} more)` : ""}`
         : "",
       braveRateLimited > 0
-        ? `Brave returned 429 on ${braveRateLimited} queries — monthly search quota likely exhausted; letters are degrading to filler. Fix: upgrade the Brave plan (https://api.search.brave.com), ~$5-10/mo at this volume.`
+        ? `Brave returned 429 on ${braveRateLimited} queries. The fallback chain stayed active. Review free-tier quota, caching, and alternate search health before considering any paid change.`
         : "",
       // Can only be nonzero when braveRateLimited is also nonzero this same
       // run (You.com only ever gets tried after Brave itself 429s/402s — see
@@ -1478,27 +1865,35 @@ export async function GET(req: Request) {
         ? `DeepSeek (the uncapped backstop tier) hit a quota/balance wall on ${deepseekRateLimited} calls this run (429 or 402) — that shouldn't normally happen on a funded account. Worth checking the DeepSeek dashboard for balance/concurrency issues.`
         : "",
       deferred.length
-        ? `${paidCallCeilingHit ? "Time budget and/or the paid-call cost ceiling" : "Time budget"} exhausted before reaching everyone — ${deferred.length} subscriber(s) got NO letter this run: ${capListLine(deferred)}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically).${paidCallCeilingHit ? "" : " This is a scale signal — the subscriber list is big enough that the daily run is pressing against the workflow's time budget."}`
+        ? `Time budget exhausted before reaching everyone. ${deferred.length} subscriber(s) got NO letter this run: ${capListLine(deferred)}. Safe to recover: rerun this exact date with ?weekOf=${weekOf} (already-delivered subscribers are skipped automatically). This is a scale signal. The subscriber list is big enough that the daily run is pressing against the workflow's time budget.`
         : "",
       // PAID_CALL_CEILING tripped — a materially different signal than a
-      // scale-driven time-budget defer above: this means Haiku+Sonnet+
-      // DeepSeek combined made more real, billed calls than a normal day's
+      // scale-driven time-budget defer above: this means Haiku+Sonnet+Opus+
+      // DeepSeek combined reached the maximum real, billed calls a normal day's
       // topic-cache-sharing should ever produce, which is exactly the
       // "systemic failure forcing every topic through the full waterfall"
       // scenario alpha-spend-cap-01 exists to catch. Worth checking
       // Anthropic/DeepSeek dashboards for actual spend, not just quota.
       paidCallCeilingHit
-        ? `COST BRAKE TRIPPED: paid-tier calls (Haiku+Sonnet+DeepSeek) hit ${paidCallsThisRun} this run, over the ${PAID_CALL_CEILING} ceiling — stopped starting new subscribers early. Check for a systemic generation failure (every topic escalating through the full waterfall) rather than assuming this is just a busy day.`
+        ? paidCallBudget.error
+          ? `COST BRAKE TRIPPED: the durable paid-call reservation failed (${paidCallBudget.error}). No unreserved paid call was started. Cached content, free tiers, deterministic intro, and prior-issue backup remained available.`
+          : `COST BRAKE TRIPPED: paid-tier calls (Haiku+Sonnet+Opus+DeepSeek) exhausted Alpha's shared ${PAID_CALL_CEILING}-call allowance for invocation date ${paidCallBudgetDate}. This invocation used ${paidCallBudget.used} of ${paidCallBudget.granted} slots it reserved. Stopped starting new paid calls while cached content, free tiers, deterministic intro, and prior-issue backup remained available. Check for a systemic generation failure (every topic escalating through the full waterfall) rather than assuming this is just a busy day.`
         : "",
-      // A persistent failure here means the round-12 mid-run-eligibility
-      // guard has gone inert (fails open by design) -- worth a loud signal
-      // even though no subscriber is actually harmed by a single blip.
+      // A persistent failure here means the round-12 mid-run eligibility guard
+      // is skipping sends because it cannot prove current access. Keep it loud
+      // so the blocked readers can be recovered after the read path is fixed.
       eligibilityRecheckFailures > 0
-        ? `The mid-run eligibility re-check failed ${eligibilityRecheckFailures} time(s) this run (fails open, so those sends still went out normally) — if this keeps happening, the guard against mailing someone right after they unsubscribe/cancel/bounce/complain (added 2026-08-06, broadened 2026-08-14) is silently not working. Check Supabase connectivity/permissions.`
+        ? `The mid-run eligibility re-check could not prove access ${eligibilityRecheckFailures} time(s). Those sends were skipped. Check Supabase connectivity, permissions, and recent account deletion activity.`
+        : "",
+      retentionErrors.length > 0
+        ? `Checkout privacy retention failed ${retentionErrors.length} time(s). Raw staged profile cleanup needs immediate review.`
+        : "",
+      deliveryCursorAdvanceFailed
+        ? "The durable delivery cursor compare-and-swap failed. This page was treated as blocked and scheduled progress was not claimed."
         : "",
     ].filter(Boolean);
     await sendOpsAlert(
-      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} genuinely missed)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${geminiRateLimited > 0 ? ", Gemini quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}${eligibilityRecheckFailures > 0 ? `, eligibility-recheck failed x${eligibilityRecheckFailures}` : ""}`,
+      `[alpha] send ${weekOf}: ${skippedBlankSubscribers.length} blanked, ${failed} failed (${genuinelyMissed} retry required)${braveRateLimited > 0 ? ", Brave quota hit" : ""}${geminiRateLimited > 0 ? ", Gemini quota hit" : ""}${groqRateLimited > 0 ? ", Groq quota hit" : ""}${deepseekRateLimited > 0 ? ", DeepSeek quota hit" : ""}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}${paidCallCeilingHit ? ", COST BRAKE TRIPPED" : ""}${eligibilityRecheckFailures > 0 ? `, eligibility-recheck failed x${eligibilityRecheckFailures}` : ""}${retentionErrors.length > 0 ? `, retention failed x${retentionErrors.length}` : ""}${deliveryCursorAdvanceFailed ? ", cursor CAS failed" : ""}`,
       lines.join("\n")
     );
   }

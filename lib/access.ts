@@ -24,3 +24,35 @@ export function hasActiveAccess(
   if (Number.isNaN(ends.getTime())) return false; // unparseable → treat as ended (fail safe)
   return ends.getTime() > now.getTime();
 }
+
+// Reader-facing access requires BOTH evidence that access was granted and an
+// unexpired cancellation window. hasActiveAccess() intentionally answers only
+// the second half because billing/admin callers use it alongside their own
+// subscription checks. Letter, inbox, and archive reads must use this combined
+// predicate so a revoked comp (`subscribed_at = null`) cannot keep reading old
+// issues merely because cancelled_at was historically null.
+export function hasSubscriberAccess(
+  subscribedAt: string | null | undefined,
+  cancelledAt: string | null | undefined,
+  now: Date = new Date()
+): boolean {
+  return !!subscribedAt && hasActiveAccess(cancelledAt, now);
+}
+
+// Invite access is a separate entitlement from Stripe. A manually approved
+// reader keeps access after the linked paid period ends, while cancelled_at
+// continues to mirror the real billing end date. Keeping those two facts
+// separate lets an invite grant be revoked without inventing Stripe state.
+// subscribed_at is still required so a bare or deleted profile cannot regain
+// access from a stale audit marker alone.
+export function hasReaderAccess(
+  subscribedAt: string | null | undefined,
+  cancelledAt: string | null | undefined,
+  accessGrantedAt: string | null | undefined,
+  now: Date = new Date()
+): boolean {
+  return (
+    !!subscribedAt &&
+    (!!accessGrantedAt || hasActiveAccess(cancelledAt, now))
+  );
+}

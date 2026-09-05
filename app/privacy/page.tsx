@@ -122,21 +122,15 @@ export default function PrivacyPage() {
           <strong>Stripe</strong> handles all payment information. We never see your
           card number.
         </li>
-        {/* alpha-drift-r28-07 (2026-08-15): a real, disclosed gap in the
-        "irreversible" delete promise above -- your name and city go into
-        Stripe when you check out so a receipt can carry your name, and
-        Stripe's own checkout records can't be edited or scrubbed after the
-        fact by anyone, including us. Removed the one avoidable duplicate
-        copy of this (it was also being written to the Stripe subscription
-        record for no real reason) and disclosing the one that's genuinely
-        unavoidable, instead of leaving it unmentioned. */}
         <li>
-          Your first name and city also go to Stripe at checkout, so a
-          receipt can carry your name. Deleting your account cancels the
-          subscription and deletes the Stripe customer record, but Stripe&apos;s
-          own checkout record itself can&apos;t be edited or removed afterward by
-          anyone, including us. Your name and city stay on that one record
-          at Stripe, permanently, the same way a receipt would.
+          Stripe receives your email address and payment details at checkout.
+          Current Alpha checkouts do not copy your profile&apos;s first name, city,
+          topic choices, or profile answers into Stripe. Alpha sends Stripe an
+          opaque checkout reference so a successful payment can be matched to
+          the right profile. Older Alpha checkout sessions created before this
+          change may still contain a first name and city in Stripe metadata.
+          New checkouts stopped sending those fields at the cutover. Older
+          session metadata may remain under Stripe&apos;s own retention rules.
         </li>
         {/* alpha-drift-r36-05 (2026-08-14): both bullets were marathon
         sentences with 3+ nested parentheticals, an em dash, and a
@@ -190,13 +184,69 @@ export default function PrivacyPage() {
         </li>
       </ul>
 
+      <H2>Checkout matching</H2>
+      <p>
+        Alpha saves the validated profile you submit directly to your confirmed
+        account before Stripe checkout starts. The separate service-only
+        checkout reservation does not contain your name, city, topics, or
+        profile answers. It keeps a keyed one-way email binding, a random
+        browser binding, and exact Stripe references so Alpha can match the
+        payment and stop duplicate subscriptions. During an interrupted Session
+        creation, the exact checkout email is held in authenticated encryption
+        so the same Stripe request can be replayed safely. Alpha clears that
+        encrypted email as soon as the Session is bound or reaches a proven
+        terminal result. After a checkout reaches a proven terminal state,
+        Alpha keeps its exact Customer and Subscription references for up to
+        180 days for billing disputes and checkout support. It then removes
+        the account, email, browser, Customer, and Subscription bindings. A
+        random internal marker and the Checkout Session ID remain only to stop
+        that same payment link from being used twice.
+      </p>
+
       <H2>Your rights</H2>
       <p>You can, at any time:</p>
       <ul>
         <li>Download a copy of everything we have about you from Settings → Account.</li>
-        <li>Delete your account and all associated data (irreversible) from the same place.</li>
+        <li>Delete your Alpha account, profile, and letters (irreversible) from the same place. The limited retention rules below still apply.</li>
         <li>Email us to revoke any consent or ask what we have.</li>
       </ul>
+      <p>
+        After a live deletion finishes, Alpha keeps a service-only deletion
+        marker for up to seven days so a delayed retry cannot bring the account
+        back. It contains only the random account ID and deletion times. It has
+        no email, profile text, letters, or Stripe references. Alpha then
+        removes that marker automatically.
+      </p>
+      <p>
+        Account deletion stops Alpha delivery. It does not remove an existing
+        do-not-email block held by Resend for a bounced address or spam
+        complaint. We keep that protection in place to prevent unwanted mail.
+        If you return, delivery may need a separate review before it resumes.
+        Resend separately retains email and log data for 30 days on its
+        standard plans and backups for seven days, under its{' '}
+        <a href="https://resend.com/security/gdpr" target="_blank" rel="noopener noreferrer">
+          retention policy
+        </a>. You can contact us about a request involving provider-held data.
+        Removing a delivery block alone does not erase those records.
+      </p>
+      <p>
+        Delivery events linked to your account are removed with it. An event
+        that arrives before we can match its message ID may temporarily keep
+        the message ID, event times, and one-way recipient hashes in a
+        restricted recovery queue. Unmatched records expire seven days after
+        the earlier of the original event time and first receipt. Replays do
+        not restart that window. Expired records are removed by the next
+        successful scheduled cleanup. Cleanup failures are flagged for review.
+        These records cannot restore your account or grant access to someone
+        who later signs up with the same email.
+      </p>
+      <p>
+        Account deletion does not erase payment records that Stripe keeps for
+        billing, fraud prevention, tax, or legal duties. Stripe may retain the
+        billing customer record and email tied to those records under its own
+        retention rules. Alpha removes the profile, letters, access, and live
+        subscription links it controls.
+      </p>
       {/* alpha-drift-r25-01 (2026-08-14): "(irreversible)" above is true of what
       the app itself can do for you -- there's no undo button and no way to
       restore an account on request. It doesn't mean every trace disappears

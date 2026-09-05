@@ -21,7 +21,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/ThemeSwitcher.tsx: the toggle button truncates instead of wrapping on narrow viewports");
@@ -136,9 +137,6 @@ console.log("(5) components/Digest.tsx: DigestProps' stale example clock-time is
 
   // Behavioral proof the comment's NEW range claim is actually correct,
   // mirroring round 33's own verify script's threshold check.
-  function localDateCrossesMidnight(anchorUtcHour: number, localOffsetHours: number): boolean {
-    return anchorUtcHour + localOffsetHours >= 24;
-  }
   check("(5d) behavioral: UTC+10 (the low end of the comment's claimed range) lands at local midnight under the real 14:00Z anchor", 14 + 10 - 24 === 0);
   check("(5e) behavioral: UTC+14 (the high end) lands ~4am under the real 14:00Z anchor", 14 + 14 - 24 === 4);
 }

@@ -33,7 +33,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) docs/BRAND_KIT.md: the theme-system section no longer undercounts the catalog at 10, and points at the real source of truth");

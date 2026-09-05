@@ -1,6 +1,6 @@
 // Verify round 32 findings: (1)+(2) admin/users' grant_free/revoke_free and
-// clear_suppression actions were check-then-act against a live Stripe/Resend
-// webhook, unlike this app's own established compare-and-swap idiom
+// clear_suppression was check-then-act against a live Stripe/Resend webhook,
+// unlike this app's own established compare-and-swap idiom
 // (weekly-send's delivered_at claim, the Stripe-webhook mirror writes); (3)
 // /topics' ranked lineup list conveyed rank + favorite/backup status via
 // aria-hidden/color only, and move()/removeAt() gave screen reader users no
@@ -11,17 +11,19 @@
 // param from the URL bar the way its own hash-flow success path already
 // does; (7) /writing deliberately did NOT get the same URL-bar scrub (a real
 // window.location.reload() there depends on session_id surviving in the
-// URL for the payment-gate retry to work); (8) admin/accounts' act() only
+// URL for the real retry to work); (8) admin/accounts' act() only
 // ever alert()'d on failure, giving zero success feedback to a screen reader
 // user. alpha-drift-r32-01 through r32-04, all 2026-08-14.
 // Run: npx tsx scripts/verify-r32-findings.mts
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/api/admin/users/route.ts: grant_free/revoke_free fold eligibility into the UPDATE's WHERE, detect a lost race via 0-row select");
@@ -31,43 +33,44 @@ console.log("(1) app/api/admin/users/route.ts: grant_free/revoke_free fold eligi
   const grantStart = src.indexOf('if (body.action === "grant_free")');
   const revokeStart = src.indexOf('if (body.action === "revoke_free")');
   const clearStart = src.indexOf('if (body.action === "clear_suppression")');
-  check("(1a) all 3 admin action blocks found in order", grantStart > 0 && revokeStart > grantStart && clearStart > revokeStart);
+  const unknownActionStart = src.indexOf(
+    '\n  return NextResponse.json({ error: "Unknown action"',
+    revokeStart
+  );
+  check("(1a) grant/revoke blocks and the earlier held clear guard are found with distinct boundaries", grantStart > 0 && revokeStart > grantStart && clearStart > 0 && clearStart < grantStart && unknownActionStart > revokeStart);
 
   const grantBlock = src.slice(grantStart, revokeStart);
+  check("(1a2-grant) grant extraction is nonempty and ends at revoke_free", grantBlock.length > 500 && !grantBlock.includes('if (body.action === "revoke_free")'));
   check("(1b-grant) the UPDATE now re-checks stripe_customer_id is still null via .is()", /\.is\("stripe_customer_id", null\)/.test(grantBlock));
-  check("(1c-grant) .select(\"id\") added so a 0-row result is detectable", /\.is\("stripe_customer_id", null\)\s*\n\s*\.select\("id"\);/.test(grantBlock));
+  check("(1c-grant) both Stripe identifiers are re-checked and .select(\"id\") makes a 0-row result detectable", /\.is\("stripe_customer_id", null\)\s*\n\s*\.is\("stripe_subscription_id", null\)/.test(grantBlock) && /const \{ error, data: updated \} = await grant\s*\n\s*\.select\("id"\);/.test(grantBlock));
+  check("(1c2-grant) the grant CAS also binds the canonical email and every delivery-state snapshot", /\.eq\("email", existing\.email\)/.test(grantBlock) && /grant = existing\.bounced_at/.test(grantBlock) && /grant = existing\.complained_at/.test(grantBlock) && /grant = existing\.suppression_cleanup_pending_at/.test(grantBlock) && /grant = existing\.delivery_suppression_cleared_at/.test(grantBlock));
+  check("(1c3-grant) access approval preserves all delivery-policy fields and makes no provider call", !/\.update\(\{[\s\S]*?unsubscribed_at:\s*null/.test(grantBlock) && !/\.update\(\{[\s\S]*?bounced_at:\s*null/.test(grantBlock) && !/\.update\(\{[\s\S]*?complained_at:\s*null/.test(grantBlock) && !/\.update\(\{[\s\S]*?suppression_cleanup_pending_at:\s*(?:null|grantedAt)/.test(grantBlock) && !/\.update\(\{[\s\S]*?delivery_suppression_cleared_at:/.test(grantBlock) && !grantBlock.includes("removeResendSuppression("));
   check("(1d-grant) a 0-row update returns 409, not a silent { ok: true }", /if \(!updated \|\| updated\.length === 0\) \{[\s\S]*?status: 409/.test(grantBlock));
 
-  const revokeBlock = src.slice(revokeStart, clearStart);
+  const revokeBlock = src.slice(revokeStart, unknownActionStart);
+  check("(1a3-revoke) revoke extraction is nonempty and ends at the unknown-action fallback", revokeBlock.length > 300 && !revokeBlock.includes('if (body.action === "clear_suppression")'));
   check("(1e-revoke) the UPDATE now re-checks stripe_customer_id is still null via .is()", /\.is\("stripe_customer_id", null\)/.test(revokeBlock));
-  check("(1f-revoke) .select(\"id\") added so a 0-row result is detectable", /\.is\("stripe_customer_id", null\)\s*\n\s*\.select\("id"\);/.test(revokeBlock));
+  check(
+    "(1f-revoke) both Stripe identifiers are re-checked and .select(\"id\") makes a 0-row result detectable",
+    /\.is\("stripe_customer_id", null\)\s*\n\s*\.is\("stripe_subscription_id", null\)\s*\n\s*\.select\("id"\);/.test(revokeBlock)
+  );
   check("(1g-revoke) a 0-row update returns 409, not a silent { ok: true }", /if \(!updated \|\| updated\.length === 0\) \{[\s\S]*?status: 409/.test(revokeBlock));
 }
 
-console.log("(2) app/api/admin/users/route.ts: clear_suppression re-checks bounced_at/complained_at immediately before the write");
+console.log("(2) app/api/admin/users/route.ts: clear_suppression is a validated hard hold with the dormant SQL protocol left fail-closed");
 {
   const src = readFileSync(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8");
   const clearStart = src.indexOf('if (body.action === "clear_suppression")');
-  const clearBlock = src.slice(clearStart);
+  const serviceStart = src.indexOf("const sb = await supabaseServiceClient();", clearStart);
+  const clearBlock = src.slice(clearStart, serviceStart);
+  const helper = readFileSync(new URL("../lib/suppression-recovery.ts", import.meta.url), "utf8");
 
-  const firstSuppressionCallIdx = clearBlock.indexOf("removeResendSuppression(row.email)");
-  const reReadIdx = clearBlock.indexOf('.select("bounced_at, complained_at")');
-  const secondSuppressionCallIdx = clearBlock.indexOf("removeResendSuppression(row.email)", firstSuppressionCallIdx + 1);
-  const finalUpdateIdx = clearBlock.indexOf('.update({ bounced_at: null, complained_at: null })');
-
-  check("(2a) a first removeResendSuppression call exists (pre-existing r20-06 behavior, untouched)", firstSuppressionCallIdx > 0);
-  check("(2b) a fresh re-select of bounced_at/complained_at happens AFTER the first suppression call", reReadIdx > firstSuppressionCallIdx);
-  check("(2c) a SECOND removeResendSuppression call exists, gated on the re-select, BEFORE the final DB write", secondSuppressionCallIdx > reReadIdx && secondSuppressionCallIdx < finalUpdateIdx);
-  // alpha-drift-r33-01 (2026-08-14): round 33's self-audit found the
-  // truthiness-only gate this assertion checks for was itself buggy -- it
-  // fired on essentially every ordinary call, not just a genuine mid-request
-  // race, since fresh.bounced_at/complained_at is already non-null on any
-  // normal invocation (that's what makes the button render at all). Now
-  // compares against a real baseline captured in the initial pre-fetch
-  // instead -- see verify-r33-findings.mts's (1a)-(1h) for the corrected
-  // shape's own coverage.
-  check("(2d) the second call is conditional on the suppression state actually changing (not just being non-null), per r33-01's real-baseline fix", /if \(suppressionChangedMidRequest && row\.email\) \{/.test(clearBlock));
-  check("(2e) a failed follow-up suppression clear leaves the DB flags untouched (502, not a silent proceed)", /clearing it failed\. Left the DB flags untouched/.test(clearBlock));
+  check("(2a) the held route slice is nonempty, returns the stable 409 code, and cannot reach the service client", clearBlock.length > 100 && clearBlock.includes('code: "manual_recovery_disabled"') && clearBlock.includes("status: 409") && !clearBlock.includes("recoverResendSuppression({") && !clearBlock.includes("removeResendSuppression("));
+  check("(2b) the held route has no recovery-helper or provider-removal import", !src.includes('from "@/lib/suppression-recovery"') && !src.includes('from "@/lib/email"'));
+  check("(2c) the dormant helper returns typed manual_recovery_disabled before provider configuration or a claim", helper.indexOf('return { status: "manual_recovery_disabled" }') > -1 && helper.indexOf('return { status: "manual_recovery_disabled" }') < helper.indexOf("if (!params.providerConfigured)") && helper.indexOf('return { status: "manual_recovery_disabled" }') < helper.indexOf('"claim_resend_suppression_recovery"'));
+  check("(2d) dormant protocol: the helper claims before its one provider leg and finalizes only after strict true", helper.indexOf('"claim_resend_suppression_recovery"') < helper.indexOf("removeSuppression(claimed.recipient_email)") && helper.indexOf("removeSuppression(claimed.recipient_email)") < helper.indexOf('"finalize_resend_suppression_recovery"'));
+  check("(2e) dormant protocol: one false or thrown provider leg never finalizes", (helper.match(/removeSuppression\(claimed\.recipient_email\)/g) || []).length === 1 && /if \(!providerCleared\) return \{ status: "provider_failed" \}/.test(helper) && /catch \{\s*return \{ status: "provider_failed" \};\s*\}/.test(helper));
+  check("(2f) dormant protocol: malformed claim or lost settlement stays unconfirmed", helper.includes("settlement_unconfirmed") && helper.includes("asSingleClaimRow(data)") && /error \|\| typeof data !== "string"/.test(helper));
 }
 
 console.log("(3) app/topics/page.tsx: rank + favorite/backup status announced to screen readers, move()/removeAt() give live feedback");
@@ -182,20 +185,57 @@ console.log("(6) app/auth/callback/page.tsx: the PKCE code param is scrubbed fro
   check("(6b) the scrub is gated on code actually being present", /if \(code && typeof window !== "undefined"\) \{\s*\n\s*window\.history\.replaceState/.test(src));
 }
 
-console.log("(7) app/writing/page.tsx: deliberately did NOT get a URL-bar scrub (would break the Try-again reload's payment-gate retry)");
+console.log("(7) app/writing/page.tsx: deliberately did NOT get a URL-bar scrub (would break the Try-again reload retry)");
 {
   const src = readFileSync(new URL("../app/writing/page.tsx", import.meta.url), "utf8");
   check("(7a) no history.replaceState call was added to this page", !/history\.replaceState/.test(src));
   check("(7b) sessionId is still read from window.location.search exactly as before", /new URLSearchParams\(window\.location\.search\)\.get\("session_id"\) \|\| undefined/.test(src));
   check("(7c) the reasoning is documented inline (so a future round doesn't 'fix' this into a regression)", /would make that reload lose session_id entirely/.test(src));
-  check("(7d) the Try-again button still calls a real window.location.reload()", /onClick=\{\(\) => window\.location\.reload\(\)\}/.test(src));
+  const retryAction = src.match(
+    /onClick=\{\(\) =>\s*(deliveryPaused\s*\?\s*router\.push\("\/inbox" as never\)\s*:\s*checkoutAlreadyUsed\s*\?\s*router\.push\("\/signin" as never\)\s*:\s*window\.location\.reload\(\))\s*\}/
+  )?.[1];
+  check("(7d) the retry button keeps its explicit paused, claimed, and retry branches", typeof retryAction === "string");
+
+  if (retryAction) {
+    // Execute the production ternary, with only its TypeScript-only `as never`
+    // casts removed. This proves the actual branch order rather than a copied
+    // approximation that could drift from the button.
+    const invokeRetry = new Function(
+      "deliveryPaused",
+      "checkoutAlreadyUsed",
+      "router",
+      "window",
+      `return (${retryAction.replaceAll(" as never", "")});`
+    ) as (
+      deliveryPaused: boolean,
+      checkoutAlreadyUsed: boolean,
+      router: { push: (path: string) => void },
+      window: { location: { reload: () => void } }
+    ) => void;
+    const destinationFor = (deliveryPaused: boolean, checkoutAlreadyUsed: boolean) => {
+      const actions: string[] = [];
+      invokeRetry(
+        deliveryPaused,
+        checkoutAlreadyUsed,
+        { push: (path) => actions.push(`push:${path}`) },
+        { location: { reload: () => actions.push("reload") } }
+      );
+      return actions;
+    };
+    check("(7e) behavioral: delivery paused goes straight to inbox, never reloads", destinationFor(true, false).join(",") === "push:/inbox" && destinationFor(true, true).join(",") === "push:/inbox");
+    check("(7f) behavioral: only an unpaused already-claimed checkout goes to sign-in", destinationFor(false, true).join(",") === "push:/signin");
+    check("(7g) behavioral: retries use a real reload only while delivery is unpaused and the checkout is unclaimed", destinationFor(false, false).join(",") === "reload");
+  }
 }
 
 console.log("(8) app/settings/accounts/page.tsx: act() announces its own result via a live region");
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
   check("(8a) actionMsg state added", /const \[actionMsg, setActionMsg\] = useState<string \| null>\(null\);/.test(src));
-  check("(8b) act()'s signature now takes email", /async function act\(userId: string, email: string, action: "delete" \| "grant_free" \| "revoke_free" \| "clear_suppression", confirmMsg\?: string\) \{/.test(src));
+  check(
+    "(8b) act()'s signature still takes email before the action union",
+    /async function act\([\s\S]*?email: string,[\s\S]*?action:[\s\S]*?confirmMsg\?: string[\s\S]*?\) \{/.test(src)
+  );
   check("(8c) a per-action verb is computed and announced on success", /setActionMsg\(`\$\{verb\} \$\{email\}\.`\);/.test(src));
   // alpha-drift-r48-supersedes-r32 (2026-08-20): round 48's alpha-drift-r48-02
   // replaced the single setBusy(userId) call with a busyRowsRef/setBusyRows
@@ -206,30 +246,35 @@ console.log("(8) app/settings/accounts/page.tsx: act() announces its own result 
   check("(8d) actionMsg is cleared at the start of each new action (so a same-text repeat still mutates the live region)", /setBusyRows\(new Set\(busyRowsRef\.current\)\);\s*\n\s*setActionMsg\(null\);/.test(src));
   check("(8e) a role=status live region renders actionMsg", /<p role="status" aria-live="polite" className="sr-only">\s*\{actionMsg\}/.test(src));
 
-  // All 4 call sites now pass u.email as the second argument.
+  // Every currently supported admin action call site passes u.email as the
+  // second argument. The hard-held clear_suppression action has no UI call.
   const callSites = [
     /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"grant_free"/,
     /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"revoke_free"/,
-    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"clear_suppression"/,
+    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"grant_invite"/,
+    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"revoke_invite"/,
+    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"deny_access"/,
     /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"delete"/,
   ];
-  const names = ["grant_free", "revoke_free", "clear_suppression", "delete"];
+  const names = ["grant_free", "revoke_free", "grant_invite", "revoke_invite", "deny_access", "delete"];
   callSites.forEach((re, i) => check(`(8f-${names[i]}) call site passes u.email`, re.test(src)));
+  check("(8f2) the UI action union excludes the hard-held clear_suppression action", !/\| "clear_suppression"/.test(src));
 
-  // Behavioral proof of the verb-selection logic.
-  function verbFor(action: "delete" | "grant_free" | "revoke_free" | "clear_suppression"): string {
-    return action === "delete"
-      ? "Deleted"
-      : action === "grant_free"
-      ? "Granted free access to"
-      : action === "revoke_free"
-      ? "Revoked free access from"
-      : "Cleared delivery suppression for";
+  // Execute the page's actual verb selection. A copied ternary would keep
+  // passing even if the production announcement changed or broke.
+  const verbStart = src.indexOf("const verb =", src.indexOf("async function act("));
+  const verbEnd = src.indexOf("setActionMsg(`${verb} ${email}.`)", verbStart);
+  check("(8f3) the actual action announcement expression has valid boundaries", verbStart > 0 && verbEnd > verbStart);
+  const verbScript = new vm.Script(`${src.slice(verbStart, verbEnd)}\nverb;`);
+  function verbFor(action: "delete" | "grant_free" | "revoke_free" | "grant_invite" | "revoke_invite" | "deny_access"): string {
+    return verbScript.runInNewContext({ action }, { timeout: 1000 }) as string;
   }
   check("(8g) behavioral: verb for delete", verbFor("delete") === "Deleted");
   check("(8h) behavioral: verb for grant_free", verbFor("grant_free") === "Granted free access to");
   check("(8i) behavioral: verb for revoke_free", verbFor("revoke_free") === "Revoked free access from");
-  check("(8j) behavioral: verb for clear_suppression", verbFor("clear_suppression") === "Cleared delivery suppression for");
+  check("(8j) behavioral: verb for grant_invite", verbFor("grant_invite") === "Granted permanent invite access to");
+  check("(8k) behavioral: verb for revoke_invite", verbFor("revoke_invite") === "Revoked permanent invite access from");
+  check("(8l) behavioral: verb for deny_access", verbFor("deny_access") === "Denied the access request from");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

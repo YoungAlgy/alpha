@@ -14,7 +14,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/ThemeSwitcher.tsx: Tab focus-trap + blur backstop");
@@ -78,33 +79,20 @@ console.log("(3) app/api/stripe/webhook/route.ts: charge.refunded keys its alert
   check("(3c) no longer keys on charge.id (the bug: distinct refund events on the same charge could dedupe against each other)", !/`alpha-refund-\$\{charge\.id\}`/.test(block));
 }
 
-console.log("(4) app/api/stripe/webhook/route.ts: dispute's charge-retrieve failure now rethrows for Stripe to retry");
+console.log("(4) app/api/stripe/webhook/route.ts: dispute billing lookups fail into Stripe retry");
 {
   const src = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
   const caseMatch = src.match(/case "charge\.dispute\.created": \{([\s\S]*?)case "charge\.dispute\.closed":/);
   check("(4a) the charge.dispute.created case was found", !!caseMatch);
   const block = caseMatch ? caseMatch[1] : "";
-  check("(4b) the retrieve failure catch still logs (observability preserved)", /console\.error\(\s*`\[stripe-webhook\] dispute \$\{dispute\.id\}: charge retrieve failed:`/.test(block));
-  // alpha-drift-r28-02 (2026-08-15): round 28's self-audit found this
-  // rethrow-immediately shape made the specific dispute alert unreachable
-  // on a PERMANENT retrieve failure -- every retry rethrew the same way
-  // before ever reaching the alert, so it was silently lost once Stripe's
-  // retry window lapsed. Round 28 moved the throw to fire AFTER the alert
-  // (captured as retrieveError, rethrown only once the alert has gone out).
-  // The exact corrected shape is checked in verify-r28-findings.mts; this
-  // check now only confirms the failure is still captured for a later throw,
-  // not that it throws immediately inside the catch (which no longer holds).
-  check("(4c) the retrieve failure is still captured for a later throw (now fires AFTER the alert -- see verify-r28-findings.mts for the exact corrected shape)", /retrieveError = e;/.test(block));
-  // alpha-drift-r29-02 (2026-08-14): round 29's self-audit added a day-bucket
-  // line inside this same `if (!customerId) {` block before the alert call
-  // (see verify-r29-findings.mts check 2c/2d for the exact corrected shape),
-  // so the tight `{\s*await sendOpsAlert(` adjacency this check used to
-  // require no longer holds. Loosened to confirm the branch and the alert's
-  // message both still exist, without asserting exact adjacency -- the same
-  // "point to the later round's script for the authoritative shape" pattern
-  // this file's own (4c) comment already established.
-  check("(4d) the genuinely-different 'retrieve succeeded but no customer on charge' alert path is untouched (exact shape now owned by verify-r29-findings.mts)", /if \(!customerId\) \{/.test(block) && /await sendOpsAlert\(\s*"alpha\. dispute opened -- couldn't identify the subscriber"/.test(block));
-  check("(4e) the sibling disputeErr throw (#35 pattern) this fix now matches is still present, confirming the precedent this fix follows is real", /if \(disputeErr\) throw new Error\(`dispute access-revoke failed: \$\{disputeErr\.message\}`\);/.test(block));
+  check("(4b) the signed dispute's charge is retrieved directly", /const charge = await stripe\.charges\.retrieve\(chargeId\);/.test(block));
+  check("(4c) charge retrieval is not swallowed, so the outer 500 path asks Stripe to retry", !/stripe\.charges\.retrieve\(chargeId\)[\s\S]{0,200}catch/.test(block));
+  check("(4d) an origin that cannot be proven as Alpha exits without mutation", /if \(!origin\) \{[\s\S]{0,250}break;/.test(block));
+  check(
+    "(4e) the current exact access-revoke mutation is awaited and a provider failure stays retryable",
+    /const disputeEnded = await endExactSubscriptionBinding\([\s\S]{0,500}?\);/.test(block) &&
+      /catch \(e\) \{[\s\S]{0,1200}?throw e;/.test(block)
+  );
 }
 
 console.log("(5) app/api/stripe/webhook/route.ts: generic webhook-failure alert now day-bucketed");

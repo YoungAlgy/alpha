@@ -83,7 +83,7 @@ export function ThemeApplier() {
         // next successful page load.
         const { data, error: rowErr } = await sb
           .from("users")
-          .select("theme, email")
+          .select("theme, email, stripe_email_sync_pending_at")
           .eq("id", user.id)
           .maybeSingle();
         if (rowErr) console.warn("[ThemeApplier] signed-in hydrate row fetch failed:", rowErr.message);
@@ -127,7 +127,11 @@ export function ThemeApplier() {
         // happen here for theme), so any return visit catches the mirror up, not
         // just /settings. No-op on every normal load (they already match).
         const authLc = user.email?.trim().toLowerCase();
-        if (authLc && (data?.email ?? "").toLowerCase() !== authLc) {
+        if (
+          authLc &&
+          ((data?.email ?? "").toLowerCase() !== authLc ||
+            !!data?.stripe_email_sync_pending_at)
+        ) {
           // alpha-drift-r56-05 (2026-08-20, silent-catch-audit-r2): this is
           // the app's SOLE trigger for reconciling a confirmed new auth
           // email back into public.users.email (weekly-send's actual
@@ -139,9 +143,23 @@ export function ThemeApplier() {
           // at all, so that alert path never fires either -- previously
           // silent everywhere. Logged, not silent, matching this file's own
           // theme-hydrate catch below and lib/theme.ts's setTheme() convention.
-          fetch("/api/account/email/reconcile", { method: "POST" }).catch((e) =>
-            console.warn("[ThemeApplier] email reconcile failed:", e instanceof Error ? e.message : e)
-          );
+          fetch("/api/account/email/reconcile", { method: "POST" })
+            .then(async (response) => {
+              if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+              }
+              const result = (await response.json()) as {
+                deliveryReviewRequired?: boolean;
+              };
+              if (result.deliveryReviewRequired) {
+                console.warn(
+                  "[ThemeApplier] email mirror updated; delivery remains blocked pending reviewed recovery"
+                );
+              }
+            })
+            .catch((e) =>
+              console.warn("[ThemeApplier] email reconcile failed:", e instanceof Error ? e.message : e)
+            );
         }
       } catch (e) {
         // alpha-drift-r57-08 (2026-08-20, silent-catch-audit-r3): this

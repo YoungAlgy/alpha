@@ -15,7 +15,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -118,7 +119,7 @@ console.log("(2) next.config.ts + components/Footer.tsx: build-time year is a ge
 
   const footerSrc = readFileSync(new URL("../components/Footer.tsx", import.meta.url), "utf8");
   check("(2b) Footer's useState initializer reads the build-time env var, not a bare Date() call", /useState\(\(\) => Number\(process\.env\.NEXT_PUBLIC_BUILD_YEAR\) \|\| new Date\(\)\.getFullYear\(\)\)/.test(footerSrc));
-  check("(2c) the post-mount useEffect correction is untouched -- still calls a live Date() to self-correct after hydration", /useEffect\(\(\) => \{\s*setYear\(new Date\(\)\.getFullYear\(\)\);\s*\}, \[\]\);/.test(footerSrc));
+  check("(2c) the post-mount useEffect correction still calls a live Date() to self-correct after hydration", /useEffect\(\(\) => \{\s*(?:\/\/[^\n]*\n\s*)*setYear\(new Date\(\)\.getFullYear\(\)\);\s*\}, \[\]\);/.test(footerSrc));
 
   // Behavioral proof against the ACTUAL production build output: confirm
   // the bundler genuinely inlined a literal year (not a stale runtime

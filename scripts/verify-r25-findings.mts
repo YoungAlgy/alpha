@@ -13,7 +13,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 function normalize(src: string): string {
@@ -23,7 +24,7 @@ function normalize(src: string): string {
 console.log("(1) privacy.tsx: backup-retention disclosure added alongside the irreversible-delete claim");
 {
   const src = normalize(readFileSync(new URL("../app/privacy/page.tsx", import.meta.url), "utf8"));
-  check("(1a) the original irreversible-delete claim is still present (not removed, just no longer the whole story)", /Delete your account and all associated data \(irreversible\) from the same place\./.test(src));
+  check("(1a) the direct irreversible-delete claim remains clear while the retention disclosure supplies its limit", /Delete your Alpha account, profile, and letters \(irreversible\) from the same place\./.test(src));
   check("(1b) new disclosure names the 30-day retention window", /encrypted daily backup of the database for up to 30 days/.test(src));
   check("(1c) new disclosure explains what this means for a deleted account", /your data can still exist in a backup taken before you deleted it/.test(src));
   check("(1d) frames it as a safety net for OUR mistakes, not a way to recover a reader's own deletion", /a safety net against our own mistakes, not\s*yours/.test(src));

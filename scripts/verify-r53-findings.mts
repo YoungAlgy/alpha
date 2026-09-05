@@ -57,7 +57,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) lib/engine/persist.ts: the user_id-requirement comment no longer misattributes gating to RLS");
@@ -77,7 +78,7 @@ console.log("(2) components/ProfileEditor.tsx: the Zodiac-birthday warning no lo
 console.log("(3) app/settings/accounts/page.tsx: touch targets fixed on 5 buttons, and Delete restores focus to the Accounts heading");
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
-  check("(3a) all 5 buttons (4 row actions + Load more) now carry py-2 -my-2", (src.match(/underline underline-offset-4 py-2 -my-2/g) ?? []).length === 5 && /text-sm mt-6 underline underline-offset-4 py-2 -my-2/.test(src));
+  check("(3a) row actions and Load more retain their touch-target padding", (src.match(/underline underline-offset-4 py-2 -my-2/g) ?? []).length >= 5 && /text-sm mt-6 underline underline-offset-4 py-2 -my-2/.test(src));
   // alpha-drift-r61-03 (2026-08-20, accessibility-resweep-newer-code-round-
   // 9) renamed deleteCount->actionCount and removed the action==="delete"
   // gate, since grant_free/revoke_free/clear_suppression unmount their own

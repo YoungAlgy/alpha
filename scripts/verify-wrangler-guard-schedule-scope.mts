@@ -21,7 +21,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 const raw = readFileSync(new URL("../.github/workflows/wrangler-config-guard.yml", import.meta.url), "utf8");

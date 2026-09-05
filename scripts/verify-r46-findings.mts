@@ -58,7 +58,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/settings/accounts/page.tsx: act() now reloads regardless of outcome, and mountedRef resets on (re)mount");
@@ -73,7 +74,7 @@ console.log("(1) app/settings/accounts/page.tsx: act() now reloads regardless of
   // block's success branch) between load() and the busyRowsRef cleanup --
   // loosened to allow that new content in between. See
   // verify-r65-findings.mts's (3).
-  check("(1a) the reload call now lives in act()'s finally block", /\} finally \{[\s\S]{0,900}?await load\(activeSearch \? \{ search: activeSearch \} : undefined\);[\s\S]{0,1200}?busyRowsRef\.current\.delete\(userId\);/.test(src));
+  check("(1a) the reload call now lives in act()'s finally block", /\} finally \{[\s\S]{0,1200}?await load\([\s\S]{0,300}?activeSearch[\s\S]{0,300}?pendingOnly[\s\S]{0,300}?\);[\s\S]{0,1200}?busyRowsRef\.current\.delete\(userId\);/.test(src));
   check("(1b) it's no longer called right after the res.ok check (pre-catch)", !/if \(!res\.ok\) throw new Error\(data\.error \|\| `HTTP \$\{res\.status\}`\);\s*\n\s*await load\(/.test(src));
   check("(1c) mountedRef is now reset to true inside the mount effect body, not just useRef(true)", /useEffect\(\(\) => \{\s*\n\s*mountedRef\.current = true;\s*\n\s*return \(\) => \{ mountedRef\.current = false; \};\s*\n\s*\}, \[\]\);/.test(src));
 }
@@ -90,7 +91,7 @@ console.log("(2) app/checkout/page.tsx + StepShell.tsx: subscribe() now has a ca
   // cleanup-only shape this assertion originally proved is the very thing that
   // got fixed.
   check("(2a) cancelledRef is declared and gets set true on cleanup", /const cancelledRef = useRef\(false\);/.test(checkoutSrc) && /return \(\) => \{ cancelledRef\.current = true; \};/.test(checkoutSrc));
-  check("(2b) subscribe() checks it right after the fetch resolves, before any navigation branch", /const data = await res\.json\(\);\s*\n\s*if \(cancelledRef\.current\) return;/.test(checkoutSrc));
+  check("(2b) subscribe() checks cancellation after the guarded response parse and before any navigation branch", /const data = await res\s*\n\s*\.json\(\)\s*\n\s*\.catch\([\s\S]{0,100}\);\s*\n\s*if \(cancelledRef\.current\) return;/.test(checkoutSrc));
   check("(2c) the catch block also checks it before touching state", /\} catch \(e\) \{\s*\n\s*if \(cancelledRef\.current\) return;\s*\n\s*setSubscribing\(false\);/.test(checkoutSrc));
   check("(2d) StepShell now receives backDisabled tied to subscribing", /<StepShell stepIndex=\{11\} prevPath="email" backDisabled=\{subscribing\}>/.test(checkoutSrc));
 
@@ -117,15 +118,16 @@ console.log("(4) app/signin/page.tsx: \"Use different email\" is now disabled du
   check("(4b) it dims to match the busy styling used on the Resend button", /className="underline underline-offset-4(?: py-2 -my-2)?"\s*\n\s*style=\{\{ opacity: busy \? 0\.5 : 1, cursor: busy \? "default" : "pointer" \}\}\s*\n\s*>\s*\n\s*Use different email/.test(src));
 }
 
-console.log("(5) app/api/account/delete/route.ts: deleteUser() now runs before the Stripe/ticket/suppression cleanup, not after");
+console.log("(5) app/api/account/delete/route.ts: durable billing/privacy cleanup completes before Auth removal");
 {
   const src = readFileSync(new URL("../app/api/account/delete/route.ts", import.meta.url), "utf8");
-  check("(5a) stripe_customer_id is pre-fetched before deleteUser()", /const \{ data: row, error: rowErr \} = await svc\s*\n\s*\.from\("users"\)\s*\n\s*\.select\("stripe_customer_id"\)/.test(src));
-  const deleteUserIdx = src.indexOf("await svc.auth.admin.deleteUser(user.id);");
-  const cleanupIdx = src.indexOf("await cleanUpStripeCustomerBeforeDelete(");
-  check("(5b) deleteUser() is called before the Stripe cleanup, not after", deleteUserIdx > -1 && cleanupIdx > -1 && deleteUserIdx < cleanupIdx);
-  check("(5c) the pre-fetched id (not a fresh lookup) is passed through, with the rowErr distinction preserved", /cleanUpStripeCustomerBeforeDelete\(svc, user\.id, "\[account\/delete\]", undefined, rowErr \? undefined : \(row\?\.stripe_customer_id \?\? null\)\)/.test(src));
-  check("(5d) a pre-fetch query failure is logged, not silently treated as \"no customer\"", /if \(rowErr\) \{\s*\n\s*console\.error\(`\[account\/delete\] pre-fetch of stripe_customer_id failed/.test(src));
+  check("(5a) the route pre-fetches the confirmed email before privacy cleanup", /const \{ data: row, error: rowErr \} = await svc\s*[\s\S]{0,120}\.select\("email"\)/.test(src));
+  const billingIdx = src.indexOf("await settleAccountDeletionBilling(svc, user.id)");
+  const privacyIdx = src.indexOf("await settleAccountDeletionPrivacy(");
+  const authSagaIdx = src.indexOf("await removeAccountAuthAndCompleteSaga(svc, user.id, deleteAuthUser)");
+  check("(5b) durable billing cleanup precedes privacy cleanup and Auth removal", billingIdx > -1 && privacyIdx > billingIdx && authSagaIdx > privacyIdx);
+  check("(5c) the Auth step is the shared saga boundary, with no legacy direct Stripe cleanup call", /removeAccountAuthAndCompleteSaga\(svc, user\.id, deleteAuthUser\)/.test(src) && !/cleanUpStripeCustomerBeforeDelete\(/.test(src));
+  check("(5d) a pre-fetch query failure is logged and leaves the account intact", /if \(rowErr\) \{\s*\n\s*console\.error\(`\[account\/delete\] pre-fetch of the user email failed/.test(src) && /status: 503/.test(src));
 }
 
 console.log("(6) docs/comment drift: Gemini's real primary-tier role for topic blurbs is now documented everywhere it was stale");
@@ -135,16 +137,20 @@ console.log("(6) docs/comment drift: Gemini's real primary-tier role for topic b
   check("(6b) it now states the PRIMARY generation tier role", /PRIMARY\s*\n\s*\/\/ generation tier for topic blurbs/.test(healthSrc));
 
   const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-  check("(6c) README Stack table's AI row now reflects the cost-tiered waterfall", /Gemini → Groq → DeepSeek → Claude Haiku 4\.5 → Claude Sonnet 5, cost-tiered waterfall \(topic blurbs\)/.test(readme));
+  check("(6c) README Stack table documents optional writer tiers and no-model operation", /\| AI \| Optional Gemini, Groq, DeepSeek, and Anthropic writer tiers behind cost controls\.[\s\S]{0,120}ALPHA_NO_MODEL_MODE[\s\S]{0,100}local deterministic formatter/.test(readme));
   check("(6d) README directory listing's topic-blurb.ts annotation no longer says \"Claude synthesis prompt\"", !/topic-blurb\.ts\s+Claude synthesis prompt for one section/.test(readme));
-  check("(6e) it now describes the Gemini-primary waterfall", /topic-blurb\.ts\s+cost-tiered blurb generation for one section \(Gemini-primary, Claude last resort\)/.test(readme));
-  check("(6f) README's cf:deploy chain description now includes the typecheck:worker step", /`opennextjs-cloudflare build` → `npm run typecheck:worker` → `opennextjs-cloudflare deploy`/.test(readme));
+  check("(6e) it now describes bounded writer policy and deterministic formatting", /topic-blurb\.ts\s+bounded free\/paid writer policy plus deterministic source formatter/.test(readme));
+  check("(6f) README's cf:deploy chain description now includes the typecheck:worker step", /builds OpenNext, typechecks the Worker, deploys, and runs the live smoke test/.test(readme));
 }
 
-console.log("(7) sanity: the refuted admin-delete finding was deliberately left unchanged (differentiated verdict, not a miss)");
+console.log("(7) admin delete uses the same durable billing/privacy saga");
 {
   const src = readFileSync(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8");
-  check("(7a) admin delete still runs Stripe cleanup before deleteUser(), unchanged from before round 46", /await cleanUpStripeCustomerBeforeDelete\(\s*\n\s*sb,\s*\n\s*body\.userId,\s*\n\s*"\[admin\/delete\]",/.test(src));
+  const billingIdx = src.indexOf("await settleAccountDeletionBilling(sb, body.userId)");
+  const privacyIdx = src.indexOf("await settleAccountDeletionPrivacy(");
+  const authSagaIdx = src.indexOf("await removeAccountAuthAndCompleteSaga(sb, body.userId, deleteAuthUser)");
+  check("(7a) admin delete runs durable billing cleanup before privacy cleanup and Auth removal", billingIdx > -1 && privacyIdx > billingIdx && authSagaIdx > privacyIdx);
+  check("(7b) admin delete has no legacy direct Stripe cleanup call", !/cleanUpStripeCustomerBeforeDelete\(/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -66,7 +66,9 @@ export async function POST() {
   // on failure; this read was the one gap.
   const { data: row, error: rowError } = await svc
     .from("users")
-    .select("email, stripe_customer_id")
+    .select(
+      "email, stripe_customer_id, stripe_email_sync_pending_at, suppression_cleanup_pending_at"
+    )
     .eq("id", user.id)
     .maybeSingle();
   if (rowError) {
@@ -88,17 +90,35 @@ export async function POST() {
     return NextResponse.json({ error: "Couldn't sync. Try again." }, { status: 500 });
   }
 
-  // Already in sync (or no row) — nothing to do.
-  if (!row || (row.email ?? "").toLowerCase() === authEmail) {
+  if (!row) {
     return NextResponse.json({ ok: true, changed: false });
   }
 
-  const { error } = await svc
-    .from("users")
-    .update({ email: authEmail })
-    .eq("id", user.id);
-  if (error) {
-    console.error("[account/email/reconcile] mirror update failed:", error.message);
+  const mirrorChanged = (row.email ?? "").toLowerCase() !== authEmail;
+  let pendingAt = row.stripe_email_sync_pending_at;
+  let suppressionPendingAt = row.suppression_cleanup_pending_at;
+  if (mirrorChanged) {
+    const changedAt = new Date().toISOString();
+    pendingAt = row.stripe_customer_id ? changedAt : null;
+    // Preserve an already-visible review marker. A clean account receives a
+    // new marker for the changed delivery address, never an automatic clear.
+    suppressionPendingAt = row.suppression_cleanup_pending_at ?? changedAt;
+    const { data: updated, error } = await svc
+      .from("users")
+      .update({
+        email: authEmail,
+        stripe_email_sync_pending_at: pendingAt,
+        suppression_cleanup_pending_at: suppressionPendingAt,
+      })
+      .eq("id", user.id)
+      .eq("email", row.email)
+      .select("id")
+      .maybeSingle();
+    if (error || !updated) {
+      console.error(
+        "[account/email/reconcile] mirror update failed:",
+        error?.message ?? "email changed concurrently"
+      );
     // A stuck mirror means a paying subscriber's letters keep going to the OLD
     // address with no signal — the same silent-drop class the cron already
     // alarms on, so surface it. A unique violation (23505) means the target
@@ -107,31 +127,93 @@ export async function POST() {
     after(
       sendOpsAlert(
         "alpha: email mirror sync failed",
-        `Reconcile could not set public.users.email for user ${user.id} to their confirmed auth email. Their letters may keep going to the old address. DB error: ${error.message}`
+          `Reconcile could not set public.users.email for user ${user.id} to their confirmed auth email. Their letters may keep going to the old address. DB error: ${error?.message ?? "email changed concurrently"}`
       ).catch(() => {})
     );
-    const conflict = (error as { code?: string }).code === "23505";
-    return NextResponse.json(
-      { error: conflict ? "That email is already on another account." : "Couldn't sync. Try again." },
-      { status: conflict ? 409 : 500 }
-    );
-  }
-
-  // Best-effort: keep the Stripe customer's email in step too (receipts /
-  // invoices). Cosmetic — a failure here must NOT fail the reconcile, since the
-  // letter-delivery mirror (the part that matters) is already updated.
-  const secret = process.env.STRIPE_SECRET_KEY?.trim();
-  if (secret && row.stripe_customer_id) {
-    try {
-      const stripe = getStripeClient();
-      await stripe.customers.update(row.stripe_customer_id, { email: authEmail });
-    } catch (e) {
-      console.warn(
-        "[account/email/reconcile] Stripe email sync failed (non-fatal):",
-        e instanceof Error ? e.message : e
+      const conflict = (error as { code?: string } | null)?.code === "23505";
+      return NextResponse.json(
+        {
+          error: conflict
+            ? "That email is already on another account."
+            : "Couldn't sync. Try again.",
+        },
+        { status: conflict ? 409 : 500 }
       );
     }
   }
 
-  return NextResponse.json({ ok: true, changed: true });
+  // A confirmed email change requires reviewed delivery recovery. Keep the
+  // marker and all delivery evidence intact. This route never clears a
+  // provider suppression.
+  const deliveryReviewRequired = Boolean(suppressionPendingAt);
+
+  if (!row.stripe_customer_id || !pendingAt) {
+    return NextResponse.json({
+      ok: true,
+      changed: mirrorChanged,
+      deliveryReviewRequired,
+    });
+  }
+
+  // Receipts and invoices can contain private billing details, so provider
+  // sync is durable instead of best-effort. The marker survives a provider
+  // outage and ThemeApplier retries it on the next signed-in page load.
+  const secret = process.env.STRIPE_SECRET_KEY?.trim();
+  if (!secret) {
+    return NextResponse.json(
+      { error: "Billing email sync is temporarily unavailable.", deliveryReviewRequired },
+      { status: 503 }
+    );
+  }
+  try {
+    const stripe = getStripeClient();
+    const customer = await stripe.customers.update(row.stripe_customer_id, {
+      email: authEmail,
+    });
+    if (
+      customer.deleted ||
+      customer.id !== row.stripe_customer_id ||
+      customer.email?.toLowerCase() !== authEmail
+    ) {
+      throw new Error("Stripe returned a different Customer email binding");
+    }
+  } catch (e) {
+    console.warn(
+      "[account/email/reconcile] Stripe email sync failed:",
+      e instanceof Error ? e.message : e
+    );
+    after(
+      sendOpsAlert(
+        "alpha: Stripe billing email sync failed",
+        `The confirmed email mirror is current for user ${user.id}, but Stripe Customer ${row.stripe_customer_id} still needs an email sync. The durable retry marker remains set.`
+      ).catch(() => {})
+    );
+    return NextResponse.json(
+      { error: "Billing email sync is still pending. Try again.", deliveryReviewRequired },
+      { status: 503 }
+    );
+  }
+
+  const { data: cleared, error: clearError } = await svc
+    .from("users")
+    .update({ stripe_email_sync_pending_at: null })
+    .eq("id", user.id)
+    .eq("email", authEmail)
+    .eq("stripe_customer_id", row.stripe_customer_id)
+    .eq("stripe_email_sync_pending_at", pendingAt)
+    .select("id")
+    .maybeSingle();
+  if (clearError || !cleared) {
+    return NextResponse.json(
+      { error: "Billing email changed again while it was syncing. Try again.", deliveryReviewRequired },
+      { status: 409 }
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    changed: mirrorChanged,
+    stripeSynced: true,
+    deliveryReviewRequired,
+  });
 }

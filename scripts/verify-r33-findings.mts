@@ -1,10 +1,9 @@
-// Verify round 33 findings: (1) admin/users' clear_suppression re-check had
-// no baseline to diff the fresh bounced_at/complained_at re-select against
-// -- it just tested truthiness, which is true on essentially every normal
-// call (that's what makes the button render), so removeResendSuppression
-// fired twice on every ordinary invocation, and a transient Resend hiccup
-// on that redundant second call failed the whole action with a misleading
-// "a new bounce/complaint just landed" 502. (2) components/Digest.tsx's
+// Verify round 33 findings: the durable SQL-owned recovery protocol remains
+// in source, but its manual provider-removal entry is currently hard-held.
+// The dormant provider leg is one-shot. Unknown provider or settlement
+// outcomes retain the fence for review. A changed delivery baseline retains
+// the fence and never gets a second provider delete.
+// (2) components/Digest.tsx's
 // formatDateline anchored to a plain noon UTC instead of the real 14:00 UTC
 // send hour, silently defeating the localTimezone reader fix for UTC+10/
 // UTC+11 readers (they still saw yesterday's date). Both fixed; a shared
@@ -13,48 +12,85 @@
 // alpha-drift-r33-01/r33-02, both 2026-08-14.
 // Run: npx tsx scripts/verify-r33-findings.mts
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
-console.log("(1) app/api/admin/users/route.ts: clear_suppression's re-check now diffs against a real baseline");
+function namedImportsFrom(source: string, moduleName: string): Set<string> {
+  const file = ts.createSourceFile("fixture.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = new Set<string>();
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier.getText(file).slice(1, -1) !== moduleName) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const element of bindings.elements) names.add(element.propertyName?.text ?? element.name.text);
+  }
+  return names;
+}
+
+console.log("(1) app/api/admin/users/route.ts: clear_suppression is hard-held while the durable protocol remains fail-closed in source");
 {
   const src = readFileSync(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8");
+  const helper = readFileSync(new URL("../lib/suppression-recovery.ts", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../supabase/migrations/20260830050000_resend_suppression_causality.sql", import.meta.url), "utf8");
   const clearStart = src.indexOf('if (body.action === "clear_suppression")');
-  const clearEnd = src.length; // clear_suppression is the last action block in the file
-  const block = src.slice(clearStart, clearEnd);
+  const serviceStart = src.indexOf("const sb = await supabaseServiceClient();", clearStart);
+  const block = src.slice(clearStart, serviceStart);
 
-  check("(1a) the initial pre-fetch now also selects bounced_at/complained_at, not just email", /\.select\("email, bounced_at, complained_at"\)/.test(block));
-  check("(1b) the old email-only pre-fetch select is gone", !/\.select\("email"\)\s*\n\s*\.eq\("id", body\.userId\)\s*\n\s*\.maybeSingle\(\);/.test(block));
-  check("(1c) the re-check now compares fresh values against the baseline (row.bounced_at/row.complained_at), not just truthiness", /const suppressionChangedMidRequest =\s*\n\s*fresh\.bounced_at !== row\.bounced_at \|\| fresh\.complained_at !== row\.complained_at;/.test(block));
-  check("(1d) the follow-up removeResendSuppression call is gated on the real diff, not the old bare truthiness check", /if \(suppressionChangedMidRequest && row\.email\) \{/.test(block));
-  check("(1e) the old truthiness-only gate is gone", !/if \(\(fresh\.bounced_at \|\| fresh\.complained_at\) && row\.email\) \{/.test(block));
+  check("(1a) the validated clear branch is nonempty, returns the stable held 409, and ends before service access", block.length > 100 && block.includes('code: "manual_recovery_disabled"') && block.includes("status: 409") && !block.includes("recoverResendSuppression({"));
+  check("(1b) dormant protocol: the helper still claims under the owner lock after the hold guard", helper.indexOf('return { status: "manual_recovery_disabled" }') < helper.indexOf('"claim_resend_suppression_recovery"') && migration.includes("pg_advisory_xact_lock(hashtextextended(p_user_id::text, 80425080))"));
+  check("(1c) dormant protocol: finalization remains strictly after provider success", helper.indexOf("removeSuppression(claimed.recipient_email)") < helper.indexOf('"finalize_resend_suppression_recovery"') && /if \(!providerCleared\) return \{ status: "provider_failed" \}/.test(helper));
+  check("(1d) dormant protocol: a changed baseline keeps the fence and has one provider leg", /return \{ status: "state_changed" \}/.test(helper) && (helper.match(/removeSuppression\(claimed\.recipient_email\)/g) || []).length === 1);
+  check("(1e) dormant protocol: malformed RPC replies and lost settlement remain unconfirmed", helper.includes("asSingleClaimRow(data)") && helper.includes("settlement_unconfirmed"));
 
-  // Behavioral proof of the real diff logic (mirrors the route's own inline
-  // expression, since it isn't extracted into a standalone function).
-  function suppressionChangedMidRequest(
+  // Behavioral proof of the delivery-state comparison contract. The comparison
+  // remains a small pure fixture here so this historical check has no provider
+  // or database dependency.
+  function deliveryStateChangedMidRequest(
+    rowUnsubscribedAt: string | null,
     rowBouncedAt: string | null,
     rowComplainedAt: string | null,
+    rowPendingAt: string | null,
+    rowClearedAt: string | null,
+    freshUnsubscribedAt: string | null,
     freshBouncedAt: string | null,
-    freshComplainedAt: string | null
+    freshComplainedAt: string | null,
+    freshPendingAt: string | null,
+    freshClearedAt: string | null
   ): boolean {
-    return freshBouncedAt !== rowBouncedAt || freshComplainedAt !== rowComplainedAt;
+    return (
+      freshUnsubscribedAt !== rowUnsubscribedAt ||
+      freshBouncedAt !== rowBouncedAt ||
+      freshComplainedAt !== rowComplainedAt ||
+      freshPendingAt !== rowPendingAt ||
+      freshClearedAt !== rowClearedAt
+    );
   }
   check(
-    "(1f) behavioral: an ORDINARY call (bounced_at already set, unchanged by the time of the re-check) does NOT trigger a second removeResendSuppression",
-    suppressionChangedMidRequest("2026-08-10T00:00:00Z", null, "2026-08-10T00:00:00Z", null) === false
+    "(1f) dormant comparator: an ordinary unchanged state has no state change",
+    deliveryStateChangedMidRequest(null, "2026-08-10T00:00:00Z", null, null, null, null, "2026-08-10T00:00:00Z", null, null, null) === false
   );
   check(
-    "(1g) behavioral: a GENUINE mid-request race (a fresh complaint lands between the pre-fetch and the re-check) DOES trigger the follow-up call",
-    suppressionChangedMidRequest("2026-08-10T00:00:00Z", null, "2026-08-10T00:00:00Z", "2026-08-14T12:00:00Z") === true
+    "(1g) dormant comparator: a fresh complaint requires a new review",
+    deliveryStateChangedMidRequest(null, "2026-08-10T00:00:00Z", null, null, null, null, "2026-08-10T00:00:00Z", "2026-08-14T12:00:00Z", null, null) === true
   );
   check(
-    "(1h) behavioral: the previously-buggy truthiness-only predicate WOULD have fired on the ordinary case (confirms this was a real regression)",
-    !!("2026-08-10T00:00:00Z" || null) === true
+    "(1g2) dormant comparator: a pending-cleanup race requires review",
+    deliveryStateChangedMidRequest(null, null, null, null, null, null, null, null, "2026-08-14T12:00:00Z", null) === true
+  );
+  check(
+    "(1g3) dormant comparator: a newer causal-clear watermark requires review",
+    deliveryStateChangedMidRequest(null, null, null, null, "2026-08-14T11:00:00Z", null, null, null, null, "2026-08-14T12:00:00Z") === true
+  );
+  check(
+    "(1h) dormant comparator: a mid-request direct opt-out requires review",
+    deliveryStateChangedMidRequest(null, null, null, null, null, "2026-08-14T12:00:00Z", null, null, null, null) === true
   );
 }
 
@@ -84,7 +120,8 @@ console.log("(2) lib/cadence.ts / components/Digest.tsx / app/inbox/page.tsx: da
   check("(2e) the old hardcoded noon anchor is gone from formatDateline", !/new Date\(`\$\{weekOf\}T12:00:00Z`\)/.test(digestSrc));
 
   const inboxSrc = readFileSync(new URL("../app/inbox/page.tsx", import.meta.url), "utf8");
-  check("(2f) app/inbox/page.tsx imports SEND_HOUR_UTC alongside nextSendIso", /import \{ nextSendIso, SEND_HOUR_UTC \} from "@\/lib\/cadence";/.test(inboxSrc));
+  const inboxCadenceImports = namedImportsFrom(inboxSrc, "@/lib/cadence");
+  check("(2f) app/inbox/page.tsx imports SEND_HOUR_UTC alongside nextSendIso", inboxCadenceImports.has("SEND_HOUR_UTC") && inboxCadenceImports.has("nextSendIso"));
   check("(2g) nextSendLabel() now derives its anchor from SEND_HOUR_UTC instead of a separate hardcoded literal", /const d = new Date\(`\$\{nextSendIso\(\)\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:00:00Z`\);/.test(inboxSrc));
   check("(2h) the old separately-hardcoded T14:00:00Z literal in nextSendLabel is gone", !/const d = new Date\(`\$\{nextSendIso\(\)\}T14:00:00Z`\);/.test(inboxSrc));
 

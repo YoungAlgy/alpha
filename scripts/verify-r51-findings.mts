@@ -19,17 +19,10 @@
 //   an RLS policy a comment claimed was unused (and once had to ship a
 //   same-day hotfix after doing so), so a false "no policy exists" claim
 //   sitting right next to a real, load-bearing policy is a real risk.
-// 3 refuted, all genuinely adjudicated, one worth naming: a HIGH-severity
-// claim that checkout.session.completed's INSERT branch writes
-// cancelled_at: null unconditionally (ignoring subscriptionLive the way its
-// UPDATE-branch sibling already gates on) was refuted 3/3. Personally
-// re-read lib/webhook-user-mutation.ts to sanity-check given the severity --
-// the underlying code-shape claim IS accurate (the INSERT branch genuinely
-// never references id.subscriptionLive), but the real-world reachability
-// requires a narrow compound race (webhook delivery specifically failing/
-// delaying for the FIRST checkout.session.completed event while a LATER
-// lifecycle event for the same object gets processed first) that the panel
-// judged too speculative to act on. Also refuted: a citation-accuracy
+// Round 80 superseded one prior adjudication: delayed, out-of-order checkout
+// delivery is now treated as an integrity boundary. The mutation helper
+// rejects any non-live subscription before its INSERT branch. Also refuted
+// in the original round: a citation-accuracy
 // follow-on on lib/analytics.ts's own round-50 fix (claims docs/SECRETS.md
 // and scripts/verify-build-env.mjs document NEXT_PUBLIC_POSTHOG_KEY when
 // neither actually does -- judged a defensible "see X for the general
@@ -44,7 +37,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) lib/analytics.ts: the stray backtick/quote mismatch in round 50's own new comment is fixed");
@@ -69,10 +63,13 @@ console.log("(3) app/api/resume/route.ts: the false 'no self-UPDATE RLS policy' 
   check("(3c) it names the real live callers of the self-update policy", /lib\/theme\.ts's setTheme\(\),\s*\n\/\/ lib\/user-sync\.ts's syncUserProfile\(\)/.test(src));
 }
 
-console.log("(4) sanity: the refuted HIGH-severity webhook finding was deliberately left unchanged (personally re-verified, reachability judged too speculative)");
+console.log("(4) round-80 supersession: non-live checkout cannot reach the active INSERT branch");
 {
   const src = readFileSync(new URL("../lib/webhook-user-mutation.ts", import.meta.url), "utf8");
-  check("(4a) the INSERT branch still unconditionally sets cancelled_at: null (unchanged from before round 51)", /kind: "insert",\s*\n\s*row: \{[\s\S]{0,200}?cancelled_at: null,/.test(src));
+  const guardIdx = src.indexOf('if (!id.subscriptionLive)');
+  const insertIdx = src.indexOf('kind: "insert"', guardIdx);
+  check("(4a) subscriptionLive is checked before any INSERT can be returned", guardIdx > -1 && insertIdx > guardIdx);
+  check("(4b) the non-live branch returns an explicit skip result", /return \{ kind: "skip", reason: "subscription-not-live" \};/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

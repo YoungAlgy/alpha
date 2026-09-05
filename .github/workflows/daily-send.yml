@@ -48,18 +48,14 @@ on:
     # not guarantee on-time delivery), or a momentary Supabase/Resend hiccup
     # at 14:00 UTC currently means a full missed day with no second attempt
     # -- this recovers it automatically, same day, without Algy clicking
-    # anything. 15:00 UTC specifically: (a) comfortably past the primary's
-    # 30-minute job timeout so the two runs cannot overlap in practice, (b)
+    # anything. The 15:00 UTC retry is past the primary slot, and the shared
+    # concurrency group queues it if that run is still finishing. It is also
     # a full hour before letter-watchdog.yml's 16:00 UTC check, so a
     # successful retry is reflected before the watchdog samples state
-    # instead of the watchdog alerting on pre-retry data, and (c) nowhere
-    # near the 00:00 UTC boundary where lib/cadence.ts's currentPeriodIso()
+    # instead of the watchdog alerting on pre-retry data. It is nowhere near
+    # the 00:00 UTC boundary where lib/cadence.ts's currentPeriodIso()
     # would roll over to a new day's weekOf and silently generate a SECOND
-    # real letter instead of recovering the missed one. Scheduled AFTER
-    # letter-watchdog.yml's 16:00 UTC check on purpose, not before it -- see
-    # this retry's own header comment for why that ordering is fine (the
-    # watchdog firing on pre-retry data is an acceptable, even useful,
-    # earliest-possible signal, not a bug).
+    # real letter instead of recovering the missed one.
     - cron: '0 15 * * *'
     # Second offset retry, added 2026-08-06 after a real GitHub Actions
     # platform-wide outage (githubstatus.com incident starting 15:22 UTC,
@@ -78,8 +74,8 @@ on:
     # (early signal beats no signal; see letter-watchdog.yml's own header
     # for why it can't reliably self-heal-and-suppress mid-day), (b) still
     # a comfortable 6 hours before the 00:00 UTC weekOf rollover, and (c)
-    # far enough past the 15:00 UTC retry's own 30-minute timeout that the
-    # concurrency group above can never see two schedules genuinely overlap.
+    # far enough past the 15:00 UTC retry that the shared concurrency group
+    # normally has time to drain before this last same-day attempt.
     #
     # This does NOT make alpha immune to a GitHub-wide outage -- the 2026-
     # 08-06 incident lasted from 15:22 UTC to past midnight, well beyond
@@ -118,8 +114,15 @@ concurrency:
 
 jobs:
   send:
+    # Access-only release hold. Re-enabling the workflow in GitHub must not
+    # start a runner or send letters. Resume only after an approved source
+    # change to this gate and lib/subscriber-delivery-policy.ts together.
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Build + the bounded 55-minute multi-page delivery drain + three isolated
+    # 5-minute maintenance lanes + process drain/restart windows need headroom.
+    # Each lane is attempted even when delivery or another lane fails.
+    timeout-minutes: 90
     steps:
       # Skips the expensive checkout/npm ci/build/start below when today's
       # send is already fully covered -- mainly matters for the 15:00 and
@@ -142,11 +145,10 @@ jobs:
       # this RPC's cutoff-based check has no idea a manual override even
       # exists and would give a meaningless answer for one.
       #
-      # Reuses letter-watchdog.yml's watchdog_delivery_check() RPC (security
-      # definer, anon-callable, returns only two integers -- never touches
-      # raw rows/PII, no need for the full-privilege secret key here either)
-      # rather than adding a new one; same real coverage check it already
-      # trusts.
+      # Reuses letter-watchdog.yml's watchdog_delivery_check() RPC for send
+      # coverage. It also checks the service-only checkout staging table for
+      # an overdue raw profile. The latter returns only due/not-due and needs
+      # the service key because anonymous clients cannot read that table.
       #
       # 2026-08-05: rewritten from an aggregate-count comparison
       # (delivered_count >= active_count) to a genuine per-subscriber
@@ -164,8 +166,24 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
         run: |
           set +e
+          # This step runs before checkout, so keep the exact Alpha project
+          # guard inline. Never send either key to a merely non-empty URL.
+          if ! SUPABASE_URL_TO_CHECK="${SUPABASE_URL}" node -e "
+            try {
+              const u = new URL(process.env.SUPABASE_URL_TO_CHECK || '');
+              if (u.protocol !== 'https:' ||
+                  u.hostname !== 'xpqxhdciaoicsnyyfshy.supabase.co' ||
+                  u.port || u.username || u.password ||
+                  !['', '/'].includes(u.pathname) || u.search || u.hash) process.exit(1);
+            } catch { process.exit(1); }
+          "; then
+            echo "::error::SEND_SUPABASE_URL does not match Alpha's dedicated project. Value withheld."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # Start of today UTC, not "N hours ago" (the watchdog's own
           # cutoff) -- this specifically wants "has TODAY's send finished",
           # not a rolling window.
@@ -205,11 +223,34 @@ jobs:
           fi
           echo "uncovered=${UNCOVERED_COUNT} active=${ACTIVE_COUNT}"
 
+          # Delivery can already be complete while durable checkout, deletion,
+          # suppression, billing-email, or refund-review work is due. Ask one
+          # service-only RPC for a boolean and never return or print row data.
+          MAINTENANCE_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          MAINTENANCE_DUE_RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
+            -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"p_now\": \"${MAINTENANCE_NOW}\"}" \
+            "${SUPABASE_URL}/rest/v1/rpc/alpha_scheduled_maintenance_due")
+          MAINTENANCE_DUE_CURL_EXIT=$?
+          if [ "${MAINTENANCE_DUE_CURL_EXIT}" -ne 0 ]; then
+            MAINTENANCE_DUE=-1
+          else
+            MAINTENANCE_DUE=$(RESPONSE="${MAINTENANCE_DUE_RESPONSE}" node -e "
+              try {
+                const data = JSON.parse(process.env.RESPONSE || '');
+                process.stdout.write(typeof data === 'boolean' ? String(data ? 1 : 0) : '-1');
+              } catch { process.stdout.write('-1'); }
+            ")
+          fi
+          [ -n "${MAINTENANCE_DUE}" ] || MAINTENANCE_DUE=-1
+          echo "scheduled_maintenance_due=${MAINTENANCE_DUE}"
+
           # Only skip on a CONFIDENT positive signal: real active subscribers
-          # exist AND zero of them are uncovered. -1 (any failure above) and
-          # 0 active (can't confirm there's anyone to check) both fall
-          # through to "proceed", not "skip".
-          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ "${UNCOVERED_COUNT}" -eq 0 ]; then
+          # exist, zero are uncovered, and no scheduled repair is due. -1 (any
+          # failure above) and 0 active both fall through to "proceed".
+          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ "${UNCOVERED_COUNT}" -eq 0 ] && [ "${MAINTENANCE_DUE}" -eq 0 ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "SKIP: 0/${ACTIVE_COUNT} active subscribers uncovered today -- nothing to retry."
           else
@@ -227,6 +268,7 @@ jobs:
           cache: 'npm'
 
       - name: Pre-flight — every required secret present + Resend actually deliverable
+        id: preflight
         if: steps.precheck.outputs.skip != 'true'
         env:
           CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
@@ -239,12 +281,17 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          CHECKOUT_BINDING_SECRET: ${{ secrets.SEND_CHECKOUT_BINDING_SECRET }}
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.RECONCILE_STRIPE_SECRET_KEY }}
+          ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
+          ALPHA_NO_MODEL_MODE: ${{ vars.SEND_ALPHA_NO_MODEL_MODE }}
+          ALPHA_PUBLIC_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK }}
         # Deliberately runs BEFORE `npm ci` -- no dependencies needed (just
-        # Node's built-in fetch), so a missing/broken secret fails in under a
-        # second instead of after a full install+build+generation run. Added
+        # Node's built-in fetch), so missing values fail immediately and the
+        # live Resend check is capped at 15 seconds. Added
         # 2026-08-05 after two real same-day incidents this would have caught
         # instantly: UNSUBSCRIBE_SECRET missing entirely (every subscriber
         # failed only after generating real content for all 4), and a broken
@@ -277,6 +324,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
           NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
+          NEXT_PUBLIC_ALPHA_RELEASE_SHA: ${{ github.sha }}
         run: npm run build
 
       - name: Start the server and run the real daily send
@@ -289,206 +337,816 @@ jobs:
           GROQ_API_KEY: ${{ secrets.SEND_GROQ_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.SEND_DEEPSEEK_API_KEY }}
           YOU_API_KEY: ${{ secrets.SEND_YOU_API_KEY }}
+          JINA_API_KEY: ${{ secrets.SEND_JINA_API_KEY }}
+          # Runtime controls live in GitHub variables because this server is
+          # separate from the Cloudflare Worker and cannot read its settings.
+          ALPHA_DISABLE_DEEPREAD: ${{ vars.SEND_ALPHA_DISABLE_DEEPREAD }}
+          ALPHA_BLURB_MODEL: ${{ vars.SEND_ALPHA_BLURB_MODEL }}
+          ALPHA_BLURB_CHEAP_MODEL: ${{ vars.SEND_ALPHA_BLURB_CHEAP_MODEL }}
+          ALPHA_EDITOR_MODEL: ${{ vars.SEND_ALPHA_EDITOR_MODEL }}
+          ALPHA_GEMINI_TEXT_MODEL: ${{ vars.SEND_ALPHA_GEMINI_TEXT_MODEL }}
+          ALPHA_GEMINI_SEARCH_MODEL: ${{ vars.SEND_ALPHA_GEMINI_SEARCH_MODEL }}
+          # Free mode is the default in code. This variable must be an
+          # explicit reviewed opt-in before Anthropic or DeepSeek can run.
+          ALPHA_ALLOW_PAID_AI: ${{ vars.SEND_ALPHA_ALLOW_PAID_AI }}
+          # Set to 1 for a strict zero-cost run. This skips all writer-model
+          # calls, including the per-reader editor note, and uses the local
+          # source formatter after search. Leave blank to keep the normal
+          # Gemini/Groq free-tier path.
+          ALPHA_NO_MODEL_MODE: ${{ vars.SEND_ALPHA_NO_MODEL_MODE }}
+          ALPHA_PUBLIC_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          # Must match the stable Cloudflare copy. General maintenance can
+          # replay an interrupted Checkout Session created by the live Worker.
+          CHECKOUT_BINDING_SECRET: ${{ secrets.SEND_CHECKOUT_BINDING_SECRET }}
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.RECONCILE_STRIPE_SECRET_KEY }}
           # route.ts's sendOpsAlert() falls back to this when Resend itself
           # is the thing that's broken (see lib/email.ts's comment on
           # sendOpsAlertViaWebhook). Live since 2026-08-05 -- posts to a
-          # private #ops-alerts channel in the Toggle Town Discord.
-          OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_OPS_ALERT_WEBHOOK_URL }}
+          # Alpha-only internal alert channel. Never reuse another product's
+          # webhook here.
+          ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
           WEEK_OF_INPUT: ${{ inputs.weekOf }}
+          DELIVERY_READY: ${{ steps.preflight.outputs.delivery_ready }}
         run: |
           set -uo pipefail
           set +e
 
-          # alpha-drift-r14-08 (review 2026-08-06): redaction used to live in
-          # a SEPARATE later step with its OWN independently-typed-out env:
-          # block listing every secret name a second time -- nothing enforced
-          # the two lists stayed in sync, so a secret added to THIS step's
-          # env: block above without also being added to that other list
-          # would ship unredacted into server.log the first time it surfaced
-          # in an unhandled exception or a verbose SDK error (a real risk
-          # this same file's own header comment already flagged elsewhere).
-          #
-          # Fixed by redacting HERE, via a trap that fires on every exit path
-          # this script has (success or any of its several `exit 1`s), using
-          # this step's OWN already-in-scope env vars -- there is now exactly
-          # ONE list of secret names (this step's env: block), not two. Name-
-          # pattern matched (compgen -v + a case match), not a hardcoded
-          # value list either: any FUTURE var ending in _KEY/_SECRET/_TOKEN or
-          # containing WEBHOOK_URL is covered automatically, with no second
-          # place to remember to update. Deliberately name-pattern-based
-          # rather than an allowlist of exact names -- a false positive
-          # (redacting something that wasn't actually sensitive, e.g. the
-          # public NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, which ends in _KEY)
-          # is harmless; a false negative (a real secret slipping through) is
-          # the actual risk this exists to close.
-          redact_secrets_from_log() {
-            [ -f server.log ] || return 0
-            for name in $(compgen -v); do
-              case "$name" in
-                *_KEY|*_SECRET|*_TOKEN|*WEBHOOK_URL*)
-                  val="${!name:-}"
-                  if [ -n "${val}" ]; then
-                    # alpha-drift-r15-13 (found+fixed 2026-08-06): only
-                    # escaped / and & (the delimiter and sed's own
-                    # replacement-only special char), leaving sed BRE's real
-                    # pattern metacharacters -- . * ^ $ [ ] -- unescaped. A
-                    # secret ending in a literal $ silently failed to
-                    # redact at all (confirmed by reproducing it locally:
-                    # $ as the last char of the pattern is sed's end-of-
-                    # line anchor, so it never matched). [ and ] both need
-                    # escaping too, or a secret containing either breaks
-                    # the whole bracket-expression pattern. This class
-                    # covers every sed BRE metacharacter plus / and &; [
-                    # is placed last in the class specifically to avoid
-                    # sed parsing "[." right after the opening bracket as
-                    # a POSIX collating-symbol sequence (confirmed this
-                    # placement locally against 10 cases, including a
-                    # secret containing every one of these characters at
-                    # once).
-                    esc=$(printf '%s' "${val}" | sed -e 's/[].^$*\/&[]/\\&/g')
-                    sed -i "s/${esc}/[REDACTED]/g" server.log
+          # server.log can contain subscriber-entered topic text, model output,
+          # provider response bodies, UUIDs, emails, and billing identifiers.
+          # A denylist cannot prove all of those shapes were removed. Keep the
+          # raw file private to this runner and build the GitHub-visible file
+          # from a fixed allowlist of labels and numeric counts only. No source
+          # log line is ever copied, printed, or uploaded.
+          umask 077
+          RAW_SERVER_LOG="server.log"
+          PUBLIC_SERVER_LOG="server.public.log"
+          PUBLIC_SERVER_LOG_TMP="${PUBLIC_SERVER_LOG}.tmp"
+
+          append_public_count() {
+            key="$1"
+            needle="$2"
+            count=$(LC_ALL=C grep -F -c -- "${needle}" "${RAW_SERVER_LOG}" 2>/dev/null)
+            case "${count}" in
+              ''|*[!0-9]*) count=0 ;;
+            esac
+            printf '%s=%s\n' "${key}" "${count}" >> "${PUBLIC_SERVER_LOG_TMP}"
+          }
+
+          build_public_server_log() {
+            if ! : > "${PUBLIC_SERVER_LOG_TMP}"; then
+              : > "${PUBLIC_SERVER_LOG}"
+              echo "::warning::Could not create public server diagnostics."
+              return 1
+            fi
+
+            printf '%s\n' \
+              'format=alpha-public-server-diagnostics-v1' \
+              'content=fixed-labels-and-numeric-counts-only' \
+              >> "${PUBLIC_SERVER_LOG_TMP}"
+
+            if [ -f "${RAW_SERVER_LOG}" ]; then
+              raw_line_count=$(wc -l < "${RAW_SERVER_LOG}" 2>/dev/null | tr -d '[:space:]')
+              case "${raw_line_count}" in
+                ''|*[!0-9]*) raw_line_count=0 ;;
+              esac
+              printf '%s=%s\n' 'raw_log_present' '1' >> "${PUBLIC_SERVER_LOG_TMP}"
+              printf '%s=%s\n' 'raw_line_count' "${raw_line_count}" >> "${PUBLIC_SERVER_LOG_TMP}"
+
+              # Every output key is fixed here and every derived value is a
+              # validated integer. grep matches are counted but never emitted.
+              append_public_count 'events.next_ready' 'Ready in'
+              append_public_count 'events.next_start_failed' 'Failed to start server'
+              append_public_count 'events.address_in_use' 'EADDRINUSE'
+              append_public_count 'events.out_of_memory' 'heap out of memory'
+              append_public_count 'events.module_missing' 'MODULE_NOT_FOUND'
+              append_public_count 'events.unhandled_rejection' 'unhandledRejection'
+              append_public_count 'events.unauthorized' '[cron/weekly-send] unauthorized request'
+              append_public_count 'events.subscriber_fetch_failed' '[cron/weekly-send] subscriber fetch failed:'
+              append_public_count 'events.subscriber_failed' '[cron/weekly-send] FAILED:'
+              append_public_count 'events.sent_live' '[cron/weekly-send] sent ('
+              append_public_count 'events.sent_backup_shared' '[cron/weekly-send] sent BACKUP-SHARED'
+              append_public_count 'events.sent_backup_fresh' '[cron/weekly-send] sent BACKUP-FRESH'
+              append_public_count 'events.sent_backup_stale' '[cron/weekly-send] sent BACKUP-STALE'
+              append_public_count 'events.skipped_already_delivered' '[cron/weekly-send] skipped (already delivered this period)'
+              append_public_count 'events.skipped_unsubscribed' '[cron/weekly-send] skipped (unsubscribed mid-run)'
+              append_public_count 'events.skipped_access_ended' '[cron/weekly-send] skipped (access ended mid-run)'
+              append_public_count 'events.skipped_suppressed' '[cron/weekly-send] skipped (bounced/complained mid-run)'
+              append_public_count 'events.skipped_suppression_pending' '[cron/weekly-send] skipped (provider suppression cleanup pending)'
+              append_public_count 'events.deferred' '[cron/weekly-send] DEFERRED (time budget exhausted)'
+              append_public_count 'events.eligibility_recheck_failed' '[cron/weekly-send] eligibility re-check could not prove access'
+              append_public_count 'events.retry_shape_mismatch' '[cron/weekly-send] persisted retry content failed shape validation'
+              append_public_count 'events.account_deletion_summary' '[cron/account-deletion-maintenance] summary:'
+              append_public_count 'events.maintenance_summary' '[cron/maintenance] summary:'
+              append_public_count 'events.provider_mirror_summary' '[cron/provider-mirror-maintenance] summary:'
+            else
+              printf '%s=%s\n' 'raw_log_present' '0' >> "${PUBLIC_SERVER_LOG_TMP}"
+              printf '%s=%s\n' 'raw_line_count' '0' >> "${PUBLIC_SERVER_LOG_TMP}"
+            fi
+
+            if ! mv -- "${PUBLIC_SERVER_LOG_TMP}" "${PUBLIC_SERVER_LOG}"; then
+              : > "${PUBLIC_SERVER_LOG}"
+              echo "::warning::Could not publish public server diagnostics."
+              return 1
+            fi
+            echo "Public server diagnostics refreshed."
+          }
+          alpha_exit_cleanup() {
+            if declare -F stop_alpha_server >/dev/null 2>&1 && { [ -n "${SERVER_PID:-}" ] || [ -n "${SERVER_PGID:-}" ]; }; then
+              stop_alpha_server 5 || true
+            fi
+            build_public_server_log
+          }
+          trap alpha_exit_cleanup EXIT
+
+          : > "${RAW_SERVER_LOG}"
+          : > "${PUBLIC_SERVER_LOG}"
+          SERVER_PID=''
+          SERVER_PGID=''
+          WORKFLOW_SHELL_PGID=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d '[:space:]')
+          case "${WORKFLOW_SHELL_PGID}" in
+            ''|*[!0-9]*)
+              echo "::error::Could not identify the workflow shell process group."
+              exit 1
+              ;;
+          esac
+
+          stop_alpha_server() {
+            GRACE_SECONDS="${1:-15}"
+            STOP_KILLER_PID=''
+            if [ -n "${SERVER_PGID}" ]; then
+              case "${SERVER_PGID}" in
+                ''|*[!0-9]*)
+                  echo "::error::Refusing to signal a malformed Alpha server process group."
+                  return 1
+                  ;;
+              esac
+              if [ "${SERVER_PGID}" = "${WORKFLOW_SHELL_PGID}" ]; then
+                echo "::error::Refusing to signal the workflow shell process group."
+                return 1
+              fi
+              kill -TERM -- "-${SERVER_PGID}" 2>/dev/null
+              ( sleep "${GRACE_SECONDS}" && kill -KILL -- "-${SERVER_PGID}" 2>/dev/null ) &
+              STOP_KILLER_PID=$!
+            elif [ -n "${SERVER_PID}" ]; then
+              kill -TERM "${SERVER_PID}" 2>/dev/null
+              ( sleep "${GRACE_SECONDS}" && kill -KILL "${SERVER_PID}" 2>/dev/null ) &
+              STOP_KILLER_PID=$!
+            fi
+
+            if [ -n "${SERVER_PID}" ]; then
+              wait "${SERVER_PID}" 2>/dev/null
+            fi
+            if [ -n "${STOP_KILLER_PID}" ]; then
+              kill "${STOP_KILLER_PID}" 2>/dev/null
+              wait "${STOP_KILLER_PID}" 2>/dev/null
+            fi
+            if [ -n "${SERVER_PGID}" ]; then
+              for i in $(seq 1 10); do
+                if ! kill -0 -- "-${SERVER_PGID}" 2>/dev/null; then
+                  break
+                fi
+                sleep 1
+              done
+              if kill -0 -- "-${SERVER_PGID}" 2>/dev/null; then
+                kill -KILL -- "-${SERVER_PGID}" 2>/dev/null
+                sleep 1
+                if kill -0 -- "-${SERVER_PGID}" 2>/dev/null; then
+                  echo "::error::Alpha server process group did not stop."
+                  return 1
+                fi
+              fi
+            fi
+
+            SERVER_PID=''
+            SERVER_PGID=''
+            if curl -sS --max-time 3 "http://localhost:3100/api/health" >/dev/null 2>&1; then
+              echo "::error::Port 3100 still responds after the Alpha server group stopped."
+              return 1
+            fi
+            return 0
+          }
+
+          start_alpha_server() {
+            if ! command -v setsid >/dev/null 2>&1; then
+              echo "::error::setsid is required for isolated Alpha server lifecycle control."
+              return 1
+            fi
+            if curl -sS --max-time 3 "http://localhost:3100/api/health" >/dev/null 2>&1; then
+              echo "::error::Port 3100 already has a responding server before launch."
+              return 1
+            fi
+
+            setsid node ./node_modules/next/dist/bin/next start -p 3100 >> "${RAW_SERVER_LOG}" 2>&1 &
+            SERVER_PID=$!
+            case "${SERVER_PID}" in
+              ''|*[!0-9]*)
+                echo "::error::Could not capture the Alpha server process id."
+                SERVER_PID=''
+                return 1
+                ;;
+            esac
+            SERVER_PGID=''
+            for i in $(seq 1 20); do
+              SERVER_PGID=$(ps -o pgid= -p "${SERVER_PID}" 2>/dev/null | tr -d '[:space:]')
+              if [ "${SERVER_PGID}" = "${SERVER_PID}" ]; then
+                break
+              fi
+              if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+                break
+              fi
+              sleep 0.1
+            done
+            if [ "${SERVER_PGID}" != "${SERVER_PID}" ]; then
+              echo "::error::Could not prove the Alpha server started in its own process group."
+              case "${SERVER_PGID}" in
+                ''|*[!0-9]*) kill -TERM "${SERVER_PID}" 2>/dev/null ;;
+                *)
+                  if [ "${SERVER_PGID}" != "${WORKFLOW_SHELL_PGID}" ]; then
+                    kill -TERM -- "-${SERVER_PGID}" 2>/dev/null
+                  else
+                    kill -TERM "${SERVER_PID}" 2>/dev/null
                   fi
                   ;;
               esac
-            done
-            echo "server.log redacted."
-          }
-          trap redact_secrets_from_log EXIT
-
-          npm run start -- -p 3100 > server.log 2>&1 &
-          SERVER_PID=$!
-
-          echo "Waiting for the server to come up..."
-          READY=0
-          for i in $(seq 1 30); do
-            if curl -sS --max-time 3 "http://localhost:3100/api/health" >/dev/null 2>&1; then
-              READY=1
-              break
+              wait "${SERVER_PID}" 2>/dev/null
+              SERVER_PID=''
+              SERVER_PGID=''
+              return 1
             fi
-            sleep 2
-          done
 
-          if [ "${READY}" -ne 1 ]; then
-            echo "::error::Server never became healthy. Last 100 lines of server.log:"
-            tail -n 100 server.log
-            kill "${SERVER_PID}" 2>/dev/null
+            echo "Waiting for a fresh Alpha server ..."
+            READY=0
+            for i in $(seq 1 30); do
+              if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+                break
+              fi
+              if curl -fsS --max-time 3 "http://localhost:3100/api/health" >/dev/null 2>&1; then
+                READY=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "${READY}" -ne 1 ]; then
+              build_public_server_log
+              echo "::error::Alpha server never became healthy. Public-safe operational summary:"
+              tail -n 100 "${PUBLIC_SERVER_LOG}"
+              stop_alpha_server 5
+              return 1
+            fi
+            echo "Fresh Alpha server is up."
+            return 0
+          }
+
+          if ! start_alpha_server; then
             exit 1
           fi
-          echo "Server is up."
 
           URL="http://localhost:3100/api/cron/weekly-send"
           if [ -n "${WEEK_OF_INPUT}" ]; then
-            URL="${URL}?weekOf=${WEEK_OF_INPUT}"
+            if ! WEEK_OF_TO_CHECK="${WEEK_OF_INPUT}" node -e '
+              const raw = process.env.WEEK_OF_TO_CHECK || "";
+              const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+              if (!match) process.exit(1);
+              const year = Number(match[1]);
+              const month = Number(match[2]);
+              const day = Number(match[3]);
+              const parsed = new Date(Date.UTC(year, month - 1, day));
+              if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) process.exit(1);
+            '; then
+              echo "::error::Manual weekOf must be a real calendar date in YYYY-MM-DD format."
+              exit 1
+            fi
+            ENCODED_WEEK_OF=$(WEEK_OF_TO_ENCODE="${WEEK_OF_INPUT}" node -e 'process.stdout.write(encodeURIComponent(process.env.WEEK_OF_TO_ENCODE || ""))')
+            URL="${URL}?weekOf=${ENCODED_WEEK_OF}"
             echo "Manual weekOf override: ${WEEK_OF_INPUT}"
           fi
 
-          echo "Calling ${URL} ..."
-          # -w appends the HTTP status as the LAST line of output, separated
-          # from the body so it can't collide with real JSON content.
-          RAW=$(curl -sS --max-time 1500 -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "${URL}")
-          CURL_EXIT=$?
-          HTTP_STATUS=$(echo "${RAW}" | tail -n 1)
-          RESPONSE=$(echo "${RAW}" | sed '$d')
-          echo "Response (curl exit ${CURL_EXIT}, HTTP ${HTTP_STATUS}):"
-          echo "${RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log(d)}})"
+          SEND_SKIPPED_FOR_PREFLIGHT=0
+          DELIVERY_CURL_FAILED=0
+          DELIVERY_HTTP_FAILED=0
+          DELIVERY_SHAPE_FAILED=0
+          DELIVERY_DRAIN_INCOMPLETE=0
+          DELIVERY_BLOCKED_PAGE=0
+          DELIVERY_CURSOR_FAILED=0
+          DELIVERY_UNCOVERED_TOTAL=0
+          DELIVERY_RETRY_REQUIRED_TOTAL=0
+          DELIVERY_RETENTION_ERRORS=0
+          DELIVERY_COST_BRAKE=0
+          DELIVERY_PAGE_COUNT=0
+          DELIVERY_TAIL_DRAINED=0
+          DELIVERY_MODE="normal"
+          DELIVERY_AFTER_USER_ID=""
+          DELIVERY_LAST_CONTINUATION=""
+          DELIVERY_INITIAL_CURSOR_PRESENT=0
+          DELIVERY_SAW_WRAP=0
+          DELIVERY_WRAP_PROBE_USED=0
+          MAX_DELIVERY_PAGES=16
+          DELIVERY_DRAIN_SECONDS=3300
+          MIN_DELIVERY_PAGE_SECONDS=300
+          DELIVERY_DRAIN_STARTED=$(date +%s)
+          RESPONSE=''
+          if [ "${DELIVERY_READY}" = "true" ]; then
+            while true; do
+              if [ "${DELIVERY_PAGE_COUNT}" -ge "${MAX_DELIVERY_PAGES}" ]; then
+                DELIVERY_DRAIN_INCOMPLETE=1
+                echo "::error::Delivery page limit (${MAX_DELIVERY_PAGES}) reached while another page was required."
+                break
+              fi
 
-          # Drain, don't kill -- an abrupt SIGKILL/SIGTERM the instant curl
-          # returns can cut off Next's after() background work (route.ts's
-          # persist+send tail can legitimately still be running for the LAST
-          # subscriber processed). `wait` after TERM gives it a moment to
-          # finish; found live 2026-08-05 as part of the same-day resilience
-          # audit -- a subscriber whose delivered_at was just claimed but
-          # whose send hadn't been confirmed yet would otherwise read as
-          # delivered to every future check with no email ever having gone
-          # out, and nothing anywhere would notice.
-          kill -TERM "${SERVER_PID}" 2>/dev/null
-          ( sleep 10 && kill -KILL "${SERVER_PID}" 2>/dev/null ) &
-          KILLER_PID=$!
-          wait "${SERVER_PID}" 2>/dev/null
-          kill "${KILLER_PID}" 2>/dev/null
+              DELIVERY_NOW=$(date +%s)
+              DELIVERY_ELAPSED=$((DELIVERY_NOW - DELIVERY_DRAIN_STARTED))
+              DELIVERY_REMAINING=$((DELIVERY_DRAIN_SECONDS - DELIVERY_ELAPSED))
+              if [ "${DELIVERY_REMAINING}" -lt "${MIN_DELIVERY_PAGE_SECONDS}" ]; then
+                DELIVERY_DRAIN_INCOMPLETE=1
+                echo "::error::Delivery drain time budget is too low to start another bounded page."
+                break
+              fi
+              PAGE_CURL_TIMEOUT=${DELIVERY_REMAINING}
+              if [ "${PAGE_CURL_TIMEOUT}" -gt 1500 ]; then
+                PAGE_CURL_TIMEOUT=1500
+              fi
 
-          if [ "${CURL_EXIT}" -ne 0 ]; then
-            echo "::error::curl itself failed (exit ${CURL_EXIT}) -- see server.log below."
-            tail -n 200 server.log
+              PAGE_URL="${URL}"
+              if [ "${DELIVERY_MODE}" = "override" ]; then
+                case "${PAGE_URL}" in
+                  *\?*) PAGE_URL="${PAGE_URL}&afterUserId=${DELIVERY_AFTER_USER_ID}" ;;
+                  *) PAGE_URL="${PAGE_URL}?afterUserId=${DELIVERY_AFTER_USER_ID}" ;;
+                esac
+              fi
+
+              NEXT_PAGE_NUMBER=$((DELIVERY_PAGE_COUNT + 1))
+              echo "Calling bounded delivery page ${NEXT_PAGE_NUMBER}/${MAX_DELIVERY_PAGES} (${DELIVERY_MODE} mode) ..."
+              # -w appends the HTTP status as the last line. The raw response
+              # stays private to the runner because it can contain emails.
+              RAW=$(curl -sS --max-time "${PAGE_CURL_TIMEOUT}" -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "${PAGE_URL}")
+              PAGE_CURL_EXIT=$?
+              PAGE_HTTP_STATUS=$(echo "${RAW}" | tail -n 1)
+              RESPONSE=$(echo "${RAW}" | sed '$d')
+              echo "Delivery page ${NEXT_PAGE_NUMBER} response (curl exit ${PAGE_CURL_EXIT}, HTTP ${PAGE_HTTP_STATUS}):"
+              echo "${RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{const s=JSON.parse(d); for(const k of ['backupSharedSentEmails','backupFreshSentEmails','backupStaleSentEmails','skippedBlankSubscribers','deferred','failures']){if(k in s)s[k]=Array.isArray(s[k])?s[k].length:0} for(const k of ['deliveryCursor','deliveryCursorNext','deliveryPageLastUserId']){if(s[k])s[k]='[redacted]'} console.log(JSON.stringify(s,null,2))}catch(e){console.log('[response body redacted: invalid JSON]')}})"
+
+              if [ "${PAGE_CURL_EXIT}" -ne 0 ]; then
+                DELIVERY_CURL_FAILED=1
+                DELIVERY_DRAIN_INCOMPLETE=1
+                break
+              fi
+              if [ "${PAGE_HTTP_STATUS}" -lt 200 ] || [ "${PAGE_HTTP_STATUS}" -ge 300 ]; then
+                DELIVERY_HTTP_FAILED=1
+                DELIVERY_DRAIN_INCOMPLETE=1
+                break
+              fi
+
+              PAGE_STATE=$(echo "${RESPONSE}" | node -e "
+                let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+                  try {
+                    const s=JSON.parse(d);
+                    const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+                    const integer=v=>Number.isInteger(v)&&v>=0;
+                    const cursorStates=new Set(['advanced','advanced_with_retry','override_read_only','empty','advance_failed']);
+                    const cursorOrNull=v=>v===null||uuid.test(v);
+                    if (!integer(s.subscribers) || !integer(s.sent) ||
+                        !integer(s.backupSharedSent) || !integer(s.backupFreshSent) || !integer(s.backupStaleSent) ||
+                        !integer(s.skippedAlreadyDelivered) || !integer(s.unsubscribedMidRunSkips) ||
+                        !integer(s.cancelledMidRunSkips) || !integer(s.suppressedMidRunSkips) ||
+                        !integer(s.checkoutRetentionErrors) || !integer(s.deliveryPageCount) ||
+                        !integer(s.deliveryRetryRequiredTotal) || s.deliveryBatchSize!==250 ||
+                        typeof s.deliveryPageComplete!=='boolean' || typeof s.deliveryRetryRequired!=='boolean' ||
+                        typeof s.deliveryPageBlocked!=='boolean' || typeof s.deliveryHasMore!=='boolean' ||
+                        typeof s.deliveryWrapped!=='boolean' || typeof s.deliveryCursorAdvanceFailed!=='boolean' ||
+                        !cursorStates.has(s.deliveryCursorState) || !cursorOrNull(s.deliveryCursor) ||
+                        !cursorOrNull(s.deliveryCursorNext) || !cursorOrNull(s.deliveryPageLastUserId) ||
+                        typeof s.paidCallBudgetDate!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.paidCallBudgetDate) ||
+                        typeof s.paidCallCeilingHit!=='boolean' ||
+                        !integer(s.paidCallReservationsGranted) || !integer(s.paidCallReservationsUsed) ||
+                        !integer(s.paidCallReservationsUnused) || typeof s.paidCallReservationExhausted!=='boolean' ||
+                        !(s.paidCallReservationError===null||typeof s.paidCallReservationError==='string')) throw new Error('shape');
+                    if (s.deliveryPageCount!==s.subscribers || s.deliveryPageCount>s.deliveryBatchSize ||
+                        s.deliveryPageComplete===s.deliveryRetryRequired ||
+                        s.deliveryRetryRequired!==(s.deliveryRetryRequiredTotal>0) ||
+                        s.deliveryPageBlocked!==(s.deliveryRetryRequired||s.deliveryCursorAdvanceFailed) ||
+                        s.deliveryCursorAdvanceFailed!==(s.deliveryCursorState==='advance_failed') ||
+                        (s.deliveryPageCount===0)!==(s.deliveryPageLastUserId===null) ||
+                        (s.deliveryHasMore&&(s.deliveryPageCount!==s.deliveryBatchSize||s.deliveryPageLastUserId===null)) ||
+                        (s.deliveryCursorState==='advanced'&&(s.deliveryPageBlocked||s.deliveryCursorNext!==s.deliveryPageLastUserId)) ||
+                        (s.deliveryCursorState==='advanced_with_retry'&&(!s.deliveryRetryRequired||s.deliveryCursorAdvanceFailed||s.deliveryCursorNext!==s.deliveryPageLastUserId)) ||
+                        (s.deliveryCursorState==='empty'&&(s.deliveryPageCount!==0||s.deliveryPageBlocked)) ||
+                        (s.deliveryCursorState==='override_read_only'&&s.deliveryCursorNext!==s.deliveryCursor)) throw new Error('contract');
+                    const covered=s.sent+s.backupSharedSent+s.backupFreshSent+s.backupStaleSent;
+                    const excused=s.skippedAlreadyDelivered+s.unsubscribedMidRunSkips+s.cancelledMidRunSkips+s.suppressedMidRunSkips;
+                    const uncovered=Math.max(s.subscribers-covered-excused,0);
+                    if (uncovered!==s.deliveryRetryRequiredTotal) throw new Error('coverage');
+                    process.stdout.write([
+                      'OK', uncovered, s.deliveryHasMore?1:0, s.deliveryRetryRequiredTotal,
+                      s.deliveryPageLastUserId||'NONE', s.deliveryPageBlocked?1:0,
+                      s.deliveryCursorAdvanceFailed?1:0, s.checkoutRetentionErrors,
+                      (s.paidCallCeilingHit||s.paidCallReservationError)?1:0,
+                      s.deliveryCursorState, s.deliveryWrapped?1:0, s.deliveryCursor?1:0
+                    ].join('|'));
+                  } catch { process.stdout.write('SHAPE_INVALID'); }
+                });
+              ")
+
+              if [ "${PAGE_STATE}" = "SHAPE_INVALID" ]; then
+                DELIVERY_SHAPE_FAILED=1
+                DELIVERY_DRAIN_INCOMPLETE=1
+                break
+              fi
+
+              IFS='|' read -r PAGE_OK PAGE_UNCOVERED PAGE_HAS_MORE PAGE_RETRY_TOTAL PAGE_LAST_USER_ID PAGE_BLOCKED PAGE_CURSOR_FAILED PAGE_RETENTION_ERRORS PAGE_COST_BRAKE PAGE_CURSOR_STATE PAGE_WRAPPED PAGE_CURSOR_PRESENT <<< "${PAGE_STATE}"
+              if [ "${PAGE_OK}" != "OK" ]; then
+                DELIVERY_SHAPE_FAILED=1
+                DELIVERY_DRAIN_INCOMPLETE=1
+                break
+              fi
+
+              DELIVERY_PAGE_COUNT=$((DELIVERY_PAGE_COUNT + 1))
+              DELIVERY_UNCOVERED_TOTAL=$((DELIVERY_UNCOVERED_TOTAL + PAGE_UNCOVERED))
+              DELIVERY_RETRY_REQUIRED_TOTAL=$((DELIVERY_RETRY_REQUIRED_TOTAL + PAGE_RETRY_TOTAL))
+              DELIVERY_RETENTION_ERRORS=$((DELIVERY_RETENTION_ERRORS + PAGE_RETENTION_ERRORS))
+              if [ "${PAGE_BLOCKED}" -eq 1 ]; then DELIVERY_BLOCKED_PAGE=1; fi
+              if [ "${PAGE_CURSOR_FAILED}" -eq 1 ]; then DELIVERY_CURSOR_FAILED=1; fi
+              if [ "${PAGE_COST_BRAKE}" -eq 1 ]; then DELIVERY_COST_BRAKE=1; fi
+              if [ "${PAGE_WRAPPED}" -eq 1 ]; then DELIVERY_SAW_WRAP=1; fi
+              if [ "${DELIVERY_PAGE_COUNT}" -eq 1 ]; then DELIVERY_INITIAL_CURSOR_PRESENT=${PAGE_CURSOR_PRESENT}; fi
+
+              # A cursor conflict is the only page result that cannot claim
+              # durable scan progress. Continue later rows read-only, then fail
+              # red after maintenance. Retry-required rows on a successful CAS
+              # use advanced_with_retry and stay in normal round-robin flow.
+              if [ "${PAGE_CURSOR_FAILED}" -eq 1 ]; then
+                if [ "${PAGE_HAS_MORE}" -eq 1 ]; then
+                  if [ "${PAGE_LAST_USER_ID}" = "NONE" ] || [ "${PAGE_LAST_USER_ID}" = "${DELIVERY_LAST_CONTINUATION}" ]; then
+                    DELIVERY_DRAIN_INCOMPLETE=1
+                    echo "::error::Cursor-conflicted delivery page did not provide a new safe continuation."
+                    break
+                  fi
+                  DELIVERY_MODE="override"
+                  DELIVERY_AFTER_USER_ID="${PAGE_LAST_USER_ID}"
+                  DELIVERY_LAST_CONTINUATION="${PAGE_LAST_USER_ID}"
+                  continue
+                fi
+                DELIVERY_TAIL_DRAINED=1
+                break
+              fi
+
+              if [ "${DELIVERY_MODE}" = "override" ]; then
+                if [ "${PAGE_HAS_MORE}" -eq 1 ]; then
+                  if [ "${PAGE_LAST_USER_ID}" = "NONE" ] || [ "${PAGE_LAST_USER_ID}" = "${DELIVERY_LAST_CONTINUATION}" ]; then
+                    DELIVERY_DRAIN_INCOMPLETE=1
+                    echo "::error::Delivery continuation made no progress."
+                    break
+                  fi
+                  DELIVERY_AFTER_USER_ID="${PAGE_LAST_USER_ID}"
+                  DELIVERY_LAST_CONTINUATION="${PAGE_LAST_USER_ID}"
+                  continue
+                fi
+                DELIVERY_TAIL_DRAINED=1
+                break
+              fi
+
+              if [ "${PAGE_CURSOR_STATE}" != "advanced" ] && [ "${PAGE_CURSOR_STATE}" != "advanced_with_retry" ] && [ "${PAGE_CURSOR_STATE}" != "empty" ]; then
+                DELIVERY_SHAPE_FAILED=1
+                DELIVERY_DRAIN_INCOMPLETE=1
+                echo "::error::Normal delivery page returned an invalid cursor state."
+                break
+              fi
+              if [ "${PAGE_HAS_MORE}" -eq 1 ]; then
+                continue
+              fi
+
+              # A run that began behind a prior cursor drains the UUID tail,
+              # then makes one normal probe so the route can wrap to the head.
+              # DELIVERY_SAW_WRAP prevents a second cycle.
+              if [ "${DELIVERY_INITIAL_CURSOR_PRESENT}" -eq 1 ] && [ "${DELIVERY_SAW_WRAP}" -eq 0 ] && [ "${DELIVERY_WRAP_PROBE_USED}" -eq 0 ]; then
+                DELIVERY_WRAP_PROBE_USED=1
+                continue
+              fi
+
+              DELIVERY_TAIL_DRAINED=1
+              break
+            done
+
+            if [ "${DELIVERY_TAIL_DRAINED}" -ne 1 ] && [ "${DELIVERY_DRAIN_INCOMPLETE}" -ne 1 ]; then
+              DELIVERY_DRAIN_INCOMPLETE=1
+            fi
+            echo "Delivery drain summary: pages=${DELIVERY_PAGE_COUNT}, retry_required=${DELIVERY_RETRY_REQUIRED_TOTAL}, uncovered=${DELIVERY_UNCOVERED_TOTAL}, tail_drained=${DELIVERY_TAIL_DRAINED}."
+          else
+            SEND_SKIPPED_FOR_PREFLIGHT=1
+            echo "Skipping letter generation because delivery preflight failed. Maintenance will still run."
+          fi
+
+          # Weekly send can return while a self-bounded Next after() delivery
+          # tail is still settling. Fully drain that process before any
+          # access-ending maintenance starts, then use a fresh server. This
+          # prevents a loaded email send from crossing an account deletion or
+          # subscription revocation boundary.
+          echo "Draining the send server before maintenance ..."
+          if ! stop_alpha_server 120; then
+            echo "::error::Could not prove the delivery server stopped before access-ending maintenance."
+            exit 1
+          fi
+          if ! start_alpha_server; then
+            echo "::error::Could not start the isolated maintenance server."
             exit 1
           fi
 
-          # HTTP status FIRST, independent of body shape. Found live
-          # 2026-08-05: a 401 (e.g. a drifted CRON_SECRET) returns valid JSON
-          # ({"error":"Unauthorized"}), which the old missed-count parser
-          # below scored as 0 missed -- a wrong secret produced a green job
-          # that delivered nothing to anyone.
-          if [ "${HTTP_STATUS}" -lt 200 ] || [ "${HTTP_STATUS}" -ge 300 ]; then
-            echo "::error::Route returned HTTP ${HTTP_STATUS}, not 2xx -- see the response body above. Nothing was necessarily delivered."
+          # Billing, checkout-retention, and deletion repair runs only after
+          # the letter route has returned. A Stripe outage can make this job
+          # red, but it cannot hold up subscriber generation or delivery.
+          DELETION_CURL_EXIT=1
+          DELETION_HTTP_STATUS=000
+          DELETION_RESPONSE=''
+          MAINT_CURL_EXIT=1
+          MAINT_HTTP_STATUS=000
+          MAINT_RESPONSE=''
+          MIRROR_CURL_EXIT=1
+          MIRROR_HTTP_STATUS=000
+          MIRROR_RESPONSE=''
+          # Account deletion gets its own full request budget. A slow Stripe or
+          # Auth cleanup cannot consume the general maintenance route's entire
+          # window and starve every other repair queue.
+          echo "Calling account deletion maintenance ..."
+          DELETION_RAW=$(curl -sS --max-time 300 -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "http://localhost:3100/api/cron/account-deletion-maintenance")
+          DELETION_CURL_EXIT=$?
+          DELETION_HTTP_STATUS=$(echo "${DELETION_RAW}" | tail -n 1)
+          DELETION_RESPONSE=$(echo "${DELETION_RAW}" | sed '$d')
+          echo "Account deletion response (curl exit ${DELETION_CURL_EXIT}, HTTP ${DELETION_HTTP_STATUS}):"
+          echo "${DELETION_RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log('[account-deletion response redacted: invalid JSON]')}})"
+
+          # A local next start server does not enforce route maxDuration. Stop
+          # this process even on curl timeout so a slow deletion cannot keep
+          # running beside another maintenance class.
+          if ! stop_alpha_server 15; then
+            echo "::error::Could not isolate account deletion maintenance from the next lane."
+            exit 1
+          fi
+          if ! start_alpha_server; then
+            echo "::error::Could not restart Alpha for general maintenance."
             exit 1
           fi
 
-          # Validate the response actually has the expected shape AND assert
-          # real coverage, not just "failed is small". A body that parses as
-          # JSON but isn't the real summary (an unexpected error shape, an
-          # empty object) used to read as "0 missed" by accident -- this now
-          # requires `subscribers` and `sent` to both be real numbers before
-          # trusting anything else in the payload, and separately asserts
-          # every non-skipped subscriber was actually covered by sent or one
-          # of the three backup tiers, not merely that `failed` looks small.
-          #
-          # alpha-drift-r26-05 (2026-08-14): skippedBlankSubscribers and
-          # deferred are both capped to EMAIL_LIST_CAP (25) in the route's
-          # own response (alpha-drift-r22-01) -- the route added
-          # skippedBlankSubscribersTotal/deferredTotal fields specifically so
-          # a capped array's .length couldn't understate the real count, but
-          # this check was never updated to read them. A capped .length can
-          # only be <= the true total, so on a day with >25 legitimately
-          # excused or deferred subscribers this inflated `uncovered` above
-          # 0 and failed the job on an otherwise fully-successful run. Falls
-          # back to .length when the *Total field is absent (an older
-          # deploy, or a response shape from before this fix) so this stays
-          # correct either way.
-          COVERAGE=$(echo "${RESPONSE}" | node -e "
+          # Run general maintenance even when the send or deletion request
+          # fails. Every independent recovery class must get a chance on the
+          # same bad day that causes a transport or provider error.
+          echo "Calling post-send maintenance ..."
+          MAINT_RAW=$(curl -sS --max-time 300 -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "http://localhost:3100/api/cron/maintenance")
+          MAINT_CURL_EXIT=$?
+          MAINT_HTTP_STATUS=$(echo "${MAINT_RAW}" | tail -n 1)
+          MAINT_RESPONSE=$(echo "${MAINT_RAW}" | sed '$d')
+          echo "Maintenance response (curl exit ${MAINT_CURL_EXIT}, HTTP ${MAINT_HTTP_STATUS}):"
+          echo "${MAINT_RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log('[maintenance response redacted: invalid JSON]')}})"
+
+          # Provider mirrors get their own process and request window. A slow
+          # checkout or cancellation recovery cannot keep email/suppression
+          # cleanup from being attempted.
+          if ! stop_alpha_server 15; then
+            echo "::error::Could not isolate general maintenance from the provider mirror lane."
+            exit 1
+          fi
+          if ! start_alpha_server; then
+            echo "::error::Could not restart Alpha for provider mirror maintenance."
+            exit 1
+          fi
+          echo "Calling provider mirror maintenance ..."
+          MIRROR_RAW=$(curl -sS --max-time 300 -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "http://localhost:3100/api/cron/provider-mirror-maintenance")
+          MIRROR_CURL_EXIT=$?
+          MIRROR_HTTP_STATUS=$(echo "${MIRROR_RAW}" | tail -n 1)
+          MIRROR_RESPONSE=$(echo "${MIRROR_RAW}" | sed '$d')
+          echo "Provider mirror response (curl exit ${MIRROR_CURL_EXIT}, HTTP ${MIRROR_HTTP_STATUS}):"
+          echo "${MIRROR_RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log('[provider-mirror response redacted: invalid JSON]')}})"
+          if ! stop_alpha_server 15; then
+            echo "::error::Could not prove the provider mirror server stopped."
+            exit 1
+          fi
+
+          if [ "${SEND_SKIPPED_FOR_PREFLIGHT}" -eq 0 ]; then
+            if [ "${DELIVERY_CURL_FAILED}" -ne 0 ]; then
+              build_public_server_log
+              echo "::error::A bounded delivery page curl failed. Maintenance still ran. See the public-safe operational summary below."
+              tail -n 200 "${PUBLIC_SERVER_LOG}"
+              exit 1
+            fi
+            if [ "${DELIVERY_HTTP_FAILED}" -ne 0 ]; then
+              echo "::error::A bounded delivery page returned a non-2xx status. Maintenance still ran."
+              exit 1
+            fi
+            if [ "${DELIVERY_SHAPE_FAILED}" -ne 0 ]; then
+              echo "::error::A delivery response violated the page/cursor contract. It was not treated as a silent success."
+              exit 1
+            fi
+            if [ "${DELIVERY_RETENTION_ERRORS}" -ne 0 ]; then
+              echo "::error::Database-only pre-send retention failed ${DELIVERY_RETENTION_ERRORS} time(s) across the delivery pages."
+              exit 1
+            fi
+            if [ "${DELIVERY_COST_BRAKE}" -ne 0 ]; then
+              echo "::error::The shared paid-call ceiling or its durable reservation failed. Subscriber fallbacks and maintenance were still attempted."
+              exit 1
+            fi
+            if [ "${DELIVERY_CURSOR_FAILED}" -ne 0 ]; then
+              echo "::error::A delivery cursor compare-and-swap failed. Later pages were attempted read-only, and durable progress was not claimed."
+              exit 1
+            fi
+            if [ "${DELIVERY_DRAIN_INCOMPLETE}" -ne 0 ] || [ "${DELIVERY_TAIL_DRAINED}" -ne 1 ]; then
+              echo "::error::Delivery stopped at the page or wall-clock bound while ordered work remained. The next slot will resume from durable state."
+              exit 1
+            fi
+            if [ "${DELIVERY_BLOCKED_PAGE}" -ne 0 ] || [ "${DELIVERY_RETRY_REQUIRED_TOTAL}" -ne 0 ] || [ "${DELIVERY_UNCOVERED_TOTAL}" -ne 0 ]; then
+              echo "::error::${DELIVERY_RETRY_REQUIRED_TOTAL} retry-required page outcome(s) were observed across ${DELIVERY_PAGE_COUNT} page(s). The fair scan cursor advanced, and uncovered readers stay eligible for wraparound retry."
+              exit 1
+            fi
+          fi
+
+          if [ "${DELETION_CURL_EXIT}" -ne 0 ]; then
+            echo "::error::Account deletion maintenance curl failed (exit ${DELETION_CURL_EXIT}). Letters were already processed."
+            exit 1
+          fi
+          if [ "${DELETION_HTTP_STATUS}" -lt 200 ] || [ "${DELETION_HTTP_STATUS}" -ge 300 ]; then
+            echo "::error::Account deletion maintenance returned HTTP ${DELETION_HTTP_STATUS}. Letters were already processed."
+            exit 1
+          fi
+          DELETION_STATUS=$(echo "${DELETION_RESPONSE}" | node -e "
             let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
               try {
                 const s = JSON.parse(d);
-                if (typeof s.subscribers !== 'number' || typeof s.sent !== 'number') {
+                const a = s.accountDeletion;
+                const ints = [
+                  a?.inspected, a?.billingResumed, a?.authDeleted,
+                  a?.completed, a?.privacyBlocked, a?.errors,
+                  s.deletionTombstonesPruned, s.deletionPruneErrors,
+                  s.pendingDeletionSagas, s.pendingDeletionCountErrors,
+                  s.dueDeletionTombstones,
+                  s.dueDeletionTombstoneCountErrors,
+                  s.resendEventRetention?.pruned,
+                  s.resendEventRetention?.errors
+                ];
+                if (ints.some(v => !Number.isInteger(v) || v < 0) ||
+                    typeof s.resendEventRetention?.remaining !== 'boolean') {
                   process.stdout.write('SHAPE_INVALID');
                   return;
                 }
-                const covered = (s.sent||0) + (s.backupSharedSent||0) + (s.backupFreshSent||0) + (s.backupStaleSent||0);
-                const blankCount = typeof s.skippedBlankSubscribersTotal === 'number'
-                  ? s.skippedBlankSubscribersTotal
-                  : (s.skippedBlankSubscribers ? s.skippedBlankSubscribers.length : 0);
-                const excused = blankCount + (s.skippedAlreadyDelivered||0);
-                const uncovered = s.subscribers - excused - covered;
-                const deferredCount = typeof s.deferredTotal === 'number'
-                  ? s.deferredTotal
-                  : (s.deferred ? s.deferred.length : 0);
-                process.stdout.write(String(Math.max(uncovered, deferredCount, 0)));
-              } catch (e) { process.stdout.write('SHAPE_INVALID'); }
+                const failed = a.privacyBlocked + a.errors +
+                  s.deletionPruneErrors + s.pendingDeletionSagas +
+                  s.pendingDeletionCountErrors + s.dueDeletionTombstones +
+                  s.dueDeletionTombstoneCountErrors +
+                  s.resendEventRetention.errors +
+                  Number(s.resendEventRetention.remaining);
+                process.stdout.write(String(failed));
+              } catch { process.stdout.write('SHAPE_INVALID'); }
             });
           ")
-
-          if [ "${COVERAGE}" = "SHAPE_INVALID" ]; then
-            echo "::error::Response body was HTTP 2xx but not the expected send-summary JSON shape -- treating as a failure, not a silent pass."
+          if [ "${DELETION_STATUS}" = "SHAPE_INVALID" ]; then
+            echo "::error::Account deletion maintenance returned an unexpected summary shape. Letters were already processed."
+            exit 1
+          fi
+          if [ "${DELETION_STATUS}" != "0" ]; then
+            echo "::error::Account deletion maintenance has ${DELETION_STATUS} unresolved item(s). Letters were already processed."
             exit 1
           fi
 
-          if [ "${COVERAGE}" != "0" ]; then
-            echo "::error::${COVERAGE} subscriber(s) not accounted for by sent/backup/excused counts (or deferred for time) this run."
+          if [ "${MAINT_CURL_EXIT}" -ne 0 ]; then
+            echo "::error::Post-send maintenance curl failed (exit ${MAINT_CURL_EXIT}). Letters were already processed."
+            exit 1
+          fi
+          if [ "${MAINT_HTTP_STATUS}" -lt 200 ] || [ "${MAINT_HTTP_STATUS}" -ge 300 ]; then
+            echo "::error::Post-send maintenance returned HTTP ${MAINT_HTTP_STATUS}. Letters were already processed."
+            exit 1
+          fi
+          MAINT_STATUS=$(echo "${MAINT_RESPONSE}" | node -e "
+            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+              try {
+                const s = JSON.parse(d);
+                const f = s.staleCheckoutFinalizer;
+                const t = s.terminalCheckoutScrub;
+                const c = s.checkoutCreation;
+                const r = s.checkoutRecovery;
+                const l = s.legacyDuplicate;
+                const n = s.renewalCancellation;
+                const ints = [
+                  s.checkoutRetentionErrors,
+                  f?.completed, f?.aborted, f?.errors,
+                  t?.profilesScrubbed, t?.fulfillmentsScrubbed, t?.errors,
+                  c?.inspected, c?.claimed, c?.inProgress, c?.reviewRequired, c?.bound,
+                  c?.expired, c?.deletionPending, c?.replayWindowMissed,
+                  c?.errors,
+                  r?.inspected, r?.recovered, r?.nonAccessBound,
+                  r?.inProgress, r?.cancelled,
+                  r?.terminallyScrubbed, r?.errors,
+                  l?.inspected, l?.inProgress, l?.finalized,
+                  l?.unresolved, l?.errors,
+                  n?.inspected, n?.scheduled, n?.alreadyScheduled, n?.retired,
+                  n?.inProgress, n?.unresolved, n?.errors,
+                  s.pendingCheckoutCreationReviews,
+                  s.checkoutCreationReviewErrors,
+                  s.deadLetteredCheckoutProfiles,
+                  s.checkoutDeadLetterCountErrors,
+                  s.deadLetteredLegacyCheckoutFulfillments,
+                  s.legacyDeadLetterCountErrors,
+                  s.pendingRenewalCancellations,
+                  s.renewalCancellationCountErrors,
+                  s.unresolvedRefundReviews, s.refundReviewErrors,
+                  s.resolvedRefundReviewsPruned,
+                  s.resolvedRefundReviewsRemaining,
+                  s.refundReviewPruneErrors
+                ];
+                if (ints.some(v => !Number.isInteger(v) || v < 0)) {
+                  process.stdout.write('SHAPE_INVALID');
+                  return;
+                }
+                const failed = s.checkoutRetentionErrors + f.aborted + f.errors +
+                  t.errors + c.inProgress + c.reviewRequired +
+                  c.deletionPending + c.replayWindowMissed + c.errors + r.errors +
+                  r.inProgress +
+                  l.inProgress + l.unresolved + l.errors +
+                  n.inProgress + n.unresolved + n.errors +
+                  s.pendingCheckoutCreationReviews +
+                  s.checkoutCreationReviewErrors +
+                  s.deadLetteredCheckoutProfiles +
+                  s.checkoutDeadLetterCountErrors +
+                  s.deadLetteredLegacyCheckoutFulfillments +
+                  s.legacyDeadLetterCountErrors +
+                  s.pendingRenewalCancellations +
+                  s.renewalCancellationCountErrors +
+                  s.unresolvedRefundReviews +
+                  s.refundReviewErrors +
+                  s.resolvedRefundReviewsRemaining +
+                  s.refundReviewPruneErrors;
+                process.stdout.write(String(failed));
+              } catch { process.stdout.write('SHAPE_INVALID'); }
+            });
+          ")
+          if [ "${MAINT_STATUS}" = "SHAPE_INVALID" ]; then
+            echo "::error::Post-send maintenance returned an unexpected summary shape. Letters were already processed."
+            exit 1
+          fi
+          if [ "${MAINT_STATUS}" != "0" ]; then
+            echo "::error::Post-send maintenance has ${MAINT_STATUS} unresolved item(s). Letters were already processed."
             exit 1
           fi
 
-          echo "OK: send completed, every active subscriber accounted for."
+          if [ "${MIRROR_CURL_EXIT}" -ne 0 ]; then
+            echo "::error::Provider mirror maintenance curl failed (exit ${MIRROR_CURL_EXIT}). Letters were already processed."
+            exit 1
+          fi
+          if [ "${MIRROR_HTTP_STATUS}" -lt 200 ] || [ "${MIRROR_HTTP_STATUS}" -ge 300 ]; then
+            echo "::error::Provider mirror maintenance returned HTTP ${MIRROR_HTTP_STATUS}. Letters were already processed."
+            exit 1
+          fi
+          MIRROR_STATUS=$(echo "${MIRROR_RESPONSE}" | node -e "
+            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+              try {
+                const s = JSON.parse(d);
+                const e = s.stripeEmailSync;
+                const p = s.suppression;
+                const ints = [
+                  e?.inspected, e?.cleared, e?.deferred, e?.errors,
+                  p?.inspected, p?.cleared, p?.deferred, p?.errors,
+                  s.pendingStripeEmailSyncs, s.stripeEmailSyncCountErrors,
+                  s.pendingSuppressions, s.suppressionCountErrors,
+                  s.unresolvedSuppressionRecoveries, s.suppressionRecoveryCountErrors,
+                  s.finalMaintenanceDueErrors
+                ];
+                if (ints.some(v => !Number.isInteger(v) || v < 0) ||
+                    typeof s.finalMaintenanceDue !== 'boolean') {
+                  process.stdout.write('SHAPE_INVALID');
+                  return;
+                }
+                const failed = e.deferred + e.errors + p.deferred + p.errors +
+                  s.pendingStripeEmailSyncs + s.stripeEmailSyncCountErrors +
+                  s.pendingSuppressions + s.suppressionCountErrors +
+                  s.unresolvedSuppressionRecoveries + s.suppressionRecoveryCountErrors +
+                  s.finalMaintenanceDueErrors +
+                  (s.finalMaintenanceDue ? 1 : 0);
+                process.stdout.write(String(failed));
+              } catch { process.stdout.write('SHAPE_INVALID'); }
+            });
+          ")
+          if [ "${MIRROR_STATUS}" = "SHAPE_INVALID" ]; then
+            echo "::error::Provider mirror maintenance returned an unexpected summary shape. Letters were already processed."
+            exit 1
+          fi
+          if [ "${MIRROR_STATUS}" != "0" ]; then
+            echo "::error::Provider mirror maintenance has ${MIRROR_STATUS} unresolved item(s). Letters were already processed."
+            exit 1
+          fi
 
-      - name: Upload server log on failure
+          if [ "${SEND_SKIPPED_FOR_PREFLIGHT}" -eq 1 ]; then
+            echo "::error::Delivery preflight failed, so no letter generation was attempted. Scheduled maintenance completed before this failure."
+            exit 1
+          fi
+
+          echo "OK: send completed, every active subscriber accounted for, and maintenance is clear."
+
+      - name: Upload public-safe server diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: server-log
-          path: server.log
+          name: public-server-diagnostics
+          path: server.public.log
           retention-days: 7

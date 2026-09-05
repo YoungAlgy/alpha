@@ -71,7 +71,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/settings/accounts/page.tsx: the OPERATIONAL STATE card uses a border-color cue, not opacity, for staleness");
@@ -94,7 +95,7 @@ console.log("(3) components/FirstLetterCelebration.tsx + app/writing/page.tsx: b
 {
   const celebration = readFileSync(new URL("../components/FirstLetterCelebration.tsx", import.meta.url), "utf8");
   check("(3a) the effect checks matchMedia before setting visible", /if \(typeof window !== "undefined" && window\.matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)\.matches\) return;/.test(celebration));
-  check("(3b) the check sits before setVisible(true)", /matches\) return;\s*\n\s*setVisible\(true\);/.test(celebration));
+  check("(3b) the reduced-motion check sits before setVisible(true)", /matches\) return;\s*\n\s*(?:\/\/[^\n]*\n\s*)*setVisible\(true\);/.test(celebration));
 
   const writing = readFileSync(new URL("../app/writing/page.tsx", import.meta.url), "utf8");
   check("(3c) the writing-mark span carries an identifying className", /alpha-display alpha-writing-mark text-7xl md:text-8xl font-bold inline-block/.test(writing));
@@ -115,7 +116,7 @@ console.log("(4) app/theme/page.tsx + lib/user-sync.ts: getSession() errors now 
 console.log("(5) app/settings/page.tsx: 4 discarded-error sites fixed (mount hydrate row read, its catch, requestTier's re-read, and the export handler's getSession)");
 {
   const src = readFileSync(new URL("../app/settings/page.tsx", import.meta.url), "utf8");
-  check("(5a) the mount hydrate's row-read error is destructured and logged", /const \{ data: row, error: rowErr \} = await sb\s*\n\s*\.from\("users"\)\s*\n\s*\.select\("topic_quota, topics, subscribed_at, cancelled_at, stripe_customer_id, unsubscribed_at"\)/.test(src) && /if \(rowErr\) console\.warn\("\[settings\] hydrate row fetch failed:", rowErr\.message\);/.test(src));
+  check("(5a) the mount hydrate's row-read error is destructured and logged", /const \{ data: row, error: rowErr \} = await sb\s*\n\s*\.from\("users"\)\s*\n\s*\.select\("topic_quota, topics, subscribed_at, cancelled_at, access_granted_at, stripe_customer_id, unsubscribed_at"\)/.test(src) && /if \(rowErr\) console\.warn\("\[settings\] hydrate row fetch failed:", rowErr\.message\);/.test(src));
   check("(5b) the surrounding catch now logs a thrown failure", /\} catch \(e\) \{\s*\n\s*\/\/ alpha-drift-r63-05: logged, not silent/.test(src));
   check("(5c) requestTier's quota re-read error is destructured and logged", /const \{ data: row, error: rowErr \} = await sb\s*\n\s*\.from\("users"\)\s*\n\s*\.select\("topic_quota"\)/.test(src) && /if \(rowErr\) console\.warn\("\[settings\] requestTier quota re-read failed:", rowErr\.message\);/.test(src));
   check("(5d) requestTier's own catch also logs now", /console\.warn\("\[settings\] requestTier hydrate threw:", e instanceof Error \? e\.message : e\);/.test(src));

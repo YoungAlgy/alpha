@@ -1,19 +1,9 @@
 import type { TopicSignal } from "./types";
 
-// V0 mock sources. Each entry carries curated EVERGREEN signal for one topic,
-// INCLUDING real URLs we know exist. Claude may only cite URLs that appear
-// in the signal — it must not invent new ones. In V1 these get replaced by
-// Brave Search + curated RSS.
-//
-// This is the LAST-RESORT filler (see assemble.ts's genFiller): it only ever
-// fires when a reader's own topics AND the generic-fallback tail (see
-// buildGenerationPool) both come up dry via live search — in practice, only
-// during a total Brave outage. Deliberately worded with NO "this week" /
-// dated framing (was originally written and dated "week of May 17, 2026" —
-// harmless while genuinely rare-path filler, but actively misleading if ever
-// shown on, say, a September send with specific numbers/events pinned to
-// May). WEEK_OF below is an internal cache-lookup tag only, never shown to
-// the reader or asserted as "current" in the prompt text itself.
+// TEST FIXTURES ONLY. These are historical snapshots dated 2026-05-17. They
+// remain available to deterministic verification scripts but must never enter
+// a production issue. Production source resolution uses current live providers
+// and returns no signal when the bounded provider cascade cannot find one.
 const WEEK_OF = "2026-05-17";
 
 const MOCK_SIGNALS: TopicSignal[] = [

@@ -34,8 +34,10 @@
 // "youngalgy.com rewrite -> internal Vercel hostname" comment
 // (generate/route.ts, stripe/checkout/route.ts, stripe/portal/route.ts);
 // lib/analytics.ts's PostHog setup comment said "in Vercel env".
-// 1 refuted: docs/SECRETS.md missing a JINA_API_KEY row (refuted 2/2 --
-// judged real-but-minor, not acted on; left unchanged).
+// 1 refuted in the original round: docs/SECRETS.md missing a JINA_API_KEY row
+// was judged real-but-minor and left unchanged at that point. The current
+// inventory now includes the row, so this verifier checks the live document
+// state rather than preserving the old absence assertion.
 // alpha-drift-r49-01 through r49-08, all 2026-08-20.
 // Run: npx tsx scripts/verify-r49-findings.mts
 import { readFileSync } from "node:fs";
@@ -44,7 +46,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) src/worker-entry.ts: no-store now applies to every non-static-asset route, not just /letter (personally verified, HIGH)");
@@ -129,10 +132,10 @@ console.log("(8) lib/analytics.ts: PostHog activation instructions no longer say
   check("(8b) now points at the WSL deploy checkout's build-time env file + docs/SECRETS.md", /WSL deploy checkout's own build-time env file/.test(src) && /docs\/SECRETS\.md/.test(src));
 }
 
-console.log("(9) sanity: the refuted docs/SECRETS.md finding was deliberately left unchanged");
+console.log("(9) docs/SECRETS.md now inventories the optional Jina Reader credential");
 {
   const src = readFileSync(new URL("../docs/SECRETS.md", import.meta.url), "utf8");
-  check("(9a) docs/SECRETS.md has no JINA_API_KEY row (refuted 2/2, not acted on)", !/JINA_API_KEY/.test(src));
+  check("(9a) docs/SECRETS.md has a JINA_API_KEY row", /JINA_API_KEY/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

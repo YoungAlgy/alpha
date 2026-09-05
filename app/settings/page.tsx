@@ -11,7 +11,8 @@ import { ProfileEditor } from "@/components/ProfileEditor";
 import { EmailChanger } from "@/components/EmailChanger";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
+import { hasActiveAccess, hasReaderAccess, ADMIN_EMAIL } from "@/lib/access";
+import { isInviteOnly } from "@/lib/access-mode";
 import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS } from "@/lib/types";
 import { poolCap } from "@/lib/engine/select-sections";
 
@@ -33,7 +34,9 @@ export default function SettingsPage() {
   // user) at least once. Gates the Billing section so a reader on a non-5
   // tier never sees the hardcoded default flash before their real quota/price
   // is known.
-  const [quotaLoaded, setQuotaLoaded] = useState(false);
+  const [quotaLoaded, setQuotaLoaded] = useState(
+    () => !supabaseConfigured()
+  );
   // The reader's ranked topic POOL from the DB (source of truth). The top
   // `topicQuota` are favorites that fill the letter; the rest are free backups.
   // Falls back to onboarding localStorage when the DB row hasn't loaded.
@@ -85,12 +88,38 @@ export default function SettingsPage() {
   const [justAdded, setJustAdded] = useState(false);
   // In-page billing feedback (replaces jarring/off-brand alert() dialogs).
   const [billingMsg, setBillingMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // Renewal cancellation is deliberately separate from the Stripe Billing
+  // Portal so a missing portal configuration cannot trap a paying reader.
+  // It only schedules the exact stored Alpha subscription to end after the
+  // already-paid period. Cards and invoices stay in the portal.
+  const [confirmingRenewalCancel, setConfirmingRenewalCancel] = useState(false);
+  const [renewalCancelBusy, setRenewalCancelBusy] = useState(false);
+  const [renewalCancelMsg, setRenewalCancelMsg] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
+  const [renewalEndsAt, setRenewalEndsAt] = useState<string | null>(null);
+  const renewalCancelInFlight = useRef(false);
+  const renewalCancelHeadingRef = useRef<HTMLParagraphElement>(null);
+  const renewalPanelWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (confirmingRenewalCancel) {
+      renewalCancelHeadingRef.current?.focus();
+      renewalPanelWasOpenRef.current = true;
+      return;
+    }
+    if (renewalPanelWasOpenRef.current) {
+      billingHeadingRef.current?.focus();
+      renewalPanelWasOpenRef.current = false;
+    }
+  }, [confirmingRenewalCancel]);
   // Whether the user has an active PAID Stripe subscription. The delete
   // endpoint cancels their Stripe subscription before removing the account
   // (best-effort, see app/api/account/delete/route.ts) — this just drives the
   // confirm-dialog copy so paying users know billing is handled, not just the
   // app account.
   const [hasPaidSub, setHasPaidSub] = useState(false);
+  const [hasInviteAccess, setHasInviteAccess] = useState(false);
   // The signed-in user's real email (auth session = source of truth). The
   // onboarding-state email in localStorage is only present for users who came
   // through the funnel on this device — admin-granted / fresh-device sign-ins
@@ -139,7 +168,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!supabaseConfigured()) {
-      setQuotaLoaded(true);
       return;
     }
     let cancelled = false;
@@ -165,7 +193,7 @@ export default function SettingsPage() {
         // Save-block treatment.
         const { data: row, error: rowErr } = await sb
           .from("users")
-          .select("topic_quota, topics, subscribed_at, cancelled_at, stripe_customer_id, unsubscribed_at")
+          .select("topic_quota, topics, subscribed_at, cancelled_at, access_granted_at, stripe_customer_id, unsubscribed_at")
           .eq("id", user.id)
           .maybeSingle();
         if (rowErr) console.warn("[settings] hydrate row fetch failed:", rowErr.message);
@@ -176,16 +204,29 @@ export default function SettingsPage() {
         if (Array.isArray(row?.topics) && row.topics.length > 0) {
           setTopics(row.topics as string[]);
         }
+        setHasInviteAccess(!!row?.access_granted_at);
         // Paid + active = subscribed, has a Stripe customer, and not past a
         // cancellation date. (Free admin-granted accounts have no customer id.)
-        if (row?.subscribed_at && row?.stripe_customer_id && hasActiveAccess(row.cancelled_at)) {
+        if (
+          row?.subscribed_at &&
+          row?.stripe_customer_id &&
+          hasActiveAccess(row.cancelled_at)
+        ) {
           setHasPaidSub(true);
+          if (row.cancelled_at) setRenewalEndsAt(row.cancelled_at);
         }
         // Show "Resume my letters" only when they're paused AND would actually
         // get letters back if they resumed (subscribed + live access — covers
         // comped accounts too, which have no stripe_customer_id). For a reader
         // with no access, resuming wouldn't send anything, so don't offer it.
-        if (row?.unsubscribed_at && row?.subscribed_at && hasActiveAccess(row.cancelled_at)) {
+        if (
+          row?.unsubscribed_at &&
+          hasReaderAccess(
+            row.subscribed_at,
+            row.cancelled_at,
+            row.access_granted_at
+          )
+        ) {
           setShowResume(true);
         }
       } catch (e) {
@@ -278,7 +319,10 @@ export default function SettingsPage() {
       const res = await fetch("/api/stripe/update-quantity", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ direction }),
+        body: JSON.stringify({
+          direction,
+          expectedQuantity: topicQuota / TOPICS_PER_BUNDLE,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -325,6 +369,63 @@ export default function SettingsPage() {
     } finally {
       setBusyTier(null);
       confirmInFlight.current = false;
+    }
+  }
+
+  async function confirmRenewalCancellation() {
+    if (renewalCancelInFlight.current) return;
+    renewalCancelInFlight.current = true;
+    setRenewalCancelBusy(true);
+    setRenewalCancelMsg(null);
+    try {
+      const res = await fetch("/api/stripe/cancel-renewal", {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        setRenewalCancelMsg({
+          kind: "err",
+          text: "Sign in first to cancel renewal.",
+        });
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(
+          data.error || "Couldn't confirm the cancellation. Try again."
+        );
+      }
+      const cancelAt =
+        typeof data.cancelAt === "string" ? data.cancelAt : null;
+      if (!cancelAt || Number.isNaN(new Date(cancelAt).getTime())) {
+        throw new Error("Stripe did not return a valid access end date.");
+      }
+      setRenewalEndsAt(cancelAt);
+      const ended = data.ended === true;
+      if (ended) setHasPaidSub(false);
+      setRenewalCancelMsg({
+        kind: "ok",
+        text: hasInviteAccess
+          ? "Renewal is off. Your permanent invite access stays active."
+          : ended
+          ? `Renewal is off. Alpha access ended on ${formatRenewalEnd(
+              cancelAt
+            )}.`
+          : `Renewal is off. You keep Alpha through ${formatRenewalEnd(
+              cancelAt
+            )}.`,
+      });
+      setConfirmingRenewalCancel(false);
+    } catch (error) {
+      setRenewalCancelMsg({
+        kind: "err",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Couldn't confirm the cancellation. Try again.",
+      });
+    } finally {
+      setRenewalCancelBusy(false);
+      renewalCancelInFlight.current = false;
     }
   }
 
@@ -538,19 +639,26 @@ export default function SettingsPage() {
           )}
         </Section>
 
-        <Section title="Billing">
+        {isInviteOnly() && !hasPaidSub ? (
+          <Section title="Access">
+            <p className="alpha-ui text-sm" style={{ color: "var(--ink-soft)" }}>
+              Alpha is invite-only right now. There is no monthly payment for your account. Access is reviewed personally.
+            </p>
+          </Section>
+        ) : (
+        <Section title={isInviteOnly() ? "Previous subscription" : "Billing"}>
           {quotaLoaded ? (
             <>
               <p ref={billingHeadingRef} tabIndex={-1} className="alpha-display text-base mb-1" style={{ outline: "none" }}>
-                alpha. · ${monthlyDollars} / month
+                {isInviteOnly() ? "Moving to free invite access" : `alpha. · $${monthlyDollars} / month`}
               </p>
               <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
-                {topicQuota} topics this cycle
+                {topicQuota} topics {isInviteOnly() ? "in your letter" : "this cycle"}
               </p>
             </>
           ) : (
             <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
-              Loading your plan…
+              {isInviteOnly() ? "Loading account status…" : "Loading your plan…"}
             </p>
           )}
           {/* alpha-drift-r37-02 (2026-08-14, self-audit): the r36 focus-fix
@@ -563,7 +671,14 @@ export default function SettingsPage() {
               billingHeadingRef.current null when the focus effect fires.
               Gating on quotaLoaded too makes the comment's claim actually
               true. */}
-          {!confirmingTier && quotaLoaded && (
+          {isInviteOnly() && (
+            <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
+              {hasInviteAccess
+                ? "Your permanent invite access stays active after this paid period. Turn off renewal below so it does not renew."
+                : "Alpha is invite-only now. Your current access stays through this paid period. Turn off renewal below so it does not renew."}
+            </p>
+          )}
+          {!isInviteOnly() && !confirmingTier && quotaLoaded && (
             <div className="flex flex-wrap gap-4 mb-3">
               {canAdd && (
                 <button
@@ -596,7 +711,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {confirmingTier && (
+          {!isInviteOnly() && confirmingTier && (
             <div
               className="mb-4 p-4 rounded-lg"
               style={{ background: "var(--callout-bg)", border: "1.5px solid var(--accent)" }}
@@ -653,7 +768,7 @@ export default function SettingsPage() {
               {billingMsg.text}
             </p>
           )}
-          {justAdded && (
+          {!isInviteOnly() && justAdded && (
             <p className="mb-3">
               {/* alpha-drift-r59-03 (2026-08-20, accessibility-resweep-
                   newer-code-round-7): same touch-target fix as the other
@@ -667,6 +782,105 @@ export default function SettingsPage() {
               </Link>
             </p>
           )}
+
+          {renewalEndsAt && !renewalCancelMsg && (
+            <p
+              role="status"
+              className="alpha-ui text-sm mb-3"
+              style={{ color: "var(--ink-soft)" }}
+            >
+              {hasInviteAccess
+                ? "Renewal is scheduled to stop. Your permanent invite access stays active."
+                : `Renewal is scheduled to stop. You keep Alpha through ${formatRenewalEnd(
+                    renewalEndsAt
+                  )}.`}
+            </p>
+          )}
+
+          {renewalCancelMsg && (
+            <p
+              role={renewalCancelMsg.kind === "err" ? "alert" : "status"}
+              aria-live="polite"
+              className="alpha-ui text-sm mb-3"
+              style={{
+                color:
+                  renewalCancelMsg.kind === "err"
+                    ? "var(--ink)"
+                    : "var(--ink-soft)",
+              }}
+            >
+              {renewalCancelMsg.text}
+            </p>
+          )}
+
+          {confirmingRenewalCancel ? (
+            <div
+              className="mb-4 p-4 rounded-lg"
+              style={{
+                background: "var(--callout-bg)",
+                border: "1.5px solid var(--rule)",
+              }}
+            >
+              <p
+                ref={renewalCancelHeadingRef}
+                tabIndex={-1}
+                className="alpha-display text-base font-semibold mb-1"
+                style={{ outline: "none" }}
+              >
+                Cancel renewal?
+              </p>
+              <p
+                className="alpha-ui text-sm mb-4"
+                style={{ color: "var(--ink-soft)" }}
+              >
+                {hasInviteAccess
+                  ? "Your account and letters stay here. Permanent invite access stays active after billing ends."
+                  : "Your account and letters stay here. You keep access through the end of this paid period. Alpha will not renew after that."}
+              </p>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  disabled={renewalCancelBusy}
+                  onClick={confirmRenewalCancellation}
+                  className="alpha-button alpha-button-accent text-sm"
+                  style={{ opacity: renewalCancelBusy ? 0.5 : 1 }}
+                >
+                  {renewalCancelBusy ? "Turning off renewal…" : "Turn off renewal"}
+                </button>
+                <button
+                  type="button"
+                  disabled={renewalCancelBusy}
+                  onClick={() => setConfirmingRenewalCancel(false)}
+                  className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
+                  style={{ color: "var(--ink-soft)" }}
+                >
+                  {isInviteOnly() ? "Go back" : "Keep renewal on"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="mb-3">
+              <button
+                type="button"
+                disabled={!quotaLoaded || renewalCancelBusy}
+                onClick={() => {
+                  setBillingMsg(null);
+                  setRenewalCancelMsg(null);
+                  setConfirmingTier(null);
+                  setConfirmingRenewalCancel(true);
+                }}
+                className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
+                style={{
+                  color: "var(--ink-soft)",
+                  opacity: !quotaLoaded || renewalCancelBusy ? 0.5 : 1,
+                }}
+              >
+                {renewalEndsAt ? "Verify renewal is off" : "Cancel renewal"}
+              </button>
+            </p>
+          )}
+
+          {!isInviteOnly() && <>
           <button
             type="button"
             onClick={async () => {
@@ -694,14 +908,17 @@ export default function SettingsPage() {
             Manage subscription →
           </button>
           <p className="alpha-ui text-xs mt-2" style={{ color: "var(--ink-soft)" }}>
-            Update card, cancel, see invoices. All in Stripe.
+            Update your card and see invoices in Stripe. Cancel renewal stays
+            available here if the portal is unavailable.
           </p>
+          </>}
         </Section>
+        )}
 
         {isAdmin && (
           <Section title="Accounts (admin)">
             <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
-              See everyone who's signed up. Grant free subscriptions or remove users.
+              Review access requests, grant access, or remove users.
             </p>
             {/* alpha-drift-r59-03 (2026-08-20, accessibility-resweep-newer-
                 code-round-7): same touch-target fix as the other bare CTA
@@ -805,7 +1022,7 @@ export default function SettingsPage() {
                 // blocks the page anyway so "above" isn't even clickable.
                 // State the guarantee plainly instead.
                 const confirmMsg = hasPaidSub
-                  ? `Delete your alpha. account?\n\nThis removes your letters and profile and can't be undone. Your $${monthlyDollars}/mo subscription is cancelled too, so billing stops.\n\nDelete anyway?`
+                  ? "Delete your alpha. account?\n\nThis removes your letters and profile and can't be undone. Any remaining Alpha subscription is cancelled too, so billing stops.\n\nDelete anyway?"
                   : "Delete your alpha. account? This removes your saved letters and profile. Can't be undone.";
                 if (!confirm(confirmMsg)) return;
                 if (deleteInFlight.current) return;
@@ -818,6 +1035,8 @@ export default function SettingsPage() {
                 reset();
                 localStorage.removeItem("alpha-first-issue");
                 localStorage.removeItem("alpha-theme");
+                // Auth and client stores are gone, so force a clean document.
+                // eslint-disable-next-line @next/next/no-location-assign-relative-destination
                 window.location.href = "/welcome";
               }}
               className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
@@ -831,6 +1050,12 @@ export default function SettingsPage() {
       <Footer />
     </main>
   );
+}
+
+function formatRenewalEnd(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "the saved end date";
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "long" }).format(date);
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

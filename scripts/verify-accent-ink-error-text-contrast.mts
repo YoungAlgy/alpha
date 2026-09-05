@@ -22,7 +22,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 function hexToLuminance(hex: string): number {
@@ -147,7 +148,7 @@ console.log("(5) alpha-drift-r24-01 (found+fixed 2026-08-14, self-audit): round 
     return out;
   }
   const allTsxFiles = [...walk(new URL("../app", import.meta.url).pathname.replace(/^\/([A-Za-z]):/, "$1:")), ...walk(new URL("../components", import.meta.url).pathname.replace(/^\/([A-Za-z]):/, "$1:"))];
-  let offenders: string[] = [];
+  const offenders: string[] = [];
   for (const file of allTsxFiles) {
     const src = readFileSync(file, "utf8");
     // Look for role="alert"/role="status" followed within ~400 chars by a

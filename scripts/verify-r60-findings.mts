@@ -57,7 +57,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/inbox/page.tsx: 3 controls now clear the 24px touch-target minimum");
@@ -103,12 +104,26 @@ console.log("(5) lib/stripe-cancel.ts: the internal customer-id re-lookup now lo
   check("(5d) a real error also pages ops", /sendOpsAlert\(\s*\n\s*"alpha: possible orphaned Stripe subscription after account delete",/.test(src));
 }
 
-console.log("(6) app/api/stripe/checkout/route.ts: the active-subscription pre-check now logs a real DB error while still failing open");
+console.log("(6) app/api/stripe/checkout/route.ts: an uncertain active-subscription lookup now fails closed before creating another recurring charge");
 {
   const src = readFileSync(new URL("../app/api/stripe/checkout/route.ts", import.meta.url), "utf8");
-  check("(6a) error is destructured", /const \{ data: existing, error: existingError \} = await sb/.test(src));
-  check("(6b) a real error is logged", /console\.warn\("\[stripe\/checkout\] active-subscription pre-check query failed, allowing checkout:", existingError\.message\);/.test(src));
-  check("(6c) checkout still proceeds regardless (fail-open preserved)", /if \(existingError\) \{\s*\n\s*console\.warn\("\[stripe\/checkout\][^\n]*\n\s*\}\s*\n\s*if \(shouldBlockDoubleSubscription\(existing\)\)/.test(src));
+  check(
+    "(6a) the route calls a dedicated exact Alpha subscription pre-check",
+    /const liveAlphaSubscription = await hasBlockingAlphaSubscriptionForCheckout\(/.test(src) &&
+      /knownStripeCustomerId,\s*\n\s*knownStripeSubscriptionId/.test(src)
+  );
+  check(
+    "(6b) a pre-check error is logged and enters the fail-closed catch",
+    /active-subscription pre-check failed, blocking checkout:/.test(src) &&
+      /catch \(e\) \{[\s\S]{0,180}active-subscription pre-check failed, blocking checkout:/.test(src)
+  );
+  const precheckFailure = src.indexOf("active-subscription pre-check failed, blocking checkout:");
+  const staging = src.indexOf("const retentionErrors = await scrubExpiredCheckoutProfiles");
+  check(
+    "(6c) the pre-check catch returns 503 before checkout staging",
+    /active-subscription pre-check failed, blocking checkout:[\s\S]{0,350}status: 503/.test(src) &&
+      precheckFailure >= 0 && staging > precheckFailure
+  );
 }
 
 console.log("(7) app/api/admin/users/route.ts: gatherStats()'s 3 reads now check + throw on error, caught by GET into a clean 500");

@@ -15,7 +15,29 @@
 // here is either read-only or a request that's EXPECTED to fail validation
 // before touching anything real.
 
-const BASE_URL = process.env.SMOKE_TEST_URL?.trim() || "https://alpha.everyday.report";
+const CANONICAL_BASE_URL = "https://alpha.everyday.report";
+const configuredBaseUrl = process.env.SMOKE_TEST_URL?.trim() || CANONICAL_BASE_URL;
+let parsedBaseUrl;
+try {
+  parsedBaseUrl = new URL(configuredBaseUrl);
+} catch {
+  console.error("::error:: SMOKE_TEST_URL must be the canonical Alpha HTTPS host (value withheld).");
+  process.exit(1);
+}
+if (
+  parsedBaseUrl.protocol !== "https:" ||
+  parsedBaseUrl.hostname !== "alpha.everyday.report" ||
+  parsedBaseUrl.port !== "" ||
+  !["", "/"].includes(parsedBaseUrl.pathname) ||
+  parsedBaseUrl.username !== "" ||
+  parsedBaseUrl.password !== "" ||
+  parsedBaseUrl.search !== "" ||
+  parsedBaseUrl.hash !== ""
+) {
+  console.error("::error:: SMOKE_TEST_URL must be the canonical Alpha HTTPS host (value withheld).");
+  process.exit(1);
+}
+const BASE_URL = parsedBaseUrl.origin;
 const EXPECTED_RELEASE = process.env.ALPHA_EXPECTED_RELEASE_SHA?.trim() || "";
 const EXPECTED_CHECKOUT_MODE =
   process.env.ALPHA_EXPECTED_CHECKOUT_MODE?.trim() || "";
@@ -28,12 +50,19 @@ if (!/^[0-9a-f]{40}$/.test(EXPECTED_RELEASE)) {
   );
   process.exit(1);
 }
-if (!["open", "paused"].includes(EXPECTED_CHECKOUT_MODE)) {
+if (EXPECTED_CHECKOUT_MODE !== "paused") {
   console.error(
-    "::error:: ALPHA_EXPECTED_CHECKOUT_MODE must be exactly open or paused. " +
-      "The pre-deploy gate must match it to the versioned wrangler.jsonc value."
+    "::error:: Access-only releases require ALPHA_EXPECTED_CHECKOUT_MODE=paused."
   );
   process.exit(1);
+}
+
+function accessOnlyHealthMatches(body) {
+  return body?.accessMode === "invite" && body?.subscriberDeliveryMode === "paused";
+}
+
+function noChargeResponseMatches(status, body, cacheControl, expectedError) {
+  return status === 410 && body?.error === expectedError && cacheControl.includes("no-store");
 }
 
 async function fetchWithTimeout(url, opts = {}) {
@@ -61,13 +90,21 @@ const CHECKS = [
     },
   },
   {
-    name: "/api/health reachable + core providers configured",
+    name: "/api/health reachable + hard product dependencies configured",
     hard: true,
     run: async () => {
       const res = await fetchWithTimeout(`${BASE_URL}/api/health`);
       if (res.status !== 200) return { ok: false, detail: `status ${res.status}` };
       const body = await res.json();
-      const CORE = ["anthropic", "resend", "stripe", "stripeWebhook", "supabase"];
+      const CORE = [
+        "resend",
+        "stripe",
+        "stripeWebhook",
+        "checkoutBinding",
+        "unsubscribe",
+        "legacyCheckoutCutoff",
+        "supabase",
+      ];
       const bad = CORE.filter((k) => body?.checks?.[k] !== true);
       if (bad.length > 0) {
         return { ok: false, detail: `checks.${bad.join(", checks.")} not true -- got ${JSON.stringify(body?.checks)}` };
@@ -84,21 +121,23 @@ const CHECKS = [
           detail: `checkoutMode ${JSON.stringify(body?.checkoutMode)} does not match intended ${EXPECTED_CHECKOUT_MODE}`,
         };
       }
-      // alpha-drift-r71-01 (2026-08-21, duplicate-code-audit-r20): this list
-      // used to be missing "brave" -- app/api/health/route.ts's own checks
-      // object, scripts/verify-send-preflight.mjs's SOFT_RESILIENCE_TIER, and
-      // .github/workflows/letter-watchdog.yml all name brave alongside these
-      // same 4 fields as the resilience tier, but this script's copy fell one
-      // short, so a broken/missing BRAVE_SEARCH_API_KEY produced zero warning
-      // on this deploy gate even though every sibling list already covers it.
-      const SOFT = ["gemini", "you", "groq", "deepseek", "brave"];
+      if (!accessOnlyHealthMatches(body)) {
+        return {
+          ok: false,
+          detail: `accessMode ${JSON.stringify(body?.accessMode)}; subscriberDeliveryMode ${JSON.stringify(body?.subscriberDeliveryMode)}`,
+        };
+      }
+      // This mirrors verify-send-preflight's resilience tier. Anthropic is an
+      // optional backup generator, so an absent key belongs here as a warning,
+      // not in CORE as a deploy blocker.
+      const SOFT = ["anthropic", "gemini", "you", "groq", "deepseek", "brave"];
       const softBad = SOFT.filter((k) => body?.checks?.[k] !== true);
       if (softBad.length > 0) {
         console.warn(`  (soft warning, not failing) resilience-tier fallback(s) inert: ${softBad.join(", ")}`);
       }
       return {
         ok: true,
-        detail: `core providers all true; release ${EXPECTED_RELEASE}; checkout ${EXPECTED_CHECKOUT_MODE}`,
+        detail: `hard product dependencies all true; release ${EXPECTED_RELEASE}; invite access; checkout and subscriber delivery paused`,
       };
     },
   },
@@ -225,9 +264,9 @@ const CHECKS = [
   },
 ];
 
-if (EXPECTED_CHECKOUT_MODE === "paused") {
-  CHECKS.splice(2, 0, {
-    name: "public checkout is paused before provider access",
+CHECKS.splice(2, 0,
+  {
+    name: "public checkout is permanently closed before provider access",
     hard: true,
     run: async () => {
       const res = await fetchWithTimeout(`${BASE_URL}/api/stripe/checkout`, {
@@ -242,23 +281,44 @@ if (EXPECTED_CHECKOUT_MODE === "paused") {
         // The structured response is part of this hard check.
       }
       const cacheControl = res.headers.get("cache-control") || "";
-      const retryAfter = res.headers.get("retry-after") || "";
       return {
-        ok:
-          res.status === 503 &&
-          body?.error === "checkout_temporarily_paused" &&
-          cacheControl.includes("no-store") &&
-          retryAfter === "300",
-        detail: `status ${res.status}; error ${JSON.stringify(body?.error)}; Cache-Control ${cacheControl || "(none)"}; Retry-After ${retryAfter || "(none)"}`,
+        ok: noChargeResponseMatches(res.status, body, cacheControl, "invite_only"),
+        detail: `status ${res.status}; error ${JSON.stringify(body?.error)}; Cache-Control ${cacheControl || "(none)"}`,
       };
     },
-  });
-} else {
-  CHECKS.splice(2, 0, {
-    name: "public checkout gate is open without creating a Session",
+  },
+  {
+    name: "paid quantity changes are permanently closed before provider access",
     hard: true,
     run: async () => {
-      const res = await fetchWithTimeout(`${BASE_URL}/api/stripe/checkout`, {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/stripe/update-quantity`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction: "up", expectedQuantity: 1 }),
+      });
+      let body = null;
+      try {
+        body = await res.json();
+      } catch {
+        // The structured validation response is part of this hard check.
+      }
+      const cacheControl = res.headers.get("cache-control") || "";
+      return {
+        ok: noChargeResponseMatches(
+          res.status,
+          body,
+          cacheControl,
+          "Alpha is invite-only now. Paid plan changes are closed. You can still turn off renewal from Settings."
+        ),
+        detail: `status ${res.status}; error ${JSON.stringify(body?.error)}; Cache-Control ${cacheControl || "(none)"}`,
+      };
+    },
+  },
+  {
+    name: "billing portal is permanently closed before provider access",
+    hard: true,
+    run: async () => {
+      const res = await fetchWithTimeout(`${BASE_URL}/api/stripe/portal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -267,18 +327,20 @@ if (EXPECTED_CHECKOUT_MODE === "paused") {
       try {
         body = await res.json();
       } catch {
-        // The structured validation response is part of this hard check.
+        // The structured authentication response is part of this hard check.
       }
       return {
-        ok:
-          res.status === 400 &&
-          body?.error ===
-            "Please finish setting up your profile before subscribing.",
+        ok: noChargeResponseMatches(
+          res.status,
+          body,
+          res.headers.get("cache-control") || "",
+          "Alpha is invite-only. Billing changes are closed."
+        ),
         detail: `status ${res.status}; error ${JSON.stringify(body?.error)}`,
       };
     },
-  });
-}
+  }
+);
 
 let hardFailures = 0;
 console.log(`Smoke-testing ${BASE_URL} ...\n`);

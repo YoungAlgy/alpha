@@ -11,7 +11,7 @@ import { LegalLayout } from "@/components/LegalLayout";
 const PATH = "/terms";
 const TITLE = "Terms";
 const DESCRIPTION =
-  "The terms of service for alpha. A $5/month personal letter, every day. Billing, cancellation, refunds, and what you can expect from the service.";
+  "The terms of service for alpha. An invite-only personal letter, every day, with the access rules and expectations for the service.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -37,8 +37,8 @@ export default function TermsPage() {
   return (
     <LegalLayout title="Terms of Service" effectiveDate="May 13, 2026">
       <p>
-        These terms govern your use of alpha. ("we," "us"), a personal
-        newsletter service. By subscribing, you agree to them.
+        These terms govern your use of alpha. (&quot;we,&quot; &quot;us&quot;), a personal
+        newsletter service. By requesting or using access, you agree to them.
       </p>
 
       <H2>The service</H2>
@@ -49,9 +49,10 @@ export default function TermsPage() {
       Added the caveat below rather than promise something the first send
       can't keep. */}
       <p>
-        alpha. is a paid email/web newsletter. You pick a set of topics, and
-        every day we deliver a letter written for you by AI from real sources,
-        with every link starting as a live web search made that period. On a
+        alpha. is an invite-only email/web newsletter right now. You pick a set of topics, and
+        every day we build a letter for you from real sources. A configured AI
+        writer or Alpha&apos;s local source formatter turns those sources into the
+        letter, with every link starting as a live web search made that period. On a
         rare day something upstream breaks and we can&apos;t finish a fresh
         letter in time. Rather than send nothing, we&apos;ll resend your most
         recent one and say so plainly in the letter itself. That fallback
@@ -63,12 +64,11 @@ export default function TermsPage() {
         better.
       </p>
 
-      <H2>Subscription &amp; billing</H2>
+      <H2>Access and billing</H2>
       <ul>
-        <li>alpha. starts at <strong>$5 per month, USD</strong> for 5 topics, billed
-          monthly to your card. You can add bundles of 5 more topics for $5/mo each
-          (up to 25 topics, $25/mo) from Settings → Billing.</li>
-        <li>Your subscription auto-renews each month until you cancel.</li>
+        <li>Alpha is invite-only right now. There is no charge or monthly subscription for a new access request.</li>
+        <li>Access requests are reviewed personally. An approval gives you access to the topics and letters in your Alpha account.</li>
+        <li>Any older paid Alpha account remains subject to the billing terms shown when that account subscribed. Email us if you need help with an older paid account.</li>
         {/* alpha-drift-r24-03 (2026-08-14): this used to name Settings → Billing as
         the normal path and email as a fallback "if that button doesn't work." Live-
         checked via Stripe: the account has zero Billing Portal configurations, so the
@@ -76,12 +76,12 @@ export default function TermsPage() {
         lead with email and describe the button with an "if it's live for you" hedge,
         so this stays accurate both now and once the one-time Stripe dashboard config
         (tracked separately, needs Algy) is done. */}
-        <li>You can cancel any time. Email us and we&apos;ll cancel it the same day,
+        <li>For an older paid account, you can cancel any time. Email us and we&apos;ll cancel it the same day,
           no back and forth. There&apos;s also a Manage subscription button in
           Settings → Billing for instant self-serve cancellation and card updates,
           when it&apos;s live for your account. Either way, cancellation takes effect
           at the end of the current billing cycle and you keep access until then.</li>
-        <li>We don&apos;t prorate partial-month refunds, but if something has gone
+        <li>For an older paid account, we don&apos;t prorate partial-month refunds, but if something has gone
           materially wrong on our end, email us and we&apos;ll make it right.</li>
       </ul>
 

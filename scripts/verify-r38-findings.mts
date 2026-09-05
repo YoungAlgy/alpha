@@ -29,7 +29,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) lib/engine/voice-guard.ts: BANNED_LEXICAL now catches the -ed forms round 37 missed");
@@ -94,12 +95,12 @@ console.log("(2) lib/email.ts: the daily letter's IN THIS ISSUE list no longer j
   check("(2d) scripts/preview-email.mts's sample fixture updated to match (colon, not em dash)", /"Topic"\)?\}: \$\{LONG_HEADLINE\}/.test(previewSrc));
 }
 
-console.log("(3) app/api/stripe/webhook/route.ts: cancelledAt now derives from the live-refetched subscription, not the stale event snapshot");
+console.log("(3) app/api/stripe/webhook/route.ts: subscription updates require a live Stripe read and never apply a stale event snapshot");
 {
   const src = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
-  check("(3a) liveSub is hoisted with `let` above the try block (was `const` inside it, out of scope at the derivation site)", /let liveSub: Stripe\.Subscription \| undefined;\s*\n\s*try \{\s*\n\s*liveSub = await stripe\.subscriptions\.retrieve\(sub\.id\);/.test(src));
-  check("(3b) cancelledAt now derives from liveSub with a fallback to the event snapshot on retrieve failure", /const cancelledAt = deriveCancelledAt\(liveSub\?\.status \?\? sub\.status, liveSub\?\.cancel_at \?\? sub\.cancel_at\);/.test(src));
-  check("(3c) the old stale-snapshot-only derivation is gone", !/const cancelledAt = deriveCancelledAt\(sub\.status, sub\.cancel_at\);/.test(src));
+  check("(3a) liveSub is required and a retrieve failure is rethrown for a bounded Stripe retry", /let liveSub: Stripe\.Subscription;\s*\n\s*try \{\s*\n\s*liveSub = await stripe\.subscriptions\.retrieve\(sub\.id\);/.test(src) && /live subscription retrieve failed; retrying without applying stale state:/.test(src) && /catch \(e\) \{[\s\S]{0,400}?throw e;\s*\n\s*\}/.test(src));
+  check("(3b) cancelledAt derives only from the required live subscription", /const cancelledAt = deriveCancelledAt\(liveSub\.status, liveSub\.cancel_at\);/.test(src));
+  check("(3c) both stale-only and stale-fallback derivations are gone", !/const cancelledAt = deriveCancelledAt\(sub\.status, sub\.cancel_at\);/.test(src) && !/deriveCancelledAt\(liveSub\?\.status \?\? sub\.status/.test(src));
 
   // Behavioral proof against the REAL exported deriveCancelledAt, replicating
   // the exact out-of-order-delivery scenario the finding describes: an
@@ -110,9 +111,9 @@ console.log("(3) app/api/stripe/webhook/route.ts: cancelledAt now derives from t
   const staleEventSnapshot = { status: "active", cancel_at: null }; // an EARLIER event's embedded state, delivered late
   const liveSubNow = { status: "canceled", cancel_at: null }; // Stripe's actual current state by the time this retry is processed
   const oldBehavior = deriveCancelledAt(staleEventSnapshot.status, staleEventSnapshot.cancel_at);
-  const newBehavior = deriveCancelledAt(liveSubNow.status ?? staleEventSnapshot.status, liveSubNow.cancel_at ?? staleEventSnapshot.cancel_at);
+  const newBehavior = deriveCancelledAt(liveSubNow.status, liveSubNow.cancel_at);
   check("(3d) behavioral: the OLD stale-snapshot derivation would have resurrected a churned subscriber (returned null instead of a real cancellation timestamp)", oldBehavior === null);
-  check("(3e) behavioral: the NEW live-subscription derivation correctly keeps the terminal cancellation (non-null)", newBehavior !== null);
+  check("(3e) behavioral: the required live-subscription derivation correctly keeps the terminal cancellation (non-null)", newBehavior !== null);
 }
 
 console.log("(4) watchdog_delivery_check RPC: active-subscriber definition now matches the real send's bounced_at/complained_at exclusion (migration WRITTEN, blocked on Algy's live SQL editor click)");

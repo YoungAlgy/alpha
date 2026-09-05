@@ -1,9 +1,10 @@
 import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
-import { resolveTopicSignal, resolveMockSignal } from "./source-resolver";
+import { resolveTopicSignal } from "./source-resolver";
 import { getCachedBlurbs, getRecentlyCitedUrls, setCachedBlurb } from "./blurb-cache";
 import { normalizeUrl } from "./url-guard";
 import { selectLetterSections } from "./select-sections";
+import { buildDeterministicBlurb } from "./deterministic-fallback";
 import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
 import type { Issue, UserProfile, TopicId } from "@/lib/types";
@@ -98,15 +99,19 @@ export async function generateIssue(
   // news," failedCache means "the pipeline itself broke" — conflating them
   // would make a provider outage silently read as a quiet news day in logs.
   // Without this, a topic that fails all five tiers for one subscriber gets
-  // retried from scratch — full waterfall, every paid tier included — by
-  // that same subscriber's Pass-2 filler attempt, the cron's own Layer-1
-  // fast-fallback retry, AND every later subscriber who shares that topic,
+  // retried from scratch - full waterfall, every paid tier included - by
+  // the cron's own Layer-1 fast-fallback retry and every later subscriber
+  // who shares that topic,
   // inverting the cost-sharing property the whole cache system exists for
   // during exactly the highest-cost failure mode (a systemic outage or
   // truncation bug). Scoped to this run only (same lifetime as dryCache/
   // inFlight, freshly created per cron invocation) so a real transient blip
   // isn't blacklisted into tomorrow's run.
   failedCache: Set<string> = new Set<string>(),
+  // Daily-send's shared paid-call budget. Topic and editor generation check it
+  // immediately before every paid Anthropic or DeepSeek attempt, including
+  // retries. Other callers omit it and retain their existing behavior.
+  paidCallAllowed?: () => boolean | Promise<boolean>,
 ): Promise<Issue> {
   // Map the pickable "zodiac" topic to the reader's per-sign id, dropping it when
   // there's no birthday (see mapTopicsForUser). If the WHOLE pool maps to empty
@@ -195,8 +200,7 @@ export async function generateIssue(
         // Dry in the tight since-last-send window? Retry ONCE at past-week before
         // giving up the slot. With the exclusion set filtering out everything
         // already cited, whatever the wide pass finds is guaranteed new to the
-        // reader — this keeps daily letters full of real articles instead of
-        // sliding into the static filler (whose repeats a subscriber noticed).
+        // reader - this keeps daily letters grounded in real current articles.
         if (!signal && freshness && freshness !== "pw") {
           signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls });
         }
@@ -204,7 +208,25 @@ export async function generateIssue(
           dryCache.add(dryKey);
           return null; // no fresh signal — skip, no model call
         }
-        const blurb = await generateTopicBlurb(id, weekOf, signal);
+        let blurb: TopicBlurb;
+        try {
+          blurb = await generateTopicBlurb(id, weekOf, signal, {
+            paidCallAllowed,
+          });
+        } catch (generationError) {
+          // Search already proved that this topic has real, citable material.
+          // Preserve that material through a deterministic formatter when all
+          // writer tiers are unavailable or the run is in a zero-cost mode.
+          // The original error remains visible in the warning. If the signal
+          // cannot be parsed into safe source items, rethrow so the existing
+          // backup and hard-failure paths still apply.
+          const deterministic = buildDeterministicBlurb(signal);
+          if (!deterministic) throw generationError;
+          console.warn(
+            `[assemble] ${id} ${weekOf}: model generation failed, using deterministic source fallback: ${generationError instanceof Error ? generationError.message : generationError}`
+          );
+          blurb = deterministic;
+        }
         // Only cache a real section. If the guard dropped every link (0 items),
         // don't cache the empty result — otherwise every later subscriber to this
         // topic would read the empty blurb back as a "hit" and ship a link-less
@@ -275,47 +297,11 @@ export async function generateIssue(
     return withDeadline(raw, TOPIC_GEN_DEADLINE_MS, `topic-blurb ${id}`);
   }
 
-  // Last-resort filler from the curated mock (catalog topics only) — keeps the
-  // letter full when the whole ranked pool was quiet this period.
-  //
-  // NOTE: mock blurbs are intentionally NOT written to the shared cache. The
-  // cache is the "live, fresh this period" store that genLive reads first; if a
-  // mock blurb landed there, the NEXT subscriber's genLive would read it back
-  // and treat evergreen filler as fresh signal (so that topic would never
-  // backfill for anyone after the first dry user). Generating mock per-user is
-  // cheap and rare (only fires when a reader's WHOLE pool is dry) and keeps
-  // every reader's "thin topic -> fresher backup" behavior independent.
-  async function genFiller(topicId: string): Promise<TopicBlurb | null> {
-    const id = topicId as TopicId;
-    // No cache read: genFiller only runs when genLive already returned null (no
-    // live blurb cached this period), so a lookup here always misses. Mock
-    // blurbs are deliberately never cached (see the note above), so generate it.
-    //
-    // EXCEPT failedCache: genFiller runs IMMEDIATELY after genLive returns
-    // null for this exact topic — if that null was a genuine hard failure
-    // (every generation tier exhausted, not just "no live signal"), the
-    // underlying problem is almost always provider-level (an outage, a rate
-    // limit, a systemic bug), not content-level — retrying the identical
-    // generateTopicBlurb chain with mock signal instead of live signal is
-    // very unlikely to succeed and pays the full waterfall again for nothing
-    // (alpha-spend-cap-02 — this was one of the three named repeat-payers in
-    // the original finding, see generateIssue's failedCache comment).
-    const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
-    if (failedCache.has(dryKey)) return null;
-    const signal = resolveMockSignal(id, weekOf);
-    if (!signal) return null;
-    const blurb = await withDeadline(
-      generateTopicBlurb(id, weekOf, signal),
-      TOPIC_GEN_DEADLINE_MS,
-      `topic-filler ${id}`
-    );
-    return blurb.items.length > 0 ? blurb : null;
-  }
-
   // Pick the letter's sections from the ranked pool: top fresh topics first,
-  // backups for the quiet ones, filler only as a last resort. Each generator
-  // is individually error-trapped inside the selector, so one failed topic is
-  // treated as "quiet" and backfilled rather than sinking the whole letter.
+  // then fresh backups for quiet topics. Historical mock snapshots never enter
+  // the production issue path. Each live generation is individually
+  // error-trapped inside the selector, so one failed topic is backfilled rather
+  // than sinking the whole letter.
   //
   // extractUrls (alpha-drift-r16-12): lets selectLetterSections reject a
   // candidate whose primary citation was already used by an earlier-chosen
@@ -336,7 +322,7 @@ export async function generateIssue(
     }
     return urls;
   };
-  const selection = await selectLetterSections(genPool, size, genLive, genFiller, extractBlurbUrls);
+  const selection = await selectLetterSections(genPool, size, genLive, null, extractBlurbUrls);
   const blurbs = selection.chosen.map((c) => c.value);
   if (selection.skippedDry.length > 0) {
     console.warn(
@@ -435,20 +421,22 @@ export async function generateIssue(
   // calls can still complete after this function has already given up.
   // alpha-drift-r15-07 (found+fixed 2026-08-06): this call ran the SAME
   // Claude -> Gemini -> Groq -> DeepSeek escalation shape as topic-blurb.ts,
-  // but with no withDeadline of its own, unlike every genLive/genFiller call
-  // above -- its own worst case is comparable to or worse than one topic
+  // but with no withDeadline of its own, unlike every genLive call above - its
+  // own worst case is comparable to or worse than one topic
   // blurb (no cancellation on withDeadline means a caller giving up doesn't
   // stop the underlying call: an orphaned generateEditorNote kept running
-  // and consuming real Anthropic/DeepSeek spend, counted toward
-  // topicBlurbPaidCallCount/deepseekCallCount, for a result that was
-  // silently discarded once it eventually resolved). Reuses
+  // and consuming real Anthropic/DeepSeek spend. Daily send passes one shared
+  // paid-call guard through both topic and editor generation, so even an
+  // orphaned invocation must reserve budget before starting another paid call. Reuses
   // TOPIC_GEN_DEADLINE_MS -- the existing catch below already has a clean
   // fallback intro, so a timeout here just takes that path instead of a
   // real failure, same as it always could.
   let editorIntro: string;
   try {
     editorIntro = await withDeadline(
-      generateEditorNote(user, blurbs, fallbackTopicIds),
+      generateEditorNote(user, blurbs, fallbackTopicIds, {
+        paidCallAllowed,
+      }),
       TOPIC_GEN_DEADLINE_MS,
       "editor-note"
     );

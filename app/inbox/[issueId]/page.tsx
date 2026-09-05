@@ -11,7 +11,8 @@ import { ReadingProgress } from "@/components/ReadingProgress";
 import { LetterTOC } from "@/components/LetterTOC";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { coerceThemeId } from "@/lib/themes";
-import { hasActiveAccess } from "@/lib/access";
+import { hasReaderAccess } from "@/lib/access";
+import { currentPeriodIso } from "@/lib/cadence";
 import type { Issue } from "@/lib/types";
 
 // Renders a specific past issue by ID (UUID from public.issues.id) for its
@@ -87,12 +88,13 @@ export default function IssuePage() {
             sb
               .from("issues")
               .select("week_of, volume, number, editor_intro, sections")
+              .lte("week_of", currentPeriodIso())
               .eq("id", forIssueId)
               .eq("user_id", session.user.id)
               .maybeSingle(),
             sb
               .from("users")
-              .select("first_name, city, theme, cancelled_at")
+              .select("first_name, city, theme, subscribed_at, cancelled_at, access_granted_at")
               .eq("id", session.user.id)
               .maybeSingle(),
           ]);
@@ -104,15 +106,24 @@ export default function IssuePage() {
           //
           // alpha-drift-r20-05: same deleted-account gap as /inbox --
           // see that file's comment. A cascade-deleted `users` row makes
-          // userRow null, which hasActiveAccess(undefined) misreads as
-          // "active." !userError && !userRow is a genuine zero-row
-          // result, not a query failure (that's handled below by the
-          // separate `error` check on the issues query).
-          if (!userError && !userRow) {
+          // userRow null, which the old cancellation-only helper misread as
+          // "active." Handle userError as a retryable load failure first.
+          // A clean !userRow after that is a genuine zero-row result.
+          if (userError) {
+            setLoadError(true);
+            return;
+          }
+          if (!userRow) {
             setAccessEnded(true);
             return;
           }
-          if (!hasActiveAccess(userRow?.cancelled_at)) {
+          if (
+            !hasReaderAccess(
+              userRow.subscribed_at,
+              userRow.cancelled_at,
+              userRow.access_granted_at
+            )
+          ) {
             setAccessEnded(true);
             return;
           }
@@ -148,7 +159,9 @@ export default function IssuePage() {
   }, [issueId]);
 
   useEffect(() => {
-    load();
+    // Initial client data loading is the external synchronization owned here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   if (accessEnded) {
@@ -162,7 +175,7 @@ export default function IssuePage() {
             α
           </div>
           <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
-            Your subscription has ended.
+            Your Alpha access has ended.
           </h1>
           <p className="alpha-display text-base" style={{ color: "var(--ink-soft)" }}>
             Want back in? Start a new letter, or reach out if something looks wrong.

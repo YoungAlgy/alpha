@@ -36,7 +36,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) lib/engine/voice-guard.ts: robust/comprehensive/seamless now get the same -ness treatment as their -ly forms");
@@ -59,13 +60,13 @@ console.log("(2) README.md + docs/SECRETS.md: GEMINI_API_KEY's doc now matches t
 {
   const readmeSrc = readFileSync(new URL("../README.md", import.meta.url), "utf8");
   check("(2a) the old 'Claude down' framing is gone", !/GEMINI_API_KEY=\s*# search \+ generation fallback tier \(Brave rate-limited, or Claude down\)/.test(readmeSrc));
-  check("(2b) replaced with the real PRIMARY-tier framing", /PRIMARY generation tier for/.test(readmeSrc) && /topic blurbs/.test(readmeSrc));
-  check("(2c) editor's-note's opposite tier order is disclosed too", /Editor's-note generation still tries Claude first/.test(readmeSrc));
-  check("(2d) admin panel doc now lists clear_suppression", /grant free subscription, revoke free, clear delivery suppression, delete\./.test(readmeSrc));
+  check("(2b) replaced with the current primary free-writer and no-model framing", /GEMINI_API_KEY=\s*# grounded-search fallback plus the primary free writer tier/.test(readmeSrc) && /No-model mode[\s\S]{0,100}formats already-resolved sources locally/.test(readmeSrc));
+  check("(2c) paid Claude and deterministic editor-note behavior are disclosed", /ANTHROPIC_API_KEY=\s*# paid Claude writer tier, ignored unless ALPHA_ALLOW_PAID_AI is enabled/.test(readmeSrc) && /editor-note\.ts\s+optional model intro with deterministic no-model fallback/.test(readmeSrc));
+  check("(2d) admin panel doc lists invite review and clear-suppression controls", /Admin Accounts panel[\s\S]{0,350}approve invite access[\s\S]{0,220}clear delivery suppression/.test(readmeSrc));
 
   const secretsSrc = readFileSync(new URL("../docs/SECRETS.md", import.meta.url), "utf8");
   check("(2e) SECRETS.md's Gemini row no longer says 'Claude-down generation fallback'", !/the Claude-down generation fallback simultaneously/.test(secretsSrc));
-  check("(2f) replaced with the real PRIMARY-tier framing", /the PRIMARY generation tier for topic blurbs/.test(secretsSrc));
+  check("(2f) documents Gemini's writer role and deterministic no-model path", /primary topic-blurb writer/.test(secretsSrc) && /ALPHA_NO_MODEL_MODE[\s\S]{0,100}local formatter/.test(secretsSrc));
 
   const topicBlurbSrc = readFileSync(new URL("../lib/engine/topic-blurb.ts", import.meta.url), "utf8");
   check("(2g) sanity: the real code comment this fix is matching is unchanged", /Gemini drafts every topic blurb by default/.test(topicBlurbSrc));

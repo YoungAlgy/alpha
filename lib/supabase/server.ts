@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { exactAlphaSupabaseOrigin } from "@/lib/alpha-supabase-url";
 
 export async function supabaseServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -9,8 +10,9 @@ export async function supabaseServerClient() {
   if (!url || !key) {
     throw new Error("Supabase env vars missing");
   }
+  const alphaUrl = exactAlphaSupabaseOrigin(url);
   const cookieStore = await cookies();
-  return createServerClient(url, key, {
+  return createServerClient(alphaUrl, key, {
     // Bound every request this client makes (no override = an unbounded
     // fetch — e.g. a merely-slow, not-erroring auth call — could stall a
     // route handler indefinitely with nothing to catch it). Matches the
@@ -54,8 +56,9 @@ export async function supabaseServiceClient() {
   if (!url || !serviceKey) {
     throw new Error("Supabase service env vars missing");
   }
+  const alphaUrl = exactAlphaSupabaseOrigin(url);
   const { createClient } = await import("@supabase/supabase-js");
-  return createClient(url, serviceKey, {
+  return createClient(alphaUrl, serviceKey, {
     auth: { persistSession: false },
     // Bound every request this client makes — see the matching comment in
     // supabaseServerClient() above for why.

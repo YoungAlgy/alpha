@@ -36,7 +36,8 @@ for (const e of ACCEPT) {
   const errNull = emailError(e) === null;
   const good = ok && errNull;
   console.log(`  ${good ? "OK " : "XX "} ${JSON.stringify(e)} → valid=${ok} err=${emailError(e) ?? "null"}`);
-  good ? pass++ : fail++;
+  if (good) pass++;
+  else fail++;
 }
 
 console.log("REJECT (should be invalid + carry a friendly message):");
@@ -45,14 +46,16 @@ for (const e of REJECT) {
   const msg = emailError(e);
   const good = !ok && typeof msg === "string" && msg.length > 0;
   console.log(`  ${good ? "OK " : "XX "} ${JSON.stringify(e)} → valid=${ok} err=${msg ?? "null"}`);
-  good ? pass++ : fail++;
+  if (good) pass++;
+  else fail++;
 }
 
 // Empty must use the dedicated "enter your email" copy, not the typo copy.
 const emptyMsg = emailError("");
 const emptyGood = !!emptyMsg && /enter your email/i.test(emptyMsg);
 console.log(`empty-string copy is the 'enter your email' message: ${emptyGood ? "OK" : "XX"} (${emptyMsg})`);
-emptyGood ? pass++ : fail++;
+if (emptyGood) pass++;
+else fail++;
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

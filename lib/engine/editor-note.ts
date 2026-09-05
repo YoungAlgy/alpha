@@ -2,6 +2,8 @@ import { anthropicClient, anthropicConfigured, EDITOR_NOTE_MODEL, isAnthropicUna
 import { geminiConfigured, geminiGenerateText } from "./gemini-client";
 import { groqConfigured, groqGenerateText } from "./groq-client";
 import { deepseekConfigured, deepseekGenerateText } from "./deepseek-client";
+import { noModelModeEnabled, paidAiEnabled } from "./provider-policy";
+import { buildDeterministicEditorNote } from "./deterministic-editor-note";
 import { sanitizeVoice, containsMetaLeak, findLexicalTells } from "./voice-guard";
 import { toneGuidance, generationOf } from "@/lib/demographics";
 import type { TopicBlurb } from "./types";
@@ -84,6 +86,21 @@ function clamp(s: string | undefined, max: number): string | undefined {
 // rethrew straight past the fallback cascade).
 class ClaudeContentUnusableError extends Error {}
 
+export class PaidEditorCallBudgetExceededError extends Error {}
+
+// Every real editor-note Anthropic attempt, including the optional lexical
+// retry below. Kept separate from topic-blurb's Anthropic counter so the cron
+// can include both in one shared ceiling without double-counting DeepSeek.
+let anthropicCallCount = 0;
+export function editorNoteAnthropicCallCount(): number {
+  return anthropicCallCount;
+}
+
+export interface EditorNoteOptions {
+  /** Awaited immediately before every paid editor call. */
+  paidCallAllowed?: () => boolean | Promise<boolean>;
+}
+
 // Shared shape for the Gemini/Groq/DeepSeek fallback tiers below — unlike
 // topic-blurb.ts's tryGemini/tryGroq/tryDeepSeek/tryHaiku (which genuinely
 // differ per tier: truncation-class error types, retry-once-on-parse-failure,
@@ -123,8 +140,11 @@ export async function generateEditorNote(
   // doesn't force a personal city/job/project tie onto a topic the reader
   // never actually picked. Empty by default so every other caller (and every
   // existing test) is unaffected.
-  fallbackTopicIds: Set<string> = new Set()
+  fallbackTopicIds: Set<string> = new Set(),
+  options: EditorNoteOptions = {}
 ): Promise<string> {
+  if (noModelModeEnabled()) return buildDeterministicEditorNote(blurbs);
+
   // alpha-drift-r21-05 (found+fixed 2026-08-14, self-audit of round 20's own
   // findLexicalTells retry): assemble.ts wraps this whole call in
   // withDeadline(), which never cancels an orphaned invocation -- if the
@@ -182,7 +202,20 @@ ${blurbSummaries}
 ${tone ? `\n${tone}\n` : ""}
 Write the editor's note for this reader's letter today.`;
 
+  async function requirePaidCallBudget(provider: string): Promise<void> {
+    if ((await options.paidCallAllowed?.()) === false) {
+      throw new PaidEditorCallBudgetExceededError(
+        `editor note: paid-call ceiling reached before ${provider}`
+      );
+    }
+  }
+
   async function callClaude(): Promise<string> {
+    // The check and increment are deliberately adjacent and synchronous. An
+    // orphaned generateIssue invocation can overlap a fallback invocation, so
+    // this must reserve its place in the shared ceiling before yielding.
+    await requirePaidCallBudget("Anthropic");
+    anthropicCallCount += 1;
     const response = await anthropicClient().messages.create({
       model: EDITOR_NOTE_MODEL,
       // 1000, not 500: Opus 4.8 narrates more than Sonnet did and its tokenizer
@@ -221,15 +254,10 @@ Write the editor's note for this reader's letter today.`;
   // to decide whether a lexical-tell slip is worth a fresh Claude retry (only
   // makes sense for the tier that actually produced the text we're checking).
   let usedClaude = false;
-  // Anthropic not even configured (2026-07-29: Algy may deliberately not be
-  // funding it) is treated the SAME as Anthropic being unavailable mid-call —
-  // both mean "fall through to the free tiers below," not "throw
-  // immediately." Without this check, an unset ANTHROPIC_API_KEY throws a
-  // plain Error that isAnthropicUnavailable's status/connection-error checks
-  // don't recognize, so this fallback chain would never even run and every
-  // reader would get the assembler's generic derived intro instead of a real
-  // written note from whatever tier IS available.
-  if (anthropicConfigured()) {
+  // Anthropic not configured, or explicitly disabled by the paid-AI policy,
+  // is treated the SAME as Anthropic being unavailable mid-call. Both mean
+  // "fall through to the free tiers below," not "throw immediately."
+  if (anthropicConfigured() && paidAiEnabled()) {
     try {
       note = await callClaude();
       usedClaude = true;
@@ -238,9 +266,17 @@ Write the editor's note for this reader's letter today.`;
       // callClaude above) is just as fallback-eligible as an outage — the
       // call succeeded but produced nothing shippable, so it must route to
       // Gemini/Groq/DeepSeek the same way, not rethrow past them.
-      if (!isAnthropicUnavailable(e) && !(e instanceof ClaudeContentUnusableError)) throw e; // a real bug in OUR payload, not an outage — surface it
+      if (
+        !isAnthropicUnavailable(e) &&
+        !(e instanceof ClaudeContentUnusableError) &&
+        !(e instanceof PaidEditorCallBudgetExceededError)
+      ) throw e; // a real bug in OUR payload, not an outage — surface it
       anthropicErr = e;
-      console.warn(`[editor-note] Anthropic unavailable (status ${(e as { status?: number }).status ?? "connection"}), falling back`);
+      if (e instanceof PaidEditorCallBudgetExceededError) {
+        console.warn("[editor-note] paid-call ceiling blocked Anthropic, falling back to free tiers");
+      } else {
+        console.warn(`[editor-note] Anthropic unavailable (status ${(e as { status?: number }).status ?? "connection"}), falling back`);
+      }
     }
   }
 
@@ -252,8 +288,12 @@ Write the editor's note for this reader's letter today.`;
     note = await tryTextTier("Groq", groqConfigured(), () => groqGenerateText(SYSTEM_PROMPT, userPrompt, 1000));
   }
 
-  if (note === undefined) {
-    note = await tryTextTier("DeepSeek", deepseekConfigured(), () => deepseekGenerateText(SYSTEM_PROMPT, userPrompt, 1000));
+  if (note === undefined && deepseekConfigured() && paidAiEnabled()) {
+    // DeepSeek is paid too and is disabled unless the explicit policy allows
+    // it. Its client owns the shared DeepSeek counter, but the editor path
+    // must still reserve budget before that client can start.
+    await requirePaidCallBudget("DeepSeek");
+    note = await tryTextTier("DeepSeek", true, () => deepseekGenerateText(SYSTEM_PROMPT, userPrompt, 1000));
   }
 
   if (note === undefined) {

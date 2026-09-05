@@ -1,7 +1,7 @@
 import { isValidTopicId } from "@/lib/topics";
 import { hasActiveAccess } from "@/lib/access";
 import { isValidEmail } from "@/lib/validate-email";
-import type { TopicId } from "@/lib/types";
+import { MIN_TOPIC_QUOTA, type TopicId } from "@/lib/types";
 
 // Pulled out of app/api/stripe/checkout/route.ts as pure functions so a
 // deterministic verify script (scripts/verify-checkout-guards.mts) can
@@ -20,11 +20,9 @@ export interface CheckoutProfileInput {
 // Profile-completeness gate. The client already redirects an incomplete
 // profile back to /welcome before this endpoint is ever hit, but that's UI
 // only -- a direct POST would otherwise sail straight through to a real
-// Stripe session with no name and no topics. /api/generate requires the
-// exact same two fields (via ProfileSchema, including the max(25) bound)
-// before it will write a letter, so an unblocked checkout here would
-// produce a paying subscriber who can never actually generate one. Enforce
-// the same bar before the charge instead of after.
+// Stripe session with no name and no topics. The unsigned onboarding picker
+// requires exactly the five topics included in the base subscription. Enforce
+// that paid quantity boundary here before the charge.
 //
 // email is checked here too -- firstName+topics alone let a visitor who
 // skipped straight from /topics to /checkout (direct URL, or resuming a
@@ -38,8 +36,11 @@ export function isProfileComplete(body: CheckoutProfileInput): boolean {
   return (
     !!body.firstName?.trim() &&
     Array.isArray(body.topics) &&
-    body.topics.length > 0 &&
-    body.topics.length <= 25 &&
+    // Checkout always creates one base bundle. Larger pools are available only
+    // after Stripe quantity has been increased through the authenticated
+    // settings flow. A direct POST must not buy one bundle and stage 25 topics.
+    body.topics.length === MIN_TOPIC_QUOTA &&
+    new Set(body.topics).size === body.topics.length &&
     body.topics.every((t) => typeof t === "string" && isValidTopicId(t as TopicId)) &&
     !!body.email &&
     isValidEmail(body.email)
@@ -62,9 +63,8 @@ export interface ExistingSubscriberRow {
 // so they're let through; the webhook just links their Stripe customer onto
 // the existing row. A cancelled-and-ended subscriber (cancelled_at in the
 // past, hasActiveAccess false) is NOT blocked either, so they can
-// resubscribe. `existing` is null for a brand-new email (no row at all) or
-// when the pre-check lookup itself failed -- both correctly fall through to
-// "don't block."
+// resubscribe. `existing` is null only for a confirmed brand-new email. The
+// route now handles lookup errors separately and fails checkout closed.
 export function shouldBlockDoubleSubscription(existing: ExistingSubscriberRow | null): boolean {
   if (!existing) return false;
   return !!(existing.subscribed_at && existing.stripe_customer_id && hasActiveAccess(existing.cancelled_at));

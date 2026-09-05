@@ -71,7 +71,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/ProfileEditor.tsx + app/api/account/profile/route.ts: city is now optional everywhere, with a visible required-field indicator");

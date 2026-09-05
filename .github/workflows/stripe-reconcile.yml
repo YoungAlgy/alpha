@@ -56,7 +56,8 @@ jobs:
           # sendOpsAlert (lib/email.ts) reads these exact names directly.
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
-          OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_OPS_ALERT_WEBHOOK_URL }}
+          # Alpha-only. Never reuse another product's ops channel.
+          ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
         run: |
           set +e
           npx tsx scripts/reconcile-stripe-vs-supabase.mts | tee reconcile-output.json
@@ -102,7 +103,7 @@ jobs:
           if [ "${EXIT_CODE}" = "" ]; then
             open_or_update_issue \
               "${SEARCH_PHRASE}: reconciliation script itself failed to run" \
-              "The reconciliation script did not complete (no exit code captured) -- check the workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              "The reconciliation script did not complete (no exit code captured). The workflow run contains operational status only: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             exit 1
           fi
 
@@ -112,14 +113,24 @@ jobs:
               const j = JSON.parse(raw);
               console.log('Reconciliation run ' + j.checkedAt + ': ' + j.findingsCount + ' discrepanc' + (j.findingsCount === 1 ? 'y' : 'ies') + ' found.');
               console.log('');
-              for (const f of j.findings) {
-                console.log('- [' + f.type + '] ' + f.detail + ' (stripe customer ' + f.stripeCustomerId + (f.userId ? ', user ' + f.userId : '') + ')');
+              if (!Array.isArray(j.findingTypes)) throw new Error('findingTypes is missing');
+              let typeTotal = 0;
+              for (const findingType of j.findingTypes) {
+                if (!findingType || typeof findingType.type !== 'string' || !/^[a-z0-9_:-]+$/i.test(findingType.type)) {
+                  throw new Error('invalid finding type');
+                }
+                if (!Number.isInteger(findingType.count) || findingType.count < 1) {
+                  throw new Error('invalid finding type count');
+                }
+                typeTotal += findingType.count;
+                console.log('- [' + findingType.type + '] ' + findingType.count);
               }
+              if (typeTotal !== j.findingsCount) throw new Error('finding type counts do not match total');
             } catch (e) {
               console.log('Could not parse reconcile-output.json: ' + e.message);
             }
           ")
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          FULL_BODY=$(printf '%s\n\nFull run: %s' "${BODY}" "${RUN_URL}")
+          FULL_BODY=$(printf '%s\n\nAggregate workflow run: %s' "${BODY}" "${RUN_URL}")
           open_or_update_issue "${SEARCH_PHRASE} found" "${FULL_BODY}"
           exit 1

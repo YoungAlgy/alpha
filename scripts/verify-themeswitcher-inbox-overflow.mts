@@ -17,7 +17,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/inbox/page.tsx: ThemeSwitcher is now the LAST icon in its header row, matching its own align=right precondition");

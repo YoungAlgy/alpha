@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { cleanUpStripeCustomerBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
 import { rateLimit } from "@/lib/rate-limit";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
-import { removeResendSuppression } from "@/lib/email";
+import {
+  isAccountDeletionBlockedBySuppressionRecovery,
+  removeAccountAuthAndCompleteSaga,
+  settleAccountDeletionBilling,
+  settleAccountDeletionPrivacy,
+} from "@/lib/account-deletion";
+import { normalizeAccountEmails } from "@/lib/account-privacy";
 
 export const runtime = "nodejs";
 
@@ -21,21 +26,12 @@ export const runtime = "nodejs";
 // ourselves, by user_id, before the auth user goes away and takes that FK
 // link with it.
 //
-// It also cancels the user's Stripe subscription(s) — otherwise a paying user
-// would keep being billed after their account (and portal access) is gone.
-// That step is best-effort and never blocks the deletion.
-//
-// alpha-drift-r46-06 (2026-08-19): the Stripe/ticket/suppression cleanup used
-// to run BEFORE deleteUser() below. If deleteUser() then failed for a real
-// (non-not-found) reason, this returned a 500 saying "couldn't delete, try
-// again" while the subscription was already cancelled and the Stripe
-// customer already gone — the user reads that as a no-op and silently loses
-// paid access with no self-serve way to restore it. deleteUser() now runs
-// FIRST (right after a pre-fetch of stripe_customer_id, since the row is
-// about to cascade away), gating everything else: only on its success (or an
-// already-not-found race) do we run the Stripe/ticket/suppression cleanup.
-// That way a real deleteUser() failure means NOTHING else has happened yet,
-// so "couldn't delete, try again" is accurate again.
+// Stripe and Auth cannot share a transaction. A service-only deletion saga
+// first scrubs staged checkout PII, freezes new fulfillment, expires every
+// exact open Alpha Checkout Session, and cancels only exact Alpha
+// subscriptions. Auth is removed only after Stripe and the database both
+// confirm that billing is terminal. The pseudonymous tombstone makes a failed
+// request safe to retry without retaining the subscriber's profile text.
 //
 // Auth: only the signed-in user can delete their own account. We read the
 // session server-side and delete that exact id — no user-supplied id is
@@ -66,71 +62,135 @@ export async function POST() {
 
   const svc = await supabaseServiceClient();
 
-  // Pre-fetch stripe_customer_id while the row still exists — deleteUser()
-  // below cascades public.users away, and this is the only chance to learn
-  // it. `rowErr` (not just a falsy `row`) distinguishes "we confirmed there's
-  // no Stripe customer" from "the query itself failed and we don't actually
-  // know" — collapsing those would risk silently skipping real Stripe
-  // cleanup on a transient query error, the same class of gap already fixed
-  // elsewhere in this codebase (see admin/users/route.ts's alpha-drift-r26-01).
+  // Fetching the row separately keeps the user-facing missing-row error clear
+  // and preserves the confirmed Auth email for support/Resend cleanup. The
+  // saga itself re-reads and locks the exact billing ids transactionally.
   const { data: row, error: rowErr } = await svc
     .from("users")
-    .select("stripe_customer_id")
+    .select("email")
     .eq("id", user.id)
     .maybeSingle();
   if (rowErr) {
-    console.error(`[account/delete] pre-fetch of stripe_customer_id failed for ${user.id}, proceeding with delete anyway:`, rowErr.message);
+    console.error(`[account/delete] pre-fetch of the user email failed for ${user.id}; account left intact:`, rowErr.message);
+    return NextResponse.json(
+      { error: "Couldn't verify your billing status. Nothing was deleted. Try again." },
+      { status: 503 }
+    );
+  }
+  // An authenticated auth user with no public.users row is data drift, not
+  // proof that no Stripe customer exists. Deleting auth here would erase the
+  // only remaining account identity while leaving us unable to establish
+  // whether a recurring subscription still needs cancellation.
+  if (!row) {
+    console.error(`[account/delete] public user row missing for ${user.id}; account left intact because billing status is unknown`);
+    return NextResponse.json(
+      { error: "Couldn't verify your billing status. Nothing was deleted. Contact support if this keeps happening." },
+      { status: 503 }
+    );
   }
 
-  const { error } = await svc.auth.admin.deleteUser(user.id);
-  if (error) {
-    // A concurrent second click/tab racing this same delete: whichever
-    // request completes second hits an auth.users row the first one already
-    // removed. The END STATE both requests wanted (no auth user) is already
-    // true, so this isn't really a failure -- treating it as one showed a
-    // real signed-in user a scary "couldn't delete" alert on an account that
-    // was, in fact, already gone (found in review 2026-08-06; no client-side
-    // guard existed to prevent the double-click that triggers this).
-    if (isUserNotFoundError(error)) {
-      console.warn(`[account/delete] deleteUser reported not-found for ${user.id} — already deleted, treating as success`);
-    } else {
-      console.error("[account/delete] failed:", error.message);
+  let deletionState:
+    | "prepared"
+    | "billing_clean"
+    | "auth_delete_started"
+    | "complete";
+  try {
+    deletionState = await settleAccountDeletionBilling(svc, user.id);
+  } catch (billingError) {
+    if (isAccountDeletionBlockedBySuppressionRecovery(billingError)) {
+      console.warn(
+        `[account/delete] reviewed delivery recovery blocks deletion for ${user.id}; account left intact`
+      );
       return NextResponse.json(
-        { error: "Couldn't delete your account. Try again or contact support." },
-        { status: 500 },
+        {
+          error:
+            "Account deletion is blocked until the reviewed delivery recovery is settled. Your account is still intact.",
+        },
+        { status: 409 }
+      );
+    }
+    console.error(
+      `[account/delete] exact Alpha billing cleanup was not confirmed for ${user.id}; Auth left intact:`,
+      billingError instanceof Error ? billingError.message : billingError
+    );
+    return NextResponse.json(
+      {
+        error:
+          "Couldn't safely finish billing cleanup. Your account is still intact. Try again or contact support.",
+      },
+      { status: 503 }
+    );
+  }
+
+  // Auth is authoritative after a confirmed email change. The public mirror
+  // can lag until ThemeApplier or the reconciliation route catches up, so
+  // clean both addresses before the saga records privacy completion.
+  const cleanupEmails = normalizeAccountEmails(user.email, row.email);
+  if (
+    cleanupEmails.length === 0 &&
+    deletionState !== "auth_delete_started" &&
+    deletionState !== "complete"
+  ) {
+    console.error(
+      `[account/delete] no confirmed email remained for required privacy cleanup for ${user.id}`
+    );
+    return NextResponse.json(
+      { error: "Couldn't verify your account email. Nothing was deleted." },
+      { status: 503 }
+    );
+  }
+  if (
+    cleanupEmails.length > 0 &&
+    deletionState !== "auth_delete_started" &&
+    deletionState !== "complete"
+  ) {
+    try {
+      await settleAccountDeletionPrivacy(
+        svc,
+        user.id,
+        cleanupEmails
+      );
+    } catch (privacyError) {
+      console.error(
+        `[account/delete] required privacy cleanup was not confirmed for ${user.id}; Auth left intact:`,
+        privacyError instanceof Error ? privacyError.message : privacyError
+      );
+      return NextResponse.json(
+        {
+          error:
+            "Couldn't finish deleting your stored support data. Your account is still intact. Try again.",
+        },
+        { status: 503 }
       );
     }
   }
 
-  // Cancel any Stripe subscription and delete the Customer object — the auth
-  // user (and cascaded public.users, incl. stripe_customer_id) is already
-  // gone at this point, so pass the pre-fetched id through rather than
-  // letting this re-query a row that no longer exists (it would find
-  // nothing and silently skip cleanup). Best-effort: a Stripe hiccup must
-  // never block the user's right to delete their account — and by this
-  // point the account is already deleted regardless.
-  await cleanUpStripeCustomerBeforeDelete(svc, user.id, "[account/delete]", undefined, rowErr ? undefined : (row?.stripe_customer_id ?? null));
-
-  // Delete the user's support tickets outright rather than letting the FK
-  // cascade just null out user_id — see deleteSupportTicketsBeforeDelete's
-  // own comment for why. Best-effort, like the Stripe step above.
-  // alpha-drift-r28-08 (2026-08-15): pass the confirmed auth email too, so
-  // a support ticket filed signed-out with this same address (user_id
-  // permanently NULL) is caught, not just tickets already linked by id.
-  await deleteSupportTicketsBeforeDelete(svc, user.id, "[account/delete]", user.email);
-
-  // alpha-drift-r20-01 (found+fixed 2026-08-13): if this reader ever hard-
-  // bounced or complained, Resend keeps that as its own account-level
-  // suppression-list record, keyed by email, entirely separate from (and
-  // outliving) every Supabase trace this route already clears -- a real
-  // third-party record surviving the "all associated data (irreversible)"
-  // promise below. Reusing removeResendSuppression() here isn't about
-  // re-enabling delivery (they're gone, we won't email them again) -- the
-  // underlying call is DELETE /suppressions/{email}, so the effect wanted
-  // either way is identical: the record stops existing at Resend. Best-
-  // effort, same as the Stripe/ticket steps above.
-  if (user.email) {
-    await removeResendSuppression(user.email);
+  try {
+    const deleteAuthUser = async () => {
+      const { error } = await svc.auth.admin.deleteUser(user.id);
+      if (!error) return;
+      // A retry can arrive after a prior request removed Auth but failed to
+      // write the final saga marker. Not-found is the idempotent success path.
+      if (isUserNotFoundError(error)) {
+        console.warn(`[account/delete] deleteUser reported not-found for ${user.id} — already deleted, treating as success`);
+        return;
+      }
+      throw error;
+    };
+    if (deletionState === "complete") {
+      await deleteAuthUser();
+    } else {
+      await removeAccountAuthAndCompleteSaga(svc, user.id, deleteAuthUser);
+    }
+  } catch (authError) {
+    console.error(
+      `[account/delete] Auth removal or durable saga completion failed for ${user.id}:`,
+      authError instanceof Error ? authError.message : authError
+    );
+    return NextResponse.json(
+      { error: "Account deletion is still in progress. Try again or contact support." },
+      { status: 503 }
+    );
   }
 
   // Best-effort sign-out so the now-orphaned session cookie is cleared.

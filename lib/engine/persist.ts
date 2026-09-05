@@ -1,11 +1,20 @@
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { coerceGender } from "@/lib/demographics";
-import { sendOpsAlert, removeResendSuppression } from "@/lib/email";
+import { sendOpsAlert } from "@/lib/email";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
 import type { Issue, UserProfile } from "@/lib/types";
 
 interface PersistResult {
   userId: string;
+  // Callers must not send a letter link or consume a one-time checkout unless
+  // both durable writes succeeded. A token alone proves only that Auth was
+  // reachable, not that the subscriber profile or issue exists.
+  profilePersisted: boolean;
+  issuePersisted: boolean;
+  // The exact row that won the (user_id, week_of) insert race. Callers must
+  // render and send this value, not an independently generated loser, so the
+  // email, browser response, and archive always carry one content identity.
+  persistedIssue: Issue | null;
   // The verifiable token from generateLink(), NOT the raw action_link URL --
   // found in review 2026-08-06: returning the full link in the /api/generate
   // JSON response body put a live, fully-authenticating bearer credential
@@ -99,11 +108,14 @@ export async function persistIssueIfPossible(
   // Lowercase so the auth user + public.users row key on the same canonical
   // email the checkout/webhook paths use (emails are case-insensitive in
   // practice; Supabase auth lowercases anyway).
-  const email = profile.email?.toLowerCase().trim();
+  let email = profile.email?.toLowerCase().trim();
   if (!email) return null;
 
   try {
     const sb = await supabaseServiceClient();
+    let userId: string;
+    let hashedToken: string | null = null;
+    let verificationType = "magiclink";
 
     if (expectedUserId) {
       // alpha-drift-r61-05 (2026-08-20, silent-catch-audit-r7): `error`
@@ -135,73 +147,45 @@ export async function persistIssueIfPossible(
         );
         return null;
       }
-    }
-
-    // Find-or-create auth user + grab a sign-in link in one call
-    const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
-      type: "magiclink",
-      email,
-      options: {
-        // .trim(): a trailing space/newline pasted into the Vercel env var
-        // silently breaks the redirect URL (and Supabase's allowlist match).
-        redirectTo: process.env.NEXT_PUBLIC_APP_URL?.trim()
-          ? `${process.env.NEXT_PUBLIC_APP_URL.trim()}/auth/callback?next=/inbox`
-          : undefined,
-      },
-    });
-    if (linkErr || !linkData?.user) {
-      console.warn("[persist] generateLink failed:", linkErr?.message);
-      return null;
-    }
-    const userId = linkData.user.id;
-    const hashedToken = linkData.properties?.hashed_token ?? null;
-    // NOT always "magiclink", despite requesting type: "magiclink" above --
-    // verified live (2026-08-06): for an email with no EXISTING confirmed
-    // auth user, generateLink implicitly creates one via the signup path,
-    // and the token it returns must be verified as type "signup", not
-    // "magiclink" (verifyOtp rejects it with "Email link is invalid or has
-    // expired" otherwise -- caught by an end-to-end browser test before
-    // shipping, not by reasoning about the SDK's types alone). Only a
-    // RETURNING reader (an existing confirmed user) actually gets a true
-    // "magiclink" token back. Read the real type Supabase assigned instead
-    // of assuming it matches the request.
-    const verificationType = linkData.properties?.verification_type ?? "magiclink";
-
-    // alpha-drift-r18-01 (found+fixed 2026-08-07): this endpoint has its own
-    // find-or-create-by-email path, entirely separate from the Stripe webhook
-    // -- generateLink above will happily mint a fresh auth user (and this
-    // function then writes a full profile row) for an email that bounced or
-    // complained on a PREVIOUS, since-deleted account. This app's own
-    // bounced_at/complained_at columns don't even apply here (a brand-new
-    // row starts NULL either way) -- the actual problem lives entirely in
-    // Resend's own account-level suppression list, which is keyed by email,
-    // not by this app's user id.
-    //
-    // alpha-drift-r19-01 (found+fixed 2026-08-07): this used to run
-    // unconditionally on EVERY call, including an already-subscribed
-    // reader's Nth re-generate (verifyPaid()'s authenticated branch is live
-    // and repeatable -- see app/api/generate/route.ts's own user-keyed rate
-    // limit, added the same round for exactly that reason). removeResend
-    // Suppression carries its own 15s network timeout and sits OUTSIDE
-    // generateIssue's withDeadline wrapper -- GENERATE_DEADLINE_MS=105s
-    // against a 120s maxDuration leaves only ~15s of designed headroom for
-    // everything after generation, so an unconditional extra 15s-capable
-    // call here could alone push an ordinary regenerate into a hard
-    // platform timeout during a Resend slowdown, for a reader who was never
-    // suppressed and gains nothing from the check. verificationType (just
-    // computed above) already tells us exactly who needs this: "signup"
-    // means generateLink just implicitly CREATED this auth user -- a true
-    // first-time signup, or a resubscribe after a full account deletion
-    // (same implicit-create path, since the old account no longer exists to
-    // find) -- both real re-consent moments where a stale suppression could
-    // exist. "magiclink" means an already-existing, continuously-active
-    // account, which was never suppressed by definition of still existing
-    // normally. AWAITED (never fire-and-forget -- see assemble.ts's
-    // blurb-cache write for why that class of bug is real on Workers), but
-    // failures here can't block onboarding: removeResendSuppression already
-    // swallows and logs its own errors.
-    if (verificationType !== "magiclink") {
-      await removeResendSuppression(email);
+      const currentEmail = stillExists.user.email?.toLowerCase().trim();
+      if (!currentEmail) {
+        console.warn(
+          `[persist] expectedUserId ${expectedUserId} has no current auth email. Skipping persistence rather than attaching the issue by stale email.`
+        );
+        return null;
+      }
+      // The staged checkout may have been paid under the account's former
+      // email while a confirmed email change completed in another tab. The
+      // stable auth user id owns the purchase. Use its current email and skip
+      // generateLink entirely so the old address cannot create or resolve a
+      // different auth user between the existence check and persistence.
+      email = currentEmail;
+      profile.email = currentEmail;
+      userId = expectedUserId;
+    } else {
+      // Anonymous first checkout: find or create the auth user by the exact
+      // email Stripe verified, and retain the token metadata for compatibility
+      // with the existing result shape. The caller never exposes this token.
+      const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
+        type: "magiclink",
+        email,
+        options: {
+          // .trim(): a trailing space/newline pasted into the app URL can
+          // silently break Supabase's redirect allowlist match.
+          redirectTo: process.env.NEXT_PUBLIC_APP_URL?.trim()
+            ? `${process.env.NEXT_PUBLIC_APP_URL.trim()}/auth/callback?next=/inbox`
+            : undefined,
+        },
+      });
+      if (linkErr || !linkData?.user) {
+        console.warn("[persist] generateLink failed:", linkErr?.message);
+        return null;
+      }
+      userId = linkData.user.id;
+      hashedToken = linkData.properties?.hashed_token ?? null;
+      // A newly created user returns "signup" while an existing user returns
+      // "magiclink". Read the provider's actual value instead of assuming.
+      verificationType = linkData.properties?.verification_type ?? "magiclink";
     }
 
     // Sync the profile fields onto public.users (service role bypasses RLS).
@@ -219,13 +203,21 @@ export async function persistIssueIfPossible(
     //     every field, and the cron needs first_name + topics present).
     //   • existing row   → write only the fields the caller actually has a
     //     value for; never overwrite a real value with empty/partial input.
-    const { data: existingUser } = await sb
+    let profilePersisted = false;
+    const { data: existingUser, error: existingUserErr } = await sb
       .from("users")
       .select("id")
       .eq("id", userId)
       .maybeSingle();
 
-    if (!existingUser) {
+    if (existingUserErr) {
+      console.error("[persist] users profile lookup failed:", existingUserErr.message);
+      await sendOpsAlert(
+        "alpha profile sync failed",
+        `users profile lookup failed for user ${userId} (${email}): ${existingUserErr.message}`,
+        `alpha-persist-profile-lookup-${userId}`
+      );
+    } else if (!existingUser) {
       const { error: insErr } = await sb.from("users").insert({
         id: userId,
         email,
@@ -239,45 +231,56 @@ export async function persistIssueIfPossible(
         theme: profile.theme || "forest",
         topics: profile.topics,
       });
-      if (insErr) {
+      if (!insErr) {
+        profilePersisted = true;
+      } else {
         // Lost a race with a concurrent insert (e.g. the Stripe checkout
         // webhook creating the row mid-generation) — the row now exists, so
         // fall back to a non-clobbering update instead of dropping the topics.
         const updates = nonEmptyProfileFields(profile);
         if (Object.keys(updates).length > 0) {
-          const { error: raceErr } = await sb
+          const { data: raceRows, error: raceErr } = await sb
             .from("users")
             .update(updates)
-            .eq("id", userId);
-          if (raceErr) {
+            .eq("id", userId)
+            .select("id");
+          if (raceErr || (raceRows?.length ?? 0) === 0) {
             console.error(
               "[persist] users profile insert raced AND update fallback failed:",
               insErr.message,
-              raceErr.message
+              raceErr?.message ?? "no matching user row"
             );
             await sendOpsAlert(
               "alpha profile sync failed",
-              `users profile insert raced AND update fallback failed for user ${userId} (${email}): insert=${insErr.message}; update=${raceErr.message}`,
+              `users profile insert raced AND update fallback failed for user ${userId} (${email}): insert=${insErr.message}; update=${raceErr?.message ?? "no matching user row"}`,
               `alpha-persist-insert-race-${userId}`
             );
+          } else {
+            profilePersisted = true;
           }
         }
       }
     } else {
       const updates = nonEmptyProfileFields(profile);
       if (Object.keys(updates).length > 0) {
-        const { error: updErr } = await sb
+        const { data: updateRows, error: updErr } = await sb
           .from("users")
           .update(updates)
-          .eq("id", userId);
-        if (updErr) {
-          console.error("[persist] users profile update failed:", updErr.message);
+          .eq("id", userId)
+          .select("id");
+        if (updErr || (updateRows?.length ?? 0) === 0) {
+          const detail = updErr?.message ?? "no matching user row";
+          console.error("[persist] users profile update failed:", detail);
           await sendOpsAlert(
             "alpha profile sync failed",
-            `users profile update failed for existing user ${userId} (${email}): ${updErr.message}`,
+            `users profile update failed for existing user ${userId} (${email}): ${detail}`,
             `alpha-persist-update-${userId}`
           );
+        } else {
+          profilePersisted = true;
         }
+      } else {
+        profilePersisted = true;
       }
     }
 
@@ -315,7 +318,41 @@ export async function persistIssueIfPossible(
       console.warn("[persist] issue upsert failed:", issueErr.message);
     }
 
-    return { userId, hashedToken, verificationType };
+    // ignoreDuplicates deliberately lets an already-written issue win. Read
+    // the canonical row back even after a clean insert because a concurrent
+    // cron or retry may have won the uniqueness race. This value is the only
+    // content the caller may render or send.
+    const { data: storedIssue, error: storedIssueErr } = await sb
+      .from("issues")
+      .select("id, volume, number, editor_intro, sections")
+      .eq("user_id", userId)
+      .eq("week_of", weekOf)
+      .maybeSingle();
+    if (storedIssueErr) {
+      console.warn("[persist] canonical issue lookup failed:", storedIssueErr.message);
+    }
+    const persistedIssue: Issue | null = storedIssue
+      ? {
+          id: storedIssue.id,
+          volume: storedIssue.volume,
+          number: storedIssue.number,
+          weekOf,
+          recipientFirstName: profile.firstName,
+          recipientCity: profile.city || "",
+          editorIntro: storedIssue.editor_intro,
+          sections: storedIssue.sections as Issue["sections"],
+        }
+      : null;
+    const issuePersisted = persistedIssue !== null;
+
+    return {
+      userId,
+      hashedToken,
+      verificationType,
+      profilePersisted,
+      issuePersisted,
+      persistedIssue,
+    };
   } catch (e) {
     console.warn("[persist] exception:", e instanceof Error ? e.message : e);
     return null;

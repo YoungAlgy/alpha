@@ -19,6 +19,8 @@ export function FirstLetterCelebration({ active }: { active: boolean }) {
     // matching it here rather than leaving the one remaining large-
     // amplitude full-screen animation ungated.
     if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    // The effect starts the one-shot visual transition after activation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVisible(true);
     const t = setTimeout(() => setVisible(false), 2400);
     return () => clearTimeout(t);

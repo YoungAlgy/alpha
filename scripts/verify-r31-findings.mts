@@ -13,7 +13,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) next.config.ts: Strict-Transport-Security header added");
@@ -33,7 +34,9 @@ console.log("(2) 3 routes now guard against a literal JSON null body before the 
   // multi-line explanatory comment): the guard must exist, and must sit
   // AFTER the try/catch's closing brace but BEFORE the first real property
   // read on body.
-  const profileSrc = readFileSync(new URL("../app/api/account/profile/route.ts", import.meta.url), "utf8");
+  // Git may check unchanged routes out with CRLF on Windows. Compare the
+  // same source semantics independently of checkout line endings.
+  const profileSrc = readFileSync(new URL("../app/api/account/profile/route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const profileCatchEnd = profileSrc.indexOf('} catch {\n    return NextResponse.json({ error: "Bad request." }, { status: 400 });\n  }');
   const profileGuardIdx = profileSrc.indexOf('if (typeof body !== "object" || body === null) {');
   const profileFirstReadIdx = profileSrc.indexOf("const firstName = cleanRequired");
@@ -42,7 +45,7 @@ console.log("(2) 3 routes now guard against a literal JSON null body before the 
     profileCatchEnd >= 0 && profileGuardIdx > profileCatchEnd && profileFirstReadIdx > profileGuardIdx
   );
 
-  const topicsSrc = readFileSync(new URL("../app/api/account/topics/route.ts", import.meta.url), "utf8");
+  const topicsSrc = readFileSync(new URL("../app/api/account/topics/route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const topicsCatchEnd = topicsSrc.indexOf('} catch {\n    return NextResponse.json({ error: "Bad request." }, { status: 400 });\n  }');
   const topicsGuardIdx = topicsSrc.indexOf('if (typeof body !== "object" || body === null) {');
   const topicsFirstReadIdx = topicsSrc.indexOf("const shape = validateTopicsShape");

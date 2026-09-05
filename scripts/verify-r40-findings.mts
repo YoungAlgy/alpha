@@ -31,7 +31,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) lib/engine/voice-guard.ts: robust/comprehensive/calibrate now get the same -ly/noun inflection treatment as their siblings");
@@ -72,7 +73,7 @@ console.log("(3) app/api/unsubscribe/route.ts: the confirmation page copy no lon
 {
   const src = readFileSync(new URL("../app/api/unsubscribe/route.ts", import.meta.url), "utf8");
   check("(3a) the em dash is gone", !/Your Stripe subscription is separate and unaffected — /.test(src));
-  check("(3b) replaced with a plain second sentence", /Your Stripe subscription is separate and unaffected\. Manage or cancel billing separately from settings/.test(src));
+  check("(3b) current copy explains the older-paid-account billing step in plain sentences", /If this is an older paid Alpha account, email delivery and billing are separate\. Turn off renewal in settings if you also want billing to end\./.test(src));
 }
 
 console.log("(4) lib/sample-issue.ts: the public sample page's voice-guide violations are fixed (except the one the adversarial panel correctly refuted)");

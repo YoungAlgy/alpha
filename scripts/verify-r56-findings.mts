@@ -34,7 +34,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) components/ThemeApplier.tsx: a cross-tab theme change now arms the same flag as an in-tab pick");
@@ -48,11 +49,11 @@ console.log("(1) components/ThemeApplier.tsx: a cross-tab theme change now arms 
   check("(1b) onStorage calls markThemeEditedThisLoad() when applying a genuine cross-tab theme change", /function onStorage\(e: StorageEvent\) \{\s*\n\s*if \(e\.key === ONBOARDING_KEY \|\| e\.key === FALLBACK_KEY\) \{\s*\n\s*const next = readLocalTheme\(\);\s*\n\s*if \(next && next !== document\.documentElement\.getAttribute\("data-theme"\)\) \{\s*\n\s*markThemeEditedThisLoad\(\);/.test(src));
 }
 
-console.log("(2) components/ThemeApplier.tsx: the email-reconcile fetch's catch is no longer silent");
+console.log("(2) components/ThemeApplier.tsx: the same-origin email-reconcile POST handles its response and reports failures");
 {
   const src = readFileSync(new URL("../components/ThemeApplier.tsx", import.meta.url), "utf8");
-  check("(2a) the reconcile fetch's catch no longer discards the error silently", !/fetch\("\/api\/account\/email\/reconcile", \{ method: "POST" \}\)\.catch\(\(\) => \{\}\);/.test(src));
-  check("(2b) it now logs via console.warn", /fetch\("\/api\/account\/email\/reconcile", \{ method: "POST" \}\)\.catch\(\(e\) =>\s*\n\s*console\.warn\("\[ThemeApplier\] email reconcile failed:", e instanceof Error \? e\.message : e\)\s*\n\s*\);/.test(src));
+  check("(2a) the reconcile request remains a same-origin POST and rejects non-OK responses before parsing JSON", /fetch\("\/api\/account\/email\/reconcile", \{ method: "POST" \}\)\s*\.then\(async \(response\) => \{\s*if \(!response\.ok\) \{\s*throw new Error\(`HTTP \$\{response\.status\}`\);\s*\}\s*const result = \(await response\.json\(\)\)/.test(src));
+  check("(2b) delivery review and request errors are both visible to the browser console", /if \(result\.deliveryReviewRequired\) \{[\s\S]*?console\.warn\(\s*"\[ThemeApplier\] email mirror updated; delivery remains blocked pending reviewed recovery"\s*\);[\s\S]*?\}\s*\}\)\s*\.catch\(\(e\) =>\s*console\.warn\(\s*"\[ThemeApplier\] email reconcile failed:", e instanceof Error \? e\.message : e\s*\)\s*\);/.test(src));
 }
 
 console.log("(3) components/EmailChanger.tsx: err is now role=\"alert\", matching the app's action-failure convention");

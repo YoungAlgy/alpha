@@ -29,7 +29,8 @@ for (const [input, want] of cases) {
   const got = hasActiveAccess(input, now);
   const ok = got === want;
   console.log(`  ${ok ? "OK " : "XX "} ${JSON.stringify(input)} → ${got} (want ${want})`);
-  ok ? pass++ : fail++;
+  if (ok) pass++;
+  else fail++;
 }
 
 // ---- (B) live read-only filter check ----
@@ -43,8 +44,20 @@ const { createClient } = await import("@supabase/supabase-js");
 const sb = createClient(url, key, { auth: { persistSession: false } });
 const nowIso = new Date().toISOString();
 
-async function count(build: (q: any) => any): Promise<number> {
-  const q = build(sb.from("users").select("*", { count: "exact", head: true }));
+type CountResult = { count: number | null; error: { message: string } | null };
+type CountQuery = {
+  not(column: string, operator: "is", value: null): CountQuery;
+  is(column: string, value: null): CountQuery;
+  or(filters: string): CountQuery;
+  gt(column: string, value: string): CountQuery;
+  then<TResult1 = CountResult, TResult2 = never>(
+    onfulfilled?: ((value: CountResult) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): PromiseLike<TResult1 | TResult2>;
+};
+
+async function count(build: (q: CountQuery) => CountQuery): Promise<number> {
+  const q = build(sb.from("users").select("*", { count: "exact", head: true }) as unknown as CountQuery);
   const { count, error } = await q;
   if (error) throw new Error(error.message);
   return count ?? 0;
@@ -52,16 +65,16 @@ async function count(build: (q: any) => any): Promise<number> {
 
 console.log("\n(B) live read-only weekly-send filter check:");
 try {
-  const oldActive = await count((q: any) =>
+  const oldActive = await count((q) =>
     q.not("subscribed_at", "is", null).is("cancelled_at", null).is("unsubscribed_at", null)
   );
-  const newActive = await count((q: any) =>
+  const newActive = await count((q) =>
     q
       .not("subscribed_at", "is", null)
       .or(`cancelled_at.is.null,cancelled_at.gt.${nowIso}`)
       .is("unsubscribed_at", null)
   );
-  const futureCancel = await count((q: any) =>
+  const futureCancel = await count((q) =>
     q.not("subscribed_at", "is", null).gt("cancelled_at", nowIso).is("unsubscribed_at", null)
   );
   console.log(`  old filter (cancelled_at IS NULL)      → ${oldActive} recipients`);
@@ -70,7 +83,8 @@ try {
   const reconciles = newActive === oldActive + futureCancel;
   console.log(`  reconciles (new == old + futureCancel) : ${reconciles ? "OK" : "XX"}`);
   console.log(`  .or filter executed without PostgREST error: OK`);
-  reconciles ? pass++ : fail++;
+  if (reconciles) pass++;
+  else fail++;
   pass++; // the .or query executing without throwing is itself a pass
 } catch (e) {
   console.error(`  XX live check failed: ${e instanceof Error ? e.message : e}`);

@@ -10,6 +10,9 @@
 import { loadEnvLocal } from "./_load-env.mts";
 loadEnvLocal();
 
+import type { UserProfile, TopicId } from "../lib/types.ts";
+import type { TopicBlurb } from "../lib/engine/types.ts";
+
 const { resolveTopicSignal } = await import("../lib/engine/source-resolver.ts");
 const { generateTopicBlurb } = await import("../lib/engine/topic-blurb.ts");
 const { generateEditorNote } = await import("../lib/engine/editor-note.ts");
@@ -21,7 +24,9 @@ function weekOfNow(): string {
   return d.toISOString().slice(0, 10);
 }
 
-const PROFILES: Record<string, { profile: any; topics: string[] }> = {
+type SampleProfile = UserProfile & { id: string };
+
+const PROFILES: Record<string, { profile: SampleProfile; topics: TopicId[] }> = {
   // Algy's mom — the real live reader.
   gigi: {
     profile: {
@@ -35,6 +40,7 @@ const PROFILES: Record<string, { profile: any; topics: string[] }> = {
       gender: "female",
       birthday: undefined,
       topics: [],
+      theme: "soft",
     },
     topics: ["personal-finance", "womens-health"],
   },
@@ -51,6 +57,7 @@ const PROFILES: Record<string, { profile: any; topics: string[] }> = {
       gender: "male",
       birthday: undefined,
       topics: [],
+      theme: "soft",
     },
     topics: ["founder-operator", "ai-news"],
   },
@@ -62,7 +69,7 @@ if (!sel) {
   console.error(`unknown profile "${which}". use: ${Object.keys(PROFILES).join(" | ")}`);
   process.exit(1);
 }
-const topicIds = (process.argv[3] ? process.argv[3].split(",") : sel.topics).map((s) => s.trim());
+const topicIds: TopicId[] = (process.argv[3] ? process.argv[3].split(",") : sel.topics).map((s) => s.trim() as TopicId);
 const profile = { ...sel.profile, topics: topicIds };
 const weekOf = weekOfNow();
 
@@ -70,11 +77,11 @@ console.log(`# SAMPLE — profile=${which} week=${weekOf}`);
 console.log(`# BLURB_MODEL=${BLURB_MODEL}  EDITOR_NOTE_MODEL=${EDITOR_NOTE_MODEL}`);
 console.log(`# topics=${topicIds.join(", ")}\n`);
 
-const blurbs: any[] = [];
+const blurbs: TopicBlurb[] = [];
 for (const id of topicIds) {
   process.stderr.write(`resolving + generating ${id}...\n`);
-  const signal = await resolveTopicSignal(id as never, weekOf);
-  const blurb = await generateTopicBlurb(id as never, weekOf, signal);
+  const signal = await resolveTopicSignal(id, weekOf);
+  const blurb = await generateTopicBlurb(id, weekOf, signal);
   blurbs.push(blurb);
   console.log(`===== SECTION: ${blurb.topicLabel} =====`);
   console.log(`[intro] ${blurb.intro}\n`);
@@ -87,5 +94,5 @@ for (const id of topicIds) {
 }
 
 process.stderr.write(`generating editor note...\n`);
-const note = await generateEditorNote(profile as never, blurbs);
+const note = await generateEditorNote(profile, blurbs);
 console.log(`===== EDITOR NOTE =====\n${note}\n`);

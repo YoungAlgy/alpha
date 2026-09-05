@@ -45,7 +45,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 console.log("(1) app/settings/accounts/page.tsx: Load More now announces a running total, not a fixed per-page count that would repeat verbatim");
@@ -81,13 +82,13 @@ console.log("(3) scripts/verify-cost-tiering.mts + lib/engine/client.ts: the hea
   check("(3e) client.ts now documents Groq + DeepSeek in the chain", /Groq free -> DeepSeek paid-uncapped -> Haiku cheap/.test(client));
 }
 
-console.log("(4) app/api/stripe/webhook/route.ts: the existing-row lookup's error is now logged and folded into the insert-failure message");
+console.log("(4) app/api/stripe/webhook/route.ts: an uncertain existing-row lookup fails closed before any access mutation");
 {
   const src = readFileSync(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
   check("(4a) the existing-row read now destructures error", /const \{ data: existing, error: existingErr \} = await sb/.test(src));
-  check("(4b) a truthy existingErr is logged", /if \(existingErr\) \{\s*\n\s*console\.warn\("\[stripe-webhook\] existing-row lookup failed/.test(src));
-  check("(4c) the insert-failure throw folds in existingErr when present, without gating the insert attempt itself", /throw new Error\(\s*\n\s*existingErr\s*\n\s*\? `user insert failed \(the earlier existing-row lookup had also failed: \$\{existingErr\.message\}\): \$\{insErr\.message\}`/.test(src));
-  check("(4d) no blanket early throw was added on existingErr alone (the direct-checkout insert-succeeds path stays intact)", !/if \(existingErr\) throw/.test(src));
+  check("(4b) a truthy existingErr throws into Stripe's retriable 500 path", /if \(existingErr\) \{\s*\n\s*throw new Error\(`existing user lookup failed: \$\{existingErr\.message\}`\);/.test(src));
+  check("(4c) checkoutUserMutation runs only after that error branch", src.indexOf("if (existingErr)") > -1 && src.indexOf("if (existingErr)") < src.indexOf("const mut = checkoutUserMutation("));
+  check("(4d) insert failures still throw for webhook retry", /if \(insErr\) \{\s*\n\s*throw new Error\(`user insert failed: \$\{insErr\.message\}`\);/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

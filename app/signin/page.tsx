@@ -11,6 +11,27 @@ import { isValidEmail } from "@/lib/validate-email";
 import { isAuthRateLimitError, isInvalidOrExpiredOtpError } from "@/lib/gotrue-errors";
 
 const REMEMBERED_EMAIL_KEY = "alpha-signin-email";
+const LEGACY_CHECKOUT_RETURN_KEY = "alpha-legacy-checkout-return";
+const SIGNIN_RETURN_KEY = "alpha-signin-return";
+
+function takeSignInReturnPath(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const legacyPath = window.sessionStorage.getItem(LEGACY_CHECKOUT_RETURN_KEY);
+    window.sessionStorage.removeItem(LEGACY_CHECKOUT_RETURN_KEY);
+    if (
+      legacyPath &&
+      /^\/writing\?session_id=cs_[A-Za-z0-9_]+$/.test(legacyPath)
+    ) {
+      return legacyPath;
+    }
+    const path = window.sessionStorage.getItem(SIGNIN_RETURN_KEY);
+    window.sessionStorage.removeItem(SIGNIN_RETURN_KEY);
+    return path === "/checkout" ? path : null;
+  } catch {
+    return null;
+  }
+}
 
 type Step = "email" | "code";
 
@@ -59,6 +80,8 @@ export default function SigninPage() {
   useEffect(() => {
     try {
       const remembered = localStorage.getItem(REMEMBERED_EMAIL_KEY);
+      // This is a one-time client-only localStorage hydration after mount.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (remembered) setEmail(remembered);
     } catch {
       // ignore
@@ -92,7 +115,7 @@ export default function SigninPage() {
           if (typeof window !== "undefined" && window.location.hash) {
             window.history.replaceState(null, "", window.location.pathname);
           }
-          router.replace("/inbox" as never);
+          router.replace((takeSignInReturnPath() || "/inbox") as never);
         }
       } catch {
         // ignore — stay on signin form
@@ -212,7 +235,7 @@ export default function SigninPage() {
       if (cancelledRef.current) return;
       if (error) throw error;
       audioConfirm();
-      router.push("/inbox" as never);
+      router.push((takeSignInReturnPath() || "/inbox") as never);
     } catch (e) {
       // alpha-drift-r35-02 (2026-08-14): never show GoTrue's raw vendor
       // wording ("Token has expired or is invalid.") -- see

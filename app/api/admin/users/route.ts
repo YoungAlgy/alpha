@@ -1,20 +1,28 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { cleanUpStripeCustomerBeforeDelete, deleteSupportTicketsBeforeDelete } from "@/lib/stripe-cancel";
 import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
 import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
-import { removeResendSuppression } from "@/lib/email";
 import { isValidCalendarDate } from "@/lib/demographics";
+import {
+  isAccountDeletionBlockedBySuppressionRecovery,
+  removeAccountAuthAndCompleteSaga,
+  settleAccountDeletionBilling,
+  settleAccountDeletionPrivacy,
+} from "@/lib/account-deletion";
+import { normalizeAccountEmails } from "@/lib/account-privacy";
+import { MANUAL_PROVIDER_SUPPRESSION_REMOVAL_HOLD_MESSAGE } from "@/lib/suppression-recovery-policy";
 
 export const runtime = "nodejs";
 
 interface Stats {
   totalUsers: number;
+  pendingRequests: number;
   paying: number;
   freeGranted: number;
+  inviteGranted: number;
   cancelled: number;
   unsubscribed: number;
   notSubscribed: number;
@@ -36,6 +44,8 @@ async function gatherStats(): Promise<Stats> {
     cancelled_at: string | null;
     unsubscribed_at: string | null;
     stripe_customer_id: string | null;
+    access_requested_at: string | null;
+    access_granted_at: string | null;
   };
   // alpha-drift-r60-08 (2026-08-20, silent-catch-audit-r6): all three reads
   // in this function used to discard `error` entirely. On a failure,
@@ -54,7 +64,7 @@ async function gatherStats(): Promise<Stats> {
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data: page, error: pageError } = await sb
       .from("users")
-      .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id")
+      .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id, access_requested_at, access_granted_at")
       .order("id")
       .range(from, from + PAGE_SIZE - 1);
     if (pageError) {
@@ -68,8 +78,10 @@ async function gatherStats(): Promise<Stats> {
 
   const stats = {
     totalUsers: rows.length,
+    pendingRequests: 0,
     paying: 0,
     freeGranted: 0,
+    inviteGranted: 0,
     cancelled: 0,
     unsubscribed: 0,
     notSubscribed: 0,
@@ -79,6 +91,11 @@ async function gatherStats(): Promise<Stats> {
   // Priority mirrors what the owner cares about most: opted out > cancelled >
   // paying > free > never-subscribed.
   for (const r of rows) {
+    if (r.access_requested_at && !r.access_granted_at) stats.pendingRequests++;
+    // Invite access is an overlay. A reader can still have a paid period open
+    // while their permanent invite is already recorded, so this count is
+    // intentionally independent from the mutually exclusive billing buckets.
+    if (r.access_granted_at) stats.inviteGranted++;
     if (r.unsubscribed_at) stats.unsubscribed++;
     // "cancelled" = actually churned (cancel date in the PAST). A FUTURE
     // cancelled_at is cancel-at-period-end: still paying, still getting
@@ -164,6 +181,16 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim();
   const before = searchParams.get("before");
+  const pending = searchParams.get("pending");
+  if (pending !== null && pending !== "1") {
+    return NextResponse.json({ error: "Invalid pending filter." }, { status: 400 });
+  }
+  if (pending === "1" && q) {
+    return NextResponse.json(
+      { error: "Pending requests and email search cannot be combined." },
+      { status: 400 }
+    );
+  }
 
   // alpha-drift-r26-08 (2026-08-14): `before` used to reach the .lt() filter
   // below completely unvalidated -- a malformed value (?before=not-a-date)
@@ -229,16 +256,27 @@ export async function GET(req: Request) {
     // suppression event, not a billing change) was invisible in this list --
     // silently excluded from every future send by the cron's own
     // .is("bounced_at", null).is("complained_at", null) filter with no way
-    // for an admin to even SEE it happened, let alone fix it. See the new
-    // clear_suppression action below.
-    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, cancelled_at, unsubscribed_at, bounced_at, complained_at, created_at")
-    .order("created_at", { ascending: false });
+    // for an admin to even SEE it happened. The panel keeps the delivery
+    // review state visible while provider recovery is held.
+    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, access_requested_at, access_granted_at, cancelled_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_started_at, created_at");
   if (escapedQ) {
-    usersQuery = usersQuery.ilike("email", `%${escapedQ}%`);
-  } else if (before) {
-    usersQuery = usersQuery.lt("created_at", before).limit(200);
-  } else {
+    usersQuery = usersQuery
+      .ilike("email", `%${escapedQ}%`)
+      .order("created_at", { ascending: false });
+  } else if (pending === "1") {
+    usersQuery = usersQuery
+      .not("access_requested_at", "is", null)
+      .is("access_granted_at", null)
+      .order("access_requested_at", { ascending: false });
+    if (before) usersQuery = usersQuery.lt("access_requested_at", before);
     usersQuery = usersQuery.limit(200);
+  } else if (before) {
+    usersQuery = usersQuery
+      .lt("created_at", before)
+      .order("created_at", { ascending: false })
+      .limit(200);
+  } else {
+    usersQuery = usersQuery.order("created_at", { ascending: false }).limit(200);
   }
 
   // alpha-drift-r61-01 (2026-08-20, self-audit-r60): round 60's own
@@ -249,8 +287,8 @@ export async function GET(req: Request) {
   // 60, gatherStats() never threw, so this always returned 200 with the
   // real user list even when stats came back wrong; round 60 traded that
   // for "the entire admin dashboard, including the Grant/Revoke/Delete/
-  // Clear-suppression action buttons an admin might urgently need during
-  // exactly this kind of DB blip, goes fully blank" on any transient stats-
+  // delivery-review state an admin might urgently need during exactly this
+  // kind of DB blip, goes fully blank" on any transient stats-
   // side failure. Promise.allSettled decouples them: a stats failure is
   // still logged (round 60's real improvement, kept), but a working user
   // list is never thrown away over it. stats: null signals "unavailable"
@@ -280,7 +318,15 @@ export async function GET(req: Request) {
 }
 
 const ActionBodySchema = z.object({
-  action: z.enum(["delete", "grant_free", "revoke_free", "clear_suppression"]),
+  action: z.enum([
+    "delete",
+    "grant_free",
+    "revoke_free",
+    "grant_invite",
+    "revoke_invite",
+    "deny_access",
+    "clear_suppression",
+  ]),
   userId: z.string().uuid(),
 });
 type ActionBody = z.infer<typeof ActionBodySchema>;
@@ -314,219 +360,433 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  if (body.action === "clear_suppression") {
+    return NextResponse.json(
+      {
+        error: MANUAL_PROVIDER_SUPPRESSION_REMOVAL_HOLD_MESSAGE,
+        code: "manual_recovery_disabled",
+      },
+      { status: 409 }
+    );
+  }
+
   const sb = await supabaseServiceClient();
 
   if (body.action === "delete") {
-    // alpha-drift-r20-01 (found+fixed 2026-08-13): need the email BEFORE the
-    // cascade-delete below removes it, to clear any Resend suppression-list
-    // trace tied to it (see the removeResendSuppression call further down).
-    // alpha-drift-r24-06 (2026-08-14): also select stripe_customer_id here
-    // and pass it straight through to cleanUpStripeCustomerBeforeDelete --
-    // it used to re-select the same row itself for that one column, a second
-    // query for data this route was already fetching.
-    //
-    // alpha-drift-r26-01 (2026-08-14): this used to discard `error` from
-    // maybeSingle() entirely, the same gap the GET handler above already
-    // avoids (it checks error and logs+500s). A genuinely failed query
-    // (connection blip, RLS hiccup -- resolves as {data:null, error:{...}},
-    // never throws) then looked IDENTICAL to "this row doesn't exist" --
-    // and combined with round 25's own `targetUser ? ... : null` fix below,
-    // a failed pre-fetch was silently treated as "confirmed no Stripe
-    // customer," so cleanUpStripeCustomerBeforeDelete skipped its cleanup
-    // entirely while auth.admin.deleteUser() still deleted the account —
-    // an active subscription left billing forever with zero log trail.
-    // Checking error first and bailing before any destructive step closes
-    // both the observability gap and that billing-leak path in one fix.
+    // Keep confirmed emails only for app-owned support cleanup. Deletion
+    // preserves provider-side do-not-email blocks.
+    // The deletion saga independently locks the current public.users billing
+    // ids and every related staged checkout before it touches Stripe.
     const { data: targetUser, error: targetUserError } = await sb
       .from("users")
-      .select("email, stripe_customer_id")
+      .select("email")
       .eq("id", body.userId)
       .maybeSingle();
     if (targetUserError) {
       console.error("[admin/users] delete: pre-fetch failed:", targetUserError.message);
       return NextResponse.json({ error: "Couldn't verify user before delete. Try again." }, { status: 500 });
     }
-    // Cancel any Stripe subscription and delete the Customer object FIRST
-    // (mirrors self-serve account/delete): deleting the auth user cascades
-    // public.users away incl. stripe_customer_id, so a still-active sub
-    // would bill forever with no way to stop it. Best-effort — a Stripe
-    // hiccup must never block the admin delete.
-    //
-    // alpha-drift-r25-02 (2026-08-14): `targetUser?.stripe_customer_id`
-    // collapsed TWO different situations to the same `undefined` value --
-    // "the row has no stripe_customer_id" (a real answer) and "targetUser
-    // itself is null because the row is already gone" (also a real answer,
-    // per this SAME file's own alpha-drift-r17-02 comment: a stale admin
-    // tab or a race with the user's own self-delete). Both should skip
-    // cleanUpStripeCustomerBeforeDelete's internal re-lookup -- only a
-    // genuinely omitted argument should trigger it. The ternary below makes
-    // that explicit: a missing row passes `null` (a real "already checked,
-    // nothing there" answer), never `undefined` (which reads as "caller
-    // didn't pre-fetch this").
-    await cleanUpStripeCustomerBeforeDelete(
-      sb,
-      body.userId,
-      "[admin/delete]",
-      undefined,
-      targetUser ? targetUser.stripe_customer_id : null
-    );
-    // Same reasoning as self-serve account/delete: support_tickets.user_id is
-    // ON DELETE SET NULL, not CASCADE, so skipping this would leave an
-    // admin-initiated delete short of the "all associated data" promise on
-    // the privacy page while self-serve deletes correctly clear it.
-    // alpha-drift-r28-08 (2026-08-15): also passes the pre-fetched email, so
-    // an orphaned (signed-out-when-filed) support ticket matching this
-    // account's own email is caught too, not just tickets already linked by id.
-    await deleteSupportTicketsBeforeDelete(sb, body.userId, "[admin/delete]", targetUser?.email);
-    // Same reasoning as self-serve account/delete: a real third-party
-    // suppression record can outlive every Supabase trace otherwise.
-    if (targetUser?.email) {
-      await removeResendSuppression(targetUser.email);
+    const { data: targetAuth, error: targetAuthError } =
+      await sb.auth.admin.getUserById(body.userId);
+    if (targetAuthError && !isUserNotFoundError(targetAuthError)) {
+      console.error("[admin/users] delete: Auth identity lookup failed:", targetAuthError.message);
+      return NextResponse.json(
+        { error: "Couldn't verify user before delete. Try again." },
+        { status: 503 }
+      );
     }
-    // Delete the auth user — cascade removes their public.users + issues rows.
-    const { error } = await sb.auth.admin.deleteUser(body.userId);
-    if (error) {
-      // alpha-drift-r17-02 (found+fixed 2026-08-07): the self-serve
-      // account/delete route already treats a not-found error as success
-      // (a race with a second click/tab hitting an already-deleted user) --
-      // this identical deleteUser call site never got the same fix, so an
-      // admin hit a scary generic 500 on a user that was, in fact, already
-      // gone (e.g. a stale admin tab, or the user self-deleted moments
-      // before the admin's click landed).
-      if (isUserNotFoundError(error)) {
-        console.warn(`[admin/users] deleteUser reported not-found for ${body.userId} — already deleted, treating as success`);
-      } else {
-        console.error("[admin/users] delete failed:", error.message);
-        return NextResponse.json({ error: "Couldn't delete user. Try again." }, { status: 500 });
+    // Auth is authoritative after a confirmed email change. Keep the public
+    // mirror too because an orphaned support ticket may still
+    // carry the older address.
+    const cleanupEmails = normalizeAccountEmails(
+      targetAuth?.user?.email,
+      targetUser?.email
+    );
+    let deletionState:
+      | "prepared"
+      | "billing_clean"
+      | "auth_delete_started"
+      | "complete";
+    try {
+      deletionState = await settleAccountDeletionBilling(sb, body.userId);
+    } catch (billingError) {
+      if (isAccountDeletionBlockedBySuppressionRecovery(billingError)) {
+        console.warn(
+          `[admin/users] delete: reviewed delivery recovery blocks deletion for ${body.userId}; account left intact`
+        );
+        return NextResponse.json(
+          {
+            error:
+              "Account deletion is blocked until the reviewed delivery recovery is settled. The account is still intact.",
+          },
+          { status: 409 }
+        );
       }
+      console.error(
+        `[admin/users] delete: exact Alpha billing cleanup was not confirmed for ${body.userId}; Auth left intact:`,
+        billingError instanceof Error ? billingError.message : billingError
+      );
+      return NextResponse.json(
+        {
+          error:
+            "Couldn't safely finish this user's billing cleanup. Nothing was deleted. Try again.",
+        },
+        { status: 503 }
+      );
+    }
+
+    if (
+      cleanupEmails.length === 0 &&
+      deletionState !== "auth_delete_started" &&
+      deletionState !== "complete"
+    ) {
+      console.error(
+        `[admin/users] delete: no confirmed email remained for required privacy cleanup for ${body.userId}`
+      );
+      return NextResponse.json(
+        { error: "Couldn't verify the user's email. Nothing was deleted." },
+        { status: 503 }
+      );
+    }
+    if (
+      cleanupEmails.length > 0 &&
+      deletionState !== "auth_delete_started" &&
+      deletionState !== "complete"
+    ) {
+      try {
+        await settleAccountDeletionPrivacy(
+          sb,
+          body.userId,
+          cleanupEmails
+        );
+      } catch (privacyError) {
+        console.error(
+          `[admin/users] delete: required privacy cleanup was not confirmed for ${body.userId}; Auth left intact:`,
+          privacyError instanceof Error ? privacyError.message : privacyError
+        );
+        return NextResponse.json(
+          {
+          error:
+            "Couldn't finish deleting support data. The user account is still intact. Try again.",
+          },
+          { status: 503 }
+        );
+      }
+    }
+
+    try {
+      const deleteAuthUser = async () => {
+        const { error } = await sb.auth.admin.deleteUser(body.userId);
+        if (!error) return;
+        if (isUserNotFoundError(error)) {
+          console.warn(`[admin/users] deleteUser reported not-found for ${body.userId} — already deleted, treating as success`);
+          return;
+        }
+        throw error;
+      };
+      if (deletionState === "complete") {
+        await deleteAuthUser();
+      } else {
+        await removeAccountAuthAndCompleteSaga(sb, body.userId, deleteAuthUser);
+      }
+    } catch (authError) {
+      console.error(
+        `[admin/users] delete: Auth removal or durable saga completion failed for ${body.userId}:`,
+        authError instanceof Error ? authError.message : authError
+      );
+      return NextResponse.json(
+        { error: "Account deletion is still in progress. Try again." },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === "deny_access") {
+    const { data: existing, error: existingError } = await sb
+      .from("users")
+      .select("access_requested_at, access_granted_at")
+      .eq("id", body.userId)
+      .maybeSingle();
+    if (existingError) {
+      console.error("[admin/users] deny_access pre-fetch failed");
+      return NextResponse.json(
+        { error: "Couldn't verify the access request. Try again." },
+        { status: 500 }
+      );
+    }
+    if (!existing) {
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    }
+    if (existing.access_granted_at) {
+      return NextResponse.json(
+        { error: "This account already has invite access. Revoke that access separately." },
+        { status: 409 }
+      );
+    }
+    if (!existing.access_requested_at) {
+      return NextResponse.json({ ok: true, alreadyDenied: true });
+    }
+    const { data: updated, error } = await sb
+      .from("users")
+      .update({ access_requested_at: null })
+      .eq("id", body.userId)
+      .eq("access_requested_at", existing.access_requested_at)
+      .is("access_granted_at", null)
+      .select("id");
+    if (error) {
+      console.error("[admin/users] deny_access failed");
+      return NextResponse.json(
+        { error: "Couldn't deny the access request. Try again." },
+        { status: 500 }
+      );
+    }
+    if (!updated || updated.length === 0) {
+      return NextResponse.json(
+        { error: "The request changed while it was being reviewed. Refresh and try again." },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === "grant_invite" || body.action === "revoke_invite") {
+    // A Stripe-linked reader can be moved onto permanent invite access without
+    // rewriting any billing field. cancelled_at remains the provider mirror,
+    // which means renewal cancellation and terminal events keep their exact
+    // meaning. The protected access_granted_at marker is the separate invite
+    // entitlement consumed by reader and delivery gates.
+    const { data: existing, error: existingError } = await sb
+      .from("users")
+      .select(
+        "stripe_customer_id, subscribed_at, access_requested_at, access_granted_at"
+      )
+      .eq("id", body.userId)
+      .maybeSingle();
+    if (existingError) {
+      console.error("[admin/users] invite access pre-fetch failed");
+      return NextResponse.json(
+        { error: "Couldn't verify user. Try again." },
+        { status: 500 }
+      );
+    }
+    if (!existing) {
+      return NextResponse.json({ error: "User not found." }, { status: 404 });
+    }
+    if (!existing.stripe_customer_id) {
+      return NextResponse.json(
+        {
+          error:
+            body.action === "grant_invite"
+              ? "Use Grant free for a reader with no Stripe account."
+              : "Use Revoke free for a reader with no Stripe account.",
+        },
+        { status: 400 }
+      );
+    }
+    if (body.action === "grant_invite") {
+      if (!existing.subscribed_at) {
+        return NextResponse.json(
+          {
+            error:
+              "This Stripe-linked account has no local access stamp. Review its exact billing state before granting invite access.",
+          },
+          { status: 409 }
+        );
+      }
+      if (existing.access_granted_at) {
+        if (!existing.access_requested_at) {
+          return NextResponse.json({ ok: true, alreadyGranted: true });
+        }
+        const { data: reviewed, error: reviewError } = await sb
+          .from("users")
+          .update({ access_requested_at: null })
+          .eq("id", body.userId)
+          .eq("stripe_customer_id", existing.stripe_customer_id)
+          .eq("subscribed_at", existing.subscribed_at)
+          .eq("access_requested_at", existing.access_requested_at)
+          .eq("access_granted_at", existing.access_granted_at)
+          .select("id");
+        if (reviewError || !reviewed || reviewed.length === 0) {
+          return NextResponse.json(
+            { error: "The account changed while its request was being reviewed. Refresh and try again." },
+            { status: reviewError ? 500 : 409 }
+          );
+        }
+        return NextResponse.json({ ok: true, alreadyGranted: true });
+      }
+      const grantedAt = new Date().toISOString();
+      let grant = sb
+        .from("users")
+        .update({ access_requested_at: null, access_granted_at: grantedAt })
+        .eq("id", body.userId)
+        .eq("stripe_customer_id", existing.stripe_customer_id)
+        .eq("subscribed_at", existing.subscribed_at);
+      grant = existing.access_requested_at
+        ? grant.eq("access_requested_at", existing.access_requested_at)
+        : grant.is("access_requested_at", null);
+      const { data: updated, error } = await grant
+        .is("access_granted_at", null)
+        .select("id");
+      if (error) {
+        console.error("[admin/users] grant_invite failed");
+        return NextResponse.json(
+          { error: "Couldn't grant invite access. Try again." },
+          { status: 500 }
+        );
+      }
+      if (!updated || updated.length === 0) {
+        return NextResponse.json(
+          { error: "The account changed while access was being granted. Refresh and try again." },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (!existing.access_granted_at) {
+      return NextResponse.json({ ok: true, alreadyRevoked: true });
+    }
+    let revoke = sb
+      .from("users")
+      .update({ access_requested_at: null, access_granted_at: null })
+      .eq("id", body.userId)
+      .eq("stripe_customer_id", existing.stripe_customer_id)
+      .eq("access_granted_at", existing.access_granted_at);
+    revoke = existing.access_requested_at
+      ? revoke.eq("access_requested_at", existing.access_requested_at)
+      : revoke.is("access_requested_at", null);
+    const { data: updated, error } = await revoke
+      .select("id");
+    if (error) {
+      console.error("[admin/users] revoke_invite failed");
+      return NextResponse.json(
+        { error: "Couldn't revoke invite access. Try again." },
+        { status: 500 }
+      );
+    }
+    if (!updated || updated.length === 0) {
+      return NextResponse.json(
+        { error: "The account changed while access was being revoked. Refresh and try again." },
+        { status: 409 }
+      );
     }
     return NextResponse.json({ ok: true });
   }
 
   if (body.action === "grant_free") {
-    // Don't let a comp grant clobber a REAL Stripe subscriber's cancellation
-    // state (the cancelled_at: null below would un-cancel them in our mirror).
-    // Mirror revoke_free's guard: refuse if they have a real Stripe customer —
-    // a paying sub is managed in Stripe, never comped over.
-    // alpha-drift-r26-01 (2026-08-14): check error before checking !existing --
-    // otherwise a genuinely failed query (never throws, resolves as
-    // {data:null, error:{...}}) reads as "user not found" with zero log trail.
     const { data: existing, error: existingError } = await sb
       .from("users")
-      .select("stripe_customer_id, email")
+      .select(
+        "email, stripe_customer_id, stripe_subscription_id, subscribed_at, cancelled_at, access_requested_at, access_granted_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, delivery_suppression_cleared_at"
+      )
       .eq("id", body.userId)
       .maybeSingle();
     if (existingError) {
       console.error("[admin/users] grant_free: pre-fetch failed:", existingError.message);
       return NextResponse.json({ error: "Couldn't verify user. Try again." }, { status: 500 });
     }
-    // alpha-drift-r17-01 (found+fixed 2026-08-07): isFreeGrantEligible(undefined)
-    // returns true (its whole contract is "no stripe_customer_id on file"), so
-    // a userId that matches NO ROW AT ALL (deleted, stale id from another
-    // admin tab) used to pass this guard the same as a genuinely free-grant-
-    // eligible user -- the update below then matched zero rows (no error from
-    // a 0-row update) and this route reported { ok: true } for a write that
-    // never happened. Check existence explicitly first, as its own distinct
-    // failure reason from "has a real Stripe subscription."
     if (!existing) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
-    if (!isFreeGrantEligible(existing.stripe_customer_id)) {
+    const normalizedEmail = existing.email?.toLowerCase().trim();
+    if (!normalizedEmail || normalizedEmail !== existing.email) {
       return NextResponse.json(
-        { error: "User has a real Stripe subscription. Manage in Stripe, don't comp." },
+        { error: "Repair this account's canonical email before granting access." },
+        { status: 409 }
+      );
+    }
+    if (
+      !isFreeGrantEligible(existing.stripe_customer_id) ||
+      existing.stripe_subscription_id
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "User has a Stripe billing binding. Review the exact Customer and Subscription instead of granting free access.",
+        },
         { status: 400 }
       );
     }
-    // Mark as subscribed without a Stripe customer. App checks subscribed_at.
-    // Clear unsubscribed_at too: a comp grant is an explicit admin decision to
-    // send letters, so it must re-consent a previously-opted-out user (mirrors
-    // the paid checkout path) — otherwise re-comping an unsubscribed reader
-    // would silently leave them dropped from every send. Clear
-    // bounced_at/complained_at for the same reason (alpha-drift-r17-05,
-    // same round) -- these are Resend delivery-suppression columns, and an
-    // admin's explicit comp decision is exactly the same kind of re-consent
-    // as a paid checkout, which lib/webhook-user-mutation.ts's
-    // checkoutUserMutation clears them on -- an un-comped-then-recomped
-    // reader must not stay permanently excluded from the cron's
-    // `.is("bounced_at", null).is("complained_at", null)` filter.
-    // alpha-drift-r32-01 (2026-08-14): the eligibility check above reads
-    // stripe_customer_id, then this UPDATE runs as a separate statement --
-    // between the two, a checkout webhook could land and set a real
-    // stripe_customer_id on this same row (this reader just paid). Without
-    // re-checking, this comp grant would still fire and un-cancel/clobber a
-    // now-real subscriber's state, exactly what isFreeGrantEligible exists to
-    // prevent. Folding the same null-check into the UPDATE's WHERE (the
-    // established compare-and-swap idiom this app already uses for the
-    // weekly-send delivered_at claim and the Stripe-webhook mirror writes)
-    // makes the eligibility check atomic with the write instead of just
-    // advisory, and .select("id") detects a lost race as a 0-row result.
-    const { error, data: updated } = await sb
+
+    // Access approval is independent from delivery policy. Do not clear an
+    // unsubscribe, bounce, complaint, pending cleanup, or causal watermark
+    // here. Manual provider suppression removal remains on a safety hold.
+    const grantedAt = new Date().toISOString();
+    let grant = sb
       .from("users")
       .update({
-        subscribed_at: new Date().toISOString(),
+        subscribed_at: grantedAt,
+        access_requested_at: null,
+        access_granted_at: grantedAt,
         cancelled_at: null,
-        unsubscribed_at: null,
-        bounced_at: null,
-        complained_at: null,
       })
       .eq("id", body.userId)
+      .eq("email", existing.email)
       .is("stripe_customer_id", null)
+      .is("stripe_subscription_id", null);
+    grant = existing.subscribed_at
+      ? grant.eq("subscribed_at", existing.subscribed_at)
+      : grant.is("subscribed_at", null);
+    grant = existing.cancelled_at
+      ? grant.eq("cancelled_at", existing.cancelled_at)
+      : grant.is("cancelled_at", null);
+    grant = existing.access_requested_at
+      ? grant.eq("access_requested_at", existing.access_requested_at)
+      : grant.is("access_requested_at", null);
+    grant = existing.access_granted_at
+      ? grant.eq("access_granted_at", existing.access_granted_at)
+      : grant.is("access_granted_at", null);
+    grant = existing.unsubscribed_at
+      ? grant.eq("unsubscribed_at", existing.unsubscribed_at)
+      : grant.is("unsubscribed_at", null);
+    grant = existing.bounced_at
+      ? grant.eq("bounced_at", existing.bounced_at)
+      : grant.is("bounced_at", null);
+    grant = existing.complained_at
+      ? grant.eq("complained_at", existing.complained_at)
+      : grant.is("complained_at", null);
+    grant = existing.suppression_cleanup_pending_at
+      ? grant.eq(
+          "suppression_cleanup_pending_at",
+          existing.suppression_cleanup_pending_at
+        )
+      : grant.is("suppression_cleanup_pending_at", null);
+    grant = existing.delivery_suppression_cleared_at
+      ? grant.eq(
+          "delivery_suppression_cleared_at",
+          existing.delivery_suppression_cleared_at
+        )
+      : grant.is("delivery_suppression_cleared_at", null);
+    const { error, data: updated } = await grant
       .select("id");
     if (error) {
       console.error("[admin/users] grant_free failed:", error.message);
       return NextResponse.json({ error: "Couldn't grant free access. Try again." }, { status: 500 });
     }
     if (!updated || updated.length === 0) {
-      console.error(`[admin/users] grant_free: lost race, stripe_customer_id was set between pre-fetch and update for ${body.userId}`);
       return NextResponse.json(
-        { error: "This user just got a real Stripe subscription. Refresh and manage in Stripe instead." },
+        {
+          error:
+            "The account changed while access was being granted. Refresh and review it before retrying.",
+        },
         { status: 409 }
       );
     }
-    // alpha-drift-r17-06: this app's own bounced_at/complained_at columns
-    // are only half the fix -- Resend maintains its own separate account-
-    // level suppression list that also has to be cleared, or the cron
-    // would keep calling sendLetterNotification for an "active" subscriber
-    // Resend silently keeps skipping. Awaited (not fire-and-forget) so it
-    // gets a real chance to complete before this handler returns.
-    //
-    // alpha-drift-r45-01 (2026-08-19): this used to say "a failure here
-    // never fails the grant itself" and discard removeResendSuppression's
-    // return value entirely -- but that's inconsistent with clear_suppression
-    // a few dozen lines below, which treats the identical failure as a hard
-    // blocking error (alpha-drift-r20-06/r21-06/r32-02's own reasoning: a
-    // Resend-side suppression surviving while this app thinks the reader is
-    // clear means every future send is silently dropped, with nothing
-    // anywhere to surface it). Worse here specifically: the UPDATE above
-    // already zeroed bounced_at/complained_at unconditionally, so the admin
-    // UI's own isSuppressed badge (app/settings/accounts/page.tsx) goes
-    // dark on a failure too -- there would be no self-serve or admin path
-    // left to ever notice or repair it. Now reports the failure instead of
-    // silently swallowing it, matching clear_suppression's own shape.
-    if (existing.email) {
-      const cleared = await removeResendSuppression(existing.email);
-      if (!cleared) {
-        console.error(`[admin/users] grant_free: removeResendSuppression failed for ${body.userId} after the DB grant already landed`);
-        return NextResponse.json(
-          {
-            error:
-              "Free access granted, but clearing the Resend suppression failed. This reader's letters may still be silently dropped. Try again.",
-          },
-          { status: 502 }
-        );
-      }
-    }
+
     return NextResponse.json({ ok: true });
   }
 
   if (body.action === "revoke_free") {
-    // Only revokes the free-grant flag — does NOT touch real Stripe subs.
-    // Guard: only revoke if there's no stripe_customer_id (i.e., they were free-granted).
+    // Only revokes the free-grant flag — does NOT touch real Stripe bindings.
+    // Guard both IDs so an incomplete legacy binding cannot be treated as a comp.
     // alpha-drift-r26-01 (2026-08-14): check error before checking !row, same
     // reasoning as grant_free above.
     const { data: row, error: rowError } = await sb
       .from("users")
-      .select("stripe_customer_id")
+      .select(
+        "stripe_customer_id, stripe_subscription_id, access_requested_at, subscribed_at, access_granted_at, cancelled_at"
+      )
       .eq("id", body.userId)
       .maybeSingle();
     if (rowError) {
@@ -537,167 +797,57 @@ export async function POST(req: Request) {
     if (!row) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
-    if (!isFreeGrantEligible(row.stripe_customer_id)) {
+    if (!isFreeGrantEligible(row.stripe_customer_id) || row.stripe_subscription_id) {
       return NextResponse.json(
-        { error: "User has a real Stripe subscription. Manage in Stripe." },
+        { error: "User has a Stripe billing binding. Review it before revoking free access." },
         { status: 400 }
       );
     }
     // alpha-drift-r32-01 (2026-08-14): same race as grant_free above -- fold
-    // the eligibility re-check into the UPDATE's WHERE so a stripe_customer_id
+    // the eligibility re-check into the UPDATE's WHERE so a Stripe binding
     // that lands between the pre-fetch and this write can't get silently
     // un-comped (revoke_free would otherwise blow away a now-real paid
     // subscription's subscribed_at). .select("id") detects the lost race.
-    const { error, data: updated } = await sb
+    // Revoking a comp must close read access immediately as well as stop
+    // future sends. Archive and tokenized-letter gates use cancelled_at,
+    // while the cron uses subscribed_at, so write both in the same atomic
+    // UPDATE. Clearing only subscribed_at left every already-created issue
+    // readable indefinitely because hasActiveAccess(null) is true.
+    const revokedAt = new Date().toISOString();
+    let revoke = sb
       .from("users")
-      .update({ subscribed_at: null })
-      .eq("id", body.userId)
+      .update({
+        subscribed_at: null,
+        access_requested_at: null,
+        access_granted_at: null,
+        cancelled_at: revokedAt,
+      })
+      .eq("id", body.userId);
+    revoke = row.access_requested_at
+      ? revoke.eq("access_requested_at", row.access_requested_at)
+      : revoke.is("access_requested_at", null);
+    revoke = row.subscribed_at
+      ? revoke.eq("subscribed_at", row.subscribed_at)
+      : revoke.is("subscribed_at", null);
+    revoke = row.access_granted_at
+      ? revoke.eq("access_granted_at", row.access_granted_at)
+      : revoke.is("access_granted_at", null);
+    revoke = row.cancelled_at
+      ? revoke.eq("cancelled_at", row.cancelled_at)
+      : revoke.is("cancelled_at", null);
+    const { error, data: updated } = await revoke
       .is("stripe_customer_id", null)
+      .is("stripe_subscription_id", null)
       .select("id");
     if (error) {
       console.error("[admin/users] revoke_free failed:", error.message);
       return NextResponse.json({ error: "Couldn't revoke free access. Try again." }, { status: 500 });
     }
     if (!updated || updated.length === 0) {
-      console.error(`[admin/users] revoke_free: lost race, stripe_customer_id was set between pre-fetch and update for ${body.userId}`);
+      console.error(`[admin/users] revoke_free: lost race, access or billing changed between pre-fetch and update for ${body.userId}`);
       return NextResponse.json(
-        { error: "This user just got a real Stripe subscription. Refresh and manage in Stripe instead." },
+        { error: "This user's access or billing changed. Refresh and review it instead." },
         { status: 409 }
-      );
-    }
-    return NextResponse.json({ ok: true });
-  }
-
-  if (body.action === "clear_suppression") {
-    // alpha-drift-r20-06 (found+fixed 2026-08-13): bounced_at/complained_at
-    // (this app's DB flags) and Resend's own account-level suppression list
-    // were ONLY ever cleared on a re-consent moment -- a fresh Stripe
-    // checkout (lib/webhook-user-mutation.ts) or a first-time
-    // signup/resubscribe-after-deletion (lib/engine/persist.ts, gated on
-    // verificationType !== "magiclink"). A CONTINUOUSLY-subscribed reader
-    // (never re-checks out, never gets deleted) who bounces or complains
-    // mid-subscription -- e.g. a transient bounce on one day's send -- has
-    // no such moment ahead of them: every later magic-link exchange for an
-    // existing user resolves to "magiclink", so persist.ts's gate never
-    // fires again, and grant_free (the only other clearer) explicitly
-    // REFUSES to act on anyone with a real Stripe subscription. That left a
-    // PAYING subscriber with literally no recovery path -- silently
-    // excluded from every future send by the cron's own
-    // .is("bounced_at", null).is("complained_at", null) filter, forever.
-    // This is deliberately its own action, not folded into grant_free/
-    // revoke_free: deliverability suppression is orthogonal to billing
-    // state, so unlike those two, this one has NO isFreeGrantEligible gate
-    // -- it must work on a real paying subscriber, which is exactly the
-    // case those two can't touch.
-    //
-    // alpha-drift-r21-06 (found+fixed 2026-08-14, self-audit): this used to
-    // clear the DB flags FIRST, then call removeResendSuppression after --
-    // the daily cron's own eligibility filter (.is("bounced_at",
-    // null).is("complained_at", null)) reads the DB directly, so the instant
-    // that UPDATE committed, this reader became cron-eligible again even
-    // though Resend's own suppression entry hadn't actually been removed
-    // yet. A send landing in that window would be silently dropped by
-    // Resend with nothing in this app's own tables ever showing it failed --
-    // reintroducing, in a narrow window, the exact problem this action
-    // exists to fix. Reordered to match the ALREADY-correct pattern
-    // lib/engine/persist.ts uses (Resend cleared before any DB write): clear
-    // Resend FIRST, and only clear the DB flags -- the thing the cron
-    // actually reads -- once that's confirmed to have actually worked.
-    // alpha-drift-r26-01 (2026-08-14): check error before checking !row, same
-    // reasoning as grant_free/revoke_free above.
-    // alpha-drift-r33-01 (2026-08-14, self-audit): also select bounced_at/
-    // complained_at here as a BASELINE -- the re-check below used to compare
-    // the fresh re-select against nothing, just testing truthiness, which is
-    // true on essentially every normal call to this action (that's what
-    // makes the "Clear suppression" button render in the first place). That
-    // fired a second, redundant removeResendSuppression call on every
-    // ordinary invocation, and any transient Resend hiccup on that redundant
-    // call failed the whole action with a misleading "a new bounce/complaint
-    // just landed" 502 even though the first call already fully cleared it.
-    const { data: row, error: rowError } = await sb
-      .from("users")
-      .select("email, bounced_at, complained_at")
-      .eq("id", body.userId)
-      .maybeSingle();
-    if (rowError) {
-      console.error("[admin/users] clear_suppression: pre-fetch failed:", rowError.message);
-      return NextResponse.json({ error: "Couldn't verify user. Try again." }, { status: 500 });
-    }
-    if (!row) {
-      return NextResponse.json({ error: "User not found." }, { status: 404 });
-    }
-    if (row.email) {
-      const cleared = await removeResendSuppression(row.email);
-      if (!cleared) {
-        console.error(`[admin/users] clear_suppression: removeResendSuppression failed for ${body.userId}, leaving DB flags untouched`);
-        return NextResponse.json(
-          { error: "Couldn't clear the Resend suppression. Left the DB flags untouched so the cron doesn't pick this reader up while Resend is still silently dropping their mail. Try again." },
-          { status: 502 }
-        );
-      }
-    }
-    // alpha-drift-r32-02 (2026-08-14): the pre-fetch above only ever read
-    // `email` -- a fresh bounce/complaint webhook could land AFTER the
-    // removeResendSuppression call just above but BEFORE the UPDATE below
-    // commits, adding a NEW Resend-side suppression entry that call was
-    // never told about. Without this re-check, the UPDATE would still clear
-    // this app's own bounced_at/complained_at columns, making the reader
-    // cron-eligible again while Resend is still silently dropping their
-    // mail -- reintroducing, in a narrower window, the exact bug
-    // alpha-drift-r21-06 (above) already fixed once. Re-read the suppression
-    // columns immediately before the write and, if either CHANGED since the
-    // pre-fetch (alpha-drift-r33-01: compared against the real baseline now,
-    // not just truthiness), re-run removeResendSuppression before clearing
-    // the DB flags.
-    const { data: fresh, error: freshError } = await sb
-      .from("users")
-      .select("bounced_at, complained_at")
-      .eq("id", body.userId)
-      .maybeSingle();
-    if (freshError) {
-      console.error("[admin/users] clear_suppression: re-fetch failed:", freshError.message);
-      return NextResponse.json({ error: "Couldn't verify user. Try again." }, { status: 500 });
-    }
-    if (!fresh) {
-      return NextResponse.json({ error: "User not found." }, { status: 404 });
-    }
-    const suppressionChangedMidRequest =
-      fresh.bounced_at !== row.bounced_at || fresh.complained_at !== row.complained_at;
-    if (suppressionChangedMidRequest && row.email) {
-      const clearedAgain = await removeResendSuppression(row.email);
-      if (!clearedAgain) {
-        console.error(`[admin/users] clear_suppression: a fresh bounce/complaint landed mid-request, follow-up removeResendSuppression failed for ${body.userId}`);
-        return NextResponse.json(
-          { error: "A new bounce/complaint just landed for this reader and clearing it failed. Left the DB flags untouched. Try again." },
-          { status: 502 }
-        );
-      }
-    }
-    // alpha-drift-r44-01 (2026-08-19, self-audit): this UPDATE used to be a
-    // plain check-then-act, not a real compare-and-swap -- the `fresh`
-    // read above only PROVED nothing had changed at read time, but the
-    // window between that read and this write landing at Supabase was
-    // still open. A bounce/complaint webhook landing in THAT narrower
-    // window would still get silently clobbered back to null, reintroducing
-    // (in a smaller window) the exact bug alpha-drift-r21-06/r32-02 already
-    // fixed twice for this same action. Folded the `fresh` snapshot into
-    // the WHERE clause itself (the same established idiom grant_free/
-    // revoke_free already use above) so the write is now atomic with the
-    // check, and .select("id") detects a lost race as a real 0-row result
-    // instead of silently succeeding.
-    let suppressionQuery = sb.from("users").update({ bounced_at: null, complained_at: null }).eq("id", body.userId);
-    suppressionQuery = fresh.bounced_at === null ? suppressionQuery.is("bounced_at", null) : suppressionQuery.eq("bounced_at", fresh.bounced_at);
-    suppressionQuery = fresh.complained_at === null ? suppressionQuery.is("complained_at", null) : suppressionQuery.eq("complained_at", fresh.complained_at);
-    const { error, data: suppressionUpdated } = await suppressionQuery.select("id");
-    if (error) {
-      console.error("[admin/users] clear_suppression failed:", error.message);
-      return NextResponse.json({ error: "Resend suppression cleared, but the DB update failed. Try again." }, { status: 500 });
-    }
-    if (!suppressionUpdated || suppressionUpdated.length === 0) {
-      console.error(`[admin/users] clear_suppression: lost race, a bounce/complaint landed between the fresh-read and the write for ${body.userId}`);
-      return NextResponse.json(
-        { error: "A new bounce/complaint just landed for this reader. Left the DB flags untouched. Try again." },
-        { status: 502 }
       );
     }
     return NextResponse.json({ ok: true });

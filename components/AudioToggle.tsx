@@ -7,6 +7,8 @@ export function AudioToggle({ compact = false }: { compact?: boolean }) {
   const [on, setOn] = useState(true);
 
   useEffect(() => {
+    // Read the persisted preference once after the browser becomes available.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOn(isAudioEnabled());
     // Cross-tab sync: without this, muting in Tab A leaves Tab B's toggle
     // showing unmuted (and still playing UI chimes) until Tab B reloads.

@@ -19,22 +19,142 @@ export interface CheckoutIdentity {
   firstName: string;
   city: string | null;
   customerId: string | null;
+  subscriptionId: string;
+  // Set only after the webhook freshly retrieves a different stored
+  // subscription and proves it terminal, no longer Alpha, or incompatible
+  // with the stored customer. Database cancellation timestamps alone are not
+  // enough to authorize replacing an exact Stripe binding.
+  priorBindingReplaceable: boolean;
   nowIso: string;
+  // Immutable Stripe Session creation time. A replay may arrive days later,
+  // so only suppression evidence older than this checkout may be cleared as
+  // part of the reader's paid re-consent.
+  checkoutStartedAtIso: string;
   // Whether the checkout session's subscription is LIVE right now (verified
-  // against Stripe in the handler). Gates the stale-cancellation clear below so
-  // a re-delivered ORIGINAL checkout for a since-ended subscription can't
-  // resurrect a churned reader.
+  // against Stripe in the handler). Gates the entire mutation so a delayed
+  // checkout for a since-ended subscription cannot create or reactivate access.
   subscriptionLive: boolean;
+  // For callers that perform provider cleanup, local bounce/complaint flags may
+  // only be cleared after it succeeds. When it has not, access is still
+  // provisioned but delivery stays blocked through suppression_cleanup_pending_at.
+  suppressionCleared: boolean;
+  // Paid checkout deliberately does not perform provider suppression cleanup.
+  // Preserve every existing local delivery-suppression field in that path,
+  // while allowing the checkout to restore paid access and explicit unsubscribe
+  // re-consent semantics.
+  preserveSuppressionState?: boolean;
+  // Immutable profile staged before redirecting to Stripe. A valid paid
+  // checkout can therefore create a sendable subscriber even if the browser
+  // never reaches the first-letter page.
+  stagedProfile?: {
+    firstName: string;
+    city: string | null;
+    jobBlurb: string | null;
+    projectBlurb: string | null;
+    funBlurb: string | null;
+    birthday: string | null;
+    gender: "male" | "female" | null;
+    topics: string[];
+    theme: string;
+  };
+}
+
+export interface ExistingCheckoutUser {
+  subscribed_at: string | null;
+  cancelled_at: string | null;
+  unsubscribed_at?: string | null;
+  bounced_at?: string | null;
+  complained_at?: string | null;
+  suppression_cleanup_pending_at?: string | null;
+  first_name?: string | null;
+  city?: string | null;
+  job_blurb?: string | null;
+  project_blurb?: string | null;
+  fun_blurb?: string | null;
+  birthday?: string | null;
+  gender?: string | null;
+  topics?: string[] | null;
+  theme?: string | null;
+  stripe_subscription_id?: string | null;
 }
 
 export type UserMutation =
+  | {
+      kind: "skip";
+      reason: "subscription-not-live" | "subscription-binding-conflict";
+    }
   | { kind: "insert"; row: Record<string, unknown> }
   | { kind: "update"; patch: Record<string, unknown> };
 
+function suppressionIsNewerThanCheckout(
+  value: string | null | undefined,
+  checkoutStartedAtIso: string
+): boolean {
+  if (!value) return false;
+  const valueMs = new Date(value).getTime();
+  const checkoutMs = new Date(checkoutStartedAtIso).getTime();
+  // Invalid stored evidence or an invalid checkout clock must fail closed.
+  return (
+    !Number.isFinite(valueMs) ||
+    !Number.isFinite(checkoutMs) ||
+    valueMs > checkoutMs
+  );
+}
+
+export function hasDeliverySuppressionAfterCheckout(
+  existing: ExistingCheckoutUser | null,
+  checkoutStartedAtIso: string
+): boolean {
+  return !!(
+    existing &&
+    (suppressionIsNewerThanCheckout(
+      existing.unsubscribed_at,
+      checkoutStartedAtIso
+    ) ||
+      suppressionIsNewerThanCheckout(
+        existing.bounced_at,
+        checkoutStartedAtIso
+      ) ||
+      suppressionIsNewerThanCheckout(
+        existing.complained_at,
+        checkoutStartedAtIso
+      ))
+  );
+}
+
 export function checkoutUserMutation(
-  existing: { subscribed_at: string | null; cancelled_at: string | null } | null,
+  existing: ExistingCheckoutUser | null,
   id: CheckoutIdentity
 ): UserMutation {
+  // No checkout event may create or reactivate access from an ended or
+  // unverifiable subscription. This guard lives in the pure mutation helper
+  // as a second line of defense behind the route's live Stripe lookup.
+  if (!id.subscriptionLive) {
+    return { kind: "skip", reason: "subscription-not-live" };
+  }
+  const replacingPriorBinding = !!(
+    existing?.stripe_subscription_id &&
+    existing.stripe_subscription_id !== id.subscriptionId
+  );
+  if (replacingPriorBinding) {
+    if (!id.priorBindingReplaceable) {
+      return { kind: "skip", reason: "subscription-binding-conflict" };
+    }
+  }
+  const newerUnsubscribe = suppressionIsNewerThanCheckout(
+    existing?.unsubscribed_at,
+    id.checkoutStartedAtIso
+  );
+  const newerBounce = suppressionIsNewerThanCheckout(
+    existing?.bounced_at,
+    id.checkoutStartedAtIso
+  );
+  const newerComplaint = suppressionIsNewerThanCheckout(
+    existing?.complained_at,
+    id.checkoutStartedAtIso
+  );
+  const preserveNewerSuppression =
+    newerUnsubscribe || newerBounce || newerComplaint;
   if (!existing) {
     // First contact — typically a direct-checkout user who skipped onboarding.
     // Create the full row. quota 5 = base bundle; a customer.subscription.*
@@ -44,12 +164,25 @@ export function checkoutUserMutation(
       row: {
         id: id.userId,
         email: id.email,
-        first_name: id.firstName,
-        city: id.city,
+        first_name: id.stagedProfile?.firstName ?? id.firstName,
+        city: id.stagedProfile?.city ?? id.city,
+        job_blurb: id.stagedProfile?.jobBlurb ?? null,
+        project_blurb: id.stagedProfile?.projectBlurb ?? null,
+        fun_blurb: id.stagedProfile?.funBlurb ?? null,
+        birthday: id.stagedProfile?.birthday ?? null,
+        gender: id.stagedProfile?.gender ?? null,
+        topics: id.stagedProfile?.topics ?? [],
+        theme: id.stagedProfile?.theme ?? "forest",
         stripe_customer_id: id.customerId,
+        stripe_subscription_id: id.subscriptionId,
         subscribed_at: id.nowIso,
         cancelled_at: null,
         topic_quota: 5,
+        suppression_cleanup_pending_at: id.preserveSuppressionState
+          ? null
+          : id.suppressionCleared
+            ? null
+            : id.nowIso,
       },
     };
   }
@@ -65,30 +198,49 @@ export function checkoutUserMutation(
   // column, so if checkout doesn't clear it, a previously-unsubscribed user
   // who pays again is silently skipped by the weekly cron forever — a paying
   // subscriber receiving nothing.
-  // alpha-drift-r17-05 (found+fixed 2026-08-07): bounced_at/complained_at are
-  // written by app/api/webhooks/resend/route.ts on a hard bounce/complaint
-  // and, before this fix, were NEVER cleared anywhere in the codebase --
-  // grepping every writer confirmed the only mutation site always SETS them,
-  // never nulls either column, so a subscriber who ever bounced/complained
-  // was permanently excluded from the cron's `.is("bounced_at",
-  // null).is("complained_at", null)` filter with zero recovery mechanism,
-  // even after fixing a typo'd address and paying again. Same reasoning as
-  // unsubscribed_at just above: a fresh paid checkout is explicit, real-
-  // world proof this address is live and this reader wants the letters --
-  // Stripe itself just successfully emailed this same address a receipt.
-  // Cleared unconditionally on every checkout completion (not gated behind
-  // subscriptionLive the way cancelled_at is below) because that gate exists
-  // specifically to stop a re-delivered event from resurrecting BILLING
-  // access on an ended subscription -- deliverability suppression isn't a
-  // billing concern, and the underlying payment event proving the address
-  // works already happened regardless of whether the subscription is still
-  // live today.
+  // Bounce and complaint evidence is owned by the Resend webhook and is not
+  // implicitly cleared by a paid checkout. Only a caller that has separately
+  // confirmed provider cleanup may pass suppressionCleared=true. Checkout's
+  // preserveSuppressionState mode leaves these fields, the pending marker, and
+  // the causal watermark untouched.
   const patch: Record<string, unknown> = {
+    // Auth is the canonical account identity. This also repairs the short
+    // supported email-change window where auth already has the new address
+    // while the public mirror still carries the old one.
+    email: id.email,
     stripe_customer_id: id.customerId,
-    unsubscribed_at: null,
-    bounced_at: null,
-    complained_at: null,
+    stripe_subscription_id: id.subscriptionId,
   };
+  if (!newerUnsubscribe) patch.unsubscribed_at = null;
+  if (!id.preserveSuppressionState && !preserveNewerSuppression) {
+    patch.suppression_cleanup_pending_at = id.suppressionCleared
+      ? null
+      : id.nowIso;
+  }
+  if (!id.preserveSuppressionState && id.suppressionCleared) {
+    if (!newerBounce) patch.bounced_at = null;
+    if (!newerComplaint) patch.complained_at = null;
+  }
+  const staged = id.stagedProfile;
+  if (staged) {
+    // generateLink's auth trigger usually creates a bare public.users row
+    // before this lookup. Fill only fields that are still blank so a paid
+    // checkout cannot remain an active subscriber with an empty topic pool,
+    // while a returning reader's newer saved profile is never overwritten.
+    if (!existing.first_name?.trim()) patch.first_name = staged.firstName;
+    if (!existing.city?.trim() && staged.city) patch.city = staged.city;
+    if (!existing.job_blurb?.trim() && staged.jobBlurb) patch.job_blurb = staged.jobBlurb;
+    if (!existing.project_blurb?.trim() && staged.projectBlurb) {
+      patch.project_blurb = staged.projectBlurb;
+    }
+    if (!existing.fun_blurb?.trim() && staged.funBlurb) patch.fun_blurb = staged.funBlurb;
+    if (!existing.birthday && staged.birthday) patch.birthday = staged.birthday;
+    if (!existing.gender && staged.gender) patch.gender = staged.gender;
+    if (!Array.isArray(existing.topics) || existing.topics.length === 0) {
+      patch.topics = staged.topics;
+    }
+    if (!existing.theme?.trim()) patch.theme = staged.theme;
+  }
   if (!existing.subscribed_at) patch.subscribed_at = id.nowIso;
   // cancelled_at: clear ONLY a stale (already past/now) cancellation, and ONLY
   // when the checkout's subscription is verified LIVE right now
@@ -104,7 +256,12 @@ export function checkoutUserMutation(
   //   - past/now only: a FUTURE cancelled_at (a live cancel-at-period-end) is
   //     PRESERVED, so a scheduled cancellation is never erased.
   // subscription.* events remain the authoritative mirror by customer id.
-  if (id.subscriptionLive && existing.cancelled_at) {
+  if (replacingPriorBinding && id.priorBindingReplaceable) {
+    // The fresh Stripe proof says this cancellation belongs to the prior exact
+    // subscription. It must not carry onto the newly-paid replacement, even if
+    // the old local timestamp was scheduled in the future.
+    patch.cancelled_at = null;
+  } else if (id.subscriptionLive && existing.cancelled_at) {
     const endsMs = new Date(existing.cancelled_at).getTime();
     const nowMs = new Date(id.nowIso).getTime();
     if (Number.isNaN(endsMs) || endsMs <= nowMs) {
@@ -142,26 +299,21 @@ export function isFirstSubscription(
 // the correct signal for "when does access end," regardless of which flow
 // set it.
 //
-// The 3 Stripe statuses this app treats as "the subscription has actually
-// ended" -- everything else (active, trialing, past_due, incomplete, paused)
-// leaves cancelled_at alone (null, unless a real cancel_at is scheduled).
+// Only canceled and incomplete_expired are final enough to release an exact
+// subscription identity. Stripe can later reopen and pay an `unpaid`
+// subscription, so it must keep blocking a second checkout even though it no
+// longer grants Alpha access.
 // Exported on its own (not just inlined in deriveCancelledAt) because
-// scripts/reconcile-stripe-vs-supabase.mts needs the SAME notion of
-// "should this look live in the DB" -- alpha-drift-r15-14 (found+fixed
-// 2026-08-06): that script used to reuse lib/update-quantity-guards.ts's
-// isLiveForManagement (scoped to {active, trialing, past_due} -- its own
-// comment says it exists to answer "should this subscription be findable
-// by the quantity-change flow", not a general liveness check) as its
-// notion of Stripe-side liveness. `incomplete` and `paused` are in neither
-// that set NOR this terminal set, so a subscription in either status was
-// simultaneously "not live" per isLiveForManagement and "not cancelled"
-// per this file's own deriveCancelledAt (cancelled_at stays null) --
-// isLiveForManagement's narrower set produced a false-positive
-// access_mismatch drift alert for a real, ordinary transient Stripe state
-// (incomplete during a pending 3DS/first-payment confirmation; paused via
-// Stripe's own "pause collection" feature) that was never actually a bug.
+// scripts/reconcile-stripe-vs-supabase.mts needs the same access decision.
+// `incomplete`, `paused`, and `unpaid` keep their exact billing reservation
+// because Stripe may later revive them, but none proves a currently paid
+// Alpha entitlement. Only active, trialing, and past_due grant access.
 export function isTerminalSubscriptionStatus(status: string): boolean {
-  return status === "canceled" || status === "incomplete_expired" || status === "unpaid";
+  return status === "canceled" || status === "incomplete_expired";
+}
+
+export function subscriptionStatusGrantsAccess(status: string): boolean {
+  return status === "active" || status === "trialing" || status === "past_due";
 }
 
 export function deriveCancelledAt(
@@ -169,7 +321,7 @@ export function deriveCancelledAt(
   cancelAtUnixSeconds: number | null | undefined,
   nowIso: string = new Date().toISOString()
 ): string | null {
-  if (isTerminalSubscriptionStatus(status)) return nowIso;
+  if (!subscriptionStatusGrantsAccess(status)) return nowIso;
   if (typeof cancelAtUnixSeconds === "number" && cancelAtUnixSeconds > 0) {
     return new Date(cancelAtUnixSeconds * 1000).toISOString();
   }

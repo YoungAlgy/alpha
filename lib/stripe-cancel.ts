@@ -1,13 +1,12 @@
 import type Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getStripeClient, describeStripeError } from "./stripe";
+import { STRIPE_PRICE_ID, getStripeClient, describeStripeError } from "./stripe";
 import { sendOpsAlert } from "./email";
 
-// Cancel every still-billable subscription for a Stripe customer. Used by the
-// account-deletion flow: when a user deletes their account we delete the auth
-// user (cascading away public.users, incl. their stripe_customer_id) — so we
-// MUST cancel their Stripe subscription first, or they keep getting billed
-// with no account left to manage it from.
+// Cancel every still-billable, exact Alpha subscription for a Stripe customer.
+// Used by the account-deletion flow: when a user deletes their account we
+// delete the auth user and must stop Alpha billing without touching a different
+// product that may share the same Stripe Customer.
 //
 // Best-effort + idempotent: already-terminal subscriptions are skipped, and a
 // failure on one sub doesn't stop the others. Cancels IMMEDIATELY (the account
@@ -18,7 +17,12 @@ const TERMINAL: ReadonlySet<string> = new Set(["canceled", "incomplete_expired"]
 export async function cancelCustomerSubscriptions(
   stripe: Stripe,
   customerId: string
-): Promise<{ cancelled: string[]; skipped: number; errors: number }> {
+): Promise<{
+  cancelled: string[];
+  skipped: number;
+  errors: number;
+  hasNonAlphaSubscriptions: boolean;
+}> {
   const cancelled: string[] = [];
   let skipped = 0;
   let errors = 0;
@@ -31,10 +35,49 @@ export async function cancelCustomerSubscriptions(
     limit: 100,
   });
 
-  // Fire all cancels in parallel rather than one-at-a-time -- serially
+  // Account deletion may run on a Stripe Customer that is shared with a
+  // different product. Inspect the complete result before making any change.
+  // If Stripe paginates, or if a subscription containing the Alpha price has
+  // an unexpected shape, we cannot prove which object is safe to cancel.
+  if (subs.has_more || !Array.isArray(subs.data)) {
+    throw new Error("cannot safely isolate Alpha subscriptions from a paginated or malformed Stripe result");
+  }
+
+  let hasNonAlphaSubscriptions = false;
+  const alphaSubscriptions: Stripe.Subscription[] = [];
+  for (const sub of subs.data) {
+    if (!sub.items || sub.items.has_more || !Array.isArray(sub.items.data)) {
+      throw new Error(`cannot safely inspect all items for Stripe subscription ${sub.id}`);
+    }
+
+    const alphaItems = sub.items.data.filter((item) => {
+      const priceId = typeof item.price === "string" ? item.price : item.price?.id;
+      return priceId === STRIPE_PRICE_ID;
+    });
+
+    if (alphaItems.length === 0) {
+      hasNonAlphaSubscriptions = true;
+      continue;
+    }
+
+    const item = alphaItems[0];
+    const quantity = item.quantity;
+    if (
+      sub.items.data.length !== 1 ||
+      alphaItems.length !== 1 ||
+      !Number.isInteger(quantity) ||
+      (quantity as number) < 1 ||
+      (quantity as number) > 5
+    ) {
+      throw new Error(`Stripe subscription ${sub.id} contains Alpha in an invalid or mixed line-item shape`);
+    }
+    alphaSubscriptions.push(sub);
+  }
+
+  // Fire exact Alpha cancels in parallel rather than one-at-a-time -- serially
   // awaiting each call means N subscriptions can inherit N x the SDK's
   // worst-case latency, blocking the account-deletion flow that awaits us.
-  const toCancel = subs.data.filter((sub) => {
+  const toCancel = alphaSubscriptions.filter((sub) => {
     if (TERMINAL.has(sub.status)) {
       skipped++;
       return false;
@@ -53,13 +96,15 @@ export async function cancelCustomerSubscriptions(
     }
   });
 
-  return { cancelled, skipped, errors };
+  return { cancelled, skipped, errors, hasNonAlphaSubscriptions };
 }
 
 // Shared entry point for both delete flows (self-serve account/delete and
 // admin/users delete): looks up the target user's stripe_customer_id, builds
-// a Stripe client, cancels their subscriptions via the function above, THEN
-// permanently deletes the Stripe Customer object itself.
+// a Stripe client, and cancels exact Alpha subscriptions via the function
+// above. Alpha never deletes the account-wide Stripe Customer object. A
+// subscription list cannot prove that another product is not using that same
+// Customer for one-time charges, invoices, or saved payment methods.
 //
 // alpha-drift-r20-01 (found+fixed 2026-08-13): this function used to stop at
 // cancelling subscriptions -- it never called stripe.customers.del(). The
@@ -144,52 +189,42 @@ export async function cleanUpStripeCustomerBeforeDelete(
     }
     if (!customerId) return;
     const stripe = stripeClient ?? getStripeClient();
-    // alpha-drift-r65-05 (2026-08-21, silent-catch-audit-r11): the
-    // subscription-cancel step and the customer-delete step used to share
-    // ONE try, so a throw out of cancelCustomerSubscriptions()'s unguarded
-    // stripe.subscriptions.list() (a network blip, a timeout, a one-off
-    // 5xx -- all real per lib/stripe.ts's own maxNetworkRetries:1) skipped
-    // customers.del() entirely, and Stripe's own documented behavior is
-    // that deleting a Customer ALSO cancels any still-active subscription
-    // -- so that skip meant NO code path cancelled it. Given separate
-    // try/catches now, matching the pattern app/api/stripe/webhook/
-    // route.ts already uses when calling this same cancel function.
+    // First prove which subscriptions belong to Alpha. A list failure,
+    // pagination, or invalid Alpha line shape makes every mutation unsafe.
     let cancelFailed = false;
+    let cancellationInspected = false;
+    let hasNonAlphaSubscriptions = false;
     try {
-      const { cancelled, skipped, errors } = await cancelCustomerSubscriptions(stripe, customerId);
+      const result = await cancelCustomerSubscriptions(stripe, customerId);
+      const { cancelled, skipped, errors } = result;
+      cancellationInspected = true;
+      hasNonAlphaSubscriptions = result.hasNonAlphaSubscriptions;
+      cancelFailed = errors > 0;
       console.log(
-        `${logPrefix} stripe ${customerId}: cancelled ${cancelled.length}, skipped ${skipped}, errors ${errors}`
+        `${logPrefix} stripe ${customerId}: cancelled ${cancelled.length} Alpha subscriptions, skipped ${skipped}, errors ${errors}, other products ${hasNonAlphaSubscriptions ? "present" : "absent"}`
       );
     } catch (cancelErr) {
       cancelFailed = true;
       console.warn(
-        `${logPrefix} stripe ${customerId}: subscription-cancel step threw, still attempting customer delete (deleting the Customer also cancels any live subscription, per Stripe's own documented behavior):`,
+        `${logPrefix} stripe ${customerId}: could not safely isolate Alpha subscriptions, preserving the Stripe Customer:`,
         describeStripeError(cancelErr)
       );
     }
-    try {
-      await stripe.customers.del(customerId);
-      console.log(`${logPrefix} stripe ${customerId}: customer object deleted`);
-    } catch (delErr) {
-      // A genuinely already-deleted customer (a retry, a race with a second
-      // delete click) throws here too -- Stripe's error message for that
-      // case contains "No such customer", distinct from a real API failure.
-      // Either way this is best-effort: log and move on, never block delete.
-      //
-      // alpha-drift-r29-05 (2026-08-14): describeStripeError, see lib/stripe.ts.
-      console.warn(`${logPrefix} stripe ${customerId}: customer delete failed:`, describeStripeError(delErr));
-      if (cancelFailed) {
-        // Both best-effort steps failed -- unlike a customers.del()-only
-        // failure (still caught by the weekly Stripe/Supabase reconcile
-        // job's orphaned-live-subscription check), a still-active
-        // subscription under a Customer that ALSO failed to delete has no
-        // other safety net, so this pages a human directly.
-        await sendOpsAlert(
-          "alpha: possible orphaned Stripe subscription after account delete",
-          `${logPrefix} user ${userId}'s account was deleted, but BOTH the subscription-cancel step and the customer-delete step failed for Stripe customer ${customerId}. If they had an active subscription, it may still be billing with no account left to manage it. Worth checking Stripe directly for this customer.`
-        ).catch(() => {});
-      }
+
+    if (!cancellationInspected || cancelFailed) {
+      await sendOpsAlert(
+        "alpha: possible orphaned Stripe subscription after account delete",
+        `${logPrefix} user ${userId}'s account deletion could not fully confirm exact Alpha subscription cleanup for Stripe customer ${customerId}. The account-wide Customer was preserved. Check the exact Alpha subscription directly.`
+      ).catch(() => {});
     }
+    if (hasNonAlphaSubscriptions) {
+      console.log(
+        `${logPrefix} stripe ${customerId}: another product subscription is attached`
+      );
+    }
+    console.log(
+      `${logPrefix} stripe ${customerId}: customer object preserved; Alpha does not delete account-wide Stripe Customers automatically`
+    );
   } catch (e) {
     console.warn(`${logPrefix} subscription cancel failed (proceeding with delete):`, describeStripeError(e));
   }

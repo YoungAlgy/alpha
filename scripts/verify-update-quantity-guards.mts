@@ -7,6 +7,8 @@
 // or under-bills add-on units; a broken status-set lookup silently 400s a
 // real paying subscriber trying to change tier.
 // Run: npx tsx scripts/verify-update-quantity-guards.mts
+import { readFileSync } from "node:fs";
+
 const { nextQuantity, isLiveForManagement, MAX_QTY, MIN_QTY } = await import(
   "../lib/update-quantity-guards.ts"
 );
@@ -15,7 +17,8 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 // --- nextQuantity: boundaries + a full up-then-down round trip -------------
@@ -50,6 +53,58 @@ check("(4) incomplete_expired -> NOT manageable", isLiveForManagement("incomplet
 check("(4) unpaid -> NOT manageable", isLiveForManagement("unpaid") === false);
 check("(4) incomplete -> NOT manageable (never completed initial payment)", isLiveForManagement("incomplete") === false);
 check("(4) paused -> NOT manageable", isLiveForManagement("paused") === false);
+
+// --- exact Alpha subscription binding in the mutation route ---------------
+console.log("(5) update route binds and mutates only one exact Alpha subscription");
+{
+  const route = readFileSync(
+    new URL("../app/api/stripe/update-quantity/route.ts", import.meta.url),
+    "utf8"
+  );
+  check(
+    "(5a) the user lookup includes the durable subscription id",
+    route.includes("stripe_customer_id, stripe_subscription_id, topic_quota")
+  );
+  check(
+    "(5b) a stored id is retrieved directly instead of scanning for the first live product",
+    route.includes("stripe.subscriptions.retrieve(storedSubscriptionId)") &&
+      !route.includes("subs.data.find((s) => isLiveForManagement(s.status))")
+  );
+  check(
+    "(5c) exact identity includes customer, one item, Alpha price, and quantity 1 through 5",
+    route.includes("stripeCustomerId(sub.customer) !== customerId") &&
+      route.includes("sub.items.data.length !== 1") &&
+      route.includes("priceId === STRIPE_PRICE_ID") &&
+      route.includes("(quantity as number) >= 1") &&
+      route.includes("(quantity as number) <= 5")
+  );
+  check(
+    "(5d) legacy lookup is restricted to the Alpha price and rejects pagination",
+    /stripe\.subscriptions\.list\(\{[\s\S]{0,250}customer: row\.stripe_customer_id,[\s\S]{0,120}price: STRIPE_PRICE_ID,[\s\S]{0,120}limit: 100/.test(route) &&
+      route.includes("if (subs.has_more || !Array.isArray(subs.data))")
+  );
+  check(
+    "(5e) legacy lookup rejects invalid shapes and multiple current matches",
+    route.includes("if (!isExactAlphaSubscription(candidate, row.stripe_customer_id))") &&
+      route.includes("if (legacyMatches.length > 1)")
+  );
+  check(
+    "(5f) a legacy id is persisted with a compare-and-set",
+    route.includes(".update({ stripe_subscription_id: sub.id })") &&
+      route.includes('.is("stripe_subscription_id", null)') &&
+      route.includes("racedRow?.stripe_subscription_id !== sub.id")
+  );
+  check(
+    "(5g) only the verified Alpha item id is sent to Stripe",
+    route.includes("!item || !isExactAlphaSubscription(sub, row.stripe_customer_id)") &&
+      route.includes("{ items: [{ id: item.id, quantity: nextQty }] }")
+  );
+  check(
+    "(5h) the post-update read is checked against the same exact binding",
+    route.includes("fresh.id !== sub.id") &&
+      route.includes("!isExactAlphaSubscription(fresh, row.stripe_customer_id)")
+  );
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) {

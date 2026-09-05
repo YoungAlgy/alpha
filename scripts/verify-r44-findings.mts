@@ -1,8 +1,8 @@
 // Verify round 44 findings: 3 confirmed, 8 refuted (out of 11 raw findings
 // across 5 dimensions -- mutation-authorization-audit found nothing at
 // all, a reassuring signal on that specific surface).
-// - app/api/admin/users/route.ts: clear_suppression's final write was a
-//   plain check-then-act, not a real compare-and-swap like grant_free/
+// - app/api/admin/users/route.ts: the former clear_suppression final write was
+//   a plain check-then-act, unlike grant_free/
 //   revoke_free -- the `fresh` re-read only proved nothing had changed AT
 //   READ TIME, leaving the window between that read and the write landing
 //   still open to a genuine bounce/complaint webhook getting silently
@@ -28,21 +28,30 @@ let pass = 0,
   fail = 0;
 const check = (label: string, cond: boolean) => {
   console.log(`  ${cond ? "OK " : "XX "} ${label}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
-console.log("(1) app/api/admin/users/route.ts: clear_suppression's final write is now a real compare-and-swap");
+console.log("(1) clear_suppression is hard-held while its durable claim protocol remains fail-closed in source");
 {
   const src = readFileSync(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8");
-  check("(1a) the WHERE clause is now built from the fresh snapshot per-column", /fresh\.bounced_at === null \? suppressionQuery\.is\("bounced_at", null\) : suppressionQuery\.eq\("bounced_at", fresh\.bounced_at\)/.test(src));
-  check("(1b) same treatment for complained_at", /fresh\.complained_at === null \? suppressionQuery\.is\("complained_at", null\) : suppressionQuery\.eq\("complained_at", fresh\.complained_at\)/.test(src));
-  check("(1c) .select(\"id\") is chained to detect a 0-row lost race", /const \{ error, data: suppressionUpdated \} = await suppressionQuery\.select\("id"\);/.test(src));
-  check("(1d) a 0-row result is detected and reported, not silently treated as success", /if \(!suppressionUpdated \|\| suppressionUpdated\.length === 0\) \{/.test(src) && /lost race, a bounce\/complaint landed between the fresh-read and the write/.test(src));
-  check("(1e) the old unconditional, unguarded UPDATE is gone", !/\.update\(\{ bounced_at: null, complained_at: null \}\)\s*\n\s*\.eq\("id", body\.userId\);/.test(src));
+  const helper = readFileSync(new URL("../lib/suppression-recovery.ts", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../supabase/migrations/20260830050000_resend_suppression_causality.sql", import.meta.url), "utf8");
+  const clearStart = src.indexOf('if (body.action === "clear_suppression")');
+  const clearEnd = src.indexOf("const sb = await supabaseServiceClient();", clearStart);
+  const clearBlock = src.slice(clearStart, clearEnd);
+  check("(1a0) the held clear branch was extracted narrowly and is nonempty", clearBlock.length > 100 && clearEnd > clearStart);
+  check("(1a) the route returns the stable hold before any direct provider or helper work", clearBlock.includes('code: "manual_recovery_disabled"') && clearBlock.includes("status: 409") && !clearBlock.includes("recoverResendSuppression({") && !clearBlock.includes("removeResendSuppression(") && !clearBlock.includes("suppressionQuery"));
+  check("(1b) dormant SQL protocol: the claim stores a fixed comparison snapshot before the provider leg", migration.includes("suppression_recovery_snapshot jsonb") && migration.includes("suppression_recovery_snapshot = public.resend_suppression_recovery_snapshot(to_jsonb(v_user))"));
+  check("(1b2) dormant SQL protocol: finalization binds the recovery token and compares the same snapshot", migration.includes("v_user.suppression_recovery_token is distinct from p_recovery_token") && migration.includes("public.resend_suppression_recovery_snapshot(to_jsonb(v_user))") && migration.includes("= v_user.suppression_recovery_snapshot"));
+  check("(1b3) dormant SQL protocol: the recovery fence is durable and has no automatic expiry", migration.includes("This fence has no automatic expiry") && migration.includes("suppression_recovery_token is not null"));
+  check("(1c) dormant helper returns manual_recovery_disabled before configuration or RPC work", helper.indexOf('return { status: "manual_recovery_disabled" }') > -1 && helper.indexOf('return { status: "manual_recovery_disabled" }') < helper.indexOf("if (!params.providerConfigured)") && helper.indexOf('return { status: "manual_recovery_disabled" }') < helper.indexOf('"claim_resend_suppression_recovery"'));
+  check("(1d) the held route makes no provider attempt; dormant helper retains one guarded implementation", !src.includes("recoverResendSuppression({") && (helper.match(/removeSuppression\(claimed\.recipient_email\)/g) || []).length === 1);
+  check("(1e) deletion and identity changes are guarded while recovery is unresolved", migration.includes("account deletion blocked by unresolved suppression recovery") && migration.includes("account identity change blocked by unresolved suppression recovery"));
 
   // Sanity: the sibling grant_free CAS pattern this fix mirrors is
   // unchanged.
-  check("(1f) sanity: grant_free's own established CAS pattern (the one this fix mirrors) is untouched", /\.is\("stripe_customer_id", null\)\s*\n\s*\.select\("id"\);/.test(src));
+  check("(1f) sanity: grant_free still checks both Stripe IDs and detects 0-row updates", /\.is\("stripe_customer_id", null\)\s*\n\s*\.is\("stripe_subscription_id", null\)/.test(src) && /const \{ error, data: updated \} = await grant\s*\n\s*\.select\("id"\);/.test(src));
 }
 
 console.log("(2) app/settings/page.tsx: \"Your topics\" and \"Email\" now gate on quotaLoaded like the sibling Billing section");

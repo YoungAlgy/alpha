@@ -19,8 +19,10 @@ export const CSRF_GUARDED_SUFFIXES = [
   '/api/account/profile',
   '/api/account/email/reconcile',
   '/api/account/topics',
+  '/api/access/request',
   '/api/admin/users',
   '/api/stripe/portal',
+  '/api/stripe/cancel-renewal',
   '/api/stripe/update-quantity',
   // /api/generate's primary use (onboarding, gated by a Stripe checkout
   // session id) needs no cookie and was never CSRF-relevant on its own. But
