@@ -795,6 +795,12 @@ Up to three items, and ship two or even one rather than padding with a weak or r
       console.warn(`[topic-blurb] ${topicId} ${weekOf}: Sonnet tells-retry failed, shipping the original draft with its slip: ${e instanceof Error ? e.message : e}`);
     }
   }
+  // An empty terminal draft is not a successful section. Throw so assemble's
+  // existing catch can preserve the already-resolved safe sources through the
+  // deterministic formatter, just as it does when every writer tier rejects.
+  if (finalized.items.length === 0) {
+    throw new Error(`${topicId} ${weekOf}: Sonnet draft had 0 usable items after guards`);
+  }
   return { topicId, topicLabel: label, weekOf, intro: finalized.intro, items: finalized.items };
 }
 

@@ -8,7 +8,8 @@ import vm from "node:vm";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const gate = read("./verify-deploy-release.mjs");
-const smoke = read("./smoke-test-deploy.mjs");
+// Predicate extraction must work in both Windows and Unix checkouts.
+const smoke = read("./smoke-test-deploy.mjs").replace(/\r\n/g, "\n");
 const accessPolicy = read("../lib/access-mode.ts").replace(/\r\n/g, "\n");
 const deliveryPolicy = read("../lib/subscriber-delivery-policy.ts").replace(/\r\n/g, "\n");
 const suppressionPolicy = read("../lib/suppression-recovery-policy.ts").replace(/\r\n/g, "\n");

@@ -52,14 +52,16 @@ export async function POST(req: Request) {
   }
 
   const clientKey = clientKeyFromRequest(req);
-  const limited = rateLimit(`access-request:${clientKey}`, {
-    limit: 3,
-    windowMs: 24 * 60 * 60 * 1000,
+  // Malformed or signed-out attempts need a short abuse brake. They must
+  // not consume a household's daily allowance for confirmed requests.
+  const burst = rateLimit(`access-request-burst:${clientKey}`, {
+    limit: 10,
+    windowMs: 60 * 1000,
   });
-  if (!limited.ok) {
+  if (!burst.ok) {
     return NextResponse.json(
-      { error: "Too many requests. Try again tomorrow." },
-      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+      { error: "Too many attempts. Try again in a minute." },
+      { status: 429, headers: { "Retry-After": String(burst.retryAfterSec) } }
     );
   }
 
@@ -127,6 +129,17 @@ export async function POST(req: Request) {
           "The signed-in account uses a different email. Go back and use that account email, or sign out before trying this one.",
       },
       { status: 403 }
+    );
+  }
+
+  const limited = rateLimit(`access-request:${clientKey}`, {
+    limit: 3,
+    windowMs: 24 * 60 * 60 * 1000,
+  });
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Too many requests. Try again tomorrow." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
     );
   }
 
