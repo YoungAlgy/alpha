@@ -100,12 +100,44 @@ assert.equal(noCharge(503, { error: "invite_only" }, "no-store", "invite_only"),
 assert.equal(noCharge(410, { error: "wrong" }, "no-store", "invite_only"), false);
 assert.equal(noCharge(410, { error: "invite_only" }, "public", "invite_only"), false);
 
+const requiredHealthSource = smoke.match(/function inviteRequiredHealthFailures[\s\S]*?\n}/)?.[0];
+assert.ok(requiredHealthSource, "invite health requirements must remain source-extractable");
+const requiredHealthSandbox: Record<string, unknown> = {};
+vm.runInNewContext(`${requiredHealthSource}\nthis.failures = inviteRequiredHealthFailures;`, requiredHealthSandbox);
+const inviteRequiredHealthFailures = requiredHealthSandbox.failures as (body: unknown) => string[];
+const inviteHealth = {
+  checks: {
+    resend: true,
+    unsubscribe: true,
+    supabase: true,
+    stripe: false,
+    stripeWebhook: false,
+    checkoutBinding: false,
+    legacyCheckoutCutoff: false,
+  },
+  hardFailures: [],
+};
+assert.equal(inviteRequiredHealthFailures(inviteHealth).length, 0);
+for (const name of ["resend", "unsubscribe", "supabase"] as const) {
+  const changed = {
+    ...inviteHealth,
+    checks: { ...inviteHealth.checks, [name]: false },
+  };
+  assert.equal(inviteRequiredHealthFailures(changed).join(), name, `${name} must block invite launch`);
+}
+assert.equal(inviteRequiredHealthFailures({ ...inviteHealth, hardFailures: ["supabase"] }).join(), "hardFailures");
+assert.equal(inviteRequiredHealthFailures({ ...inviteHealth, hardFailures: null }).join(), "hardFailures");
+
 assert.match(smoke, /EXPECTED_CHECKOUT_MODE !== "paused"/);
 assert.match(smoke, /body\?\.accessMode === "invite"/);
 assert.match(smoke, /body\?\.subscriberDeliveryMode === "paused"/);
 assert.match(smoke, /\/api\/stripe\/checkout/);
 assert.match(smoke, /\/api\/stripe\/update-quantity/);
 assert.match(smoke, /\/api\/stripe\/portal/);
+assert.match(smoke, /\/api\/webhooks\/resend/);
+assert.match(smoke, /Missing svix headers/);
+assert.match(smoke, /billing wind-down warning, not failing/);
+assert.match(smoke, /old-key revocation/);
 assert.doesNotMatch(smoke, /fetchWithTimeout\(`\$\{BASE_URL\}\/api\/(?:generate|cron)/);
 
 for (const [label, route, exactError] of [

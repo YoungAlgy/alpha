@@ -16,9 +16,8 @@ name: Daily letter watchdog
 # than trusting the app's own /api/health for the delivery check (that
 # endpoint only proves the app is reachable and configured, not that
 # today's send actually happened -- it stayed green the whole 5-day
-# outage). /api/health IS used below, but only for the second job, to check
-# something it's actually authoritative about: which of its own API keys
-# are configured.
+# outage). /api/health is used in the first job only to prove the exact
+# live release's delivery policy before an intentional pause skips coverage.
 #
 # Runs 2 hours after the app's own 14:00 UTC cron, giving it time to
 # actually finish sending to every subscriber before checking.
@@ -49,8 +48,10 @@ name: Daily letter watchdog
 # - The RPC now returns a direct per-subscriber uncovered_count. Any value
 #   above zero is an alert. The old partial-send percentage threshold could
 #   still report success while a real subscriber remained uncovered.
-# - Delivery issues close only after uncovered_count reaches zero. A zero
-#   active-subscriber day naturally returns zero uncovered and is still OK.
+# - During active delivery, delivery issues close only after uncovered_count
+#   reaches zero. A zero active-subscriber day returns zero uncovered. A
+#   verified intentional pause can also close a stale delivery-only issue,
+#   with a note that closure does not prove historical missed sends recovered.
 # - None of the curl calls set a timeout, so a stalled connection (TCP
 #   accepted, response never completes) could hang the job for hours
 #   instead of failing fast into the alert path. All curls now bound.
@@ -70,8 +71,17 @@ jobs:
   check-delivery:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read # only this job reads the checked-out delivery policy
+      issues: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Check Supabase for real, complete delivery in the last 20 hours
+        # A failed checkout must still reach the release-state alert path.
+        if: ${{ !cancelled() }}
         env:
           SUPABASE_URL: ${{ secrets.WATCHDOG_SUPABASE_URL }}
           # Public anon/publishable key, NOT the full-privilege secret key --
@@ -148,6 +158,45 @@ jobs:
             # and doesn't depend on Resend at all.
             [ "${resend_exit}" -eq 0 ] || echo "WARNING: Resend alert call failed (curl exit ${resend_exit}) -- the GitHub Issue channel is still the source of truth."
           }
+
+          # Skip coverage only when the checked-out source policy and the live
+          # Worker both prove the SAME exact release is paused. A push ahead of
+          # deployment, an old live Worker, a broken health endpoint, or an
+          # unrecognized policy is an alert, never permission to skip.
+          RELEASE_SEARCH_PHRASE="Daily letter release state unverified"
+          RELEASE_ISSUE_TITLE="⚠️ ${RELEASE_SEARCH_PHRASE}"
+          HEALTH_FILE="${RUNNER_TEMP}/alpha-watchdog-health.json"
+          HEALTH_HTTP_STATUS=$(curl -sS --max-time 15 --connect-timeout 5 --max-filesize 8192 \
+            -o "${HEALTH_FILE}" -w '%{http_code}' \
+            'https://alpha.everyday.report/api/health')
+          HEALTH_CURL_EXIT=$?
+          MODE_CHECK_REASON=""
+          if [ "${HEALTH_CURL_EXIT}" -ne 0 ]; then
+            MODE_CHECK_REASON="live_health_fetch_failed"
+          else
+            WATCHDOG_CHECKOUT_SHA=$(git rev-parse HEAD 2>/dev/null)
+            MODE=$(WATCHDOG_CHECKOUT_SHA="${WATCHDOG_CHECKOUT_SHA}" \
+              WATCHDOG_HEALTH_HTTP_STATUS="${HEALTH_HTTP_STATUS}" \
+              node scripts/alpha-watchdog-delivery-mode.mjs < "${HEALTH_FILE}")
+            MODE_CHECK_EXIT=$?
+            if [ "${MODE_CHECK_EXIT}" -ne 0 ]; then
+              MODE_CHECK_REASON="source_or_live_health_mismatch"
+            fi
+          fi
+          if [ -n "${MODE_CHECK_REASON}" ]; then
+            echo "ALERT: the expected subscriber-delivery state could not be verified (${MODE_CHECK_REASON})."
+            ALERT_BODY="The watchdog could not prove that the checked-out source policy and live Alpha health agree on one exact release. Health HTTP status: ${HEALTH_HTTP_STATUS:-unavailable}. No delivery skip was accepted. Check the release SHA, live health, and source policy. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            send_resend_alert "[alpha] Delivery release state unverified" "${ALERT_BODY}"
+            open_or_update_issue "${RELEASE_SEARCH_PHRASE}" "${RELEASE_ISSUE_TITLE}" "${ALERT_BODY}"
+            exit 1
+          fi
+          close_issue_if_open "${RELEASE_SEARCH_PHRASE}" "Resolved: live health and the checked-out delivery policy agree on the exact release as of $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+          if [ "${MODE}" = "paused" ]; then
+            echo "OK: subscriber letters are intentionally paused in the exact live release. Delivery coverage is not expected."
+            close_issue_if_open "Daily letter send may be broken" "Closed because the exact live release intentionally pauses subscriber letters. This does not prove historical missed deliveries were recovered."
+            close_issue_if_open "Daily letter send may be incomplete" "Closed because the exact live release intentionally pauses subscriber letters. This does not prove historical missed deliveries were recovered."
+            exit 0
+          fi
 
           # 20h, not 24h: the check runs ~2h after the expected 14:00 UTC
           # send, so a genuinely missed day's send always falls outside this
@@ -315,7 +364,6 @@ jobs:
           SEND_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           SEND_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
           SEND_SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
-          SEND_CHECKOUT_BINDING_SECRET: ${{ secrets.SEND_CHECKOUT_BINDING_SECRET }}
           SEND_ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
           SEND_GEMINI_API_KEY: ${{ secrets.SEND_GEMINI_API_KEY }}
           SEND_GROQ_API_KEY: ${{ secrets.SEND_GROQ_API_KEY }}
@@ -399,7 +447,7 @@ jobs:
           # keys are individually soft. With all of them absent, an already
           # usable persisted issue or bounded prior-issue backup remains.
           HARD_MISSING=""
-          for name in SEND_CRON_SECRET SEND_RESEND_API_KEY SEND_RESEND_FROM SEND_UNSUBSCRIBE_SECRET SEND_SUPABASE_URL SEND_SUPABASE_PUBLISHABLE_KEY SEND_SUPABASE_SECRET_KEY SEND_CHECKOUT_BINDING_SECRET; do
+          for name in SEND_CRON_SECRET SEND_RESEND_API_KEY SEND_RESEND_FROM SEND_UNSUBSCRIBE_SECRET SEND_SUPABASE_URL SEND_SUPABASE_PUBLISHABLE_KEY SEND_SUPABASE_SECRET_KEY; do
             val="${!name:-}"
             [ -n "${val}" ] || HARD_MISSING="${HARD_MISSING}${HARD_MISSING:+, }${name}"
           done

@@ -16,6 +16,7 @@
 // recovery paths at exactly the moment they are needed.
 
 import { isExactAlphaSupabaseUrl } from "./alpha-supabase-url.mjs";
+import { readBoundedJson } from "./alpha-preflight-response.mjs";
 
 const GENERATOR_KEYS = [
   "ANTHROPIC_API_KEY",
@@ -24,12 +25,11 @@ const GENERATOR_KEYS = [
   "DEEPSEEK_API_KEY",
 ];
 
-const MAINTENANCE_REQUIRED = [
+const SEND_BASE_REQUIRED = [
   "CRON_SECRET",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SECRET_KEY",
-  "CHECKOUT_BINDING_SECRET",
 ];
 
 const DELIVERY_REQUIRED = [
@@ -45,7 +45,7 @@ const SOFT_RESILIENCE_TIER = [
   "ALPHA_OPS_ALERT_WEBHOOK_URL",
 ];
 
-let maintenanceFailures = 0;
+let baseFailures = 0;
 let deliveryReady = true;
 
 function configured(name) {
@@ -64,10 +64,10 @@ async function setWorkflowOutput(name, value) {
   fs.appendFileSync(outputPath, `${name}=${value}\n`);
 }
 
-for (const name of MAINTENANCE_REQUIRED) {
+for (const name of SEND_BASE_REQUIRED) {
   if (!configured(name)) {
-    console.error(`::error::${name} is not set (or empty). Local scheduled maintenance cannot run safely.`);
-    maintenanceFailures++;
+    console.error(`::error::${name} is not set (or empty). Delivery cannot run safely.`);
+    baseFailures++;
   }
 }
 
@@ -78,12 +78,12 @@ if (
   console.error(
     "::error::NEXT_PUBLIC_SUPABASE_URL does not match Alpha's dedicated Supabase project (value withheld)."
   );
-  maintenanceFailures++;
+  baseFailures++;
 }
 
 for (const name of DELIVERY_REQUIRED) {
   if (!configured(name)) {
-    console.error(`::error::${name} is not set (or empty). Letter generation will be skipped, but billing and privacy maintenance can still run.`);
+    console.error(`::error::${name} is not set (or empty). Stopping before install, build or generation.`);
     deliveryReady = false;
   }
 }
@@ -132,28 +132,20 @@ for (const name of SOFT_RESILIENCE_TIER) {
   }
 }
 
-if (!configured("STRIPE_SECRET_KEY")) {
-  console.warn(
-    "::warning::STRIPE_SECRET_KEY is not set. Letter delivery can continue, but overdue paid-checkout cleanup cannot verify or cancel its exact Stripe subscription and the workflow will report a maintenance failure if one is due."
-  );
-}
-
-if (maintenanceFailures > 0) {
-  await setWorkflowOutput("maintenance_ready", "false");
+if (baseFailures > 0 || !deliveryReady) {
   await setWorkflowOutput("delivery_ready", "false");
   await setWorkflowOutput("fresh_source_ready", "false");
   console.error(
-    `\n::error:: ${maintenanceFailures} maintenance requirement(s) failed. Stopping because the local repair route cannot authenticate or reach its database. ` +
+    `\n::error:: Delivery requirements failed. Stopping before install, build or generation. ` +
     `Check this workflow's secrets against the SEND_* (or WATCHDOG_*) values in the repo settings.`
   );
   process.exit(1);
 }
 
-await setWorkflowOutput("maintenance_ready", "true");
 await setWorkflowOutput("fresh_source_ready", String(freshSourceReady));
 
 console.log(
-  `OK: all ${MAINTENANCE_REQUIRED.length} maintenance secrets present and ` +
+  `OK: all ${SEND_BASE_REQUIRED.length} base delivery secrets present and ` +
   `${configuredGenerators.length} content generator(s) configured` +
   `${configuredGenerators.length > 0 ? ` (${configuredGenerators.join(", ")})` : " (backup-only mode)"}.`
 );
@@ -168,32 +160,34 @@ if (deliveryReady) {
   try {
     const res = await fetch("https://api.resend.com/domains", {
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+      redirect: "error",
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
-      console.error(`::error::Resend API key check failed (HTTP ${res.status}). Letter generation will be skipped; maintenance will still run.`);
+      console.error(`::error::Resend API key check failed (HTTP ${res.status}). Stopping before install, build or generation.`);
       deliveryReady = false;
     } else {
-      const data = await res.json();
-      const domains = (data.data || []).map((d) => d.name);
+      const data = await readBoundedJson(res, 65_536);
+      const domains = Array.isArray(data?.data) ? data.data : [];
       const fromMatch = process.env.RESEND_FROM?.match(/@([^\s>]+)/);
       const fromDomain = fromMatch ? fromMatch[1] : null;
-      if (!fromDomain || !domains.includes(fromDomain)) {
+      if (fromDomain !== "everyday.report" || !domains.some((d) => d?.name === fromDomain && d?.status === "verified")) {
         console.error(
-          `::error::RESEND_FROM's domain (${fromDomain ?? "invalid"}) is not verified in this Resend account. Letter generation will be skipped; maintenance will still run.`
+          "::error::The Alpha sender domain is not verified in this Resend account. Stopping before install, build or generation. Values withheld."
         );
         deliveryReady = false;
       } else {
         console.log(`OK: Resend key valid, RESEND_FROM domain (${fromDomain}) is verified.`);
       }
     }
-  } catch (e) {
-    console.error(`::error::Resend connectivity check failed: ${e instanceof Error ? e.message : e}. Letter generation will be skipped; maintenance will still run.`);
+  } catch {
+    console.error("::error::Resend connectivity or response check failed. Stopping before install, build or generation. Details withheld.");
     deliveryReady = false;
   }
 }
 
 await setWorkflowOutput("delivery_ready", String(deliveryReady));
 if (!deliveryReady) {
-  console.error("::error::Delivery preflight failed. The workflow will run maintenance locally, skip letter generation, then fail red.");
+  console.error("::error::Delivery preflight failed. No install, build or generation may follow.");
+  process.exit(1);
 }

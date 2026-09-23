@@ -119,9 +119,8 @@ jobs:
     # change to this gate and lib/subscriber-delivery-policy.ts together.
     if: ${{ false }}
     runs-on: ubuntu-latest
-    # Build + the bounded 55-minute multi-page delivery drain + three isolated
-    # 5-minute maintenance lanes + process drain/restart windows need headroom.
-    # Each lane is attempted even when delivery or another lane fails.
+    # Preserve headroom around the bounded 55-minute delivery loop and final
+    # 120-second process drain, including slow checkout/install/build days.
     timeout-minutes: 90
     steps:
       # Skips the expensive checkout/npm ci/build/start below when today's
@@ -146,9 +145,7 @@ jobs:
       # exists and would give a meaningless answer for one.
       #
       # Reuses letter-watchdog.yml's watchdog_delivery_check() RPC for send
-      # coverage. It also checks the service-only checkout staging table for
-      # an overdue raw profile. The latter returns only due/not-due and needs
-      # the service key because anonymous clients cannot read that table.
+      # coverage. Nonletter maintenance has its own disabled workflow.
       #
       # 2026-08-05: rewritten from an aggregate-count comparison
       # (delivered_count >= active_count) to a genuine per-subscriber
@@ -166,7 +163,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
         run: |
           set +e
           # This step runs before checkout, so keep the exact Alpha project
@@ -196,7 +192,7 @@ jobs:
             -d "{\"cutoff\": \"${CUTOFF}\"}" \
             "${SUPABASE_URL}/rest/v1/rpc/watchdog_delivery_check")
           CURL_EXIT=$?
-          echo "Pre-check RPC response (curl exit ${CURL_EXIT}): ${RESPONSE}"
+          echo "Pre-check RPC curl exit: ${CURL_EXIT}. Response body withheld."
 
           if [ "${CURL_EXIT}" -ne 0 ]; then
             UNCOVERED_COUNT=-1
@@ -210,8 +206,11 @@ jobs:
                 if (Array.isArray(data) && data.length === 1 &&
                     typeof data[0].uncovered_count === 'number' &&
                     typeof data[0].active_subscriber_count === 'number') {
-                  uncovered = data[0].uncovered_count;
-                  active = data[0].active_subscriber_count;
+                  if (Number.isSafeInteger(data[0].uncovered_count) && data[0].uncovered_count >= 0 &&
+                      Number.isSafeInteger(data[0].active_subscriber_count) && data[0].active_subscriber_count >= 0) {
+                    uncovered = data[0].uncovered_count;
+                    active = data[0].active_subscriber_count;
+                  }
                 }
               } catch {}
               console.log(uncovered + ' ' + active);
@@ -223,34 +222,9 @@ jobs:
           fi
           echo "uncovered=${UNCOVERED_COUNT} active=${ACTIVE_COUNT}"
 
-          # Delivery can already be complete while durable checkout, deletion,
-          # suppression, billing-email, or refund-review work is due. Ask one
-          # service-only RPC for a boolean and never return or print row data.
-          MAINTENANCE_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          MAINTENANCE_DUE_RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
-            -H "apikey: ${SUPABASE_SECRET_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"p_now\": \"${MAINTENANCE_NOW}\"}" \
-            "${SUPABASE_URL}/rest/v1/rpc/alpha_scheduled_maintenance_due")
-          MAINTENANCE_DUE_CURL_EXIT=$?
-          if [ "${MAINTENANCE_DUE_CURL_EXIT}" -ne 0 ]; then
-            MAINTENANCE_DUE=-1
-          else
-            MAINTENANCE_DUE=$(RESPONSE="${MAINTENANCE_DUE_RESPONSE}" node -e "
-              try {
-                const data = JSON.parse(process.env.RESPONSE || '');
-                process.stdout.write(typeof data === 'boolean' ? String(data ? 1 : 0) : '-1');
-              } catch { process.stdout.write('-1'); }
-            ")
-          fi
-          [ -n "${MAINTENANCE_DUE}" ] || MAINTENANCE_DUE=-1
-          echo "scheduled_maintenance_due=${MAINTENANCE_DUE}"
-
-          # Only skip on a CONFIDENT positive signal: real active subscribers
-          # exist, zero are uncovered, and no scheduled repair is due. -1 (any
-          # failure above) and 0 active both fall through to "proceed".
-          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ "${UNCOVERED_COUNT}" -eq 0 ] && [ "${MAINTENANCE_DUE}" -eq 0 ]; then
+          # Only skip on confident delivery coverage. Uncertain RPC output and
+          # zero active subscribers proceed through the normal pipeline.
+          if [ "${ACTIVE_COUNT}" -gt 0 ] && [ "${UNCOVERED_COUNT}" -eq 0 ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "SKIP: 0/${ACTIVE_COUNT} active subscribers uncovered today -- nothing to retry."
           else
@@ -260,6 +234,8 @@ jobs:
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: steps.precheck.outputs.skip != 'true'
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: steps.precheck.outputs.skip != 'true'
@@ -281,11 +257,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
-          CHECKOUT_BINDING_SECRET: ${{ secrets.SEND_CHECKOUT_BINDING_SECRET }}
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
-          STRIPE_SECRET_KEY: ${{ secrets.RECONCILE_STRIPE_SECRET_KEY }}
           ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           ALPHA_NO_MODEL_MODE: ${{ vars.SEND_ALPHA_NO_MODEL_MODE }}
           ALPHA_PUBLIC_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK }}
@@ -358,13 +332,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
-          # Must match the stable Cloudflare copy. General maintenance can
-          # replay an interrupted Checkout Session created by the live Worker.
-          CHECKOUT_BINDING_SECRET: ${{ secrets.SEND_CHECKOUT_BINDING_SECRET }}
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
-          STRIPE_SECRET_KEY: ${{ secrets.RECONCILE_STRIPE_SECRET_KEY }}
           # route.ts's sendOpsAlert() falls back to this when Resend itself
           # is the thing that's broken (see lib/email.ts's comment on
           # sendOpsAlertViaWebhook). Live since 2026-08-05 -- posts to a
@@ -373,7 +343,6 @@ jobs:
           ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
           WEEK_OF_INPUT: ${{ inputs.weekOf }}
-          DELIVERY_READY: ${{ steps.preflight.outputs.delivery_ready }}
         run: |
           set -uo pipefail
           set +e
@@ -442,9 +411,6 @@ jobs:
               append_public_count 'events.deferred' '[cron/weekly-send] DEFERRED (time budget exhausted)'
               append_public_count 'events.eligibility_recheck_failed' '[cron/weekly-send] eligibility re-check could not prove access'
               append_public_count 'events.retry_shape_mismatch' '[cron/weekly-send] persisted retry content failed shape validation'
-              append_public_count 'events.account_deletion_summary' '[cron/account-deletion-maintenance] summary:'
-              append_public_count 'events.maintenance_summary' '[cron/maintenance] summary:'
-              append_public_count 'events.provider_mirror_summary' '[cron/provider-mirror-maintenance] summary:'
             else
               printf '%s=%s\n' 'raw_log_present' '0' >> "${PUBLIC_SERVER_LOG_TMP}"
               printf '%s=%s\n' 'raw_line_count' '0' >> "${PUBLIC_SERVER_LOG_TMP}"
@@ -628,7 +594,6 @@ jobs:
             echo "Manual weekOf override: ${WEEK_OF_INPUT}"
           fi
 
-          SEND_SKIPPED_FOR_PREFLIGHT=0
           DELIVERY_CURL_FAILED=0
           DELIVERY_HTTP_FAILED=0
           DELIVERY_SHAPE_FAILED=0
@@ -652,7 +617,7 @@ jobs:
           MIN_DELIVERY_PAGE_SECONDS=300
           DELIVERY_DRAIN_STARTED=$(date +%s)
           RESPONSE=''
-          if [ "${DELIVERY_READY}" = "true" ]; then
+          # Preflight exits nonzero before npm ci when delivery is not ready.
             while true; do
               if [ "${DELIVERY_PAGE_COUNT}" -ge "${MAX_DELIVERY_PAGES}" ]; then
                 DELIVERY_DRAIN_INCOMPLETE=1
@@ -778,7 +743,7 @@ jobs:
 
               # A cursor conflict is the only page result that cannot claim
               # durable scan progress. Continue later rows read-only, then fail
-              # red after maintenance. Retry-required rows on a successful CAS
+              # red after the final drain. Retry-required rows on a successful CAS
               # use advanced_with_retry and stay in normal round-robin flow.
               if [ "${PAGE_CURSOR_FAILED}" -eq 1 ]; then
                 if [ "${PAGE_HAS_MORE}" -eq 1 ]; then
@@ -837,104 +802,22 @@ jobs:
               DELIVERY_DRAIN_INCOMPLETE=1
             fi
             echo "Delivery drain summary: pages=${DELIVERY_PAGE_COUNT}, retry_required=${DELIVERY_RETRY_REQUIRED_TOTAL}, uncovered=${DELIVERY_UNCOVERED_TOTAL}, tail_drained=${DELIVERY_TAIL_DRAINED}."
-          else
-            SEND_SKIPPED_FOR_PREFLIGHT=1
-            echo "Skipping letter generation because delivery preflight failed. Maintenance will still run."
-          fi
-
           # Weekly send can return while a self-bounded Next after() delivery
-          # tail is still settling. Fully drain that process before any
-          # access-ending maintenance starts, then use a fresh server. This
-          # prevents a loaded email send from crossing an account deletion or
-          # subscription revocation boundary.
-          echo "Draining the send server before maintenance ..."
+          # tail is still settling. Drain the server before this job exits.
+          echo "Draining the send server ..."
           if ! stop_alpha_server 120; then
-            echo "::error::Could not prove the delivery server stopped before access-ending maintenance."
-            exit 1
-          fi
-          if ! start_alpha_server; then
-            echo "::error::Could not start the isolated maintenance server."
+            echo "::error::Could not prove the delivery server stopped."
             exit 1
           fi
 
-          # Billing, checkout-retention, and deletion repair runs only after
-          # the letter route has returned. A Stripe outage can make this job
-          # red, but it cannot hold up subscriber generation or delivery.
-          DELETION_CURL_EXIT=1
-          DELETION_HTTP_STATUS=000
-          DELETION_RESPONSE=''
-          MAINT_CURL_EXIT=1
-          MAINT_HTTP_STATUS=000
-          MAINT_RESPONSE=''
-          MIRROR_CURL_EXIT=1
-          MIRROR_HTTP_STATUS=000
-          MIRROR_RESPONSE=''
-          # Account deletion gets its own full request budget. A slow Stripe or
-          # Auth cleanup cannot consume the general maintenance route's entire
-          # window and starve every other repair queue.
-          echo "Calling account deletion maintenance ..."
-          DELETION_RAW=$(curl -sS --max-time 300 -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "http://localhost:3100/api/cron/account-deletion-maintenance")
-          DELETION_CURL_EXIT=$?
-          DELETION_HTTP_STATUS=$(echo "${DELETION_RAW}" | tail -n 1)
-          DELETION_RESPONSE=$(echo "${DELETION_RAW}" | sed '$d')
-          echo "Account deletion response (curl exit ${DELETION_CURL_EXIT}, HTTP ${DELETION_HTTP_STATUS}):"
-          echo "${DELETION_RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log('[account-deletion response redacted: invalid JSON]')}})"
-
-          # A local next start server does not enforce route maxDuration. Stop
-          # this process even on curl timeout so a slow deletion cannot keep
-          # running beside another maintenance class.
-          if ! stop_alpha_server 15; then
-            echo "::error::Could not isolate account deletion maintenance from the next lane."
-            exit 1
-          fi
-          if ! start_alpha_server; then
-            echo "::error::Could not restart Alpha for general maintenance."
-            exit 1
-          fi
-
-          # Run general maintenance even when the send or deletion request
-          # fails. Every independent recovery class must get a chance on the
-          # same bad day that causes a transport or provider error.
-          echo "Calling post-send maintenance ..."
-          MAINT_RAW=$(curl -sS --max-time 300 -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "http://localhost:3100/api/cron/maintenance")
-          MAINT_CURL_EXIT=$?
-          MAINT_HTTP_STATUS=$(echo "${MAINT_RAW}" | tail -n 1)
-          MAINT_RESPONSE=$(echo "${MAINT_RAW}" | sed '$d')
-          echo "Maintenance response (curl exit ${MAINT_CURL_EXIT}, HTTP ${MAINT_HTTP_STATUS}):"
-          echo "${MAINT_RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log('[maintenance response redacted: invalid JSON]')}})"
-
-          # Provider mirrors get their own process and request window. A slow
-          # checkout or cancellation recovery cannot keep email/suppression
-          # cleanup from being attempted.
-          if ! stop_alpha_server 15; then
-            echo "::error::Could not isolate general maintenance from the provider mirror lane."
-            exit 1
-          fi
-          if ! start_alpha_server; then
-            echo "::error::Could not restart Alpha for provider mirror maintenance."
-            exit 1
-          fi
-          echo "Calling provider mirror maintenance ..."
-          MIRROR_RAW=$(curl -sS --max-time 300 -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "http://localhost:3100/api/cron/provider-mirror-maintenance")
-          MIRROR_CURL_EXIT=$?
-          MIRROR_HTTP_STATUS=$(echo "${MIRROR_RAW}" | tail -n 1)
-          MIRROR_RESPONSE=$(echo "${MIRROR_RAW}" | sed '$d')
-          echo "Provider mirror response (curl exit ${MIRROR_CURL_EXIT}, HTTP ${MIRROR_HTTP_STATUS}):"
-          echo "${MIRROR_RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log('[provider-mirror response redacted: invalid JSON]')}})"
-          if ! stop_alpha_server 15; then
-            echo "::error::Could not prove the provider mirror server stopped."
-            exit 1
-          fi
-
-          if [ "${SEND_SKIPPED_FOR_PREFLIGHT}" -eq 0 ]; then
             if [ "${DELIVERY_CURL_FAILED}" -ne 0 ]; then
               build_public_server_log
-              echo "::error::A bounded delivery page curl failed. Maintenance still ran. See the public-safe operational summary below."
+              echo "::error::A bounded delivery page curl failed. See the public-safe operational summary below."
               tail -n 200 "${PUBLIC_SERVER_LOG}"
               exit 1
             fi
             if [ "${DELIVERY_HTTP_FAILED}" -ne 0 ]; then
-              echo "::error::A bounded delivery page returned a non-2xx status. Maintenance still ran."
+              echo "::error::A bounded delivery page returned a non-2xx status."
               exit 1
             fi
             if [ "${DELIVERY_SHAPE_FAILED}" -ne 0 ]; then
@@ -946,7 +829,7 @@ jobs:
               exit 1
             fi
             if [ "${DELIVERY_COST_BRAKE}" -ne 0 ]; then
-              echo "::error::The shared paid-call ceiling or its durable reservation failed. Subscriber fallbacks and maintenance were still attempted."
+              echo "::error::The shared paid-call ceiling or its durable reservation failed."
               exit 1
             fi
             if [ "${DELIVERY_CURSOR_FAILED}" -ne 0 ]; then
@@ -961,187 +844,8 @@ jobs:
               echo "::error::${DELIVERY_RETRY_REQUIRED_TOTAL} retry-required page outcome(s) were observed across ${DELIVERY_PAGE_COUNT} page(s). The fair scan cursor advanced, and uncovered readers stay eligible for wraparound retry."
               exit 1
             fi
-          fi
 
-          if [ "${DELETION_CURL_EXIT}" -ne 0 ]; then
-            echo "::error::Account deletion maintenance curl failed (exit ${DELETION_CURL_EXIT}). Letters were already processed."
-            exit 1
-          fi
-          if [ "${DELETION_HTTP_STATUS}" -lt 200 ] || [ "${DELETION_HTTP_STATUS}" -ge 300 ]; then
-            echo "::error::Account deletion maintenance returned HTTP ${DELETION_HTTP_STATUS}. Letters were already processed."
-            exit 1
-          fi
-          DELETION_STATUS=$(echo "${DELETION_RESPONSE}" | node -e "
-            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-              try {
-                const s = JSON.parse(d);
-                const a = s.accountDeletion;
-                const ints = [
-                  a?.inspected, a?.billingResumed, a?.authDeleted,
-                  a?.completed, a?.privacyBlocked, a?.errors,
-                  s.deletionTombstonesPruned, s.deletionPruneErrors,
-                  s.pendingDeletionSagas, s.pendingDeletionCountErrors,
-                  s.dueDeletionTombstones,
-                  s.dueDeletionTombstoneCountErrors,
-                  s.resendEventRetention?.pruned,
-                  s.resendEventRetention?.errors
-                ];
-                if (ints.some(v => !Number.isInteger(v) || v < 0) ||
-                    typeof s.resendEventRetention?.remaining !== 'boolean') {
-                  process.stdout.write('SHAPE_INVALID');
-                  return;
-                }
-                const failed = a.privacyBlocked + a.errors +
-                  s.deletionPruneErrors + s.pendingDeletionSagas +
-                  s.pendingDeletionCountErrors + s.dueDeletionTombstones +
-                  s.dueDeletionTombstoneCountErrors +
-                  s.resendEventRetention.errors +
-                  Number(s.resendEventRetention.remaining);
-                process.stdout.write(String(failed));
-              } catch { process.stdout.write('SHAPE_INVALID'); }
-            });
-          ")
-          if [ "${DELETION_STATUS}" = "SHAPE_INVALID" ]; then
-            echo "::error::Account deletion maintenance returned an unexpected summary shape. Letters were already processed."
-            exit 1
-          fi
-          if [ "${DELETION_STATUS}" != "0" ]; then
-            echo "::error::Account deletion maintenance has ${DELETION_STATUS} unresolved item(s). Letters were already processed."
-            exit 1
-          fi
-
-          if [ "${MAINT_CURL_EXIT}" -ne 0 ]; then
-            echo "::error::Post-send maintenance curl failed (exit ${MAINT_CURL_EXIT}). Letters were already processed."
-            exit 1
-          fi
-          if [ "${MAINT_HTTP_STATUS}" -lt 200 ] || [ "${MAINT_HTTP_STATUS}" -ge 300 ]; then
-            echo "::error::Post-send maintenance returned HTTP ${MAINT_HTTP_STATUS}. Letters were already processed."
-            exit 1
-          fi
-          MAINT_STATUS=$(echo "${MAINT_RESPONSE}" | node -e "
-            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-              try {
-                const s = JSON.parse(d);
-                const f = s.staleCheckoutFinalizer;
-                const t = s.terminalCheckoutScrub;
-                const c = s.checkoutCreation;
-                const r = s.checkoutRecovery;
-                const l = s.legacyDuplicate;
-                const n = s.renewalCancellation;
-                const ints = [
-                  s.checkoutRetentionErrors,
-                  f?.completed, f?.aborted, f?.errors,
-                  t?.profilesScrubbed, t?.fulfillmentsScrubbed, t?.errors,
-                  c?.inspected, c?.claimed, c?.inProgress, c?.reviewRequired, c?.bound,
-                  c?.expired, c?.deletionPending, c?.replayWindowMissed,
-                  c?.errors,
-                  r?.inspected, r?.recovered, r?.nonAccessBound,
-                  r?.inProgress, r?.cancelled,
-                  r?.terminallyScrubbed, r?.errors,
-                  l?.inspected, l?.inProgress, l?.finalized,
-                  l?.unresolved, l?.errors,
-                  n?.inspected, n?.scheduled, n?.alreadyScheduled, n?.retired,
-                  n?.inProgress, n?.unresolved, n?.errors,
-                  s.pendingCheckoutCreationReviews,
-                  s.checkoutCreationReviewErrors,
-                  s.deadLetteredCheckoutProfiles,
-                  s.checkoutDeadLetterCountErrors,
-                  s.deadLetteredLegacyCheckoutFulfillments,
-                  s.legacyDeadLetterCountErrors,
-                  s.pendingRenewalCancellations,
-                  s.renewalCancellationCountErrors,
-                  s.unresolvedRefundReviews, s.refundReviewErrors,
-                  s.resolvedRefundReviewsPruned,
-                  s.resolvedRefundReviewsRemaining,
-                  s.refundReviewPruneErrors
-                ];
-                if (ints.some(v => !Number.isInteger(v) || v < 0)) {
-                  process.stdout.write('SHAPE_INVALID');
-                  return;
-                }
-                const failed = s.checkoutRetentionErrors + f.aborted + f.errors +
-                  t.errors + c.inProgress + c.reviewRequired +
-                  c.deletionPending + c.replayWindowMissed + c.errors + r.errors +
-                  r.inProgress +
-                  l.inProgress + l.unresolved + l.errors +
-                  n.inProgress + n.unresolved + n.errors +
-                  s.pendingCheckoutCreationReviews +
-                  s.checkoutCreationReviewErrors +
-                  s.deadLetteredCheckoutProfiles +
-                  s.checkoutDeadLetterCountErrors +
-                  s.deadLetteredLegacyCheckoutFulfillments +
-                  s.legacyDeadLetterCountErrors +
-                  s.pendingRenewalCancellations +
-                  s.renewalCancellationCountErrors +
-                  s.unresolvedRefundReviews +
-                  s.refundReviewErrors +
-                  s.resolvedRefundReviewsRemaining +
-                  s.refundReviewPruneErrors;
-                process.stdout.write(String(failed));
-              } catch { process.stdout.write('SHAPE_INVALID'); }
-            });
-          ")
-          if [ "${MAINT_STATUS}" = "SHAPE_INVALID" ]; then
-            echo "::error::Post-send maintenance returned an unexpected summary shape. Letters were already processed."
-            exit 1
-          fi
-          if [ "${MAINT_STATUS}" != "0" ]; then
-            echo "::error::Post-send maintenance has ${MAINT_STATUS} unresolved item(s). Letters were already processed."
-            exit 1
-          fi
-
-          if [ "${MIRROR_CURL_EXIT}" -ne 0 ]; then
-            echo "::error::Provider mirror maintenance curl failed (exit ${MIRROR_CURL_EXIT}). Letters were already processed."
-            exit 1
-          fi
-          if [ "${MIRROR_HTTP_STATUS}" -lt 200 ] || [ "${MIRROR_HTTP_STATUS}" -ge 300 ]; then
-            echo "::error::Provider mirror maintenance returned HTTP ${MIRROR_HTTP_STATUS}. Letters were already processed."
-            exit 1
-          fi
-          MIRROR_STATUS=$(echo "${MIRROR_RESPONSE}" | node -e "
-            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-              try {
-                const s = JSON.parse(d);
-                const e = s.stripeEmailSync;
-                const p = s.suppression;
-                const ints = [
-                  e?.inspected, e?.cleared, e?.deferred, e?.errors,
-                  p?.inspected, p?.cleared, p?.deferred, p?.errors,
-                  s.pendingStripeEmailSyncs, s.stripeEmailSyncCountErrors,
-                  s.pendingSuppressions, s.suppressionCountErrors,
-                  s.unresolvedSuppressionRecoveries, s.suppressionRecoveryCountErrors,
-                  s.finalMaintenanceDueErrors
-                ];
-                if (ints.some(v => !Number.isInteger(v) || v < 0) ||
-                    typeof s.finalMaintenanceDue !== 'boolean') {
-                  process.stdout.write('SHAPE_INVALID');
-                  return;
-                }
-                const failed = e.deferred + e.errors + p.deferred + p.errors +
-                  s.pendingStripeEmailSyncs + s.stripeEmailSyncCountErrors +
-                  s.pendingSuppressions + s.suppressionCountErrors +
-                  s.unresolvedSuppressionRecoveries + s.suppressionRecoveryCountErrors +
-                  s.finalMaintenanceDueErrors +
-                  (s.finalMaintenanceDue ? 1 : 0);
-                process.stdout.write(String(failed));
-              } catch { process.stdout.write('SHAPE_INVALID'); }
-            });
-          ")
-          if [ "${MIRROR_STATUS}" = "SHAPE_INVALID" ]; then
-            echo "::error::Provider mirror maintenance returned an unexpected summary shape. Letters were already processed."
-            exit 1
-          fi
-          if [ "${MIRROR_STATUS}" != "0" ]; then
-            echo "::error::Provider mirror maintenance has ${MIRROR_STATUS} unresolved item(s). Letters were already processed."
-            exit 1
-          fi
-
-          if [ "${SEND_SKIPPED_FOR_PREFLIGHT}" -eq 1 ]; then
-            echo "::error::Delivery preflight failed, so no letter generation was attempted. Scheduled maintenance completed before this failure."
-            exit 1
-          fi
-
-          echo "OK: send completed, every active subscriber accounted for, and maintenance is clear."
+          echo "OK: send completed and every active subscriber accounted for."
 
       - name: Upload public-safe server diagnostics on failure
         if: failure()

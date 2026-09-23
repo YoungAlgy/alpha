@@ -65,6 +65,15 @@ function noChargeResponseMatches(status, body, cacheControl, expectedError) {
   return status === 410 && body?.error === expectedError && cacheControl.includes("no-store");
 }
 
+function inviteRequiredHealthFailures(body) {
+  const CORE = ["resend", "unsubscribe", "supabase"];
+  const bad = CORE.filter((name) => body?.checks?.[name] !== true);
+  if (!Array.isArray(body?.hardFailures) || body.hardFailures.length !== 0) {
+    bad.push("hardFailures");
+  }
+  return bad;
+}
+
 async function fetchWithTimeout(url, opts = {}) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -96,18 +105,9 @@ const CHECKS = [
       const res = await fetchWithTimeout(`${BASE_URL}/api/health`);
       if (res.status !== 200) return { ok: false, detail: `status ${res.status}` };
       const body = await res.json();
-      const CORE = [
-        "resend",
-        "stripe",
-        "stripeWebhook",
-        "checkoutBinding",
-        "unsubscribe",
-        "legacyCheckoutCutoff",
-        "supabase",
-      ];
-      const bad = CORE.filter((k) => body?.checks?.[k] !== true);
+      const bad = inviteRequiredHealthFailures(body);
       if (bad.length > 0) {
-        return { ok: false, detail: `checks.${bad.join(", checks.")} not true -- got ${JSON.stringify(body?.checks)}` };
+        return { ok: false, detail: `invite health fields ${bad.join(", ")} failed -- checks ${JSON.stringify(body?.checks)}; hardFailures ${JSON.stringify(body?.hardFailures)}` };
       }
       if (body?.release !== EXPECTED_RELEASE) {
         return {
@@ -127,9 +127,16 @@ const CHECKS = [
           detail: `accessMode ${JSON.stringify(body?.accessMode)}; subscriberDeliveryMode ${JSON.stringify(body?.subscriberDeliveryMode)}`,
         };
       }
+      const BILLING_WIND_DOWN = ["stripe", "stripeWebhook", "checkoutBinding", "legacyCheckoutCutoff"];
+      const billingMissing = BILLING_WIND_DOWN.filter((name) => body?.checks?.[name] !== true);
+      if (billingMissing.length > 0) {
+        console.warn(
+          `  (billing wind-down warning, not failing) checks.${billingMissing.join(", checks.")} missing; legacy paid-event settlement may be impaired. These presence checks do not prove old-key revocation or that new Checkout Sessions have stopped.`
+        );
+      }
       // This mirrors verify-send-preflight's resilience tier. Anthropic is an
       // optional backup generator, so an absent key belongs here as a warning,
-      // not in CORE as a deploy blocker.
+      // not in the invite-required set as a deploy blocker.
       const SOFT = ["anthropic", "gemini", "you", "groq", "deepseek", "brave"];
       const softBad = SOFT.filter((k) => body?.checks?.[k] !== true);
       if (softBad.length > 0) {
@@ -137,7 +144,7 @@ const CHECKS = [
       }
       return {
         ok: true,
-        detail: `hard product dependencies all true; release ${EXPECTED_RELEASE}; invite access; checkout and subscriber delivery paused`,
+        detail: `invite product dependencies healthy; release ${EXPECTED_RELEASE}; invite access; checkout and subscriber delivery paused`,
       };
     },
   },
