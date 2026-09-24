@@ -50,7 +50,7 @@ function runtime(local = storage(), session = storage()) {
     useCallback(callback: unknown) { active.index++; return callback; },
   };
   const exports: any = {};
-  const storageListeners = new Set<(event: { key: string; newValue: string | null }) => void>();
+  const storageListeners = new Set<(event: { key: string | null; newValue: string | null }) => void>();
   vm.runInNewContext(compiled, {
     exports,
     require(name: string) {
@@ -60,10 +60,10 @@ function runtime(local = storage(), session = storage()) {
     },
     window: {
       localStorage: local, sessionStorage: session,
-      addEventListener(type: string, listener: (event: { key: string; newValue: string | null }) => void) {
+      addEventListener(type: string, listener: (event: { key: string | null; newValue: string | null }) => void) {
         if (type === "storage") storageListeners.add(listener);
       },
-      removeEventListener(type: string, listener: (event: { key: string; newValue: string | null }) => void) {
+      removeEventListener(type: string, listener: (event: { key: string | null; newValue: string | null }) => void) {
         if (type === "storage") storageListeners.delete(listener);
       },
     }, Date, JSON,
@@ -83,6 +83,10 @@ function runtime(local = storage(), session = storage()) {
     externalRemoval() {
       local.data.delete(key);
       for (const listener of storageListeners) listener({ key, newValue: null });
+    },
+    externalClear() {
+      local.data.clear();
+      for (const listener of storageListeners) listener({ key: null, newValue: null });
     },
   };
 }
@@ -107,6 +111,26 @@ const removalPage = removalApp.mount();
 assert.equal(removalPage().update({ firstName: "Remove me" }), true);
 removalApp.externalRemoval();
 assert.equal(removalApp.mount()().state.firstName, undefined);
+
+// Another tab's signout must clear this tab's session fallback too, including
+// the currently mounted answers. A reload must not bring them back.
+const fallbackLocal = storage();
+const fallbackSession = storage();
+fallbackLocal.faults.write = true;
+const fallbackApp = runtime(fallbackLocal, fallbackSession);
+let fallbackPage = fallbackApp.mount();
+assert.equal(fallbackPage().update({ firstName: "Fallback private" }), true);
+assert.equal(fallbackSession.data.has(key), true);
+fallbackApp.externalRemoval();
+assert.equal(fallbackPage().state.firstName, undefined);
+assert.equal(fallbackSession.data.has(key), false);
+assert.equal(fallbackApp.mount()().state.firstName, undefined);
+assert.equal(runtime(fallbackLocal, fallbackSession).mount()().state.firstName, undefined);
+fallbackPage = fallbackApp.mount();
+assert.equal(fallbackPage().update({ firstName: "Clear event" }), true);
+fallbackApp.externalClear();
+assert.equal(fallbackSession.data.has(key), false);
+assert.equal(fallbackApp.mount()().state.firstName, undefined);
 
 // A tab that hydrated earlier merges onto another tab's latest local save.
 const otherTab = runtime(local, storage());

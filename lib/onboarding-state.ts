@@ -133,6 +133,28 @@ function write(s: OnboardingState): boolean {
   }
 }
 
+function clearStoredDraft(): boolean {
+  const resetAt = Math.max(Date.now(), (readRaw().draft.draftSavedAt ?? 0) + 1);
+  if (typeof window === "undefined") {
+    memoryDraft = undefined;
+    memoryKind = undefined;
+    return false;
+  }
+  let failed = false;
+  const empty = JSON.stringify({ draftSavedAt: resetAt });
+  for (const store of ["localStorage", "sessionStorage"] as const) {
+    try {
+      window[store].removeItem(STORAGE_KEY);
+    } catch {
+      // A denied removal may still permit overwriting the private draft.
+      try { window[store].setItem(STORAGE_KEY, empty); } catch { failed = true; }
+    }
+  }
+  memoryDraft = failed ? { draftSavedAt: resetAt } : undefined;
+  memoryKind = failed ? "failed-reset" : undefined;
+  return !failed;
+}
+
 export function useOnboarding() {
   const [state, setState] = useState<OnboardingState>(EMPTY);
   const [emailDraft, setEmailDraft] = useState<string | undefined>(undefined);
@@ -148,9 +170,11 @@ export function useOnboarding() {
     setStorageError(stored.storageError ? STORAGE_ERROR : null);
     setLoaded(true);
     const onStorage = (event: StorageEvent) => {
-      if (event.key === STORAGE_KEY && event.newValue === null) {
-        memoryDraft = undefined;
-        memoryKind = undefined;
+      if ((event.key === STORAGE_KEY && event.newValue === null) || event.key === null) {
+        const cleared = clearStoredDraft();
+        setState(EMPTY);
+        setEmailDraft(undefined);
+        setStorageError(cleared ? null : STORAGE_ERROR);
       }
     };
     window.addEventListener("storage", onStorage);
@@ -192,30 +216,11 @@ export function useOnboarding() {
   }, []);
 
   const reset = useCallback((): boolean => {
-    const resetAt = Math.max(Date.now(), (readRaw().draft.draftSavedAt ?? 0) + 1);
+    const cleared = clearStoredDraft();
     setState(EMPTY);
     setEmailDraft(undefined);
-    if (typeof window !== "undefined") {
-      let failed = false;
-      const empty = JSON.stringify({ draftSavedAt: resetAt });
-      for (const store of ["localStorage", "sessionStorage"] as const) {
-        try {
-          window[store].removeItem(STORAGE_KEY);
-        } catch {
-          // If removal is blocked but writing works, overwrite private data
-          // with an empty draft before allowing navigation or reload.
-          try { window[store].setItem(STORAGE_KEY, empty); } catch { failed = true; }
-        }
-      }
-      memoryDraft = failed ? { draftSavedAt: resetAt } : undefined;
-      memoryKind = failed ? "failed-reset" : undefined;
-      setStorageError(failed ? STORAGE_ERROR : null);
-      return !failed;
-    } else {
-      memoryDraft = undefined;
-      memoryKind = undefined;
-      return false;
-    }
+    setStorageError(cleared ? null : STORAGE_ERROR);
+    return cleared;
   }, []);
 
   return { state, emailDraft, storageError, update, reset, loaded };
