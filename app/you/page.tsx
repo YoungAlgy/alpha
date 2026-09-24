@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding, nextStep } from "@/lib/onboarding-state";
 import { confirm as audioConfirm, tap } from "@/lib/audio";
-import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { supabaseConfigured } from "@/lib/supabase/client";
+import { readOnboardingAccountState } from "@/lib/onboarding-account";
 import { coerceGender, demographicSummary, maxBirthdayForMinAge, parseBirthday } from "@/lib/demographics";
 import type { Gender } from "@/lib/types";
 
@@ -16,21 +17,25 @@ const GENDERS: { value: Gender; label: string }[] = [
 
 export default function YouPage() {
   const router = useRouter();
-  const { state, update, loaded } = useOnboarding();
+  const { state, update, loaded, storageError } = useOnboarding();
   const [birthday, setBirthday] = useState("");
+  const birthdayEditedRef = useRef(false);
+  const genderEditedRef = useRef(false);
   // null = unset; "skip" = chose "prefer not to say"; else a Gender.
   const [gender, setGender] = useState<Gender | "skip" | null>(null);
+  const [accountChecked, setAccountChecked] = useState(!supabaseConfigured());
+  const [accountError, setAccountError] = useState(false);
+  const [accountAttempt, setAccountAttempt] = useState(0);
 
   useEffect(() => {
     if (!loaded) return;
     // This effect hydrates the form from the persisted onboarding store.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (state.birthday) setBirthday(state.birthday);
-    if (state.gender) setGender(state.gender);
+    if (state.birthday && !birthdayEditedRef.current) setBirthday(state.birthday);
+    if (state.gender && !genderEditedRef.current) setGender(state.gender);
   }, [loaded, state.birthday, state.gender]);
 
-  // New-user onboarding only. A signed-in reader (or a returning one on a fresh
-  // device) gets bounced to their inbox instead of re-running onboarding.
+  // A confirmed account with no completed request still needs this step.
+  // Other signed-in account states belong in /inbox.
   // alpha-drift-r55-06 (2026-08-20, duplicate-code-audit-r5): this comment
   // used to just say "Mirrors the QuestionStep guard" -- true when written
   // (round 36), but QuestionStep.tsx's own guard was upgraded with a
@@ -45,15 +50,22 @@ export default function YouPage() {
     let cancelled = false;
     (async () => {
       try {
-        const { data: { session } } = await supabaseClient().auth.getSession();
+        const account = await readOnboardingAccountState();
         if (cancelled) return;
-        if (session) router.replace("/inbox" as never);
+        if (account !== "signed-out" && account !== "incomplete") router.replace("/inbox" as never);
+        else setAccountChecked(true);
       } catch {
-        // ignore — show the step
+        if (!cancelled) setAccountError(true);
       }
     })();
     return () => { cancelled = true; };
-  }, [router]);
+  }, [router, accountAttempt]);
+
+  function retryAccountCheck() {
+    setAccountError(false);
+    setAccountChecked(false);
+    setAccountAttempt((attempt) => attempt + 1);
+  }
 
   // alpha-drift-r36-11 (2026-08-14): this page's own comment above claimed
   // to mirror "the QuestionStep guard," but only ported the SESSION half --
@@ -87,12 +99,12 @@ export default function YouPage() {
   const canContinue = (!zodiacPicked || birthday.length > 0) && birthdayValid;
 
   function submit() {
-    if (!canContinue) return;
+    if (!canContinue || !accountChecked || accountError) return;
     audioConfirm();
-    update({
+    if (!update({
       birthday: birthday || undefined,
       gender: coerceGender(gender) ?? undefined,
-    });
+    })) return;
     router.push(`/${nextStep("you")}` as never);
   }
 
@@ -109,11 +121,12 @@ export default function YouPage() {
   // in-progress, not-yet-valid birthday is silently dropped rather than
   // saved malformed, same rule canContinue already enforces for Continue.
   function skip() {
+    if (!accountChecked || accountError) return;
     tap();
-    update({
+    if (!update({
       birthday: birthdayValid ? (birthday || undefined) : undefined,
       gender: coerceGender(gender) ?? undefined,
-    });
+    })) return;
     router.push(`/${nextStep("you")}` as never);
   }
 
@@ -154,7 +167,7 @@ export default function YouPage() {
             value={birthday}
             min="1920-01-01"
             max={maxBirthdayForMinAge()}
-            onChange={(e) => setBirthday(e.target.value)}
+            onChange={(e) => { birthdayEditedRef.current = true; setBirthday(e.target.value); }}
             className="alpha-display text-2xl md:text-3xl bg-transparent border-b pt-2 pb-3 focus:outline-none focus:border-current"
             // alpha-drift-r16-04: see components/ProfileEditor.tsx's
             // matching birthday input for why colorScheme:"light" was
@@ -209,7 +222,7 @@ export default function YouPage() {
                   key={g.value}
                   type="button"
                   aria-pressed={active}
-                  onClick={() => { setGender(active ? null : g.value); tap(); }}
+                  onClick={() => { genderEditedRef.current = true; setGender(active ? null : g.value); tap(); }}
                   // alpha-drift-r20-11 (found+fixed 2026-08-13): py-2 measured
                   // ~38px tall live, 2px under the commonly-cited 40px mobile
                   // touch-target guideline (still passed WCAG's stricter 24px
@@ -230,7 +243,7 @@ export default function YouPage() {
             <button
               type="button"
               aria-pressed={gender === "skip"}
-              onClick={() => { setGender(gender === "skip" ? null : "skip"); tap(); }}
+              onClick={() => { genderEditedRef.current = true; setGender(gender === "skip" ? null : "skip"); tap(); }}
               // alpha-drift-r20-11: same touch-target bump as the two gender
               // buttons above.
               className="alpha-ui text-sm px-4 py-2.5 rounded-full border transition"
@@ -245,13 +258,15 @@ export default function YouPage() {
           </div>
         </div>
 
+        {storageError && <p role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>{storageError}</p>}
+        {accountError && <div role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>Couldn&apos;t check your account. <button type="button" onClick={retryAccountCheck} className="underline underline-offset-4 p-2">Try again</button></div>}
         <div className="flex items-center gap-6 pt-2">
           <button
             type="button"
             onClick={submit}
-            disabled={!canContinue}
+            disabled={!canContinue || !accountChecked || accountError}
             className="alpha-button"
-            style={{ opacity: canContinue ? 1 : 0.4, cursor: canContinue ? "pointer" : "not-allowed" }}
+            style={{ opacity: canContinue && accountChecked && !accountError ? 1 : 0.4, cursor: canContinue && accountChecked && !accountError ? "pointer" : "not-allowed" }}
           >
             Continue →
           </button>
@@ -259,6 +274,7 @@ export default function YouPage() {
             <button
               type="button"
               onClick={skip}
+              disabled={!accountChecked || accountError}
               // alpha-drift-r23-09 (found+fixed 2026-08-14): ~20px tall
               // (bare text-sm, no padding), under the WCAG 2.5.8 24px
               // floor, sitting right next to Continue -- same "these sit

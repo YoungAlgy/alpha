@@ -11,6 +11,7 @@ import { tap, unselect, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import type { TopicId } from "@/lib/types";
 import { clampQuota } from "@/lib/types";
+import { readOnboardingAccountState } from "@/lib/onboarding-account";
 
 const DEFAULT_TARGET = 5; // unsigned (first-onboarding) flow always picks 5
 const LEGACY_CHECKOUT_RETURN_KEY = "alpha-legacy-checkout-return";
@@ -45,7 +46,7 @@ function consumeLegacyCheckoutReturnPath(): string | null {
 
 export default function TopicsPage() {
   const router = useRouter();
-  const { state, update, loaded } = useOnboarding();
+  const { state, update, loaded, storageError } = useOnboarding();
   const [picked, setPicked] = useState<TopicId[]>([]);
   const [signedIn, setSignedIn] = useState(false);
   // Quota = how many topics this user is currently paid up for. 5 = base,
@@ -61,6 +62,8 @@ export default function TopicsPage() {
   // navigating away as if it saved.
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState(false);
+  const [accountAttempt, setAccountAttempt] = useState(0);
   // The signed-in reader's birthday, only to warn when they pick Zodiac without
   // one (that section gets skipped). Mirrors the onboarding "you" step gate.
   const [userBirthday, setUserBirthday] = useState<string | null>(null);
@@ -148,8 +151,7 @@ export default function TopicsPage() {
 
   useEffect(() => {
     // The persisted onboarding store becomes available only after hydration.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (loaded && state.topics) setPicked(state.topics);
+    if (loaded && state.topics && !userEditedRef.current) setPicked(state.topics);
   }, [loaded, state.topics]);
 
   // Edit-from-settings detection: signed-in users go back to /settings on save.
@@ -157,8 +159,17 @@ export default function TopicsPage() {
   useEffect(() => {
     if (!supabaseConfigured()) return;
     let cancelled = false;
+    let redirecting = false;
     (async () => {
       try {
+        const account = await readOnboardingAccountState();
+        if (cancelled) return;
+        if ((account === "pending" || account === "ended") && !legacyCheckoutReturnPath()) {
+          redirecting = true;
+          router.replace("/inbox" as never);
+          return;
+        }
+        if (account !== "reader") return;
         const sb = supabaseClient();
         // alpha-drift-r62-05: both destructures below used to discard their
         // Supabase error and rely on a try/catch that can't see it --
@@ -173,16 +184,17 @@ export default function TopicsPage() {
         // localStorage's smaller one). Logged only -- the page's existing
         // fail-open UX is unchanged, this just makes the failure visible.
         const { data: { session }, error: sessionErr } = await sb.auth.getSession();
-        if (sessionErr) console.warn("[topics] signed-in hydrate getSession failed:", sessionErr.message);
+        if (sessionErr) throw sessionErr;
         if (cancelled) return;
-        if (!session) return;
+        if (!session) throw new Error("Session changed while loading topics");
         const { data: row, error: rowErr } = await sb
           .from("users")
           .select("topic_quota, topics, birthday")
           .eq("id", session.user.id)
           .maybeSingle();
-        if (rowErr) console.warn("[topics] signed-in hydrate row fetch failed:", rowErr.message);
+        if (rowErr) throw rowErr;
         if (cancelled) return;
+        if (!row) throw new Error("Account changed while loading topics");
         // Flip signedIn in the same batch as the row's picked/target values below
         // (not right after getSession) so submit()'s signedIn check never sees a
         // render where signedIn is true but `picked` still holds stale
@@ -220,17 +232,24 @@ export default function TopicsPage() {
         // recurring failure here would otherwise look like a successful
         // save to the reader while silently writing nothing to the DB.
         console.warn("[topics] signed-in hydrate failed:", e instanceof Error ? e.message : e);
+        if (!cancelled) setAccountError(true);
       } finally {
         // Unconditional: reached whether a session existed, the row fetch
         // succeeded, or it threw -- every one of those is "we now know
         // everything we're going to know," so submit() is safe from here.
-        if (!cancelled) setTopicsHydrated(true);
+        if (!cancelled && !redirecting) setTopicsHydrated(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router, accountAttempt]);
+
+  function retryAccountCheck() {
+    setAccountError(false);
+    setTopicsHydrated(false);
+    setAccountAttempt((attempt) => attempt + 1);
+  }
 
   // alpha-drift-r36-11 (2026-08-14): components/onboarding/QuestionStep.tsx
   // (every other step past /name) bounces to /welcome when firstName is
@@ -384,7 +403,7 @@ export default function TopicsPage() {
     // still at its pre-hydrate default. saveInFlight.current: the
     // synchronous re-entry guard `saving` (React state) can't provide on
     // its own -- see that ref's own comment.
-    if (!ready || saving || !topicsHydrated || saveInFlight.current) return;
+    if (!ready || saving || !topicsHydrated || accountError || saveInFlight.current) return;
     saveInFlight.current = true;
     setSaveError(null);
     try {
@@ -422,8 +441,8 @@ export default function TopicsPage() {
         router.push((consumeLegacyCheckoutReturnPath() || "/settings") as never);
         return;
       }
+      if (!update({ topics: picked })) return;
       confirm();
-      update({ topics: picked });
       router.push((consumeLegacyCheckoutReturnPath() || "/fun") as never);
     } finally {
       // Unconditional: every return path above (save failed, save succeeded
@@ -821,6 +840,8 @@ export default function TopicsPage() {
           </p>
         )}
 
+        {accountError && <div role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>Couldn&apos;t check your account. <button type="button" onClick={retryAccountCheck} className="underline underline-offset-4 p-2">Try again</button></div>}
+
         {/* alpha-drift-r20-09 (found+fixed 2026-08-13): this bar had no
             background at all -- just position:sticky with transparent
             content -- so scrolling pill cards visually overlapped the
@@ -833,13 +854,13 @@ export default function TopicsPage() {
               fails WCAG AA 4.5:1 against --paper in 12+ themes -- --ink
               clears every theme. */}
           <span
-            role="status"
+            role={saveError || storageError || accountError ? "alert" : "status"}
             aria-live="polite"
             className="alpha-ui text-sm"
-            style={{ color: saveError ? "var(--ink)" : "var(--ink-soft)" }}
+            style={{ color: saveError || storageError || accountError ? "var(--ink)" : "var(--ink-soft)" }}
           >
-            {saveError
-              ? saveError
+            {accountError || storageError || saveError
+              ? storageError || saveError || "Couldn't check your account. Try again shortly."
               : signedIn
                 ? favRemaining > 0
                   ? `Pick ${favRemaining} more to fill your letter`
@@ -851,11 +872,11 @@ export default function TopicsPage() {
           <button
             type="button"
             onClick={submit}
-            disabled={!ready || saving || !topicsHydrated}
+            disabled={!ready || saving || !topicsHydrated || accountError}
             className="alpha-button"
             style={{
-              opacity: ready && !saving && topicsHydrated ? 1 : 0.3,
-              cursor: ready && !saving && topicsHydrated ? "pointer" : "not-allowed",
+              opacity: ready && !saving && topicsHydrated && !accountError ? 1 : 0.3,
+              cursor: ready && !saving && topicsHydrated && !accountError ? "pointer" : "not-allowed",
             }}
           >
             {saving ? "Saving…" : signedIn ? "Save" : "Continue →"}

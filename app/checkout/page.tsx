@@ -9,6 +9,8 @@ import { THEMES, SWATCHES, coerceThemeId } from "@/lib/themes";
 import { track } from "@/lib/analytics";
 import { isProfileComplete } from "@/lib/checkout-guards";
 import { isInviteOnly } from "@/lib/access-mode";
+import { readOnboardingAccountState } from "@/lib/onboarding-account";
+import { incompleteSignupPath } from "@/lib/signup-progress";
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -19,6 +21,30 @@ export default function CheckoutPage() {
   const [alreadySubscribed, setAlreadySubscribed] = useState(false);
   const [signInRequired, setSignInRequired] = useState(false);
   const [accessRequested, setAccessRequested] = useState(false);
+  const [accountChecked, setAccountChecked] = useState(!isInviteOnly());
+  const [accountCheckError, setAccountCheckError] = useState<string | null>(null);
+  const [accountCheckAttempt, setAccountCheckAttempt] = useState(0);
+  const requestInFlight = useRef(false);
+
+  // Read the stored request before checking the local draft. A pending reader
+  // may return after clearing storage or from another device.
+  useEffect(() => {
+    if (!isInviteOnly()) return;
+    let cancelled = false;
+    readOnboardingAccountState().then((status) => {
+      if (cancelled) return;
+      if (status === "reader" || status === "ended") {
+        router.replace("/inbox" as never);
+        return;
+      }
+      setAccessRequested(status === "pending");
+      setAccountCheckError(null);
+      setAccountChecked(true);
+    }).catch(() => {
+      if (!cancelled) setAccountCheckError("Couldn't check your signup. Your saved answers haven't been cleared.");
+    });
+    return () => { cancelled = true; };
+  }, [router, accountCheckAttempt]);
   // alpha-drift-r39-04 (2026-08-19): a 409 unmounts the focused Subscribe
   // button (the ternary swaps its whole branch) and replaces it with this
   // "already subscribed" block -- with no ref/focus management, the browser
@@ -89,11 +115,10 @@ export default function CheckoutPage() {
   // (app/welcome/page.tsx, components/onboarding/QuestionStep.tsx,
   // app/you/page.tsx), which already use replace for the same reason.
   useEffect(() => {
-    if (!loaded) return;
-    if (!isProfileComplete({ firstName: state.firstName, topics: state.topics, email: state.email })) {
-      router.replace("/welcome" as never);
-    }
-  }, [loaded, state, router]);
+    if (!loaded || !accountChecked || accessRequested) return;
+    const path = incompleteSignupPath(state);
+    if (path) router.replace(path as never);
+  }, [loaded, accountChecked, accessRequested, state, router]);
 
   function rememberCheckoutSignIn() {
     try {
@@ -169,6 +194,8 @@ export default function CheckoutPage() {
   }
 
   async function requestAccess() {
+    if (requestInFlight.current || !accountChecked || accessRequested || !isProfileComplete(state)) return;
+    requestInFlight.current = true;
     setSubscribing(true);
     setStripeErr(null);
     try {
@@ -209,6 +236,8 @@ export default function CheckoutPage() {
       if (cancelledRef.current) return;
       setSubscribing(false);
       setStripeErr(e instanceof Error ? e.message : "Couldn't send your request.");
+    } finally {
+      requestInFlight.current = false;
     }
   }
 
@@ -217,18 +246,34 @@ export default function CheckoutPage() {
   const themeLabel = THEMES.find((t) => t.id === themeId)?.label || "Forest";
   const sw = SWATCHES[themeId];
 
+  if (!loaded || !accountChecked) {
+    return (
+      <StepShell stepIndex={11} prevPath="email">
+        <p className="alpha-ui" role={accountCheckError ? "alert" : "status"}>
+          {accountCheckError || "Checking your saved signup..."}
+        </p>
+        {accountCheckError && (
+          <button type="button" className="alpha-button mt-4" onClick={() => {
+            setAccountCheckError(null);
+            setAccountCheckAttempt((attempt) => attempt + 1);
+          }}>Try again</button>
+        )}
+      </StepShell>
+    );
+  }
+
   return (
     <StepShell stepIndex={11} prevPath="email" backDisabled={subscribing}>
       <div className="space-y-10">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
-            {loaded ? `Almost there, ${firstName}.` : "Almost there."}
+            {accessRequested ? "Your request is saved." : `Almost there, ${firstName}.`}
           </h1>
           <p
             className="alpha-display text-lg md:text-xl leading-relaxed"
             style={{ color: "var(--ink-soft)" }}
           >
-            {isInviteOnly() ? "Request access and we'll review your profile." : "Subscribe and we'll write your first letter on the spot."}
+            {accessRequested ? "You don't need to sign up again." : isInviteOnly() ? "Request access and we'll review your profile." : "Subscribe and we'll write your first letter on the spot."}
           </p>
         </div>
 
@@ -244,7 +289,7 @@ export default function CheckoutPage() {
             Same bug class settings/page.tsx's quotaLoaded gate already
             closed elsewhere (rounds 19/44) -- gated here too, on the app's
             single highest-stakes screen. */}
-        {loaded && <div className="grid md:grid-cols-[160px_1fr] gap-5 items-stretch">
+        {loaded && !accessRequested && <div className="grid md:grid-cols-[160px_1fr] gap-5 items-stretch">
           <div
             className="rounded-lg overflow-hidden p-4 flex flex-col justify-between"
             style={{
@@ -338,10 +383,10 @@ export default function CheckoutPage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => router.push("/" as never)}
+                  onClick={() => router.push("/inbox" as never)}
                   className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
                 >
-                  Back to Alpha →
+                  View request status →
                 </button>
               </div>
             ) : signInRequired ? (

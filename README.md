@@ -9,6 +9,12 @@ access. Alex approves requests from the Accounts panel. Approval writes the
 protected invite entitlement and creates no Stripe customer or monthly charge.
 After the request is stored, Alpha can post a PII-free best-effort notice to
 the optional Alpha-only ops webhook. The Accounts queue remains authoritative.
+Signup answers saved on each step prefill when the visitor resumes in the same
+browser. Local storage is preferred, with same-tab session storage as a backup.
+If neither can save, the form stays open with an error. Expired email drafts are
+prefilled for confirmation without restarting the other questions. A stored
+request has a persistent waiting-for-approval screen. Explicit sign-out clears
+the local draft, and signup never grants access or enrolls letter delivery.
 Existing paid accounts remain supported while renewal is wound down. The
 Accounts panel can give a Stripe-linked reader permanent invite access without
 changing `cancelled_at` or another billing mirror. Renewal must still be turned

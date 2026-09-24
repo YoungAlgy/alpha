@@ -14,7 +14,7 @@ import { FirstLetterCelebration } from "@/components/FirstLetterCelebration";
 import { LetterTOC } from "@/components/LetterTOC";
 import { ShareButton } from "@/components/ShareButton";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
-import { hasReaderAccess } from "@/lib/access";
+import { getSignupAccountState } from "@/lib/signup-progress";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { currentPeriodIso, nextSendIso, SEND_HOUR_UTC } from "@/lib/cadence";
 import { fanfare } from "@/lib/audio";
@@ -32,6 +32,9 @@ export default function InboxPage() {
   const [celebrate, setCelebrate] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [accessEnded, setAccessEnded] = useState(false);
+  const [signupState, setSignupState] = useState<"pending" | "incomplete" | null>(null);
+  const [clearError, setClearError] = useState<string | null>(null);
+  const clearTarget = useRef<{ path: string; opts: { skipSignOut?: boolean } }>({ path: "/welcome", opts: {} });
   // alpha-drift-r43-02 (2026-08-19, self-audit): a genuine Supabase query
   // failure (network blip, transient RLS/DB error) used to fall through
   // the SAME path as "no letter yet" -- the identical bug class round 42
@@ -54,6 +57,9 @@ export default function InboxPage() {
   const load = useCallback(async () => {
     setMissing(false);
     setLoadError(false);
+    setAccessEnded(false);
+    setSignupState(null);
+    setIssue(null);
     try {
       // Path 1 — authenticated user reads from Supabase.
       // Prefer this so a returning sign-in on a fresh device still sees the letter.
@@ -92,7 +98,7 @@ export default function InboxPage() {
                 .maybeSingle(),
               sb
                 .from("users")
-                .select("first_name, city, theme, subscribed_at, cancelled_at, access_granted_at")
+                .select("first_name, city, theme, subscribed_at, cancelled_at, access_requested_at, access_granted_at")
                 .eq("id", session.user.id)
                 .maybeSingle(),
             ]);
@@ -117,22 +123,29 @@ export default function InboxPage() {
             // means. .maybeSingle() returns error:null on a genuine
             // zero-row result (that's its whole purpose vs .single()). Handle
             // userError first as a retryable load failure, then a clean
-            // !userRow as a real "this account is gone" signal.
+            // !userRow can also be a confirmed account still finishing signup.
             if (userError) {
               setLoadError(true);
               return;
             }
             if (!userRow) {
-              setAccessEnded(true);
+              const { data: { user }, error: identityError } = await sb.auth.getUser();
+              if (!mountedRef.current) return;
+              if (identityError) {
+                setLoadError(true);
+                return;
+              }
+              if (!user || user.id !== session.user.id) {
+                setAccessEnded(true);
+                return;
+              }
+            }
+            const accountState = getSignupAccountState(userRow);
+            if (accountState === "pending" || accountState === "incomplete") {
+              setSignupState(accountState);
               return;
             }
-            if (
-              !hasReaderAccess(
-                userRow.subscribed_at,
-                userRow.cancelled_at,
-                userRow.access_granted_at
-              )
-            ) {
+            if (accountState === "ended" || !userRow) {
               setAccessEnded(true);
               return;
             }
@@ -261,8 +274,13 @@ export default function InboxPage() {
   // lets each call site opt into whichever behavior actually matches what it
   // knows about its own auth state, instead of keying it off the path alone.
   async function clearAndGo(path: string, opts: { skipSignOut?: boolean } = {}) {
+    clearTarget.current = { path, opts };
+    setClearError(null);
     try {
-      if (path !== "/signin" && !opts.skipSignOut && supabaseConfigured()) await supabaseClient().auth.signOut();
+      if (path !== "/signin" && !opts.skipSignOut && supabaseConfigured()) {
+        const { error } = await supabaseClient().auth.signOut();
+        if (error) throw error;
+      }
     } catch (e) {
       // Logged, not silent: this is the shared/library-computer sign-out
       // path (see the comment above) -- a swallowed failure here means the
@@ -270,12 +288,28 @@ export default function InboxPage() {
       // could see the previous reader's letter, with nothing in the logs
       // to ever surface that it happened.
       console.warn("[inbox] signOut failed before navigate:", e instanceof Error ? e.message : e);
+      setClearError("Couldn't sign you out. Please try again before leaving this device.");
+      return;
     }
     // Wipe onboarding answers (name, email, birthday, etc.) so the next
     // person on this device — shared/library/kiosk computer — doesn't get
     // them pre-filled or see this reader's email dropped into /signin.
-    reset();
+    if (!reset()) {
+      setClearError("This browser wouldn't clear your saved answers. Try again, or clear Alpha's site data in your browser before sharing this device.");
+      return;
+    }
     window.location.assign(path);
+  }
+
+  if (clearError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <div className="text-center space-y-6 max-w-md">
+          <p role="alert" className="alpha-ui">{clearError}</p>
+          <button type="button" className="alpha-button" onClick={() => clearAndGo(clearTarget.current.path, clearTarget.current.opts)}>Try again</button>
+        </div>
+      </main>
+    );
   }
 
   if (loadError) {
@@ -311,6 +345,33 @@ export default function InboxPage() {
     );
   }
 
+  if (signupState) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <div className="text-center space-y-6 max-w-md">
+          <h1 className="alpha-display text-2xl md:text-3xl font-bold tracking-tight">
+            {signupState === "pending" ? "Your request is saved." : "Finish your signup."}
+          </h1>
+          <p className="alpha-ui text-base leading-relaxed" style={{ color: "var(--ink-soft)" }}>
+            {signupState === "pending"
+              ? "You're waiting for Alex to approve access. Your answers are saved. You don't need to sign up again."
+              : "Your email is confirmed. Finish your profile to request access. Any answers saved in this browser will be filled in."}
+          </p>
+          <div className="flex flex-col items-center gap-4">
+            {signupState === "pending" ? (
+              <button type="button" onClick={() => load()} className="alpha-button">Check approval status</button>
+            ) : (
+              <Link href="/name" className="alpha-button">Continue signup →</Link>
+            )}
+            <button type="button" onClick={() => clearAndGo("/welcome")} className="alpha-ui text-sm underline py-2">
+              Sign out and clear this device
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (accessEnded) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
@@ -329,12 +390,9 @@ export default function InboxPage() {
             Your Alpha access has ended.
           </h1>
           <p className="alpha-display text-base md:text-lg leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-            Want back in? Start a new letter, or reach out if something looks wrong.
+            Contact Alex to request access again. You don&apos;t need to start signup over.
           </p>
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button type="button" onClick={() => clearAndGo("/welcome")} className="alpha-button">
-              Start a new letter →
-            </button>
             {/* alpha-drift-r60-01 (2026-08-20, accessibility-resweep-newer-
                 code-round-8): under the WCAG 2.5.8 24px touch-target
                 minimum, missed by every prior round despite the identical
@@ -410,23 +468,18 @@ export default function InboxPage() {
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
                 {/* Buttons (not Links) that clear any stale cookie first, so a
                     half-signed-in reader can't get bounced back to /inbox. */}
-                <button
-                  type="button"
-                  onClick={() => clearAndGo("/signin")}
-                  className="alpha-button"
-                >
+                <Link href="/signin" className="alpha-button">
                   Sign in to see my letters →
-                </button>
+                </Link>
                 {/* alpha-drift-r60-03 (2026-08-20, accessibility-resweep-
                     newer-code-round-8): same touch-target fix. */}
-                <button
-                  type="button"
-                  onClick={() => clearAndGo("/welcome", { skipSignOut: true })}
+                <Link
+                  href="/welcome"
                   className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{ color: "var(--ink-soft)" }}
                 >
-                  I&apos;m new, start fresh
-                </button>
+                  {loaded && state.firstName ? "Continue signup →" : "Set up your letter →"}
+                </Link>
               </div>
             </>
           )}

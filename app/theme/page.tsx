@@ -8,6 +8,7 @@ import { THEMES, SWATCHES, coerceThemeId } from "@/lib/themes";
 import { chime, confirm } from "@/lib/audio";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { setTheme } from "@/lib/theme";
+import { readOnboardingAccountState } from "@/lib/onboarding-account";
 import type { ThemeId } from "@/lib/types";
 
 // Theme preview swatches live in lib/themes.ts (SWATCHES) so they stay in sync
@@ -15,7 +16,7 @@ import type { ThemeId } from "@/lib/types";
 
 export default function ThemePage() {
   const router = useRouter();
-  const { state, loaded } = useOnboarding();
+  const { state, update, loaded, storageError } = useOnboarding();
   const [picked, setPicked] = useState<ThemeId>("forest");
   const [signedIn, setSignedIn] = useState(false);
   // alpha-drift-r19-01 (found+fixed 2026-08-07): the signed-in hydrate below
@@ -29,6 +30,8 @@ export default function ThemePage() {
   // (supabaseConfigured() false — this is a pure onboarding-localStorage
   // flow with nothing async to race).
   const [themeHydrated, setThemeHydrated] = useState(!supabaseConfigured());
+  const [accountError, setAccountError] = useState(false);
+  const [accountAttempt, setAccountAttempt] = useState(0);
   // alpha-drift-r54-03 (2026-08-20, accessibility-resweep-newer-code-round-2):
   // pickTheme() applies a tap immediately and unconditionally (localStorage,
   // DOM data-theme, an async DB write) with no gate on themeHydrated. The
@@ -44,7 +47,7 @@ export default function ThemePage() {
   const userPickedRef = useRef(false);
 
   useEffect(() => {
-    if (loaded && state.theme) {
+    if (loaded && state.theme && !userPickedRef.current) {
       const safe = coerceThemeId(state.theme);
       // This effect hydrates the picker from the persisted onboarding store.
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -57,8 +60,17 @@ export default function ThemePage() {
   useEffect(() => {
     if (!supabaseConfigured()) return;
     let cancelled = false;
+    let redirecting = false;
     (async () => {
       try {
+        const account = await readOnboardingAccountState();
+        if (cancelled) return;
+        if (account === "pending" || account === "ended") {
+          redirecting = true;
+          router.replace("/inbox" as never);
+          return;
+        }
+        if (account !== "reader") return;
         const sb = supabaseClient();
         // alpha-drift-r63-04 (2026-08-21, silent-catch-audit-r9): used to
         // discard `error` -- getSession() resolves rather than throws on an
@@ -69,9 +81,9 @@ export default function ThemePage() {
         // /name on submit() instead of back to /settings. Logged only --
         // the fail-open UX (misroute, self-recoverable) is unchanged.
         const { data: { session }, error: sessionErr } = await sb.auth.getSession();
-        if (sessionErr) console.warn("[theme] signed-in hydrate getSession failed:", sessionErr.message);
+        if (sessionErr) throw sessionErr;
         if (cancelled) return;
-        if (!session) return;
+        if (!session) throw new Error("Session changed while loading theme");
         setSignedIn(true);
         // Note: intentionally set BEFORE the row fetch below, not after —
         // signedIn's only job here is choosing submit()'s redirect target
@@ -96,8 +108,9 @@ export default function ThemePage() {
           .select("theme")
           .eq("id", session.user.id)
           .maybeSingle();
-        if (rowErr) console.warn("[theme] signed-in hydrate row fetch failed:", rowErr.message);
+        if (rowErr) throw rowErr;
         if (cancelled) return;
+        if (!row) throw new Error("Account changed while loading theme");
         const dbTheme = row?.theme as ThemeId | null | undefined;
         // alpha-drift-r54-03: don't let a late-resolving hydrate revert a
         // pick the user already made this session -- see userPickedRef's
@@ -109,19 +122,28 @@ export default function ThemePage() {
         // back to "forest" (see the comment above) -- a swallowed failure
         // here lets that exact regression resurface with no trace.
         console.warn("[theme] signed-in hydrate failed:", e instanceof Error ? e.message : e);
+        if (!cancelled) setAccountError(true);
       } finally {
         // Unconditional: reached whether a session existed, the row fetch
         // succeeded, or it threw -- every one of those is "we now know
         // everything we're going to know," so Continue is safe from here.
-        if (!cancelled) setThemeHydrated(true);
+        if (!cancelled && !redirecting) setThemeHydrated(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router, accountAttempt]);
+
+  function retryAccountCheck() {
+    setAccountError(false);
+    setThemeHydrated(false);
+    setAccountAttempt((attempt) => attempt + 1);
+  }
 
   function pickTheme(id: ThemeId) {
+    if (!themeHydrated || accountError) return;
+    if (!signedIn && !update({ theme: id })) return;
     userPickedRef.current = true;
     setPicked(id);
     // Apply + persist (account + localStorage) + broadcast immediately, so the
@@ -139,7 +161,8 @@ export default function ThemePage() {
     // themeHydrated gate: see its own comment on the state declaration
     // above (alpha-drift-r19-01) -- without it this could fire with
     // `picked`/`signedIn` still at their pre-hydrate defaults.
-    if (!themeHydrated) return;
+    if (!themeHydrated || accountError) return;
+    if (!signedIn && !update({ theme: picked })) return;
     confirm();
     // Guarantee the final pick is saved (idempotent if pickTheme already did).
     setTheme(picked);
@@ -174,6 +197,7 @@ export default function ThemePage() {
                 key={t.id}
                 type="button"
                 aria-pressed={isPicked}
+                disabled={!themeHydrated || accountError}
                 aria-label={`${t.label} theme${isPicked ? ", selected" : ""}`}
                 onClick={() => pickTheme(t.id)}
                 onMouseEnter={() => isPicked || hoverTheme()}
@@ -267,6 +291,8 @@ export default function ThemePage() {
           })}
         </div>
 
+        {storageError && <p role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>{storageError}</p>}
+        {accountError && <div role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>Couldn&apos;t check your account. <button type="button" onClick={retryAccountCheck} className="underline underline-offset-4 p-2">Try again</button></div>}
         <div className="flex items-center justify-between gap-4 pt-4">
           <span
             className="alpha-ui text-sm"
@@ -277,9 +303,9 @@ export default function ThemePage() {
           <button
             type="button"
             onClick={submit}
-            disabled={!themeHydrated}
+            disabled={!themeHydrated || accountError}
             className="alpha-button"
-            style={{ opacity: themeHydrated ? 1 : 0.5, cursor: themeHydrated ? "pointer" : "not-allowed" }}
+            style={{ opacity: themeHydrated && !accountError ? 1 : 0.5, cursor: themeHydrated && !accountError ? "pointer" : "not-allowed" }}
           >
             Continue →
           </button>

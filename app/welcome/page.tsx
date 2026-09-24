@@ -4,14 +4,17 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
-import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { supabaseConfigured } from "@/lib/supabase/client";
+import { readOnboardingAccountState } from "@/lib/onboarding-account";
+import { useOnboarding } from "@/lib/onboarding-state";
 import { SHARE_LEAD } from "@/lib/copy";
 
 export default function WelcomePage() {
   const router = useRouter();
+  const { state, loaded } = useOnboarding();
 
   useEffect(() => {
-    // Redirect for an already-signed-in visitor. This is the ONLY thing that
+    // Redirect for an established account. This is the ONLY thing that
     // catches this now, not a fallback -- middleware.ts only handles the
     // apex/www host redirect (alpha-drift-r15-04, found 2026-08-06: the old
     // server-side signed-in-user redirect was deliberately NOT carried over
@@ -33,10 +36,9 @@ export default function WelcomePage() {
     let cancelled = false;
     (async () => {
       try {
-        const sb = supabaseClient();
-        const { data: { session } } = await sb.auth.getSession();
+        const account = await readOnboardingAccountState();
         if (cancelled) return;
-        if (session) router.replace("/inbox" as never);
+        if (account !== "signed-out" && account !== "incomplete") router.replace("/inbox" as never);
       } catch {
         // ignore — show the welcome page as a fallback
       }
@@ -66,8 +68,8 @@ export default function WelcomePage() {
             {SHARE_LEAD}
           </p>
           <div className="pt-4">
-            <Link href="/theme" className="alpha-button text-base">
-              Let&apos;s get to know you →
+            <Link href={loaded && state.firstName ? "/name" : "/theme"} className="alpha-button text-base">
+              {loaded && state.firstName ? "Continue setting up →" : "Let's get to know you →"}
             </Link>
           </div>
           <p

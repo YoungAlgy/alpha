@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useOnboarding, nextStep, type OnboardingState } from "@/lib/onboarding-state";
 import { confirm as audioConfirm, tap } from "@/lib/audio";
-import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { supabaseConfigured } from "@/lib/supabase/client";
+import { readOnboardingAccountState } from "@/lib/onboarding-account";
 
 interface QuestionStepProps {
   field: keyof OnboardingState;
@@ -41,15 +42,17 @@ export function QuestionStep({
   maxLength,
 }: QuestionStepProps) {
   const router = useRouter();
-  const { state, update, loaded } = useOnboarding();
+  const { state, update, loaded, storageError, emailDraft } = useOnboarding();
   const initial = (state[field] as string) || "";
   const [value, setValue] = useState<string>(initial);
+  const userEditedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [accountChecked, setAccountChecked] = useState(!supabaseConfigured());
+  const [accountError, setAccountError] = useState(false);
+  const [accountAttempt, setAccountAttempt] = useState(0);
 
-  // These are NEW-USER onboarding steps only (editing lives in /settings). A
-  // signed-in reader who deep-links here, or a returning subscriber on a fresh
-  // device, would otherwise see a blank form and could re-save stale values —
-  // bounce them to their inbox, mirroring the welcome page's guard.
+  // A confirmed account can still be finishing signup. Only an established
+  // reader, pending request, or ended account leaves this funnel for /inbox.
   //
   // alpha-drift-r48-01 (2026-08-20): had no cancellation guard -- this
   // component is rendered by /name, /city, /role, /focus, /fun, and /email
@@ -64,21 +67,27 @@ export function QuestionStep({
     let cancelled = false;
     (async () => {
       try {
-        const { data: { session } } = await supabaseClient().auth.getSession();
+        const account = await readOnboardingAccountState();
         if (cancelled) return;
-        if (session) router.replace("/inbox" as never);
+        if (account !== "signed-out" && account !== "incomplete") router.replace("/inbox" as never);
+        else setAccountChecked(true);
       } catch {
-        // ignore — show the step as a fallback
+        if (!cancelled) setAccountError(true);
       }
     })();
     return () => { cancelled = true; };
-  }, [router]);
+  }, [router, accountAttempt]);
+
+  function retryAccountCheck() {
+    setAccountError(false);
+    setAccountChecked(false);
+    setAccountAttempt((attempt) => attempt + 1);
+  }
 
   useEffect(() => {
     // The persisted onboarding store becomes available only after hydration.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (loaded) setValue((state[field] as string) || "");
-  }, [loaded, field, state]);
+    if (loaded && !userEditedRef.current) setValue((state[field] as string) || (field === "email" ? emailDraft : "") || "");
+  }, [loaded, field, state, emailDraft]);
 
   // Every QuestionStep past /name (city, role, focus, fun, email) is a direct
   // URL a browser will happily load with empty or partial localStorage — none
@@ -100,7 +109,7 @@ export function QuestionStep({
 
   function submit(e?: FormEvent) {
     e?.preventDefault();
-    if (!canContinue) return;
+    if (!canContinue || !accountChecked || accountError) return;
     // Format gate (e.g. email): block advancing on a likely typo and show it
     // inline here, rather than letting a bad address reach Stripe / the send.
     if (validate) {
@@ -112,7 +121,7 @@ export function QuestionStep({
     }
     setError(null);
     audioConfirm();
-    update({ [field]: trimmed || undefined } as Partial<OnboardingState>);
+    if (!update({ [field]: trimmed || undefined } as Partial<OnboardingState>)) return;
     router.push(`/${nextStep(currentPath)}` as never);
   }
 
@@ -121,6 +130,7 @@ export function QuestionStep({
   useEffect(() => () => clearTimeout(skipTimer.current), []);
 
   function skip() {
+    if (!accountChecked || accountError) return;
     tap();
     setSkipping(true);
     skipTimer.current = setTimeout(() => {
@@ -136,7 +146,10 @@ export function QuestionStep({
       // instead of always clearing it: an untouched revisit keeps the saved
       // value, a genuinely empty field still clears to undefined exactly as
       // before.
-      update({ [field]: trimmed || undefined } as Partial<OnboardingState>);
+      if (!update({ [field]: trimmed || undefined } as Partial<OnboardingState>)) {
+        setSkipping(false);
+        return;
+      }
       router.push(`/${nextStep(currentPath)}` as never);
     }, 280);
   }
@@ -173,6 +186,7 @@ export function QuestionStep({
           aria-required={!optional || undefined}
           value={value}
           onChange={(e) => {
+            userEditedRef.current = true;
             setValue(e.target.value);
             if (error) setError(null);
           }}
@@ -195,6 +209,7 @@ export function QuestionStep({
           type={field === "email" ? "email" : "text"}
           value={value}
           onChange={(e) => {
+            userEditedRef.current = true;
             setValue(e.target.value);
             if (error) setError(null);
           }}
@@ -222,15 +237,17 @@ export function QuestionStep({
           {error}
         </p>
       )}
+      {storageError && <p role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>{storageError}</p>}
+      {accountError && <div role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>Couldn&apos;t check your account. <button type="button" onClick={retryAccountCheck} className="underline underline-offset-4 p-2">Try again</button></div>}
       <div className="flex items-center justify-between gap-6 pt-2">
         <div className="flex items-center gap-6">
           <button
             type="submit"
-            disabled={!canContinue}
+            disabled={!canContinue || !accountChecked || accountError}
             className="alpha-button"
             style={{
-              opacity: canContinue ? 1 : 0.3,
-              cursor: canContinue ? "pointer" : "not-allowed",
+              opacity: canContinue && accountChecked && !accountError ? 1 : 0.3,
+              cursor: canContinue && accountChecked && !accountError ? "pointer" : "not-allowed",
             }}
           >
             Continue →
@@ -239,6 +256,7 @@ export function QuestionStep({
             <button
               type="button"
               onClick={skip}
+              disabled={!accountChecked || accountError}
               // alpha-drift-r23-09 (found+fixed 2026-08-14): ~20px tall
               // (bare text-sm, no padding), under the WCAG 2.5.8 24px
               // floor, sitting right next to Continue. p-2 -m-2

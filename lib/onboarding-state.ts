@@ -31,6 +31,8 @@ export interface OnboardingState {
   // field-specific timestamp, stamped only when a patch actually sets/
   // changes email -- see update() below.
   emailSavedAt?: number;
+  // Orders local, same-tab fallback, and in-memory copies after a storage failure.
+  draftSavedAt?: number;
 }
 
 const EMPTY: OnboardingState = {};
@@ -50,46 +52,112 @@ const EMPTY: OnboardingState = {};
 // the same day).
 const EMAIL_STALE_AFTER_MS = 24 * 60 * 60 * 1000; // 24h
 
-function read(): OnboardingState {
-  if (typeof window === "undefined") return EMPTY;
+const STORAGE_ERROR = "Progress could not be saved in this browser. Keep this page open and try again.";
+let memoryDraft: OnboardingState | undefined;
+let memoryKind: "failed-write" | "failed-reset" | undefined;
+let memoryExpectedLocal = false;
+let memoryExpectedSession = false;
+
+function readStore(store: "localStorage" | "sessionStorage"): { draft?: OnboardingState; failed: boolean } {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return EMPTY;
-    const parsed = JSON.parse(raw) as OnboardingState;
-    if (parsed.email && (!parsed.emailSavedAt || Date.now() - parsed.emailSavedAt > EMAIL_STALE_AFTER_MS)) {
-      const { email: _stale, ...rest } = parsed;
-      void _stale;
-      return rest;
-    }
-    return parsed;
+    const raw = window[store].getItem(STORAGE_KEY);
+    if (!raw) return { failed: false };
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { failed: true };
+    return { draft: parsed as OnboardingState, failed: false };
   } catch {
-    return EMPTY;
+    return { failed: true };
   }
 }
 
-function write(s: OnboardingState) {
-  if (typeof window === "undefined") return;
+function readRaw(): { draft: OnboardingState; storageError: boolean } {
+  if (typeof window === "undefined") return { draft: EMPTY, storageError: false };
+  const local = readStore("localStorage");
+  const session = readStore("sessionStorage");
+  // An external cleanup may remove a previously readable persisted draft.
+  // Do not let a failed-write memory copy bring it back on the next mount.
+  if (memoryKind === "failed-write" && (
+    (memoryExpectedLocal && !local.failed && !local.draft) ||
+    (memoryExpectedSession && !session.failed && !session.draft)
+  )) {
+    memoryDraft = undefined;
+    memoryKind = undefined;
+  }
+  // Local wins ties to retain the existing cross-tab behavior. A newer
+  // session copy wins when local writes failed after an older local save.
+  const candidates = [local.draft, session.draft, memoryDraft];
+  const draft = candidates.reduce<OnboardingState | undefined>((newest, candidate) => {
+    if (!candidate) return newest;
+    return !newest || (candidate.draftSavedAt ?? 0) > (newest.draftSavedAt ?? 0)
+      ? candidate
+      : newest;
+  }, undefined) ?? EMPTY;
+  return { draft, storageError: (local.failed && session.failed) || memoryKind === "failed-reset" };
+}
+
+function usableState(raw: OnboardingState): OnboardingState {
+  if (raw.email && (!raw.emailSavedAt || Date.now() - raw.emailSavedAt > EMAIL_STALE_AFTER_MS)) {
+    const { email: _stale, ...rest } = raw;
+    void _stale;
+    return rest;
+  }
+  return raw;
+}
+
+function write(s: OnboardingState): boolean {
+  if (typeof window === "undefined") {
+    memoryDraft = s;
+    memoryKind = "failed-write";
+    return false;
+  }
+  const serialized = JSON.stringify(s);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    window.localStorage.setItem(STORAGE_KEY, serialized);
+    try { window.sessionStorage.removeItem(STORAGE_KEY); } catch { /* An older fallback cannot outrank this save. */ }
+    memoryDraft = undefined;
+    memoryKind = undefined;
+    return true;
   } catch {
-    // Storage blocked/full (Safari private mode, locked-down browser, etc).
-    // Fail soft and keep going in-memory for this session rather than
-    // throwing inside the setState updater and tripping the error boundary.
+    try {
+      window.sessionStorage.setItem(STORAGE_KEY, serialized);
+      memoryDraft = undefined;
+      memoryKind = undefined;
+      return true;
+    } catch {
+      memoryDraft = s;
+      memoryKind = "failed-write";
+      memoryExpectedLocal = !!readStore("localStorage").draft;
+      memoryExpectedSession = !!readStore("sessionStorage").draft;
+      return false;
+    }
   }
 }
 
 export function useOnboarding() {
   const [state, setState] = useState<OnboardingState>(EMPTY);
+  const [emailDraft, setEmailDraft] = useState<string | undefined>(undefined);
+  const [storageError, setStorageError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     // Hydrate the browser-only store after the initial server/client render.
+    const stored = readRaw();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setState(read());
+    setState(usableState(stored.draft));
+    setEmailDraft(typeof stored.draft.email === "string" ? stored.draft.email : undefined);
+    setStorageError(stored.storageError ? STORAGE_ERROR : null);
     setLoaded(true);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY && event.newValue === null) {
+        memoryDraft = undefined;
+        memoryKind = undefined;
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const update = useCallback((patch: Partial<OnboardingState>) => {
+  const update = useCallback((patch: Partial<OnboardingState>): boolean => {
     // Merge onto the freshest localStorage contents, not the in-memory
     // `state` -- another tab may have written since this tab last hydrated,
     // and a merge onto stale in-memory state would silently overwrite
@@ -101,12 +169,14 @@ export function useOnboarding() {
     // stranger's email back to "fresh" as long as something touched the
     // state within each rolling 24h window, defeating the staleness check
     // entirely.
+    const current = readRaw().draft;
     const next = {
-      ...read(),
+      ...current,
       ...patch,
       ...("email" in patch ? { emailSavedAt: Date.now() } : {}),
+      draftSavedAt: Math.max(Date.now(), (current.draftSavedAt ?? 0) + 1),
     };
-    write(next);
+    const saved = write(next);
     // Fire-and-forget Supabase sync if user is authed. Errors are swallowed
     // inside syncUserProfile — never blocks the UI. `patch` (this call's
     // own, unmerged intent) is passed alongside `next` (the merged result)
@@ -114,16 +184,41 @@ export function useOnboarding() {
     // apart from one that's merely present from an earlier, possibly-stale
     // localStorage snapshot -- see alpha-drift-r60-10 on syncUserProfile
     // itself for why that distinction matters for topics specifically.
-    syncUserProfile(next, patch);
-    setState(next);
+    if (saved) syncUserProfile(usableState(next), patch);
+    setState(usableState(next));
+    setEmailDraft(typeof next.email === "string" ? next.email : undefined);
+    setStorageError(saved ? null : STORAGE_ERROR);
+    return saved;
   }, []);
 
-  const reset = useCallback(() => {
+  const reset = useCallback((): boolean => {
+    const resetAt = Math.max(Date.now(), (readRaw().draft.draftSavedAt ?? 0) + 1);
     setState(EMPTY);
-    if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
+    setEmailDraft(undefined);
+    if (typeof window !== "undefined") {
+      let failed = false;
+      const empty = JSON.stringify({ draftSavedAt: resetAt });
+      for (const store of ["localStorage", "sessionStorage"] as const) {
+        try {
+          window[store].removeItem(STORAGE_KEY);
+        } catch {
+          // If removal is blocked but writing works, overwrite private data
+          // with an empty draft before allowing navigation or reload.
+          try { window[store].setItem(STORAGE_KEY, empty); } catch { failed = true; }
+        }
+      }
+      memoryDraft = failed ? { draftSavedAt: resetAt } : undefined;
+      memoryKind = failed ? "failed-reset" : undefined;
+      setStorageError(failed ? STORAGE_ERROR : null);
+      return !failed;
+    } else {
+      memoryDraft = undefined;
+      memoryKind = undefined;
+      return false;
+    }
   }, []);
 
-  return { state, update, reset, loaded };
+  return { state, emailDraft, storageError, update, reset, loaded };
 }
 
 export const ONBOARDING_STEPS = [
