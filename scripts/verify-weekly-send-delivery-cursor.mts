@@ -281,7 +281,7 @@ check(
 check(
   "provider target comes from the just-in-time account email check",
   route.includes(
-    '"email, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"'
+    '"email, delivery_enrolled, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"'
   ) &&
     route.includes("currentDeliveryEmail = freshUser.email.trim()") &&
     route.includes("to: currentDeliveryEmail") &&
@@ -365,11 +365,11 @@ check(
     workflow.includes("Refusing to signal the workflow shell process group")
 );
 check(
-  "manual weekOf input is calendar-validated and URL-encoded",
-  workflow.includes('WEEK_OF_TO_CHECK="${WEEK_OF_INPUT}"') &&
-    workflow.includes("Date.UTC(year, month - 1, day)") &&
-    workflow.includes("encodeURIComponent(process.env.WEEK_OF_TO_ENCODE") &&
-    route.includes("weekOf must be a real calendar date in YYYY-MM-DD format")
+  "manual-first workflow has no backfill input",
+  workflow.includes("if: ${{ github.event_name == 'workflow_dispatch' }}") &&
+    !workflow.includes("WEEK_OF_INPUT") &&
+    !workflow.includes("inputs.weekOf") &&
+    !workflow.includes('URL="${URL}?weekOf=')
 );
 check(
   "workflow treats mid-run ineligibility as settled coverage",

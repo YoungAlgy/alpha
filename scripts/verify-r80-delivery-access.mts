@@ -12,7 +12,7 @@ function check(label: string, condition: boolean) {
   else failed++;
 }
 
-const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 type RevokeRow = {
   stripe_customer_id: string | null;
@@ -405,8 +405,8 @@ console.log("(6) weekly delivery re-proves the subscriber access grant");
     /import \{ hasReaderAccess \} from "@\/lib\/access";/.test(route)
   );
   check(
-    "the fresh user read includes current email plus paid and invite access markers",
-    /\.select\(\s*"email, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"\s*\)/.test(
+    "the fresh user read includes enrollment, current email plus paid and invite access markers",
+    /\.select\(\s*"email, delivery_enrolled, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"\s*\)/.test(
       route
     )
   );

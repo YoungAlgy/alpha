@@ -15,6 +15,8 @@ const sha = "a".repeat(40);
 const otherSha = "b".repeat(40);
 const pausedPolicy = "// approved pause\nexport const SUBSCRIBER_LETTERS_ENABLED: boolean = false;\n";
 const openPolicy = "/* reviewed resume */\nexport const SUBSCRIBER_LETTERS_ENABLED: boolean = true;\n";
+const heldInteractivePolicy = "export const SUBSCRIBER_LETTERS_ENABLED: boolean = false;\nexport const INTERACTIVE_LETTERS_ENABLED: boolean = false;\n";
+const manualFirstPolicy = "export const SUBSCRIBER_LETTERS_ENABLED: boolean = true;\nexport const INTERACTIVE_LETTERS_ENABLED: boolean = false;\n";
 const health = (mode, release = sha) => JSON.stringify({
   ok: true,
   accessMode: "invite",
@@ -32,6 +34,9 @@ const decide = (overrides = {}) => decideWatchdogDeliveryMode({
 
 assert.equal(parseSubscriberDeliveryPolicy(pausedPolicy), "paused");
 assert.equal(parseSubscriberDeliveryPolicy(openPolicy), "open");
+assert.equal(parseSubscriberDeliveryPolicy(heldInteractivePolicy), "paused");
+assert.equal(parseSubscriberDeliveryPolicy(manualFirstPolicy), "open");
+assert.equal(parseSubscriberDeliveryPolicy(manualFirstPolicy.replace("INTERACTIVE_LETTERS_ENABLED: boolean = false", "INTERACTIVE_LETTERS_ENABLED: boolean = true")), null);
 assert.equal(parseSubscriberDeliveryPolicy("// comment only"), null);
 assert.equal(parseSubscriberDeliveryPolicy(pausedPolicy + "export const EXTRA = true;"), null);
 assert.equal(parseSubscriberDeliveryPolicy(pausedPolicy + openPolicy), null);
@@ -98,6 +103,11 @@ assert.equal(openCli.error, undefined);
 assert.equal(openCli.status, 0);
 assert.equal(openCli.stdout, "open");
 assert.equal(openCli.stderr, "");
+const manualFirstCli = runCli(manualFirstPolicy, "open");
+assert.equal(manualFirstCli.error, undefined);
+assert.equal(manualFirstCli.status, 0);
+assert.equal(manualFirstCli.stdout, "open");
+assert.equal(manualFirstCli.stderr, "");
 const mismatchCli = runCli(pausedPolicy, "open");
 assert.equal(mismatchCli.error, undefined);
 assert.equal(mismatchCli.status, 2);
@@ -110,7 +120,7 @@ assert.equal(missingPolicyCli.stdout, "");
 assert.match(missingPolicyCli.stderr, /^Watchdog release state unverified: local_input_unreadable\r?\n$/);
 
 const currentPolicy = readFileSync("lib/subscriber-delivery-policy.ts", "utf8");
-assert.equal(parseSubscriberDeliveryPolicy(currentPolicy), "paused");
+assert.equal(parseSubscriberDeliveryPolicy(currentPolicy), "open");
 const workflow = readFileSync(".github/workflows/letter-watchdog.yml", "utf8");
 assert.match(workflow, /actions\/checkout@11d5960a326750d5838078e36cf38b85af677262/);
 assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);

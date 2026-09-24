@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { hasActiveAccess, ADMIN_EMAIL } from "@/lib/access";
+import { hasActiveAccess, hasReaderAccess, ADMIN_EMAIL } from "@/lib/access";
 import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
@@ -258,7 +258,7 @@ export async function GET(req: Request) {
     // .is("bounced_at", null).is("complained_at", null) filter with no way
     // for an admin to even SEE it happened. The panel keeps the delivery
     // review state visible while provider recovery is held.
-    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, access_requested_at, access_granted_at, cancelled_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_started_at, created_at");
+    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, access_requested_at, access_granted_at, delivery_enrolled, cancelled_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_started_at, created_at");
   if (escapedQ) {
     usersQuery = usersQuery
       .ilike("email", `%${escapedQ}%`)
@@ -326,8 +326,11 @@ const ActionBodySchema = z.object({
     "revoke_invite",
     "deny_access",
     "clear_suppression",
+    "enable_delivery",
+    "pause_delivery",
   ]),
   userId: z.string().uuid(),
+  expectedEmail: z.string().email().optional(),
 });
 type ActionBody = z.infer<typeof ActionBodySchema>;
 
@@ -371,6 +374,97 @@ export async function POST(req: Request) {
   }
 
   const sb = await supabaseServiceClient();
+
+  if (body.action === "enable_delivery" || body.action === "pause_delivery") {
+    if (!body.expectedEmail) {
+      return NextResponse.json({ error: "Refresh the account list and try again." }, { status: 400 });
+    }
+    const { data: existing, error: existingError } = await sb
+      .from("users")
+      .select("email, subscribed_at, cancelled_at, access_granted_at, delivery_enrolled, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_token, suppression_recovery_started_at, delivery_suppression_cleared_at")
+      .eq("id", body.userId)
+      .maybeSingle();
+    if (existingError) {
+      console.error("[admin/users] delivery enrollment read failed");
+      return NextResponse.json({ error: "Couldn't verify delivery state. Try again." }, { status: 503 });
+    }
+    if (!existing) return NextResponse.json({ error: "Account not found." }, { status: 404 });
+    if (!existing.email || existing.email !== existing.email.toLowerCase().trim() || existing.email !== body.expectedEmail) {
+      return NextResponse.json({ error: "The displayed address changed. Refresh and review the account." }, { status: 409 });
+    }
+
+    const enable = body.action === "enable_delivery";
+    if (enable) {
+      if (!hasReaderAccess(existing.subscribed_at, existing.cancelled_at, existing.access_granted_at)) {
+        return NextResponse.json({ error: "Grant reader access before enabling letters." }, { status: 409 });
+      }
+      if (
+        existing.unsubscribed_at || existing.bounced_at || existing.complained_at ||
+        existing.suppression_cleanup_pending_at || existing.suppression_recovery_token ||
+        existing.suppression_recovery_started_at
+      ) {
+        return NextResponse.json({ error: "Delivery is blocked. Review the account before enabling letters." }, { status: 409 });
+      }
+      const { data: auth, error: authError } = await sb.auth.admin.getUserById(body.userId);
+      if (authError || !auth?.user) {
+        console.error("[admin/users] delivery enrollment Auth lookup failed");
+        return NextResponse.json({ error: "Couldn't confirm this reader's sign-in identity. Try again." }, { status: 503 });
+      }
+      const authUser = auth.user;
+      if (
+        !authUser.email_confirmed_at ||
+        !authUser.email || authUser.email.toLowerCase().trim() !== existing.email ||
+        authUser.new_email || authUser.deleted_at || authUser.is_anonymous ||
+        (authUser.banned_until &&
+          (!Number.isFinite(new Date(authUser.banned_until).getTime()) ||
+            new Date(authUser.banned_until).getTime() > Date.now()))
+      ) {
+        return NextResponse.json({ error: "Confirm the reader's current email and account status before enabling letters." }, { status: 409 });
+      }
+    }
+    if (existing.delivery_enrolled === enable) {
+      return NextResponse.json({ ok: true, alreadySet: true });
+    }
+
+    // Change only the protected enrollment bit. The WHERE clauses compare
+    // every access and block field read above so a concurrent change loses
+    // the race and has to be reviewed before a new decision.
+    let update = sb.from("users")
+      .update({ delivery_enrolled: enable })
+      .eq("id", body.userId)
+      .eq("email", existing.email)
+      .eq("delivery_enrolled", !enable);
+    const snapshot = {
+      subscribed_at: existing.subscribed_at,
+      cancelled_at: existing.cancelled_at,
+      access_granted_at: existing.access_granted_at,
+      unsubscribed_at: existing.unsubscribed_at,
+      bounced_at: existing.bounced_at,
+      complained_at: existing.complained_at,
+      suppression_cleanup_pending_at: existing.suppression_cleanup_pending_at,
+      suppression_recovery_token: existing.suppression_recovery_token,
+      suppression_recovery_started_at: existing.suppression_recovery_started_at,
+      delivery_suppression_cleared_at: existing.delivery_suppression_cleared_at,
+    };
+    for (const [field, value] of Object.entries(snapshot)) {
+      update = value === null ? update.is(field, null) : update.eq(field, value);
+    }
+    const { data: changed, error: updateError } = await update.select("id");
+    if (updateError) {
+      if (updateError.message.includes("delivery state change blocked by active provider lease")) {
+        return NextResponse.json(
+          { error: "A letter send is still in progress. Wait a few minutes, refresh, and try again." },
+          { status: 409 }
+        );
+      }
+      console.error("[admin/users] delivery enrollment update failed");
+      return NextResponse.json({ error: "Couldn't change delivery state. Try again." }, { status: 503 });
+    }
+    if (!changed || changed.length !== 1) {
+      return NextResponse.json({ error: "The account changed. Refresh and review it before retrying." }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true });
+  }
 
   if (body.action === "delete") {
     // Keep confirmed emails only for app-owned support cleanup. Deletion

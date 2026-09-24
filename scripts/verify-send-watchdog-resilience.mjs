@@ -173,7 +173,6 @@ for (const [envName, secretName] of dailyEnv) {
   );
 }
 for (const [envName, variableName] of [
-  ["ALPHA_NO_MODEL_MODE", "SEND_ALPHA_NO_MODEL_MODE"],
   ["ALPHA_PUBLIC_FEED_FALLBACK", "SEND_ALPHA_PUBLIC_FEED_FALLBACK"],
 ]) {
   check(
@@ -181,6 +180,13 @@ for (const [envName, variableName] of [
     dailyPreflightStep.includes(`${envName}: \${{ vars.${variableName} }}`)
   );
 }
+check(
+  "manual-first preflight pins no-model and paid AI off",
+  dailyPreflightStep.includes("ALPHA_NO_MODEL_MODE: '1'") &&
+    dailyPreflightStep.includes("ALPHA_ALLOW_PAID_AI: '0'") &&
+    preflight.includes('process.env.ALPHA_NO_MODEL_MODE !== "1"') &&
+    preflight.includes('process.env.ALPHA_ALLOW_PAID_AI !== "0"')
+);
 check(
   "health exposes current-source configuration separately from hard product health",
   healthRoute.includes("freshSourceConfigured:") &&
@@ -223,8 +229,6 @@ const optionalRuntimeMappings = [
   ["ALPHA_EDITOR_MODEL", "vars.SEND_ALPHA_EDITOR_MODEL"],
   ["ALPHA_GEMINI_TEXT_MODEL", "vars.SEND_ALPHA_GEMINI_TEXT_MODEL"],
   ["ALPHA_GEMINI_SEARCH_MODEL", "vars.SEND_ALPHA_GEMINI_SEARCH_MODEL"],
-  ["ALPHA_ALLOW_PAID_AI", "vars.SEND_ALPHA_ALLOW_PAID_AI"],
-  ["ALPHA_NO_MODEL_MODE", "vars.SEND_ALPHA_NO_MODEL_MODE"],
   ["ALPHA_PUBLIC_FEED_FALLBACK", "vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK"],
 ];
 for (const [envName, sourceName] of optionalRuntimeMappings) {
@@ -233,6 +237,11 @@ for (const [envName, sourceName] of optionalRuntimeMappings) {
     dailyRuntimeStep.includes(`${envName}: \${{ ${sourceName} }}`)
   );
 }
+check(
+  "manual-first runtime pins no-model and paid AI off",
+  dailyRuntimeStep.includes("ALPHA_NO_MODEL_MODE: '1'") &&
+    dailyRuntimeStep.includes("ALPHA_ALLOW_PAID_AI: '0'")
+);
 check(
   "daily build stamps its checked-out commit into health",
   daily.includes("NEXT_PUBLIC_ALPHA_RELEASE_SHA: ${{ github.sha }}")

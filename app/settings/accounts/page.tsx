@@ -23,6 +23,7 @@ interface AdminUserRow {
   subscribed_at: string | null;
   access_requested_at: string | null;
   access_granted_at: string | null;
+  delivery_enrolled: boolean;
   cancelled_at: string | null;
   unsubscribed_at: string | null;
   bounced_at: string | null;
@@ -343,7 +344,9 @@ export default function AdminAccountsPage() {
       | "revoke_free"
       | "grant_invite"
       | "revoke_invite"
-      | "deny_access",
+      | "deny_access"
+      | "enable_delivery"
+      | "pause_delivery",
     confirmMsg?: string
   ) {
     if (confirmMsg && !confirm(confirmMsg)) return;
@@ -355,7 +358,7 @@ export default function AdminAccountsPage() {
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, userId }),
+        body: JSON.stringify({ action, userId, ...(action === "enable_delivery" || action === "pause_delivery" ? { expectedEmail: email } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -370,6 +373,10 @@ export default function AdminAccountsPage() {
           ? "Granted permanent invite access to"
           : action === "revoke_invite"
           ? "Revoked permanent invite access from"
+          : action === "enable_delivery"
+          ? "Enabled letters for"
+          : action === "pause_delivery"
+          ? "Paused letters for"
           : "Denied the access request from";
       setActionMsg(`${verb} ${email}.`);
     } catch (e) {
@@ -704,6 +711,9 @@ export default function AdminAccountsPage() {
                 !!u.complained_at ||
                 !!u.suppression_cleanup_pending_at;
               const recoveryInProgress = !!u.suppression_recovery_started_at;
+              const canEnableDelivery =
+                readerAccess && !u.delivery_enrolled && !u.unsubscribed_at &&
+                !isSuppressed && !recoveryInProgress;
               return (
                 <li
                   key={u.id}
@@ -745,6 +755,12 @@ export default function AdminAccountsPage() {
                           INVITED
                         </span>
                       )}
+                      <span
+                        className="alpha-mono text-xs"
+                        style={{ color: "var(--ink)" }}
+                      >
+                        {u.delivery_enrolled ? "LETTERS ENABLED" : "LETTERS PAUSED"}
+                      </span>
                       {(isSuppressed || recoveryInProgress) && (
                         <span
                           className="alpha-mono text-xs"
@@ -816,6 +832,35 @@ export default function AdminAccountsPage() {
                       p-2 -m-2) deliberately avoids colliding with this row's
                       own gap-3 horizontal spacing. */}
                   <div className="flex flex-wrap gap-3 mt-3">
+                    {canEnableDelivery && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          act(
+                            u.id,
+                            u.email,
+                            "enable_delivery",
+                            `Enable Alpha letters for ${u.email}? Access approval alone does not send letters.`
+                          )
+                        }
+                        className="alpha-ui text-xs underline underline-offset-4 min-h-11 px-3 py-2"
+                        style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
+                      >
+                        Enable letters
+                      </button>
+                    )}
+                    {u.delivery_enrolled && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => act(u.id, u.email, "pause_delivery")}
+                        className="alpha-ui text-xs underline underline-offset-4 min-h-11 px-3 py-2"
+                        style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
+                      >
+                        Pause letters
+                      </button>
+                    )}
                     {canGrantFree && (
                       <button
                         type="button"

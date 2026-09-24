@@ -25,13 +25,23 @@ readers. Keep reader identities in protected account data, not hard-coded
 allowlists. Removing old billing history or cancellation safeguards is a
 separate wind-down step, not a prerequisite for free invite access.
 
-The approved release is access-only. `lib/subscriber-delivery-policy.ts` keeps
-new generation and every subscriber-letter send paused, including direct,
-scheduled, forced, and fallback paths. The daily-send job is also source-held
-before a runner starts. Neither hold has an environment override. Resuming
-letters requires Alex's approval and a reviewed release after the live callback
-and delivery checks pass. Saved letters, invite approval, sign-in, support, and
-operator alerts remain available. Health reports `subscriberDeliveryMode`.
+The current release is manual-first delivery. `delivery_enrolled` is an
+owner-controlled account field, separate from reading access. It defaults to
+false, cannot be changed by subscribers, and is checked in the population
+query, immediately before sending, and in the locked provider-attempt claim.
+Accounts offers separate Enable letters and Pause letters actions. Neither
+action changes access, billing history, unsubscribe, or suppression markers.
+
+`lib/subscriber-delivery-policy.ts` enables the enrolled sender while keeping
+direct reader-triggered generation paused. Setting its global literal false
+remains the emergency stop. There is no environment override. The daily job
+accepts only manual dispatch until first-batch acceptance is recorded. It pins
+no-model mode on and paid AI off. Historical overrides and forced resends are
+closed during this rollout. Health reports subscriber delivery open, which
+does not itself prove a schedule is active or a letter has been delivered.
+Saved letters, invite approval, sign-in, support, and operator alerts remain
+available. Live deployment and first-batch evidence belong in the dated
+Desktop Files launch checkpoint.
 
 Access approval, signup, paid checkout, and email reconciliation preserve
 provider do-not-email blocks. Manual provider-suppression removal is
@@ -42,8 +52,10 @@ settlement and local privacy cleanup.
 
 The invite request columns are part of the exact fourteen-migration Round 80
 atomic release package. Do not apply
-`supabase/migrations/20260830000000_invite_access.sql` by itself. The package
-has not been applied from this local audit.
+`supabase/migrations/20260830000000_invite_access.sql` by itself. The additive
+`20260924000000_delivery_enrollment.sql` requires the reviewed post-clock-fence
+function bodies. Its guarded manual release wrapper checks the existing
+25-entry ledger and records the 26th version atomically. It enrolls nobody.
 
 Free-mode generation also fails closed against paid AI. Anthropic and DeepSeek
 are disabled unless `ALPHA_ALLOW_PAID_AI` is explicitly enabled. If search has

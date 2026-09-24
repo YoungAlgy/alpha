@@ -160,8 +160,8 @@ assert.match(smoke, /body\?\.release !== EXPECTED_RELEASE/);
 assert.match(smoke, /ALPHA_EXPECTED_CHECKOUT_MODE/);
 assert.match(smoke, /body\?\.checkoutMode !== EXPECTED_CHECKOUT_MODE/);
 assert.match(smoke, /EXPECTED_CHECKOUT_MODE !== "paused"/);
-assert.match(smoke, /accessOnlyHealthMatches\(body\)/);
-assert.match(smoke, /body\?\.accessMode === "invite"[\s\S]*?body\?\.subscriberDeliveryMode === "paused"/);
+assert.match(smoke, /manualDeliveryHealthMatches\(body\)/);
+assert.match(smoke, /body\?\.accessMode === "invite"[\s\S]*?body\?\.subscriberDeliveryMode === "open"/);
 assert.match(smoke, /noChargeResponseMatches\(status, body, cacheControl, expectedError\)/);
 assert.match(smoke, /\/api\/stripe\/checkout[\s\S]*?"invite_only"/);
 assert.match(smoke, /\/api\/stripe\/update-quantity[\s\S]*?Paid plan changes are closed/);
@@ -218,7 +218,8 @@ assert.ok(
 assert.ok(
   rollbackCapture.includes('"deployments", "status"') &&
     rollbackCapture.includes("version?.percentage === 100") &&
-    rollbackCapture.includes("Alpha-Releases")
+    rollbackCapture.includes("process.env.ALPHA_RELEASE_RECORD_DIR?.trim()") &&
+    rollbackCapture.includes('"backup/release-records"')
 );
 assert.ok(
   unsubscribeCanary.includes('method: "GET"') &&
@@ -421,7 +422,7 @@ const expectedMigrationChecksums = expectedRound80Migrations.map((name) => ({
   name,
   sha256: crypto
     .createHash("sha256")
-    .update(source(`../supabase/migrations/${name}`).trimEnd())
+    .update(source(`../supabase/migrations/${name}`).replace(/\r\n/g, "\n").trimEnd())
     .digest("hex"),
 }));
 const bundlerChecksumBlock =

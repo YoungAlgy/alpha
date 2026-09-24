@@ -90,11 +90,6 @@ on:
     # Algy, not built here, since it requires him to create that account.
     - cron: '0 18 * * *'
   workflow_dispatch:
-    inputs:
-      weekOf:
-        description: 'Optional YYYY-MM-DD override (admin backfill/testing only -- leave blank for the normal daily run)'
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -114,10 +109,9 @@ concurrency:
 
 jobs:
   send:
-    # Access-only release hold. Re-enabling the workflow in GitHub must not
-    # start a runner or send letters. Resume only after an approved source
-    # change to this gate and lib/subscriber-delivery-policy.ts together.
-    if: ${{ false }}
+    # Manual-first release. Scheduled events remain inert until the first
+    # three protected issues are accepted in a separate reviewed release.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     # Preserve headroom around the bounded 55-minute delivery loop and final
     # 120-second process drain, including slow checkout/install/build days.
@@ -139,10 +133,7 @@ jobs:
       # cause a missed send.
       #
       # Bypassed entirely for workflow_dispatch (github.event_name check
-      # below) -- a manual admin run (backfill, ?weekOf= override, testing)
-      # must always execute in full regardless of today's delivery state;
-      # this RPC's cutoff-based check has no idea a manual override even
-      # exists and would give a meaningless answer for one.
+      # below) so an operator-triggered run always executes the full path.
       #
       # Reuses letter-watchdog.yml's watchdog_delivery_check() RPC for send
       # coverage. Nonletter maintenance has its own disabled workflow.
@@ -261,7 +252,8 @@ jobs:
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
           ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
-          ALPHA_NO_MODEL_MODE: ${{ vars.SEND_ALPHA_NO_MODEL_MODE }}
+          ALPHA_NO_MODEL_MODE: '1'
+          ALPHA_ALLOW_PAID_AI: '0'
           ALPHA_PUBLIC_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK }}
         # Deliberately runs BEFORE `npm ci` -- no dependencies needed (just
         # Node's built-in fetch), so missing values fail immediately and the
@@ -320,14 +312,11 @@ jobs:
           ALPHA_EDITOR_MODEL: ${{ vars.SEND_ALPHA_EDITOR_MODEL }}
           ALPHA_GEMINI_TEXT_MODEL: ${{ vars.SEND_ALPHA_GEMINI_TEXT_MODEL }}
           ALPHA_GEMINI_SEARCH_MODEL: ${{ vars.SEND_ALPHA_GEMINI_SEARCH_MODEL }}
-          # Free mode is the default in code. This variable must be an
-          # explicit reviewed opt-in before Anthropic or DeepSeek can run.
-          ALPHA_ALLOW_PAID_AI: ${{ vars.SEND_ALPHA_ALLOW_PAID_AI }}
-          # Set to 1 for a strict zero-cost run. This skips all writer-model
-          # calls, including the per-reader editor note, and uses the local
-          # source formatter after search. Leave blank to keep the normal
-          # Gemini/Groq free-tier path.
-          ALPHA_NO_MODEL_MODE: ${{ vars.SEND_ALPHA_NO_MODEL_MODE }}
+          # Manual-first delivery keeps paid writer calls off in source.
+          ALPHA_ALLOW_PAID_AI: '0'
+          # Skip writer-model calls, including per-reader editor notes, and
+          # format the current resolved sources locally.
+          ALPHA_NO_MODEL_MODE: '1'
           ALPHA_PUBLIC_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
@@ -342,7 +331,6 @@ jobs:
           # webhook here.
           ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           NEXT_PUBLIC_APP_URL: https://alpha.everyday.report
-          WEEK_OF_INPUT: ${{ inputs.weekOf }}
         run: |
           set -uo pipefail
           set +e
@@ -575,24 +563,6 @@ jobs:
           fi
 
           URL="http://localhost:3100/api/cron/weekly-send"
-          if [ -n "${WEEK_OF_INPUT}" ]; then
-            if ! WEEK_OF_TO_CHECK="${WEEK_OF_INPUT}" node -e '
-              const raw = process.env.WEEK_OF_TO_CHECK || "";
-              const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-              if (!match) process.exit(1);
-              const year = Number(match[1]);
-              const month = Number(match[2]);
-              const day = Number(match[3]);
-              const parsed = new Date(Date.UTC(year, month - 1, day));
-              if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) process.exit(1);
-            '; then
-              echo "::error::Manual weekOf must be a real calendar date in YYYY-MM-DD format."
-              exit 1
-            fi
-            ENCODED_WEEK_OF=$(WEEK_OF_TO_ENCODE="${WEEK_OF_INPUT}" node -e 'process.stdout.write(encodeURIComponent(process.env.WEEK_OF_TO_ENCODE || ""))')
-            URL="${URL}?weekOf=${ENCODED_WEEK_OF}"
-            echo "Manual weekOf override: ${WEEK_OF_INPUT}"
-          fi
 
           DELIVERY_CURL_FAILED=0
           DELIVERY_HTTP_FAILED=0

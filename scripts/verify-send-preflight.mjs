@@ -100,6 +100,10 @@ if (
 
 const strictNoModel = enabled("ALPHA_NO_MODEL_MODE");
 const publicFeedEnabled = enabled("ALPHA_PUBLIC_FEED_FALLBACK");
+if (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0") {
+  console.error("::error::Manual-first delivery requires no-model mode and paid AI disabled.");
+  deliveryReady = false;
+}
 const configuredGenerators = GENERATOR_KEYS.filter(configured);
 if (!strictNoModel && configuredGenerators.length === 0) {
   console.warn(

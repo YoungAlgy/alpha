@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Decide whether the delivery watchdog should check coverage. This parser
-// accepts comments and one literal boolean export only. It never runs TS.
+// accepts literal delivery flags with an optional interactive=false hold.
+// It never runs TS or accepts an environment-driven policy.
 import { readFileSync } from "node:fs";
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -38,7 +39,7 @@ export function parseSubscriberDeliveryPolicy(source) {
   if (state === "block") return null;
   withoutComments = withoutComments.trim();
   const match = withoutComments.match(
-    /^export\s+const\s+SUBSCRIBER_LETTERS_ENABLED\s*:\s*boolean\s*=\s*(true|false)\s*;$/
+    /^export\s+const\s+SUBSCRIBER_LETTERS_ENABLED\s*:\s*boolean\s*=\s*(true|false)\s*;(?:\s*export\s+const\s+INTERACTIVE_LETTERS_ENABLED\s*:\s*boolean\s*=\s*false\s*;)?$/
   );
   return match ? (match[1] === "true" ? "open" : "paused") : null;
 }

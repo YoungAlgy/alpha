@@ -314,6 +314,14 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
+  // Initial owner-reviewed rollout only sends the current issue once.
+  // Keep historical and forced delivery paths closed until separately reviewed.
+  if (url.searchParams.has("weekOf") || url.searchParams.get("force") === "1") {
+    return NextResponse.json(
+      { error: "Historical and forced sends are paused during the delivery rollout." },
+      { status: 403 }
+    );
+  }
   const weekOfOverride = url.searchParams.get("weekOf");
   if (
     weekOfOverride !== null &&
@@ -500,6 +508,7 @@ export async function GET(req: Request) {
       .select(
         "id, email, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, theme, topics, topic_quota"
       )
+      .eq("delivery_enrolled", true)
       .not("subscribed_at", "is", null)
       .or(
         `access_granted_at.not.is.null,cancelled_at.is.null,cancelled_at.gt.${nowIso}`
@@ -671,6 +680,7 @@ export async function GET(req: Request) {
   // to prevent. Broadened into ONE query covering all 4 columns; failures
   // renamed from unsubscribedRecheckFailures to reflect that broader scope.
   let cancelledMidRunSkips = 0;
+  let unenrolledMidRunSkips = 0;
   let suppressedMidRunSkips = 0;
   let eligibilityRecheckFailures = 0;
 
@@ -1136,7 +1146,7 @@ export async function GET(req: Request) {
       const { data: freshUser, error: freshUserErr } = await sb
         .from("users")
         .select(
-          "email, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"
+          "email, delivery_enrolled, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"
         )
         .eq("id", row.id)
         .maybeSingle();
@@ -1148,6 +1158,10 @@ export async function GET(req: Request) {
         eligibilityRecheckFailures++;
         console.warn("[cron/weekly-send] eligibility re-check could not prove access");
         return "retry-required";
+      } else if (freshUser.delivery_enrolled !== true) {
+        unenrolledMidRunSkips++;
+        console.log("[cron/weekly-send] skipped (delivery enrollment ended mid-run)");
+        return "settled";
       } else if (freshUser.unsubscribed_at) {
         unsubscribedMidRunSkips++;
         console.log("[cron/weekly-send] skipped (unsubscribed mid-run)");
@@ -1739,6 +1753,7 @@ export async function GET(req: Request) {
     hardFailedTopics: failedCache.size,
     unsubscribedMidRunSkips,
     cancelledMidRunSkips,
+    unenrolledMidRunSkips,
     suppressedMidRunSkips,
     eligibilityRecheckFailures,
     checkoutRetentionErrors: retentionErrors.length,

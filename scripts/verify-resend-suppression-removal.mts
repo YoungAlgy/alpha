@@ -39,7 +39,8 @@ const policy = load("../lib/suppression-recovery-policy.ts", {});
 assert.equal(policy.MANUAL_PROVIDER_SUPPRESSION_REMOVAL_ENABLED, false);
 assertions++;
 const deliveryPolicy = load("../lib/subscriber-delivery-policy.ts", {});
-assert.equal(deliveryPolicy.SUBSCRIBER_LETTERS_ENABLED, false);
+assert.equal(deliveryPolicy.SUBSCRIBER_LETTERS_ENABLED, true);
+assert.equal(deliveryPolicy.INTERACTIVE_LETTERS_ENABLED, false);
 assertions++;
 const recovery = load("../lib/suppression-recovery.ts", {
   "./suppression-recovery-policy": policy,

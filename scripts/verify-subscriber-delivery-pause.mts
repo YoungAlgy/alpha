@@ -14,9 +14,10 @@ const writing = read("app/writing/page.tsx");
 const workflow = read(".github/workflows/daily-send.yml");
 const health = read("app/api/health/route.ts");
 
-assert.match(policy, /SUBSCRIBER_LETTERS_ENABLED:\s*boolean\s*=\s*false/);
+assert.match(policy, /SUBSCRIBER_LETTERS_ENABLED:\s*boolean\s*=\s*true/);
+assert.match(policy, /INTERACTIVE_LETTERS_ENABLED:\s*boolean\s*=\s*false/);
 assert.doesNotMatch(policy, /process\.env/);
-const subscriberLettersEnabled = false;
+const subscriberLettersEnabled = false; // Simulate the literal emergency-pause source state.
 
 const parse = (name: string, source: string) =>
   ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -155,5 +156,5 @@ handlePaused({ status: 503 }, { error: "subscriber_delivery_paused", message: "p
 assert.deepEqual(writingCalls, ["clearInterval", "clearTimeout", "setDeliveryPaused:true", "setError:paused"]);
 
 assert.match(health, /subscriberDeliveryMode:\s*SUBSCRIBER_LETTERS_ENABLED \? "open" : "paused"/);
-assert.match(workflow, /jobs:\s+send:[\s\S]{0,300}if:\s*\$\{\{\s*false\s*\}\}/);
+assert.match(workflow, /jobs:\s+send:[\s\S]{0,300}if:\s*\$\{\{\s*github\.event_name == 'workflow_dispatch'\s*\}\}/);
 console.log("PASS verify-subscriber-delivery-pause (executed production route prefixes, bearer guard, sender backstop, and writing pause branch)");

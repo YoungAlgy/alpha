@@ -22,7 +22,7 @@ import { consumeDistributedRateLimit } from "@/lib/distributed-rate-limit";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasReaderAccess } from "@/lib/access";
 import { isInviteOnly } from "@/lib/access-mode";
-import { SUBSCRIBER_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
+import { SUBSCRIBER_LETTERS_ENABLED, INTERACTIVE_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { withDeadline } from "@/lib/with-deadline";
 import { parseBirthday, isValidCalendarDateString } from "@/lib/demographics";
@@ -1575,7 +1575,7 @@ async function loadCompletedCheckoutIssue(
 }
 
 export async function POST(req: Request) {
-  if (!SUBSCRIBER_LETTERS_ENABLED) {
+  if (!SUBSCRIBER_LETTERS_ENABLED || !INTERACTIVE_LETTERS_ENABLED) {
     return NextResponse.json(
       {
         error: "subscriber_delivery_paused",
@@ -1660,6 +1660,23 @@ export async function POST(req: Request) {
       },
       { status: paid.status }
     );
+  }
+
+  // Saved-letter reading is independent from permission to create/send a new
+  // issue. Resolve this owner-controlled flag before any generation work.
+  if (paid.kind !== "development") {
+    const deliveryDb = await supabaseServiceClient();
+    const { data: enrollment, error: enrollmentError } = await deliveryDb
+      .from("users")
+      .select("delivery_enrolled")
+      .eq("id", paid.verifiedUserId)
+      .maybeSingle();
+    if (enrollmentError || enrollment?.delivery_enrolled !== true) {
+      return NextResponse.json(
+        { error: "delivery_not_enabled", message: "New letters have not been enabled for this account." },
+        { status: enrollmentError ? 503 : 403 }
+      );
+    }
   }
 
   // alpha-drift-r18-01 (found+fixed 2026-08-07): the IP-keyed limit above is
@@ -2152,7 +2169,7 @@ export async function POST(req: Request) {
       const { data: deliveryUser, error: deliveryUserError } = await sb
         .from("users")
         .select(
-          "email, subscribed_at, cancelled_at, access_granted_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at"
+          "email, delivery_enrolled, subscribed_at, cancelled_at, access_granted_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at"
         )
         .eq("id", persistence.userId)
         .maybeSingle();
@@ -2163,6 +2180,7 @@ export async function POST(req: Request) {
         );
       } else if (
         deliveryUser &&
+        deliveryUser.delivery_enrolled === true &&
         hasReaderAccess(
           deliveryUser.subscribed_at,
           deliveryUser.cancelled_at,

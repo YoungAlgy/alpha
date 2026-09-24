@@ -20,15 +20,15 @@ const checkoutRoute = read("../app/api/stripe/checkout/route.ts");
 
 for (const [source, hash] of [
   [accessPolicy, "b9f13a9d129a7884f92f9d3c88f012db0936faaffdcaf1e73cd52ea02768c542"],
-  [deliveryPolicy, "62f1558960d31ba93fe9b1256a7f7b39e263382a9bf337fd9a8c74216a289785"],
+  [deliveryPolicy, "0d1acbb374dff7018f7d535e4c2d81b8a694cc207e3bace270e8357bd0da56b6"],
   [suppressionPolicy, "d8bdbbb14f0e258fc3d4c58af3c2742ad7671fe663e1556bd8655cbb468ad04b"],
 ] as const) {
   assert.equal(createHash("sha256").update(source).digest("hex"), hash);
   assert.ok(gate.includes(hash), `release gate must pin ${hash}`);
 }
 assert.match(gate, /expectedCheckoutMode !== "paused"/);
-assert.match(gate, /dailySendHeld/);
-assert.match(workflow, /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ false \}\}$/m);
+assert.match(gate, /dailySendManualOnly/);
+assert.match(workflow, /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}$/m);
 
 const executableGate = gate.replace(/^import .*;\r?\n/gm, "");
 function runGate(overrides: Partial<Record<string, string>> = {}): number {
@@ -76,25 +76,25 @@ function runGate(overrides: Partial<Record<string, string>> = {}): number {
 assert.equal(runGate(), 0);
 for (const [path, source] of [
   ["lib/access-mode.ts", `${accessPolicy}\n// drift`],
-  ["lib/subscriber-delivery-policy.ts", deliveryPolicy.replace("false", "true")],
+  ["lib/subscriber-delivery-policy.ts", deliveryPolicy.replace("SUBSCRIBER_LETTERS_ENABLED: boolean = true", "SUBSCRIBER_LETTERS_ENABLED: boolean = false")],
   ["lib/suppression-recovery-policy.ts", suppressionPolicy.replace("false", "true")],
-  [".github/workflows/daily-send.yml", workflow.replace("if: ${{ false }}", "if: ${{ true }}")],
+  [".github/workflows/daily-send.yml", workflow.replace("if: ${{ github.event_name == 'workflow_dispatch' }}", "if: ${{ true }}")],
 ] as const) {
   assert.equal(runGate({ [path]: source }), 1, `${path} drift must reject release`);
 }
 
 // Extract and execute the exact pure predicates used by the smoke checks.
 const predicateSource = smoke.match(
-  /function accessOnlyHealthMatches[\s\S]*?\n}\n\nfunction noChargeResponseMatches[\s\S]*?\n}/
+  /function manualDeliveryHealthMatches[\s\S]*?\n}\n\nfunction noChargeResponseMatches[\s\S]*?\n}/
 )?.[0];
 assert.ok(predicateSource, "smoke predicates must remain source-extractable");
 const sandbox: Record<string, unknown> = {};
-vm.runInNewContext(`${predicateSource}\nthis.health = accessOnlyHealthMatches; this.noCharge = noChargeResponseMatches;`, sandbox);
+vm.runInNewContext(`${predicateSource}\nthis.health = manualDeliveryHealthMatches; this.noCharge = noChargeResponseMatches;`, sandbox);
 const health = sandbox.health as (body: unknown) => boolean;
 const noCharge = sandbox.noCharge as (status: number, body: unknown, cache: string, error: string) => boolean;
-assert.equal(health({ accessMode: "invite", subscriberDeliveryMode: "paused" }), true);
-assert.equal(health({ accessMode: "paid", subscriberDeliveryMode: "paused" }), false);
-assert.equal(health({ accessMode: "invite", subscriberDeliveryMode: "open" }), false);
+assert.equal(health({ accessMode: "invite", subscriberDeliveryMode: "open" }), true);
+assert.equal(health({ accessMode: "paid", subscriberDeliveryMode: "open" }), false);
+assert.equal(health({ accessMode: "invite", subscriberDeliveryMode: "paused" }), false);
 assert.equal(noCharge(410, { error: "invite_only" }, "no-store", "invite_only"), true);
 assert.equal(noCharge(503, { error: "invite_only" }, "no-store", "invite_only"), false);
 assert.equal(noCharge(410, { error: "wrong" }, "no-store", "invite_only"), false);
@@ -130,7 +130,7 @@ assert.equal(inviteRequiredHealthFailures({ ...inviteHealth, hardFailures: null 
 
 assert.match(smoke, /EXPECTED_CHECKOUT_MODE !== "paused"/);
 assert.match(smoke, /body\?\.accessMode === "invite"/);
-assert.match(smoke, /body\?\.subscriberDeliveryMode === "paused"/);
+assert.match(smoke, /body\?\.subscriberDeliveryMode === "open"/);
 assert.match(smoke, /\/api\/stripe\/checkout/);
 assert.match(smoke, /\/api\/stripe\/update-quantity/);
 assert.match(smoke, /\/api\/stripe\/portal/);

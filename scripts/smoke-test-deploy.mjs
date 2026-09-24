@@ -57,8 +57,8 @@ if (EXPECTED_CHECKOUT_MODE !== "paused") {
   process.exit(1);
 }
 
-function accessOnlyHealthMatches(body) {
-  return body?.accessMode === "invite" && body?.subscriberDeliveryMode === "paused";
+function manualDeliveryHealthMatches(body) {
+  return body?.accessMode === "invite" && body?.subscriberDeliveryMode === "open";
 }
 
 function noChargeResponseMatches(status, body, cacheControl, expectedError) {
@@ -121,7 +121,7 @@ const CHECKS = [
           detail: `checkoutMode ${JSON.stringify(body?.checkoutMode)} does not match intended ${EXPECTED_CHECKOUT_MODE}`,
         };
       }
-      if (!accessOnlyHealthMatches(body)) {
+      if (!manualDeliveryHealthMatches(body)) {
         return {
           ok: false,
           detail: `accessMode ${JSON.stringify(body?.accessMode)}; subscriberDeliveryMode ${JSON.stringify(body?.subscriberDeliveryMode)}`,
@@ -144,7 +144,7 @@ const CHECKS = [
       }
       return {
         ok: true,
-        detail: `invite product dependencies healthy; release ${EXPECTED_RELEASE}; invite access; checkout and subscriber delivery paused`,
+        detail: `invite product dependencies healthy; release ${EXPECTED_RELEASE}; invite access; checkout paused; manual subscriber delivery open`,
       };
     },
   },

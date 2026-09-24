@@ -5,14 +5,14 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-// Pin the complete checked-in hold, including its lack of an environment
-// override. Re-enabling recovery needs a source review and a new release gate.
+// Pin the complete checked-in policies. Each delivery mode change requires a
+// source review and an updated release gate; no env override is accepted.
 const SUPPRESSION_HOLD_SHA256 =
   "d8bdbbb14f0e258fc3d4c58af3c2742ad7671fe663e1556bd8655cbb468ad04b";
 const ACCESS_MODE_SHA256 =
   "b9f13a9d129a7884f92f9d3c88f012db0936faaffdcaf1e73cd52ea02768c542";
 const DELIVERY_HOLD_SHA256 =
-  "62f1558960d31ba93fe9b1256a7f7b39e263382a9bf337fd9a8c74216a289785";
+  "0d1acbb374dff7018f7d535e4c2d81b8a694cc207e3bace270e8357bd0da56b6";
 let suppressionHoldVerified = false;
 try {
   const policy = readFileSync("lib/suppression-recovery-policy.ts", "utf8")
@@ -41,19 +41,22 @@ if (!pinnedSourceMatches("lib/access-mode.ts", ACCESS_MODE_SHA256)) {
   process.exit(1);
 }
 if (!pinnedSourceMatches("lib/subscriber-delivery-policy.ts", DELIVERY_HOLD_SHA256)) {
-  console.error("::error:: Subscriber delivery safety hold is missing or changed. Review is required before release.");
+  console.error("::error:: Reviewed manual-first subscriber delivery policy is missing or changed.");
   process.exit(1);
 }
 
-let dailySendHeld = false;
+let dailySendManualOnly = false;
 try {
   const workflow = readFileSync(".github/workflows/daily-send.yml", "utf8").replace(/\r\n/g, "\n");
-  dailySendHeld = /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ false \}\}$/m.test(workflow);
+  dailySendManualOnly = /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}$/m.test(workflow) &&
+    !/inputs\.weekOf|WEEK_OF_INPUT|URL="\$\{URL\}\?weekOf=/.test(workflow) &&
+    (workflow.match(/ALPHA_NO_MODEL_MODE: '1'/g) || []).length === 2 &&
+    (workflow.match(/ALPHA_ALLOW_PAID_AI: '0'/g) || []).length === 2;
 } catch {
   // Missing or unreadable workflow must fail the release gate.
 }
-if (!dailySendHeld) {
-  console.error("::error:: Scheduled subscriber delivery job is not pinned off. Review is required before release.");
+if (!dailySendManualOnly) {
+  console.error("::error:: Delivery job must remain dispatch-only, no-model, paid-AI-off, and without backfill input.");
   process.exit(1);
 }
 
