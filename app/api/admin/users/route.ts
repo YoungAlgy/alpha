@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
-import { hasActiveAccess, hasReaderAccess, ADMIN_EMAIL } from "@/lib/access";
+import { hasReaderAccess, ADMIN_EMAIL } from "@/lib/access";
 import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
@@ -21,14 +21,10 @@ export const runtime = "nodejs";
 interface Stats {
   totalUsers: number;
   pendingRequests: number;
-  paying: number;
   freeGranted: number;
-  inviteGranted: number;
   lettersEnabled: number;
   signupIncomplete: number;
-  cancelled: number;
   unsubscribed: number;
-  notSubscribed: number;
   latestIssueWeekOf: string | null;
   latestIssueCount: number;
 }
@@ -84,36 +80,21 @@ async function gatherStats(): Promise<Stats> {
   const stats = {
     totalUsers: rows.length,
     pendingRequests: 0,
-    paying: 0,
     freeGranted: 0,
-    inviteGranted: 0,
     lettersEnabled: 0,
     signupIncomplete: 0,
-    cancelled: 0,
     unsubscribed: 0,
-    notSubscribed: 0,
   };
   // Access and delivery are independent dimensions. Opting out of email does
   // not remove free reading access or put a reader back in the request queue.
+  // Paid billing is closed, so there are no paying/cancelled buckets here.
   for (const r of rows) {
     if (r.access_requested_at && !r.access_granted_at) stats.pendingRequests++;
     if (r.delivery_enrolled) stats.lettersEnabled++;
     if (!r.access_requested_at && !r.subscribed_at && !r.access_granted_at && !r.cancelled_at) stats.signupIncomplete++;
     if (hasReaderAccess(r.subscribed_at, r.cancelled_at, r.access_granted_at) &&
         (r.access_granted_at || (!r.stripe_customer_id && !r.stripe_subscription_id))) stats.freeGranted++;
-    // Invite access is an overlay. A reader can still have a paid period open
-    // while their permanent invite is already recorded, so this count is
-    // intentionally independent from the mutually exclusive billing buckets.
-    if (r.access_granted_at) stats.inviteGranted++;
     if (r.unsubscribed_at) stats.unsubscribed++;
-    // "cancelled" = actually churned (cancel date in the PAST). A FUTURE
-    // cancelled_at is cancel-at-period-end: still paying, still getting
-    // letters, so it falls through to the paying bucket — matches
-    // hasActiveAccess, the single source of truth the cron + access gates use.
-    else if (r.cancelled_at && !hasActiveAccess(r.cancelled_at)) stats.cancelled++;
-    else if (r.subscribed_at && r.stripe_customer_id && hasActiveAccess(r.cancelled_at)) stats.paying++;
-    else if (r.subscribed_at && !r.stripe_customer_id) { /* Counted above. */ }
-    else stats.notSubscribed++;
   }
 
   // Latest issue snapshot — surfaces whether the weekly cron is running
@@ -396,7 +377,7 @@ export async function POST(req: Request) {
     }
     const { data: existing, error: existingError } = await sb
       .from("users")
-      .select("email, first_name, topics, birthday, subscribed_at, cancelled_at, access_granted_at, delivery_enrolled, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_token, suppression_recovery_started_at, delivery_suppression_cleared_at")
+      .select("email, first_name, topics, birthday, updated_at, subscribed_at, cancelled_at, access_granted_at, delivery_enrolled, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_token, suppression_recovery_started_at, delivery_suppression_cleared_at")
       .eq("id", body.userId)
       .maybeSingle();
     if (existingError) {
@@ -456,18 +437,27 @@ export async function POST(req: Request) {
 
     // Change only the protected enrollment bit. The WHERE clauses compare
     // every access and block field read above so a concurrent change loses
-    // the race and has to be reviewed before a new decision.
+    // the race and has to be reviewed before a new decision. When enabling,
+    // updated_at (bumped by the users_touch_updated_at trigger on every
+    // write) also fences the profile check above against a concurrent edit to
+    // name, topics or birthday. Pausing only stops mail, so a reader's own
+    // profile edit must not make it fail. Topics are not compared directly:
+    // postgrest-js joins array filters with bare commas, which splits a
+    // custom topic like "custom:sales, marketing" into two elements.
     let update = sb.from("users")
       .update({ delivery_enrolled: enable })
       .eq("id", body.userId)
       .eq("email", existing.email)
       .eq("delivery_enrolled", !enable);
+    if (enable) {
+      update = existing.updated_at === null
+        ? update.is("updated_at", null)
+        : update.eq("updated_at", existing.updated_at);
+    }
     const snapshot = {
       subscribed_at: existing.subscribed_at,
       cancelled_at: existing.cancelled_at,
       access_granted_at: existing.access_granted_at,
-      first_name: existing.first_name,
-      birthday: existing.birthday,
       unsubscribed_at: existing.unsubscribed_at,
       bounced_at: existing.bounced_at,
       complained_at: existing.complained_at,
@@ -479,12 +469,6 @@ export async function POST(req: Request) {
     for (const [field, value] of Object.entries(snapshot)) {
       update = value === null ? update.is(field, null) : update.eq(field, value);
     }
-    // topics is a Postgres text array. Array containment in both directions
-    // catches a concurrent blank or replacement without relying on an array
-    // string literal in an equality filter.
-    update = existing.topics === null
-      ? update.is("topics", null)
-      : update.contains("topics", existing.topics).containedBy("topics", existing.topics);
     const { data: changed, error: updateError } = await update.select("id");
     if (updateError) {
       if (updateError.message.includes("delivery state change blocked by active provider lease")) {

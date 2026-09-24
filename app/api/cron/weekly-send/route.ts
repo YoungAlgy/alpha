@@ -14,6 +14,7 @@ import {
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
 import { issueIsReaderVisible } from "@/lib/issue-visibility";
+import { latestVisibleIssue } from "@/lib/latest-visible-issue";
 import { braveRateLimitedCount, type BraveQuotaState } from "@/lib/brave";
 import { youRateLimitedCount } from "@/lib/you-search";
 import { geminiRateLimitedCount } from "@/lib/engine/gemini-client";
@@ -1558,7 +1559,7 @@ export async function GET(req: Request) {
         try {
           const smallPool = pool.slice(0, FAST_FALLBACK_TOPIC_COUNT);
           if (smallPool.length > 0) {
-            backupIssue = await withDeadline(
+            const freshBackup = await withDeadline(
               generateIssue(
                 { ...profile, topics: smallPool },
                 weekOf,
@@ -1573,6 +1574,12 @@ export async function GET(req: Request) {
               FAST_FALLBACK_DEADLINE_MS,
               "fast-fallback(subscriber)"
             );
+            // Checked here, not only in runPersistAndSend, so a marked retry
+            // falls through to layer 2's clean repeat instead of blocking it.
+            if (!issueIsReaderVisible(freshBackup)) {
+              throw new Error("fast fallback contained a leaked source diagnostic");
+            }
+            backupIssue = freshBackup;
             backupKind = "backup-fresh";
             console.warn(
               `[cron/weekly-send] fast fallback succeeded (${smallPool.length} topics)`
@@ -1605,26 +1612,24 @@ export async function GET(req: Request) {
           // real failure in the last-resort fallback be told apart from a
           // subscriber having no delivery history, which matters for
           // diagnosing whether the fallback itself is broken mid-outage.
-          // Read a bounded window because the newest prior letter may be one
-          // of the old issues with a source-process note in reader text.
-          // The extra row tells us whether the safety bound was exhausted.
-          const { data: priorRows, error: priorErr } = await sb
-            .from("issues")
-            .select("sections")
-            .eq("user_id", row.id)
-            .not("delivered_at", "is", null)
-            .lt("week_of", weekOf)
-            .order("week_of", { ascending: false })
-            .limit(26);
+          // The newest prior letter may be one of the old issues with a
+          // source-process note in reader text, so walk past hidden ones with
+          // the same bounded search the inbox and /letter use.
+          const { data: prior, error: priorErr } = await latestVisibleIssue<{ sections: Issue["sections"] }>(
+            (from, to) => sb
+              .from("issues")
+              .select("sections")
+              .eq("user_id", row.id)
+              .not("delivered_at", "is", null)
+              .not("sections", "is", null)
+              .lt("week_of", weekOf)
+              .order("week_of", { ascending: false })
+              .range(from, to)
+          );
           if (priorErr) {
             console.error(
-              `[cron/weekly-send] backup lookup query failed: ${priorErr.message}`
+              `[cron/weekly-send] backup lookup failed: ${priorErr instanceof Error ? priorErr.message : (priorErr as { message?: string }).message ?? "unknown error"}`
             );
-          }
-          const prior = (priorRows ?? []).slice(0, 25)
-            .find((candidate) => candidate.sections && issueIsReaderVisible(candidate));
-          if (!prior && (priorRows?.length ?? 0) > 25) {
-            console.warn("[cron/weekly-send] stale backup search exhausted its 25-issue safety bound; older usable issues may exist");
           }
           if (prior?.sections) {
             backupIssue = buildBackupIssue(

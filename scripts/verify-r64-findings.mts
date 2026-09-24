@@ -110,7 +110,7 @@ console.log("(3) app/inbox/page.tsx: getSession() error routes to loadError, and
   check("(3a) getSession's error is destructured", /const \{ data: \{ session \}, error: sessionErr \} = await sb\.auth\.getSession\(\);/.test(src));
   check("(3b) a truthy sessionErr routes to loadError, not a silent fall-through", /if \(sessionErr\) \{\s*\n\s*console\.warn\("\[inbox\] getSession failed:", sessionErr\.message\);\s*\n\s*setLoadError\(true\);\s*\n\s*return;\s*\n\s*\}/.test(src));
   check("(3c) sessionEstablished is fully removed", !/sessionEstablished/.test(src) || (src.match(/sessionEstablished/g) ?? []).length === 1);
-  check("(3d) the catch sets loadError unconditionally", /console\.warn\("\[inbox\] supabase read failed:", e\);\s*\n\s*if \(mountedRef\.current\) setLoadError\(true\);\s*\n\s*return;/.test(src));
+  check("(3d) the catch sets loadError unconditionally", /if \(!isCurrentLoad\(\)\) return;\s*\n\s*console\.warn\("\[inbox\] supabase read failed:", e\);\s*\n\s*setLoadError\(true\);\s*\n\s*return;/.test(src));
 }
 
 console.log("(4) app/archive/page.tsx: load()'s getSession error is behavioral, loadMore()'s is log-only");

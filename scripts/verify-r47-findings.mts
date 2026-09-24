@@ -79,7 +79,7 @@ console.log("(3) app/topics/page.tsx: submit()'s signed-in save now has a cancel
   check("(3a) cancelledRef is declared and reset on mount", /const cancelledRef = useRef\(false\);\s*\n\s*useEffect\(\(\) => \{\s*\n\s*cancelledRef\.current = false;\s*\n\s*return \(\) => \{ cancelledRef\.current = true; \};\s*\n\s*\}, \[\]\);/.test(src));
   check(
     "(3b) it's checked before confirm()/update()/router.push on the save-success path",
-    /if \(cancelledRef\.current\) return;\s*\n\s*confirm\(\);\s*\n\s*update\(\{ topics: picked \}\);\s*\n\s*router\.push\(\(consumeLegacyCheckoutReturnPath\(\) \|\| "\/settings"\) as never\);/.test(src)
+    /if \(cancelledRef\.current\) return;\s*\n\s*confirm\(\);\s*\n\s*update\(\{ topics: picked \}, \{ sync: false \}\);\s*\n\s*router\.push\(\(consumeLegacyCheckoutReturnPath\(\) \|\| "\/settings"\) as never\);/.test(src)
   );
   check("(3c) StepShell now receives backDisabled tied to saving", /<StepShell stepIndex=\{7\} prevPath=\{signedIn \? "settings" : "focus"\} backDisabled=\{saving\}>/.test(src));
 }

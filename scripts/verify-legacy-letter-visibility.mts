@@ -52,7 +52,8 @@ const sb = { from(table: string) {
 const legacy = await selectIssue(sb, null, "reader", () => "2026-09-24", latestVisibleIssue);
 assert.equal(legacy.data?.week_of, "2026-09-23", "legacy links skip the hidden newest issue");
 assert.equal(issueIsReaderVisible(legacy.data ?? {}), true);
-assert.deepEqual(reads, [{ from: 0, to: 24 }]);
+// One full issue first, then a wider window only because it was hidden.
+assert.deepEqual(reads, [{ from: 0, to: 0 }, { from: 1, to: 24 }]);
 
 reads.length = 0;
 const exactHidden = await selectIssue(sb, "2026-09-24", "reader", () => "2026-09-24", latestVisibleIssue);

@@ -41,7 +41,10 @@ assert.match(route, /existing\.unsubscribed_at \|\| existing\.bounced_at \|\| ex
 assert.match(route, /existing\.suppression_cleanup_pending_at \|\| existing\.suppression_recovery_token/);
 assert.match(route, /\.update\(\{ delivery_enrolled: enable \}\)/);
 assert.match(route, /\.eq\("delivery_enrolled", !enable\)/);
-assert.match(route, /\.contains\("topics", existing\.topics\)\.containedBy\("topics", existing\.topics\)/);
+assert.match(route, /if \(enable\) \{\s*update = existing\.updated_at === null\s*\? update\.is\("updated_at", null\)\s*: update\.eq\("updated_at", existing\.updated_at\);/);
+// postgrest-js joins array filters with bare commas, which splits a custom
+// topic that contains a comma. The row fence must not use array filters.
+assert.doesNotMatch(route, /\.(contains|containedBy)\("topics"/);
 assert.match(route, /delivery state change blocked by active provider lease/);
 assert.match(route, /status: 409/);
 
@@ -73,6 +76,7 @@ type Row = {
   first_name: string | null;
   topics: string[];
   birthday: string | null;
+  updated_at: string | null;
   subscribed_at: string | null;
   cancelled_at: string | null;
   access_granted_at: string | null;
@@ -93,6 +97,7 @@ const defaultRow = (): Row => ({
   first_name: "Reader",
   topics: ["mental-health"],
   birthday: null,
+  updated_at: "2026-09-02T00:00:00.123456+00:00",
   subscribed_at: "2026-09-01T00:00:00Z",
   cancelled_at: null,
   access_granted_at: "2026-09-01T00:00:00Z",
@@ -162,14 +167,6 @@ async function exercise(options: {
           calls.filters.push(["is", field, value]);
           return query;
         },
-        contains: (field: string, value: unknown) => {
-          calls.filters.push(["contains", field, value]);
-          return query;
-        },
-        containedBy: (field: string, value: unknown) => {
-          calls.filters.push(["containedBy", field, value]);
-          return query;
-        },
         maybeSingle: async () => ({ data: row, error: null }),
       };
       return query;
@@ -201,20 +198,35 @@ assert.equal(enabled.result.status, 200);
 assert.equal(enabled.row.delivery_enrolled, true);
 assert.equal(enabled.calls.authReads, 1);
 for (const field of [
-  "email", "first_name", "birthday", "delivery_enrolled", "subscribed_at", "cancelled_at", "access_granted_at",
+  "email", "updated_at", "delivery_enrolled", "subscribed_at", "cancelled_at", "access_granted_at",
   "unsubscribed_at", "bounced_at", "complained_at", "suppression_cleanup_pending_at",
   "suppression_recovery_token", "suppression_recovery_started_at", "delivery_suppression_cleared_at",
 ]) {
   assert.ok(enabled.calls.filters.some(([, key]) => key === field), `missing CAS filter: ${field}`);
 }
-assert.ok(enabled.calls.filters.some(([op, field]) => op === "contains" && field === "topics"));
-assert.ok(enabled.calls.filters.some(([op, field]) => op === "containedBy" && field === "topics"));
+assert.ok(
+  enabled.calls.filters.some(([op, field, value]) => op === "eq" && field === "updated_at" && value === "2026-09-02T00:00:00.123456+00:00"),
+  "the row fence compares the exact updated_at read above",
+);
+assert.ok(!enabled.calls.filters.some(([, field]) => field === "topics"), "topics must not be sent as an array filter");
 
 const paused = await exercise({ action: "pause_delivery", row: { delivery_enrolled: true } });
 assert.equal(paused.result.status, 200);
 assert.equal(paused.row.delivery_enrolled, false);
 assert.equal(paused.calls.authReads, 0);
 assert.deepEqual(Object.keys(paused.calls.payload ?? {}), ["delivery_enrolled"]);
+// Pausing only stops mail. A reader's own concurrent profile edit bumps
+// updated_at and must not make the owner's stop action fail.
+assert.ok(!paused.calls.filters.some(([, field]) => field === "updated_at"), "pause is not fenced on profile edits");
+
+// A custom topic may contain commas (a live reader has one). Both actions must
+// still reach the single-row update without any topics filter.
+const commaTopics = ["mental-health", "custom:ai tools launching- especially around sales, marketing, recruiting, productivity"];
+for (const action of ["enable_delivery", "pause_delivery"] as const) {
+  const comma = await exercise({ action, row: { topics: commaTopics, delivery_enrolled: action === "pause_delivery" } });
+  assert.equal(comma.result.status, 200, `${action} must work for a comma topic`);
+  assert.ok(!comma.calls.filters.some(([, field]) => field === "topics"));
+}
 
 for (const action of ["enable_delivery", "pause_delivery"] as const) {
   const repeated = await exercise({ action, row: { delivery_enrolled: action === "enable_delivery" } });

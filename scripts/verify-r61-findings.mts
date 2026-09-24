@@ -107,10 +107,10 @@ console.log("(5) lib/engine/persist.ts: a real GoTrue error is now told apart fr
 console.log("(6) app/api/cron/weekly-send/route.ts: the Layer-2 backup-issue lookup now logs a real query failure");
 {
   const src = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
-  check("(6a) error is destructured from the prior-issue read", /const \{ data: prior, error: priorErr \} = await sb/.test(src));
+  check("(6a) error is destructured from the prior-issue read", /const \{ data: prior, error: priorErr \} = await latestVisibleIssue</.test(src));
   check(
     "(6b) a real error is logged distinctly without a subscriber identifier",
-    /if \(priorErr\) \{[\s\S]{0,180}\[cron\/weekly-send\] backup lookup query failed: \$\{priorErr\.message\}/.test(src) &&
+    /if \(priorErr\) \{[\s\S]{0,180}\[cron\/weekly-send\] backup lookup failed: \$\{priorErr instanceof Error \? priorErr\.message/.test(src) &&
       !src.includes("backup lookup query failed → ${row.id}")
   );
 }

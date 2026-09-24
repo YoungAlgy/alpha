@@ -146,6 +146,7 @@ async function run(scenario: Scenario) {
         };
       }
       if (name === "@/lib/suppression-recovery-policy") return policyExports;
+      if (name === "@/lib/reader-profile-state") return { hasUsableReaderProfile: () => true };
       throw new Error(`unexpected route import: ${name}`);
     },
   });

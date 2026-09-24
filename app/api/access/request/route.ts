@@ -194,7 +194,7 @@ export async function POST(req: Request) {
 
   const { data: existing, error: existingError } = await sb
     .from("users")
-    .select("id, updated_at, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, topics, subscribed_at, cancelled_at, access_granted_at, stripe_customer_id")
+    .select("id, updated_at, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, topics, theme, subscribed_at, cancelled_at, access_granted_at, stripe_customer_id")
     .eq("id", userId)
     .maybeSingle();
   if (existingError) {
@@ -217,7 +217,7 @@ export async function POST(req: Request) {
     const repair = {
       first_name: existing.first_name?.trim() ? existing.first_name : profile.first_name,
       topics: hasUsableReaderProfile({
-        first_name: existing.first_name || profile.first_name,
+        first_name: existing.first_name?.trim() ? existing.first_name : profile.first_name,
         topics: existing.topics,
         birthday: existing.birthday || profile.birthday,
       })
@@ -228,6 +228,9 @@ export async function POST(req: Request) {
       fun_blurb: existing.fun_blurb || profile.fun_blurb,
       birthday: existing.birthday || profile.birthday,
       gender: existing.gender || profile.gender,
+      // The auth-created row only has the schema default theme. Keep a theme
+      // the reader already changed while signed in, otherwise use their pick.
+      theme: existing.theme && existing.theme !== "forest" ? existing.theme : profile.theme,
     };
     let repairWrite = sb.from("users").update(repair)
       .eq("id", userId)
@@ -242,6 +245,18 @@ export async function POST(req: Request) {
     }
     if (!repaired.data) {
       return NextResponse.json({ error: "Your account changed while saving. Check your profile and try again." }, { status: 409 });
+    }
+    // The reader is already approved, so they never enter Pending. Tell the
+    // owner that letters can be enabled now.
+    try {
+      after(() =>
+        sendOpsWebhookAlert(
+          "alpha: approved reader finished signup",
+          "An approved Alpha reader saved their name and topics. Letters can be enabled from the Accounts panel."
+        )
+      );
+    } catch {
+      console.warn("[access/request] optional ops alert could not be scheduled");
     }
     return NextResponse.json({ ok: true, repaired: true });
   }

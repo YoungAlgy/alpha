@@ -116,6 +116,7 @@ function accountRuntime(options: {
         supabaseClient: () => { calls.push("supabaseClient"); return sb; },
       };
       if (name === "@/lib/signup-progress") return { getSignupAccountState };
+      if (name === "@/lib/reader-profile-state") return { hasUsableReaderProfile };
       throw Error(`Unexpected import: ${name}`);
     },
   }, { filename: "lib/onboarding-account.ts" });
@@ -138,14 +139,17 @@ equal(authFailure.calls.includes("from:users"), false, "auth failure makes no ro
 for (const [label, row, expected] of [
   ["confirmed auth without row", null, "incomplete"],
   ["saved pending request", { access_requested_at: date }, "pending"],
-  ["granted reader", { subscribed_at: date, access_granted_at: date }, "reader"],
+  ["granted reader", { first_name: "Reader", topics: ["mental-health"], subscribed_at: date, access_granted_at: date }, "reader"],
+  // Approved before the profile was saved: the normal signup steps stay open.
+  ["granted before profile saved", { first_name: null, topics: [], subscribed_at: date, access_granted_at: date }, "incomplete"],
+  ["legacy reader without an owner grant", { subscribed_at: date }, "reader"],
   ["ended reader", { subscribed_at: date, cancelled_at: past }, "ended"],
 ] as const) {
   const runtime = accountRuntime({ session: { user: { id: "signed-in-user-id" } }, row: { data: row, error: null } });
   equal(await runtime.read(), expected, label);
   assert.deepEqual(runtime.calls, [
     "supabaseClient", "getSession", "from:users",
-    "select:subscribed_at, cancelled_at, access_requested_at, access_granted_at",
+    "select:first_name, topics, birthday, subscribed_at, cancelled_at, access_requested_at, access_granted_at",
     "eq:id:signed-in-user-id", "maybeSingle",
     ...(row === null ? ["getUser"] : []),
   ], `${label}: reads only the signed-in account`);
@@ -199,6 +203,14 @@ function pageRuntime(file: string, imports: Record<string, unknown>, allowEmptyS
       if (previous && same(previous.deps, deps)) return previous.fn;
       callbacks.set(slot, { fn, deps });
       return fn;
+    },
+    useMemo(factory: () => unknown, deps?: unknown[]) {
+      const slot = index++;
+      const previous = callbacks.get(slot);
+      if (previous && same(previous.deps, deps)) return previous.fn;
+      const value = factory();
+      callbacks.set(slot, { fn: value, deps });
+      return value;
     },
     useEffect(effect: () => void | (() => void), deps?: unknown[]) {
       const slot = index++;
@@ -264,28 +276,30 @@ function findElement(value: unknown, predicate: (element: Element) => boolean): 
   return findElement(element.props?.children, predicate);
 }
 const dummy = () => null;
-function checkoutRuntime(accountRead: () => Promise<string>, profile: Record<string, unknown>, savedProfile = {
+function checkoutRuntime(accountRead: () => Promise<string>, profile: Record<string, unknown>, savedProfile: Record<string, unknown> = {
   first_name: "Reader", topics, access_granted_at: date,
-}) {
+}, emailDraft = profile.email) {
   const routes: string[] = [];
   const router = { replace: (path: string) => routes.push(path), push: (path: string) => routes.push(path) };
+  // Mirrors lib/onboarding-account.ts: an owner grant without a saved profile
+  // reads as "incomplete" so the normal signup steps stay open.
+  const readOnboardingAccount = async () => {
+    const state = await accountRead();
+    const approvedIncomplete = state === "reader" && !!savedProfile.access_granted_at && !hasUsableReaderProfile(savedProfile);
+    return { state: approvedIncomplete ? "incomplete" : state, approvedIncomplete, email: complete.email };
+  };
   const app = pageRuntime("app/checkout/page.tsx", {
     "next/navigation": { useRouter: () => router },
     "@/components/onboarding/StepShell": { StepShell: dummy },
-    "@/lib/onboarding-state": { useOnboarding: () => ({ state: profile, loaded: true, update: dummy }) },
+    "@/lib/onboarding-state": { useOnboarding: () => ({ state: profile, emailDraft, loaded: true, update: dummy }) },
     "@/lib/topics": { topicLabel: dummy, topicEmoji: dummy, isValidTopicId },
     "@/lib/themes": { THEMES: [], SWATCHES: { forest: { paper: "", ink: "", accent: "" } }, coerceThemeId: () => "forest" },
     "@/lib/analytics": { track: dummy },
     "@/lib/checkout-guards": { isProfileComplete },
     "@/lib/access-mode": { isInviteOnly: () => true },
-    "@/lib/onboarding-account": { readOnboardingAccountState: accountRead },
+    "@/lib/onboarding-account": { readOnboardingAccount },
     "@/lib/signup-progress": { incompleteSignupPath },
     "@/lib/access-request-ownership": { authOwnsAccessRequestEmail },
-    "@/lib/reader-profile-state": { hasUsableReaderProfile },
-    "@/lib/supabase/client": { supabaseClient: () => ({
-      auth: { getSession: async () => ({ data: { session: { user: { id: "reader-id", email: complete.email } } }, error: null }) },
-      from: () => ({ select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: savedProfile, error: null }) }),
-    }) },
   });
   return { ...app, routes };
 }
@@ -310,11 +324,24 @@ checkoutTree = await unfinishedApprovedCheckout.settle();
 assert.match(treeText(checkoutTree), /Finish signup/);
 checks++;
 equal(unfinishedApprovedCheckout.routes.length, 0, "approved empty account keeps matching complete draft for explicit save");
+// With no draft on this device, the approved reader answers the normal steps.
+// /name is reachable because the account reads as "incomplete", not "reader".
 const approvedWithoutDraft = checkoutRuntime(async () => "reader", {}, { first_name: "", topics: [], access_granted_at: date });
-checkoutTree = await approvedWithoutDraft.settle();
+await approvedWithoutDraft.settle();
+equal(approvedWithoutDraft.routes.includes("/name"), true, "approved empty account without draft resumes at the first step");
+// A draft email older than 24 hours still identifies this signed-in account.
+const approvedStaleEmail = checkoutRuntime(async () => "reader", { ...complete, email: undefined },
+  { first_name: "", topics: [], access_granted_at: date }, complete.email);
+checkoutTree = await approvedStaleEmail.settle();
+assert.match(treeText(checkoutTree), /Finish signup/);
+checks++;
+equal(approvedStaleEmail.routes.length, 0, "approved reader with a stale draft email is not sent back to /email");
+// A draft that belongs to a different address is never applied to this account.
+const approvedOtherDraft = checkoutRuntime(async () => "reader", { ...complete, email: "someone-else@example.test" },
+  { first_name: "", topics: [], access_granted_at: date });
+checkoutTree = await approvedOtherDraft.settle();
 assert.match(treeText(checkoutTree), /Finish in settings/);
 checks++;
-equal(approvedWithoutDraft.routes.includes("/name"), false, "approved empty account without draft has no onboarding redirect loop");
 
 let accountAttempts = 0;
 const failedCheckout = checkoutRuntime(async () => {

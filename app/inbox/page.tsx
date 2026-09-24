@@ -179,7 +179,9 @@ export default function InboxPage() {
               setLoadError(true);
               return;
             }
-            if (!data && !hasUsableReaderProfile(userRow)) {
+            // Only an owner grant can be finished from /checkout. The access
+            // request route repairs that case and nothing else.
+            if (!data && userRow.access_granted_at && !hasUsableReaderProfile(userRow)) {
               setSignupState("approved-incomplete");
               return;
             }

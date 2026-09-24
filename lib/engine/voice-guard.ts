@@ -1,3 +1,5 @@
+import { LEAKED_SOURCE_NOTE } from "@/lib/issue-visibility";
+
 // Deterministic enforcement of the no-AI-tells writing voice on generated prose.
 // The generation prompts already ASK the model to avoid em/en dashes, semicolons,
 // and curly quotes, but any model follows that imperfectly — and these
@@ -52,6 +54,9 @@ const META_LEAK_PATTERNS: RegExp[] = [
   /\bnavigation pages?\b/i,
   /\barchive listings?\b/i,
   /\bwhat (is|'?s) missing this week\b/i,
+  // The resolver's "(full text unavailable — snippet: ...)" source note. Drop
+  // the one item here rather than let the whole letter be hidden later.
+  LEAKED_SOURCE_NOTE,
 ];
 
 // True if a reader-facing string narrates the letter's own sourcing/process.

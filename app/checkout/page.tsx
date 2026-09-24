@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
@@ -9,15 +9,13 @@ import { THEMES, SWATCHES, coerceThemeId } from "@/lib/themes";
 import { track } from "@/lib/analytics";
 import { isProfileComplete } from "@/lib/checkout-guards";
 import { isInviteOnly } from "@/lib/access-mode";
-import { readOnboardingAccountState } from "@/lib/onboarding-account";
+import { readOnboardingAccount } from "@/lib/onboarding-account";
 import { incompleteSignupPath } from "@/lib/signup-progress";
-import { supabaseClient } from "@/lib/supabase/client";
 import { authOwnsAccessRequestEmail } from "@/lib/access-request-ownership";
-import { hasUsableReaderProfile } from "@/lib/reader-profile-state";
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { state, update, loaded } = useOnboarding();
+  const { state: draftState, emailDraft, update, loaded } = useOnboarding();
 
   const [subscribing, setSubscribing] = useState(false);
   const [stripeErr, setStripeErr] = useState<string | null>(null);
@@ -26,6 +24,16 @@ export default function CheckoutPage() {
   const [accessRequested, setAccessRequested] = useState(false);
   const [approvedNeedsProfile, setApprovedNeedsProfile] = useState(false);
   const [approvedAccountEmail, setApprovedAccountEmail] = useState<string | null>(null);
+  // An approved reader is already signed in, so the 24-hour draft email
+  // expiry does not apply to them. The ownership check below still requires
+  // the draft's email to match the signed-in account. Keyed on the approved
+  // account (set once) so a later sign-in prompt keeps the same draft.
+  const state = useMemo(
+    () => approvedAccountEmail && !draftState.email && emailDraft
+      ? { ...draftState, email: emailDraft }
+      : draftState,
+    [approvedAccountEmail, draftState, emailDraft]
+  );
   const [accountChecked, setAccountChecked] = useState(!isInviteOnly());
   const [accountCheckError, setAccountCheckError] = useState<string | null>(null);
   const [accountCheckAttempt, setAccountCheckAttempt] = useState(0);
@@ -36,25 +44,14 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!isInviteOnly()) return;
     let cancelled = false;
-    readOnboardingAccountState().then(async (status) => {
+    readOnboardingAccount().then(({ state: status, approvedIncomplete, email }) => {
       if (cancelled) return;
-      if (status === "reader") {
-        const sb = supabaseClient();
-        const { data: { session }, error: sessionError } = await sb.auth.getSession();
-        if (sessionError || !session) throw new Error("Couldn't check your sign-in.");
-        const { data: profile, error: profileError } = await sb.from("users")
-          .select("first_name, topics, birthday, access_granted_at")
-          .eq("id", session.user.id)
-          .maybeSingle();
-        if (profileError || !profile) throw new Error("Couldn't check your profile.");
-        if (cancelled) return;
-        if (profile.access_granted_at && !hasUsableReaderProfile(profile)) {
-          setApprovedAccountEmail(session.user.email ?? null);
-          setApprovedNeedsProfile(true);
-          setAccountCheckError(null);
-          setAccountChecked(true);
-          return;
-        }
+      if (approvedIncomplete) {
+        setApprovedAccountEmail(email);
+        setApprovedNeedsProfile(true);
+        setAccountCheckError(null);
+        setAccountChecked(true);
+        return;
       }
       if (status === "reader" || status === "ended") {
         router.replace("/inbox" as never);
@@ -138,10 +135,11 @@ export default function CheckoutPage() {
   // (app/welcome/page.tsx, components/onboarding/QuestionStep.tsx,
   // app/you/page.tsx), which already use replace for the same reason.
   useEffect(() => {
-    if (!loaded || !accountChecked || accessRequested || approvedNeedsProfile) return;
+    if (!loaded || !accountChecked || accessRequested) return;
+    // An approved reader with missing answers goes back through the same steps.
     const path = incompleteSignupPath(state);
     if (path) router.replace(path as never);
-  }, [loaded, accountChecked, accessRequested, approvedNeedsProfile, state, router]);
+  }, [loaded, accountChecked, accessRequested, state, router]);
 
   function rememberCheckoutSignIn() {
     try {
@@ -246,6 +244,8 @@ export default function CheckoutPage() {
       if (res.status === 401 && data.error === "identity_verification_required") {
         rememberCheckoutSignIn();
         setSubscribing(false);
+        // The sign-in prompt renders below the approved-profile branch.
+        setApprovedNeedsProfile(false);
         setSignInRequired(true);
         return;
       }
@@ -258,6 +258,9 @@ export default function CheckoutPage() {
         router.replace("/inbox" as never);
         return;
       }
+      // Access changed since this page loaded, so the server saved a new
+      // request. Show that state, not the approved-profile form.
+      setApprovedNeedsProfile(false);
       setAccessRequested(true);
       setSubscribing(false);
     } catch (e) {
@@ -409,7 +412,7 @@ export default function CheckoutPage() {
                 {isProfileComplete(state) && authOwnsAccessRequestEmail(approvedAccountEmail, state.email) ? (
                   <button type="button" onClick={requestAccess} disabled={subscribing}
                     className="alpha-button alpha-button-accent w-full justify-center text-base py-4">
-                    {subscribing ? "Saving profile…" : "Finish signup →"}
+                    {subscribing ? "Saving profile..." : "Finish signup →"}
                   </button>
                 ) : (
                   <button type="button" onClick={() => router.push("/settings" as never)}

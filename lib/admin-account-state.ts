@@ -46,24 +46,26 @@ export function getAdminAccountState(row: AdminAccountStateInput) {
     : row.stripe_customer_id && row.subscribed_at && !row.access_granted_at
     ? "grant_invite" as const
     : null;
-  const revokeAction = freeGranted
-    ? billingBound ? "revoke_invite" as const : "revoke_free" as const
-    : null;
-  // Do not offer the linked-account action for a malformed subscription-only
-  // binding, which the server deliberately holds for account review.
-  const safeRevokeAction = revokeAction === "revoke_invite" && !row.stripe_customer_id ? null : revokeAction;
+  // A subscription-only binding (no customer id) is malformed. The server
+  // holds it for account review, so no linked-account action is offered.
+  const malformedBinding = billingBound && !row.stripe_customer_id;
+  const revokeAction = !freeGranted ? null
+    : !billingBound ? "revoke_free" as const
+    : malformedBinding ? null
+    : "revoke_invite" as const;
   const legacyAccessRemains = !!row.subscribed_at && billingBound && hasActiveAccess(row.cancelled_at);
 
   return {
     readerAccess, freeGranted, pending, recovery, suppressed, profileComplete,
-    grantAction, revokeAction: safeRevokeAction, deliveryBlockReason,
+    grantAction, revokeAction, deliveryBlockReason,
     canEnableDelivery: !row.delivery_enrolled && !deliveryBlockReason,
     accessLabel: freeGranted ? "Free (granted)" : pending ? "Access requested"
       : readerAccess ? "Legacy access" : row.subscribed_at || row.access_granted_at || row.cancelled_at
       ? "Access ended" : "Signup started",
     deliveryLabel: row.delivery_enrolled && deliveryBlockReason ? "Letters blocked"
       : row.delivery_enrolled ? "Letters enabled" : "Letters paused",
-    needsAccountReview: billingBound && !grantAction && !readerAccess && !row.access_granted_at,
+    needsAccountReview: billingBound && !grantAction &&
+      ((!readerAccess && !row.access_granted_at) || (freeGranted && malformedBinding)),
     revokeNote: legacyAccessRemains
       ? " Previously recorded access may remain until its existing end date."
       : "",

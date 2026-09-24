@@ -1,4 +1,4 @@
-import { issueHasLeakedSourceNote, issueIsReaderVisible } from "../lib/issue-visibility.ts";
+import { issueHasLeakedSourceNote, issueIsReaderVisible, WRAPPED_SOURCE_NOTE } from "../lib/issue-visibility.ts";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
@@ -28,6 +28,22 @@ check("one failed optional rewrite does not hide a letter", issueIsReaderVisible
   sections: [{ items: [{ body: "Read the piece for the details on music." }] }],
 }));
 check("nested marker in editor note is hidden", !issueIsReaderVisible({ editorIntro: "full text unavailable: snippet: chart" }));
+for (const variant of [
+  "(Full-text unavailable — snippet: x)",
+  "full text unavailable; snippet: x",
+  "Full text unavailable (snippet: x)",
+  "full text unavailable, snippet: x",
+  "full text unavailable ‒ snippet: x",
+  "full text unavailable ― snippet: x",
+  "full text unavailable − snippet: x",
+  "*full text unavailable* — snippet: x",
+  "(Full text not available, snippet: x)",
+  "full text is unavailable - snippet: x",
+]) {
+  check(`model rewrite of the note is hidden: ${variant}`, issueHasLeakedSourceNote(variant));
+}
+check("a word ending in -full is not a match", !issueHasLeakedSourceNote("handful text unavailable, snippet: x"));
+check("the legacy unwrap pattern still extracts the snippet", "(full text unavailable — snippet: The chart)".replace(WRAPPED_SOURCE_NOTE, "$1") === "The chart");
 
 const cron = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
 const senderStart = cron.indexOf("async function runPersistAndSend(");
@@ -62,6 +78,14 @@ const archive = readFileSync(new URL("../app/archive/page.tsx", import.meta.url)
 check("archive advances by raw rows after filtering", archive.includes("const from = rawCount;") &&
   archive.includes("setRawCount(from + rows.length);") &&
   archive.includes("const visibleRows = rows.filter(issueIsReaderVisible);"));
-check("stale backup and same-day cache skip marked content", cron.includes(".find((candidate) => candidate.sections && issueIsReaderVisible(candidate))") &&
+check("stale backup and same-day cache skip marked content", cron.includes("await latestVisibleIssue<{ sections: Issue[\"sections\"] }>(") &&
   cron.includes("b.items.length > 0 && issueIsReaderVisible({ sections: [b] })"));
+const layerOne = cron.slice(cron.indexOf("// LAYER 1"), cron.indexOf("// LAYER 2"));
+check("a marked fast fallback is rejected before it can block the stale backup",
+  /if \(!issueIsReaderVisible\(freshBackup\)\) \{\s*throw new Error\([^)]*\);\s*\}\s*backupIssue = freshBackup;/.test(layerOne));
+const assemble = readFileSync(new URL("../lib/engine/assemble.ts", import.meta.url), "utf8");
+check("a freshly generated marked section is never cached", assemble.indexOf("if (!issueIsReaderVisible({ sections: [blurb] })) {") > 0 &&
+  assemble.indexOf("if (!issueIsReaderVisible({ sections: [blurb] })) {") < assemble.indexOf("await setCachedBlurb(blurb);"));
+const { containsMetaLeak } = await import("../lib/engine/voice-guard.ts");
+check("the item-level meta-leak guard drops the note", containsMetaLeak("Chart news, snippet: x (full text unavailable, snippet: chart)"));
 console.log(`PASS verify-issue-visibility (${checks} assertions, offline)`);

@@ -89,7 +89,7 @@ console.log("(4) app/letter/page.tsx: both Promise.all query errors are now logg
   const src = readFileSync(new URL("../app/letter/page.tsx", import.meta.url), "utf8");
   check("(4a) the issues-query error is now destructured", /const \[\{ data: userRow, error: userError \}, \{ data: issueRow, error: issueError \}\] = await Promise\.all\(/.test(src));
   check("(4b) userError is now logged", /if \(userError\) console\.error\("\[letter\] users query error:", userError\.message\);/.test(src));
-  check("(4c) issueError is now logged with a distinguishable message from the outer catch", /if \(issueError\) console\.error\("\[letter\] issues query error:", issueError\.message\);/.test(src));
+  check("(4c) issueError is now logged with a distinguishable message from the outer catch", /if \(issueError\) console\.error\("\[letter\] issues query error:",\s*\n\s*issueError instanceof Error \? issueError\.message/.test(src));
 }
 
 console.log("(5) lib/stripe-cancel.ts: exact Alpha cancellation never deletes the account-wide Customer");

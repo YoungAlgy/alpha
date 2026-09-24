@@ -9,6 +9,7 @@ import { TOPICS } from "../lib/topics.ts";
 const source = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
 const route = source("../app/api/access/request/route.ts");
 const checkout = source("../app/checkout/page.tsx");
+const account = source("../lib/onboarding-account.ts");
 
 assert.ok(route.indexOf("authOwnsAccessRequestEmail(signedInUser.email, email)") <
   route.indexOf("const repair = {"), "auth email ownership precedes repair");
@@ -16,13 +17,18 @@ assert.match(route, /\.eq\("updated_at", existing\.updated_at\)[\s\S]*?\.eq\("ac
 assert.doesNotMatch(route.slice(route.indexOf("const repair = {"), route.indexOf("const repaired =")),
   /access_requested_at|delivery_enrolled|subscribed_at|cancelled_at|stripe_customer_id|suppression/);
 assert.match(checkout, /approvedNeedsProfile[\s\S]*?Finish signup/);
-assert.match(checkout, /!hasUsableReaderProfile\(profile\)/);
+// The shared account reader, not a second checkout-only query, decides this.
+assert.match(account, /state === "reader" && !!row\?\.access_granted_at && !hasUsableReaderProfile\(row\)/);
+assert.match(checkout, /readOnboardingAccount\(\)\.then\(\(\{ state: status, approvedIncomplete, email \}\)/);
 assert.equal(hasUsableReaderProfile({ first_name: "Reader", topics: ["zodiac"], birthday: null }), false);
 assert.equal(hasUsableReaderProfile({ first_name: "Reader", topics: ["zodiac"], birthday: "1990-05-01" }), true);
 assert.equal(hasUsableReaderProfile({ first_name: "Reader", topics: ["constructor"] }), false);
 assert.equal(hasUsableReaderProfile({ first_name: "Reader", topics: ["mental-health"] }), true);
+// Older custom ids kept their capitals, and the generator still uses them.
+assert.equal(hasUsableReaderProfile({ first_name: "Reader", topics: ["custom:Islam and Quran"] }), true);
+assert.equal(hasUsableReaderProfile({ first_name: "  ", topics: ["mental-health"] }), false);
 assert.match(checkout, /isProfileComplete\(state\)[\s\S]*?Finish in settings/);
-assert.doesNotMatch(checkout.slice(checkout.indexOf("readOnboardingAccountState().then"),
+assert.doesNotMatch(checkout.slice(checkout.indexOf("readOnboardingAccount().then"),
   checkout.indexOf("function rememberCheckoutSignIn")), /requestAccess\(/);
 
 const begin = route.indexOf("  if (\n    hasReaderAccess(", route.indexOf("const { data: existing"));
@@ -31,23 +37,27 @@ assert.ok(begin >= 0 && end > begin, "approved repair branch can be exercised of
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
   new (...args: string[]) => (...values: unknown[]) => Promise<unknown>;
 const evaluate = new AsyncFunction("existing", "profile", "sb", "userId", "hasReaderAccess",
-  "hasUsableReaderProfile", "NextResponse", "console", `${route.slice(begin, end)}return null;`);
+  "hasUsableReaderProfile", "NextResponse", "console", "after", "sendOpsWebhookAlert", `${route.slice(begin, end)}return null;`);
 const profile = {
   first_name: "Nick", topics: TOPICS.slice(0, 5).map((topic) => topic.id),
   city: "Tampa", job_blurb: "work", project_blurb: null, fun_blurb: null,
-  birthday: null, gender: null,
+  birthday: null, gender: null, theme: "sunset",
 };
 const base = {
   id: "account-1", updated_at: "2026-09-24T01:00:00Z", access_granted_at: "2026-09-23T01:00:00Z",
   subscribed_at: null, cancelled_at: null, stripe_customer_id: null,
   first_name: null, topics: [], city: null, job_blurb: null,
-  project_blurb: null, fun_blurb: null, birthday: null, gender: null,
+  project_blurb: null, fun_blurb: null, birthday: null, gender: null, theme: "forest",
 };
 const responses = { json: (body: Record<string, unknown>, opts?: { status: number }) => ({ body, status: opts?.status ?? 200 }) };
 const hasAccess = (_subscribed: unknown, _cancelled: unknown, grant: unknown) => !!grant;
-const silentConsole = { error: () => {} };
+const silentConsole = { error: () => {}, warn: () => {} };
+let alerts: string[] = [];
+const after = (task: () => void) => task();
+const sendOpsWebhookAlert = (subject: string) => { alerts.push(subject); };
 
 async function run(existing: typeof base, result: { data: unknown; error: unknown }) {
+  alerts = [];
   const writes: Array<{ fields: Record<string, unknown>; filters: Array<[string, unknown]> }> = [];
   const sb = { from: () => ({ update(fields: Record<string, unknown>) {
     const filters: Array<[string, unknown]> = [];
@@ -61,8 +71,8 @@ async function run(existing: typeof base, result: { data: unknown; error: unknow
     return chain;
   } }) };
   const response = await evaluate(existing, profile, sb, "account-1", hasAccess,
-    hasUsableReaderProfile, responses, silentConsole);
-  return { response: response as { body: Record<string, unknown>; status: number } | null, writes };
+    hasUsableReaderProfile, responses, silentConsole, after, sendOpsWebhookAlert);
+  return { response: response as { body: Record<string, unknown>; status: number } | null, writes, alerts: [...alerts] };
 }
 
 let outcome = await run(base, { data: { id: "account-1" }, error: null });
@@ -75,6 +85,8 @@ assert.deepEqual(outcome.writes[0].filters, [
 ]);
 assert.equal("access_requested_at" in outcome.writes[0].fields, false);
 assert.equal("delivery_enrolled" in outcome.writes[0].fields, false);
+assert.equal(outcome.writes[0].fields.theme, "sunset", "the reader's theme pick replaces the schema default");
+assert.deepEqual(outcome.alerts, ["alpha: approved reader finished signup"], "the owner is told letters can be enabled");
 
 outcome = await run({ ...base, first_name: "Saved name", topics: ["mental-health"] }, { data: null, error: null });
 assert.equal(outcome.response?.status, 409);
@@ -82,10 +94,16 @@ assert.equal(outcome.writes.length, 0, "a complete saved profile ignores an olde
 
 outcome = await run({ ...base, first_name: "Saved name" }, { data: { id: "account-1" }, error: null });
 assert.equal(outcome.writes[0].fields.first_name, "Saved name", "repair preserves present fields");
+
+outcome = await run({ ...base, theme: "tuxedo" }, { data: { id: "account-1" }, error: null });
+assert.equal(outcome.writes[0].fields.theme, "tuxedo", "a theme changed while signed in is kept");
+
+outcome = await run({ ...base, first_name: "Saved name" }, { data: { id: "account-1" }, error: null });
 assert.deepEqual(outcome.writes[0].fields.topics, profile.topics);
 
 outcome = await run(base, { data: null, error: null });
 assert.equal(outcome.response?.status, 409, "a concurrent account edit requires retry");
+assert.deepEqual(outcome.alerts, [], "no alert when nothing was saved");
 
 outcome = await run({ ...base, access_granted_at: null }, { data: null, error: null });
 assert.equal(outcome.response, null, "an unapproved account continues through the request branch");

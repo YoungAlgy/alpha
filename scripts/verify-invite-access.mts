@@ -123,7 +123,11 @@ assert.match(
   /if \(existing\)[\s\S]*?\.update\(profile\)\.eq\("id", userId\)[\s\S]*?\.eq\("updated_at", existing\.updated_at\)[\s\S]*?\.insert\(\{ id: userId, \.\.\.profile \}\)/
 );
 const requestStoredIndex = accessRoute.indexOf("if (result.error || !result.data)");
-const requestAlertIndex = accessRoute.indexOf("sendOpsWebhookAlert(");
+// The approved-profile repair has its own alert earlier in the file. This
+// checks the pending-request alert, which must follow the stored request.
+const requestAlertIndex = accessRoute.indexOf("sendOpsWebhookAlert(", requestStoredIndex);
+assert.ok(accessRoute.indexOf("sendOpsWebhookAlert(", accessRoute.indexOf("if (!repaired.data)")) < requestStoredIndex,
+  "the repair alert is scheduled only after its profile write succeeds");
 const requestSuccessIndex = accessRoute.indexOf(
   "return NextResponse.json({ ok: true, requestedAt: now })"
 );

@@ -270,10 +270,17 @@ export default function ArchivePage() {
       ]);
       const stillMore = rows.length === PAGE_SIZE;
       setHasMore(stillMore);
+      // A batch can be all hidden letters. Say so, and include how far the
+      // search got so a second such batch still reads differently and is
+      // announced again.
       setLoadMoreMsg(
         rows.length === 0
           ? "No more letters to load."
-          : `Loaded ${visibleRows.length} more letter${visibleRows.length === 1 ? "" : "s"} -- ${newTotal} shown.${stillMore ? "" : " That's all of them."}`
+          : visibleRows.length === 0
+          ? stillMore
+            ? `Nothing to show in that batch (${from + rows.length} checked). Load more to keep going.`
+            : `That's all of them. ${newTotal} shown.`
+          : `Loaded ${visibleRows.length} more letter${visibleRows.length === 1 ? "" : "s"}. ${newTotal} shown.${stillMore ? "" : " That's all of them."}`
       );
     } finally {
       if (mountedRef.current) {

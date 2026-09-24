@@ -146,6 +146,7 @@ async function run(kind: RouteKind, failureKind: FailureKind): Promise<RunResult
       if (name === "@/lib/email") return { resendConfigured: () => false, removeResendSuppression: async () => { providerCalls += 1; return false; } };
       if (name === "@/lib/demographics") return { isValidCalendarDate: () => true };
       if (name === "@/lib/suppression-recovery-policy") return suppressionPolicy;
+      if (name === "@/lib/reader-profile-state") return { hasUsableReaderProfile: () => true };
       if (name === "@/lib/suppression-recovery") return { recoverResendSuppression: async () => ({ status: "already_clear" }) };
       throw new Error(`unexpected route import: ${name}`);
     },

@@ -3,6 +3,7 @@ import { sanitizeVoice } from "./voice-guard";
 import { cleanField } from "./text-clean";
 import { normalizeUrl } from "./url-guard";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
+import { WRAPPED_SOURCE_NOTE } from "@/lib/issue-visibility";
 import type { TopicBlurb, TopicSignal, BlurbItem, SignalSource } from "./types";
 
 /**
@@ -58,7 +59,7 @@ function parseDeepSources(signal: TopicSignal): SignalSource[] {
     const titleLine = lines.find((line, index) => index < sourceLine && firstLineTitle(line) !== null);
     const title = (titleLine && firstLineTitle(titleLine)) || new URL(url).hostname;
     const raw = lines.slice(sourceLine + 1).join("\n").trim();
-    const excerpt = raw.replace(/^\(full text unavailable(?:\s|[—–\-.,:…]){0,32}snippet:\s*([\s\S]*)\)$/i, "$1");
+    const excerpt = raw.replace(WRAPPED_SOURCE_NOTE, "$1");
     sources.push({ title, url, excerpt });
   }
   return sources;

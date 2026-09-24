@@ -66,7 +66,7 @@ console.log("(2) app/archive/page.tsx: a new sr-only live region announces Load 
 {
   const src = readFileSync(new URL("../app/archive/page.tsx", import.meta.url), "utf8");
   check("(2a) loadMoreMsg state exists", /const \[loadMoreMsg, setLoadMoreMsg\] = useState<string \| null>\(null\);/.test(src));
-  check("(2b) loadMore() sets a message that varies with the running total, and flags exhaustion", /const newTotal = items\.length \+ rows\.length;/.test(src) && /setLoadMoreMsg\(/.test(src) && /That's all of them\./.test(src));
+  check("(2b) loadMore() sets a message that varies with the running total, and flags exhaustion", /const newTotal = items\.length \+ visibleRows\.length;/.test(src) && /setLoadMoreMsg\(/.test(src) && /That's all of them\./.test(src));
   check("(2c) the live region is mounted unconditionally (not inside a state-gated block)", /<p role="status" aria-live="polite" className="sr-only">\s*\n\s*\{loadMoreMsg\}\s*\n\s*<\/p>\s*\n\s*\n\s*\{state === "loading"/.test(src));
 }
 

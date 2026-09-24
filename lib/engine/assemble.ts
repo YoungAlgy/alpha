@@ -247,6 +247,17 @@ export async function generateIssue(
         // cleanup below relies on this NOT being in dryCache to tell the two
         // resolved-null cases apart.
         if (blurb.items.length === 0) return null;
+        // A section still carrying the resolver's source note would get the
+        // whole letter hidden, and caching it would hand it to every reader
+        // of this topic. Use the free deterministic version of the same
+        // sources (it unwraps the note). Otherwise treat it like the empty
+        // case above: null, uncached, so the selector backfills the slot.
+        if (!issueIsReaderVisible({ sections: [blurb] })) {
+          const clean = buildDeterministicBlurb(signal);
+          if (!clean || clean.items.length === 0 || !issueIsReaderVisible({ sections: [clean] })) return null;
+          console.warn(`[assemble] ${id} ${weekOf}: generated section leaked the source note, using deterministic sources`);
+          blurb = clean;
+        }
         // AWAITED, not fire-and-forget: this write feeds getRecentlyCitedUrls'
         // cross-send repeat guard (a subscriber never seeing the same article
         // twice within 14 days). An unawaited write here can be silently

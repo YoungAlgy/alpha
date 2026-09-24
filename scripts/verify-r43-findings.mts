@@ -82,10 +82,10 @@ console.log("(2) app/inbox/page.tsx: a genuine query failure is now distinguishe
   // against the actual @supabase/auth-js source. The catch now sets
   // loadError unconditionally, matching its siblings. See
   // verify-r64-findings.mts's inbox section.
-  check("(2d) the catch block sets loadError unconditionally, matching its siblings (no sessionEstablished gate)", !/let sessionEstablished = false;/.test(src) && !/if \(sessionEstablished\) \{/.test(src) && /console\.warn\("\[inbox\] supabase read failed:", e\);\s*\n\s*if \(mountedRef\.current\) setLoadError\(true\);\s*\n\s*return;/.test(src));
+  check("(2d) the catch block sets loadError unconditionally, matching its siblings (no sessionEstablished gate)", !/let sessionEstablished = false;/.test(src) && !/if \(sessionEstablished\) \{/.test(src) && /if \(!isCurrentLoad\(\)\) return;\s*\n\s*console\.warn\("\[inbox\] supabase read failed:", e\);\s*\n\s*setLoadError\(true\);\s*\n\s*return;/.test(src));
   check("(2e) a distinct loadError UI block exists with a Try again button", /Couldn&apos;t load your letters\./.test(src) && /onClick=\{\(\) => load\(\)\}/.test(src));
   check("(2f) the original signed-in-but-no-letter-yet copy is untouched (still correct for the genuine empty state)", /You&apos;re signed in\. Your letters show up here once they&apos;re/.test(src));
-  check("(2g) the finally block still unconditionally marks checked, even after an early return from any branch", /if \(mountedRef\.current\) setChecked\(true\);\s*\n\s*\}\s*\n\s*\}, \[state\.theme\]\);/.test(src));
+  check("(2g) the finally block still unconditionally marks checked, even after an early return from any branch", /if \(isCurrentLoad\(\)\) setChecked\(true\);\s*\n\s*\}\s*\n\s*\}, \[state\.theme\]\);/.test(src));
   check("(2h) the retry-triggering effect depends on the stable load callback, not a raw theme dependency (no unintended re-fetch loop)", /}, \[loaded, load\]\);/.test(src));
 }
 

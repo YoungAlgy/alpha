@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { currentPeriodIso } from "../lib/cadence.ts";
+import { latestVisibleIssue } from "../lib/latest-visible-issue.ts";
 
 // Freeze the test clock, not the production date helper. The same extracted
 // queries must keep passing after the calendar advances beyond this fixture.
@@ -123,26 +124,36 @@ const inboxSource = source("../app/inbox/page.tsx");
 const directSource = source("../app/inbox/[issueId]/page.tsx");
 const archiveSource = source("../app/archive/page.tsx");
 const letterSource = source("../app/letter/page.tsx");
-const inboxChain = extractOne(inboxSource, /sb\s*\.from\("issues"\)[\s\S]*?\.maybeSingle\(\)/g, "inbox");
+// The inbox reads through latestVisibleIssue, one row window at a time.
+const inboxChain = extractOne(inboxSource, /sb\s*\.from\("issues"\)[\s\S]*?\.range\(from, to\)/g, "inbox");
+async function executeInbox(fixtures: IssueFixture[]): Promise<QueryResult> {
+  const run = new Function(
+    "sb", "currentPeriodIso", "latestVisibleIssue",
+    `return latestVisibleIssue((from, to) => ${inboxChain});`
+  ) as (sb: ReturnType<typeof inertClient>, period: typeof currentPeriodIso, walk: typeof latestVisibleIssue) => Promise<QueryResult>;
+  return run(inertClient(fixtures), fixturePeriod, latestVisibleIssue);
+}
 const directChain = extractOne(directSource, /sb\s*\.from\("issues"\)[\s\S]*?\.maybeSingle\(\)/g, "direct inbox");
 const archiveChains = archiveSource.match(/sb\s*\.from\("issues"\)[\s\S]*?\.range\([^\n]*\)/g) ?? [];
 assert.equal(archiveChains.length, 2, "archive must have initial and load-more issue queries");
 const [archiveInitialChain, archiveLoadMoreChain] = archiveChains;
-const letterStart = letterSource.indexOf("let issueQuery = sb");
+const letterStart = letterSource.indexOf("const issueQuery = () => sb");
 const letterEnd = letterSource.indexOf("// alpha-drift-r65-04", letterStart);
 assert.ok(letterStart >= 0 && letterEnd > letterStart, "letter query setup must remain extractable");
-const letterSetup = letterSource.slice(letterStart, letterEnd);
-const letterFinal = extractOne(letterSource, /issueQuery\.order\("week_of", \{ ascending: false \}\)\.limit\(1\)\.maybeSingle\(\)/g, "letter final query");
+// The setup ends by building issueRead, the exact v2 read or the legacy
+// walk past hidden issues. Drop the one TypeScript generic so it runs as JS.
+const letterSetup = letterSource.slice(letterStart, letterEnd).replace("latestVisibleIssue<IssueRow>(", "latestVisibleIssue(");
+assert.ok(letterSetup.includes("const issueRead = weekOf"), "letter query setup must build issueRead");
 
 async function executeLetter(fixtures: IssueFixture[], weekOf: string | undefined): Promise<QueryResult> {
   const run = new Function(
-    "sb", "currentPeriodIso", "userId", "weekOf",
-    `return (async () => { ${letterSetup} return await ${letterFinal}; })();`
+    "sb", "currentPeriodIso", "userId", "weekOf", "latestVisibleIssue",
+    `return (async () => { ${letterSetup} return await issueRead; })();`
   ) as (
     sb: ReturnType<typeof inertClient>, period: typeof currentPeriodIso,
-    userId: string, weekOf: string | undefined
+    userId: string, weekOf: string | undefined, walk: typeof latestVisibleIssue
   ) => Promise<QueryResult>;
-  return run(inertClient(fixtures), fixturePeriod, "unit-reader", weekOf);
+  return run(inertClient(fixtures), fixturePeriod, "unit-reader", weekOf, latestVisibleIssue);
 }
 
 const fixture = (id: string, weekOf: string, extra: Partial<IssueFixture> = {}): IssueFixture => ({
@@ -160,7 +171,7 @@ function check(condition: boolean, message: string) {
   checks += 1;
 }
 
-const inbox = await executeChain(inboxChain, periodFixtures);
+const inbox = await executeInbox(periodFixtures);
 assert.equal((inbox.data as IssueFixture | null)?.id, "unit-current");
 check(true, "inbox executes its actual latest-period query");
 
@@ -198,7 +209,7 @@ assert.equal(currentPeriodIso(new Date("2026-09-04T20:00:00.000-04:00")), "2026-
 assert.equal(currentPeriodIso(new Date("2026-09-05T14:00:00.000+14:00")), "2026-09-05");
 check(true, "UTC period helper is stable across midnight and reader offsets");
 
-const currentUndelivered = await executeChain(inboxChain, [fixture("unit-current-undelivered", "2026-09-05")]);
+const currentUndelivered = await executeInbox([fixture("unit-current-undelivered", "2026-09-05")]);
 assert.equal((currentUndelivered.data as IssueFixture | null)?.id, "unit-current-undelivered");
 check(true, "current-period undelivered issue remains readable");
 

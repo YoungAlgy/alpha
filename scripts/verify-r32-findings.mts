@@ -236,7 +236,7 @@ console.log("(8) app/settings/accounts/page.tsx: act() announces its own result 
     "(8b) act()'s signature still takes email before the action union",
     /async function act\([\s\S]*?email: string,[\s\S]*?action:[\s\S]*?confirmMsg\?: string[\s\S]*?\) \{/.test(src)
   );
-  check("(8c) a per-action verb is computed and announced on success", /setActionMsg\(`\$\{verb\} \$\{email\}\.`\);/.test(src));
+  check("(8c) a per-action verb is computed and announced on success", /setActionMsg\(`\$\{ACTION_VERBS\[action\]\} \$\{email\}\.`\);/.test(src));
   // alpha-drift-r48-supersedes-r32 (2026-08-20): round 48's alpha-drift-r48-02
   // replaced the single setBusy(userId) call with a busyRowsRef/setBusyRows
   // pair (per-row tracking, fixing a real cross-row disabled-state bug) --
@@ -244,36 +244,35 @@ console.log("(8) app/settings/accounts/page.tsx: act() announces its own result 
   // action) is unaffected, just needs to match the new lines immediately
   // preceding it.
   check("(8d) actionMsg is cleared at the start of each new action (so a same-text repeat still mutates the live region)", /setBusyRows\(new Set\(busyRowsRef\.current\)\);\s*\n\s*setActionMsg\(null\);/.test(src));
-  check("(8e) a role=status live region renders actionMsg", /<p role="status" aria-live="polite" className="sr-only">\s*\{actionMsg\}/.test(src));
+  // The status line is visible now, so a failed action whose row left the
+  // list still has somewhere to show its error.
+  check("(8e) a role=status live region renders actionMsg", /<p role="status" aria-live="polite" className="alpha-ui text-sm mb-4">\s*\{actionMsg\}/.test(src));
 
-  // Every currently supported admin action call site passes u.email as the
-  // second argument. The hard-held clear_suppression action has no UI call.
-  const callSites = [
-    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"grant_free"/,
-    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"revoke_free"/,
-    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"grant_invite"/,
-    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"revoke_invite"/,
-    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"deny_access"/,
-    /act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*"delete"/,
-  ];
-  const names = ["grant_free", "revoke_free", "grant_invite", "revoke_invite", "deny_access", "delete"];
-  callSites.forEach((re, i) => check(`(8f-${names[i]}) call site passes u.email`, re.test(src)));
+  // Every admin action call site passes u.email as the second argument. Grant
+  // and revoke pick their server action from the row, so match any action.
+  const callSites = [...src.matchAll(/act\(\s*\n\s*u\.id,\s*\n\s*u\.email,\s*\n\s*([^,\n]+),/g)].map((m) => m[1].trim());
+  for (const expected of ["account.grantAction!", "account.revokeAction!", '"deny_access"', '"delete"', '"enable_delivery"']) {
+    check(`(8f-${expected}) call site passes u.email`, callSites.includes(expected));
+  }
+  check("(8f-pause_delivery) call site passes u.email", /act\(u\.id, u\.email, "pause_delivery"\)/.test(src));
   check("(8f2) the UI action union excludes the hard-held clear_suppression action", !/\| "clear_suppression"/.test(src));
 
-  // Execute the page's actual verb selection. A copied ternary would keep
-  // passing even if the production announcement changed or broke.
-  const verbStart = src.indexOf("const verb =", src.indexOf("async function act("));
-  const verbEnd = src.indexOf("setActionMsg(`${verb} ${email}.`)", verbStart);
-  check("(8f3) the actual action announcement expression has valid boundaries", verbStart > 0 && verbEnd > verbStart);
-  const verbScript = new vm.Script(`${src.slice(verbStart, verbEnd)}\nverb;`);
+  // Execute the page's actual verb map. A copied table would keep passing
+  // even if the production announcement changed or broke.
+  const verbStart = src.indexOf("const ACTION_VERBS");
+  const verbEnd = src.indexOf("};", verbStart) + 2;
+  check("(8f3) the actual action announcement map has valid boundaries", verbStart > 0 && verbEnd > verbStart);
+  const verbs = new vm.Script(`(${src.slice(src.indexOf("{", verbStart), verbEnd - 1)})`)
+    .runInNewContext({}, { timeout: 1000 }) as Record<string, string>;
   function verbFor(action: "delete" | "grant_free" | "revoke_free" | "grant_invite" | "revoke_invite" | "deny_access"): string {
-    return verbScript.runInNewContext({ action }, { timeout: 1000 }) as string;
+    return verbs[action];
   }
   check("(8g) behavioral: verb for delete", verbFor("delete") === "Deleted");
   check("(8h) behavioral: verb for grant_free", verbFor("grant_free") === "Granted free access to");
   check("(8i) behavioral: verb for revoke_free", verbFor("revoke_free") === "Revoked free access from");
-  check("(8j) behavioral: verb for grant_invite", verbFor("grant_invite") === "Granted permanent invite access to");
-  check("(8k) behavioral: verb for revoke_invite", verbFor("revoke_invite") === "Revoked permanent invite access from");
+  // Invite and free grants read the same to the owner now.
+  check("(8j) behavioral: verb for grant_invite", verbFor("grant_invite") === "Granted free access to");
+  check("(8k) behavioral: verb for revoke_invite", verbFor("revoke_invite") === "Revoked free access from");
   check("(8l) behavioral: verb for deny_access", verbFor("deny_access") === "Denied the access request from");
 }
 

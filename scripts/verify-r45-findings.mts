@@ -84,7 +84,7 @@ console.log("(3) app/topics/page.tsx: a failed save's error is now cleared by ev
 console.log("(4) app/settings/accounts/page.tsx: a page-level load error is now cleared at the start of every new load() attempt");
 {
   const src = readFileSync(new URL("../app/settings/accounts/page.tsx", import.meta.url), "utf8");
-  check("(4a) load() now clears err before starting a new fetch", /async function load\(opts\?: \{[\s\S]{0,180}\}\) \{[\s\S]{0,900}if \(err\) setErr\(null\);/.test(src));
+  check("(4a) load() now clears err before starting a new fetch", /async function load\(opts\?: \{[\s\S]{0,400}\}\): Promise<AdminUserRow\[\] \| null> \{[\s\S]{0,900}if \(err\) setErr\(null\);/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

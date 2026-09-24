@@ -56,8 +56,8 @@ console.log("(1) app/settings/accounts/page.tsx: Load More restores focus to the
   check("(1a) a loadMoreBtnRef + loadMoreCount pair exists", /const loadMoreBtnRef = useRef<HTMLButtonElement>\(null\);\s*\n\s*const \[loadMoreCount, setLoadMoreCount\] = useState\(0\);/.test(src));
   check("(1b) the effect focuses the heading only once the button ref is empty and a load-more actually ran", /if \(loadMoreCount > 0 && !loadMoreBtnRef\.current\) accountsHeadingRef\.current\?\.focus\(\);/.test(src));
   check("(1c) loadMore() increments the counter in its finally block", /finally \{\s*\n\s*setLoadingMore\(false\);\s*\n\s*setLoadMoreCount\(\(c\) => c \+ 1\);\s*\n\s*\}/.test(src));
-  check("(1d) loadMore() re-entrancy is now a synchronous guard, not the disabled attribute", /async function loadMore\(\) \{\s*\n\s*if \(loadingMore \|\| !users \|\| users\.length === 0\) return;/.test(src));
-  check("(1e) the button carries the ref and aria-disabled, not disabled", /ref=\{loadMoreBtnRef\}[\s\S]{0,700}aria-disabled=\{loadingMore\}/.test(src));
+  check("(1d) loadMore() re-entrancy is now a synchronous guard, not the disabled attribute", /async function loadMore\(\) \{\s*\n\s*if \(loading \|\| loadingMore \|\| busyRowsRef\.current\.size > 0 \|\| activeSearch \|\| !users \|\| users\.length === 0\) return;/.test(src));
+  check("(1e) the button carries the ref and aria-disabled, not disabled", /ref=\{loadMoreBtnRef\}[\s\S]{0,700}aria-disabled=\{loading \|\| loadingMore \|\| busyRows\.size > 0\}/.test(src));
   check("(1f) no bare disabled={loadingMore} remains on this button", !/(?<!aria-)disabled=\{loadingMore\}/.test(src));
 }
 

@@ -38,17 +38,36 @@ interface AdminUserRow {
 interface Stats {
   totalUsers: number;
   pendingRequests: number;
-  paying: number;
   freeGranted: number;
-  inviteGranted: number;
   lettersEnabled: number;
   signupIncomplete: number;
-  cancelled: number;
   unsubscribed: number;
-  notSubscribed: number;
   latestIssueWeekOf: string | null;
   latestIssueCount: number;
 }
+
+type AdminAction =
+  | "delete"
+  | "grant_free"
+  | "revoke_free"
+  | "grant_invite"
+  | "revoke_invite"
+  | "deny_access"
+  | "enable_delivery"
+  | "pause_delivery";
+
+// Invite and free grants are the same thing to the owner now. The server
+// picks the matching action from the row's billing history.
+const ACTION_VERBS: Record<AdminAction, string> = {
+  delete: "Deleted",
+  grant_free: "Granted free access to",
+  grant_invite: "Granted free access to",
+  revoke_free: "Revoked free access from",
+  revoke_invite: "Revoked free access from",
+  deny_access: "Denied the access request from",
+  enable_delivery: "Enabled letters for",
+  pause_delivery: "Paused letters for",
+};
 
 export default function AdminAccountsPage() {
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
@@ -182,13 +201,18 @@ export default function AdminAccountsPage() {
   // it's still the MOST RECENTLY ISSUED call by the time it resolves.
   const loadSeqRef = useRef(0);
 
+  // Resolves to the rows this call applied, or null when it failed or a
+  // newer load superseded it.
   async function load(opts?: {
     search?: string;
     before?: string;
     append?: boolean;
     pending?: boolean;
-  }) {
-    if (!mountedRef.current) return;
+    // Same view reloaded (after an action, or Refresh): keep the current rows
+    // on screen so a failed reload does not blank the list.
+    keep?: boolean;
+  }): Promise<AdminUserRow[] | null> {
+    if (!mountedRef.current) return null;
     // alpha-drift-r45-04 (2026-08-19): this never cleared a prior `err` on
     // a later successful load -- if the initial mount load() 401'd (e.g.
     // the auth cookie hadn't hydrated yet) and a subsequent retry/search
@@ -213,7 +237,7 @@ export default function AdminAccountsPage() {
     const isStale = () => !mountedRef.current || seq !== loadSeqRef.current;
     setLoading(true);
     // Never show old rows under a newly selected filter or search heading.
-    if (!opts?.append) setUsers(null);
+    if (!opts?.append && !opts?.keep) setUsers(null);
     try {
       const params = new URLSearchParams();
       if (opts?.search) params.set("q", opts.search);
@@ -222,26 +246,26 @@ export default function AdminAccountsPage() {
         if (opts?.before) params.set("before", opts.before);
       }
       const res = await fetch(`/api/admin/users${params.toString() ? `?${params}` : ""}`, { cache: "no-store" });
-      if (isStale()) return;
+      if (isStale()) return null;
       if (res.status === 401) {
         setUsers(null);
         setStats(null);
         setErr("Sign in first.");
-        return;
+        return null;
       }
       if (res.status === 403) {
         setUsers(null);
         setStats(null);
         setErr("Not authorized.");
-        return;
+        return null;
       }
       const data = await res.json();
-      if (isStale()) return;
+      if (isStale()) return null;
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setUsers((prev) => (opts?.append && prev ? [...prev, ...data.users] : data.users));
       // alpha-drift-r66-01 (2026-08-21, accessibility-resweep-newer-code-
       // r14): Load More appended rows with zero announcement -- the page's
-      // own sr-only role=status region (below) exists but was only ever
+      // own role=status region (below) exists but was only ever
       // fed by act()'s result, never by this path. A screen-reader admin
       // got no confirmation new rows loaded, and (per this page's
       // aria-disabled={loadingMore} on the just-clicked button, the same
@@ -277,15 +301,19 @@ export default function AdminAccountsPage() {
       // The API caps every response at 200 rows — fewer than that back means
       // we've hit the end of the table (or, for a search, all the matches).
       setHasMore(data.users.length === 200);
+      return data.users as AdminUserRow[];
     } catch (e) {
       if (!isStale()) setErr(e instanceof Error ? e.message : "Couldn't load users.");
+      return null;
     } finally {
       if (!isStale()) setLoading(false);
     }
   }
 
   useEffect(() => {
-    // This mount effect hydrates the admin list from the server.
+    // This mount effect hydrates the admin list from the server. load() marks
+    // the list as loading before its request, which is the intended update.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load({ pending: true });
     // `load` is intentionally mount-only. It is recreated during render and
     // adding it here would turn this hydration effect into a request loop.
@@ -310,6 +338,7 @@ export default function AdminAccountsPage() {
     setQ(search);
     setActiveSearch(search);
     setPendingOnly(false);
+    setRowErrors({});
     load({ search });
   }
 
@@ -318,6 +347,7 @@ export default function AdminAccountsPage() {
     setQ("");
     setActiveSearch("");
     setPendingOnly(true);
+    setRowErrors({});
     load({ pending: true });
     setClearCount((c) => c + 1);
   }
@@ -327,6 +357,7 @@ export default function AdminAccountsPage() {
     setQ("");
     setActiveSearch("");
     setPendingOnly(true);
+    setRowErrors({});
     load({ pending: true });
   }
 
@@ -335,6 +366,7 @@ export default function AdminAccountsPage() {
     setQ("");
     setActiveSearch("");
     setPendingOnly(false);
+    setRowErrors({});
     load();
   }
 
@@ -355,15 +387,7 @@ export default function AdminAccountsPage() {
   async function act(
     userId: string,
     email: string,
-    action:
-      | "delete"
-      | "grant_free"
-      | "revoke_free"
-      | "grant_invite"
-      | "revoke_invite"
-      | "deny_access"
-      | "enable_delivery"
-      | "pause_delivery",
+    action: AdminAction,
     confirmMsg?: string
   ) {
     if (confirmMsg && !confirm(confirmMsg)) return;
@@ -372,6 +396,7 @@ export default function AdminAccountsPage() {
     setBusyRows(new Set(busyRowsRef.current));
     setActionMsg(null);
     setRowErrors((prev) => ({ ...prev, [userId]: "" }));
+    let failure: string | null = null;
     try {
       const res = await fetch("/api/admin/users", {
         method: "POST",
@@ -380,27 +405,11 @@ export default function AdminAccountsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      const verb =
-        action === "delete"
-          ? "Deleted"
-          : action === "grant_free"
-          ? "Granted free access to"
-          : action === "revoke_free"
-          ? "Revoked free access from"
-          : action === "grant_invite"
-          ? "Granted free access to"
-          : action === "revoke_invite"
-          ? "Revoked free access from"
-          : action === "enable_delivery"
-          ? "Enabled letters for"
-          : action === "pause_delivery"
-          ? "Paused letters for"
-          : "Denied the access request from";
-      if (mountedRef.current) setActionMsg(`${verb} ${email}.`);
+      if (mountedRef.current) setActionMsg(`${ACTION_VERBS[action]} ${email}.`);
     } catch (e) {
-      if (mountedRef.current) setRowErrors((prev) => ({
-        ...prev, [userId]: e instanceof Error ? e.message : "Action failed.",
-      }));
+      failure = e instanceof Error ? e.message : "Action failed.";
+      const message = failure;
+      if (mountedRef.current) setRowErrors((prev) => ({ ...prev, [userId]: message }));
     } finally {
       // alpha-drift-r46-01 (2026-08-19): this used to only reload on the
       // clean-success path. An action can commit before a later operation
@@ -409,15 +418,18 @@ export default function AdminAccountsPage() {
       // search was active, so acting on a result found past the newest-200
       // window doesn't bounce the admin back to page one -- regardless of
       // whether this action's own response was a full success.
-      await load(
+      const rows = await load(
         activeSearch
-          ? { search: activeSearch }
-          : pendingOnly
-          ? { pending: true }
-          : undefined
+          ? { search: activeSearch, keep: true }
+          : { pending: pendingOnly, keep: true }
       );
       busyRowsRef.current.delete(userId);
       if (!mountedRef.current) return;
+      // A failed action can still remove its row (a partial delete, or a
+      // request approved elsewhere). Show that error where it stays visible.
+      if (failure && rows && !rows.some((row) => row.id === userId)) {
+        setActionMsg(`${email}: ${failure}`);
+      }
       // alpha-drift-r65-03 (2026-08-21, accessibility-resweep-newer-code-
       // r13): used to sit in the try block's success-only branch (see
       // actionCount's own comment above for the r61-03 "all 4 actions"
@@ -568,8 +580,14 @@ export default function AdminAccountsPage() {
           </button>
           <button
             type="button"
-            disabled={loading || busyRows.size > 0}
-            onClick={() => load(activeSearch ? { search: activeSearch } : { pending: pendingOnly })}
+            // aria-disabled, not disabled: a disabled button drops keyboard
+            // focus to <body> mid-refresh (same reason as Load more below).
+            aria-disabled={loading || busyRows.size > 0}
+            onClick={() => {
+              if (loading || busyRowsRef.current.size > 0) return;
+              setRowErrors({});
+              load(activeSearch ? { search: activeSearch, keep: true } : { pending: pendingOnly, keep: true });
+            }}
             className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--ink-soft)" }}
           >
@@ -614,6 +632,7 @@ export default function AdminAccountsPage() {
               <Stat label="Pending requests" value={stats.pendingRequests} />
               <Stat label="Signup started" value={stats.signupIncomplete} />
               <Stat label="Unsubscribed" value={stats.unsubscribed} />
+              <Stat label="Latest issue" value={stats.latestIssueWeekOf || "—"} sub={`${stats.latestIssueCount} sent`} />
               <Stat
                 label="Email"
                 value="Resend"
@@ -630,8 +649,9 @@ export default function AdminAccountsPage() {
           </p>
         )}
 
-        {/* alpha-drift-r32-04 (2026-08-14): sr-only, announces act()'s
-            result -- see the state comment above. */}
+        {/* alpha-drift-r32-04 (2026-08-14): announces act()'s result --
+            see the state comment above. Visible now so a failed action whose
+            row left the list still has somewhere to show its error. */}
         <p role="status" aria-live="polite" className="alpha-ui text-sm mb-4">
           {actionMsg}
         </p>
@@ -674,10 +694,9 @@ export default function AdminAccountsPage() {
               const created = new Date(u.created_at).toLocaleDateString();
               const hasPendingAccessRequest = account.pending;
               const isBusy = loading || busyRows.has(u.id);
-              // alpha-drift-r20-06: deliverability suppression is orthogonal
-              // to billing status (statusLabel above) -- a Paying subscriber
-              // can be silently bounce-suppressed too, so this is its own
-              // badge, not folded into status.label.
+              // alpha-drift-r20-06: deliverability suppression is its own
+              // badge, separate from the access label, since any reader can
+              // be bounce-suppressed.
               const isSuppressed = account.suppressed;
               const recoveryInProgress = account.recovery;
               return (
