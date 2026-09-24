@@ -50,6 +50,32 @@ export interface BraveResult {
   meta_url?: { hostname?: string };
 }
 
+// Caller-owned so one exhausted monthly quota can short-circuit later queries
+// in the same send without leaking a verdict into a different request/day.
+export interface BraveQuotaState {
+  monthlyExhausted: boolean;
+}
+
+function confirmedMonthlyQuota(status: number, text: string): boolean {
+  if (status !== 402 || text.length > 8192) return false;
+  try {
+    const body: unknown = JSON.parse(text);
+    if (!body || typeof body !== "object") return false;
+    const isMonthly = (value: unknown): boolean => {
+      if (!value || typeof value !== "object") return false;
+      const error = value as Record<string, unknown>;
+      const meta = error.meta;
+      return error.code === "USAGE_LIMIT_EXCEEDED" &&
+        !!meta && typeof meta === "object" &&
+        (meta as Record<string, unknown>).usage_limit_type === "monthly";
+    };
+    const record = body as Record<string, unknown>;
+    return isMonthly(record) || isMonthly(record.error);
+  } catch {
+    return false;
+  }
+}
+
 export interface BraveSearchOptions {
   count?: number;
   // past day/week/month/year, OR a discovery date range "YYYY-MM-DDtoYYYY-MM-DD"
@@ -67,8 +93,10 @@ export interface BraveSearchOptions {
   // source-resolver.ts) can't use the global counter's before/after delta for
   // that, since a DIFFERENT topic's failure in the same wave would show up in
   // the delta too. This callback lets a caller track its own attempts in its
-  // own closure instead.
+  // own closure instead. A request-local monthly-quota skip also invokes the
+  // callback, without incrementing the real provider-response counter.
   onRateLimited?: () => void;
+  quotaState?: BraveQuotaState;
 }
 
 export function braveConfigured(): boolean {
@@ -81,6 +109,12 @@ export async function braveSearch(
 ): Promise<BraveResult[]> {
   const key = process.env.BRAVE_SEARCH_API_KEY;
   if (!key) throw new Error("BRAVE_SEARCH_API_KEY missing");
+  if (opts.quotaState?.monthlyExhausted) {
+    // Count this as a degraded call for the topic's fallback decision, but do
+    // not count it as another provider response in the run's ops summary.
+    opts.onRateLimited?.();
+    throw new Error("Brave Search monthly quota exhausted for this invocation (request skipped)");
+  }
 
   const params = new URLSearchParams({
     q: query,
@@ -110,6 +144,9 @@ export async function braveSearch(
         opts.onRateLimited?.();
       }
       const text = await res.text().catch(() => "");
+      if (opts.quotaState && confirmedMonthlyQuota(res.status, text)) {
+        opts.quotaState.monthlyExhausted = true;
+      }
       throw new Error(`Brave Search ${res.status}: ${text.slice(0, 200)}`);
     }
 

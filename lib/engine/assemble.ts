@@ -7,6 +7,7 @@ import { selectLetterSections } from "./select-sections";
 import { buildDeterministicBlurb } from "./deterministic-fallback";
 import { topicLabel, mapTopicsForUser, GENERIC_FALLBACK_TOPICS } from "@/lib/topics";
 import { withDeadline } from "@/lib/with-deadline";
+import type { BraveQuotaState } from "@/lib/brave";
 import type { Issue, UserProfile, TopicId } from "@/lib/types";
 import type { TopicBlurb } from "./types";
 
@@ -112,6 +113,9 @@ export async function generateIssue(
   // immediately before every paid Anthropic or DeepSeek attempt, including
   // retries. Other callers omit it and retain their existing behavior.
   paidCallAllowed?: () => boolean | Promise<boolean>,
+  // Shared by the caller's batch, including wider searches and fast fallback.
+  // A standalone call starts fresh so a previous quota verdict cannot leak.
+  quotaState: BraveQuotaState = { monthlyExhausted: false },
 ): Promise<Issue> {
   // Map the pickable "zodiac" topic to the reader's per-sign id, dropping it when
   // there's no birthday (see mapTopicsForUser). If the WHOLE pool maps to empty
@@ -196,13 +200,13 @@ export async function generateIssue(
       // topic's contribution to the parallel wave.
       raw = (async () => {
         const excludeUrls = citedByTopic.get(id);
-        let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls });
+        let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls, quotaState });
         // Dry in the tight since-last-send window? Retry ONCE at past-week before
         // giving up the slot. With the exclusion set filtering out everything
         // already cited, whatever the wide pass finds is guaranteed new to the
         // reader - this keeps daily letters grounded in real current articles.
         if (!signal && freshness && freshness !== "pw") {
-          signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls });
+          signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls, quotaState });
         }
         if (!signal) {
           dryCache.add(dryKey);

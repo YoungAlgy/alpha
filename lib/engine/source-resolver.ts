@@ -1,4 +1,4 @@
-import { braveConfigured, braveSearch, type BraveResult, type BraveSearchOptions } from "@/lib/brave";
+import { braveConfigured, braveSearch, type BraveQuotaState, type BraveResult, type BraveSearchOptions } from "@/lib/brave";
 import { youConfigured, youSearch } from "@/lib/you-search";
 import { rankAndDedup } from "./source-rank";
 import { fetchArticleText, deepReadEnabled } from "./fetch-content";
@@ -107,6 +107,8 @@ export async function resolveTopicSignal(
      *  excluded from candidates so a letter never re-covers an article the
      *  reader was already sent (the cross-send repeat guard). */
     excludeUrls?: Set<string>;
+    /** Shared only within the caller's generation batch. */
+    quotaState?: BraveQuotaState;
   }
 ): Promise<TopicSignal | undefined> {
   const custom = isCustomTopic(topicId);
@@ -129,10 +131,11 @@ export async function resolveTopicSignal(
     // — that would misroute a genuinely quiet topic (Brave fine, nothing new)
     // into the Gemini fallback instead of the existing backup-topic behavior.
     let rateLimitedThisTopic = false;
-    let shouldTryFallback = !braveConfigured();
-    let fallbackReason: BraveFallbackReason = "not configured";
+    const monthlyExhausted = opts?.quotaState?.monthlyExhausted === true;
+    let shouldTryFallback = !braveConfigured() || monthlyExhausted;
+    let fallbackReason: BraveFallbackReason = monthlyExhausted ? "rate-limited" : "not configured";
 
-    if (braveConfigured()) {
+    if (braveConfigured() && !monthlyExhausted) {
       try {
         const live = await fetchLiveSignal(
           topicId,
@@ -140,7 +143,8 @@ export async function resolveTopicSignal(
           weekOf,
           opts?.freshness,
           opts?.excludeUrls,
-          () => { rateLimitedThisTopic = true; }
+          () => { rateLimitedThisTopic = true; },
+          (query, searchOptions) => braveSearch(query, { ...searchOptions, quotaState: opts?.quotaState })
         );
         if (live.state === "signal") return live.signal;
         if (live.state === "unavailable") {

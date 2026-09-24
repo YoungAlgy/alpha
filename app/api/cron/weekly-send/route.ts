@@ -13,7 +13,7 @@ import {
 } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
-import { braveRateLimitedCount } from "@/lib/brave";
+import { braveRateLimitedCount, type BraveQuotaState } from "@/lib/brave";
 import { youRateLimitedCount } from "@/lib/you-search";
 import { geminiRateLimitedCount } from "@/lib/engine/gemini-client";
 import { groqRateLimitedCount } from "@/lib/engine/groq-client";
@@ -705,6 +705,9 @@ export async function GET(req: Request) {
   // full waterfall again for the filler pass, the fast-fallback layer below,
   // or any later subscriber sharing that topic this run.
   const failedCache = new Set<string>();
+  // One confirmed monthly cap skips later Brave calls in this batch only.
+  // A fresh request can detect a recovered quota without persistent lockout.
+  const sourceQuotaState: BraveQuotaState = { monthlyExhausted: false };
 
   console.log(
     `[cron/weekly-send] weekOf=${weekOf} subscribers=${rows.length} force=${force}`
@@ -1385,7 +1388,8 @@ export async function GET(req: Request) {
                 dryCache,
                 inFlight,
                 failedCache,
-                paidCallAllowed
+                paidCallAllowed,
+                sourceQuotaState
               ),
               PER_USER_DEADLINE_MS,
               "generateIssue(subscriber)"
@@ -1553,7 +1557,8 @@ export async function GET(req: Request) {
                 dryCache,
                 inFlight,
                 failedCache,
-                paidCallAllowed
+                paidCallAllowed,
+                sourceQuotaState
               ),
               FAST_FALLBACK_DEADLINE_MS,
               "fast-fallback(subscriber)"
