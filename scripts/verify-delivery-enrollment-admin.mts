@@ -7,6 +7,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { hasReaderAccess } from "../lib/access.ts";
 import { blocksCsrf } from "../lib/csrf-guard.ts";
+import { hasUsableReaderProfile } from "../lib/reader-profile-state.ts";
 
 const source = (path: string) =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
@@ -29,20 +30,25 @@ assert.match(route, /hasReaderAccess\(existing\.subscribed_at, existing\.cancell
 assert.match(route, /authUser\.email_confirmed_at/);
 assert.match(route, /authUser\.email\.toLowerCase\(\)\.trim\(\) !== existing\.email/);
 assert.match(route, /authUser\.banned_until/);
+assert.match(route, /code: "email_unconfirmed"/);
+assert.match(route, /code: "email_mismatch"/);
+assert.match(route, /code: "email_change_pending"/);
+assert.match(route, /code: "account_banned"/);
+assert.match(route, /code: "account_deleted"/);
+assert.match(route, /code: "anonymous_account"/);
+assert.match(route, /code: "signup_incomplete"/);
 assert.match(route, /existing\.unsubscribed_at \|\| existing\.bounced_at \|\| existing\.complained_at/);
 assert.match(route, /existing\.suppression_cleanup_pending_at \|\| existing\.suppression_recovery_token/);
 assert.match(route, /\.update\(\{ delivery_enrolled: enable \}\)/);
 assert.match(route, /\.eq\("delivery_enrolled", !enable\)/);
+assert.match(route, /\.contains\("topics", existing\.topics\)\.containedBy\("topics", existing\.topics\)/);
 assert.match(route, /delivery state change blocked by active provider lease/);
 assert.match(route, /status: 409/);
 
 assert.match(page, /delivery_enrolled: boolean/);
 assert.match(page, /expectedEmail: email/);
-assert.match(page, /LETTERS ENABLED/);
-assert.match(page, /LETTERS PAUSED/);
 assert.match(page, /Enable letters/);
 assert.match(page, /Pause letters/);
-assert.equal((page.match(/min-h-11 px-3 py-2/g) ?? []).length, 2);
 
 // Run the actual new POST branch after extracting it from the TypeScript AST.
 // Only its DB/Auth/response boundaries are mocked. No server is started.
@@ -58,12 +64,15 @@ const deliveryBranch = post.body.statements.find(
 );
 assert.ok(deliveryBranch, "separate delivery action branch must exist");
 const runnable = ts.transpileModule(
-  `async function run(body, sb, NextResponse, hasReaderAccess, console) { ${deliveryBranch.getText(parsed)} }`,
+  `async function run(body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile, console) { ${deliveryBranch.getText(parsed)} }`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
 
 type Row = {
   email: string;
+  first_name: string | null;
+  topics: string[];
+  birthday: string | null;
   subscribed_at: string | null;
   cancelled_at: string | null;
   access_granted_at: string | null;
@@ -81,6 +90,9 @@ const userId = "245fb183-0d73-4a57-bf17-38bd57e37fb6";
 const expectedEmail = "reader@example.test";
 const defaultRow = (): Row => ({
   email: expectedEmail,
+  first_name: "Reader",
+  topics: ["mental-health"],
+  birthday: null,
   subscribed_at: "2026-09-01T00:00:00Z",
   cancelled_at: null,
   access_granted_at: "2026-09-01T00:00:00Z",
@@ -150,6 +162,14 @@ async function exercise(options: {
           calls.filters.push(["is", field, value]);
           return query;
         },
+        contains: (field: string, value: unknown) => {
+          calls.filters.push(["contains", field, value]);
+          return query;
+        },
+        containedBy: (field: string, value: unknown) => {
+          calls.filters.push(["containedBy", field, value]);
+          return query;
+        },
         maybeSingle: async () => ({ data: row, error: null }),
       };
       return query;
@@ -165,8 +185,8 @@ async function exercise(options: {
       ({ body: value, status: opts?.status ?? 200 }),
   };
   const result = await runInNewContext(
-    `${runnable}\nrun(body, sb, NextResponse, hasReaderAccess, console)`,
-    { body, sb, NextResponse, hasReaderAccess, console: { error() {} } },
+    `${runnable}\nrun(body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile, console)`,
+    { body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile, console: { error() {} } },
   ) as { body: Record<string, unknown>; status: number };
   assert.deepEqual(
     [row.subscribed_at, row.cancelled_at, row.access_granted_at],
@@ -181,12 +201,14 @@ assert.equal(enabled.result.status, 200);
 assert.equal(enabled.row.delivery_enrolled, true);
 assert.equal(enabled.calls.authReads, 1);
 for (const field of [
-  "email", "delivery_enrolled", "subscribed_at", "cancelled_at", "access_granted_at",
+  "email", "first_name", "birthday", "delivery_enrolled", "subscribed_at", "cancelled_at", "access_granted_at",
   "unsubscribed_at", "bounced_at", "complained_at", "suppression_cleanup_pending_at",
   "suppression_recovery_token", "suppression_recovery_started_at", "delivery_suppression_cleared_at",
 ]) {
   assert.ok(enabled.calls.filters.some(([, key]) => key === field), `missing CAS filter: ${field}`);
 }
+assert.ok(enabled.calls.filters.some(([op, field]) => op === "contains" && field === "topics"));
+assert.ok(enabled.calls.filters.some(([op, field]) => op === "containedBy" && field === "topics"));
 
 const paused = await exercise({ action: "pause_delivery", row: { delivery_enrolled: true } });
 assert.equal(paused.result.status, 200);
@@ -212,16 +234,29 @@ for (const blockedField of [
   assert.equal(blocked.result.status, 409, `${blockedField} must block enrollment`);
   assert.equal(blocked.calls.payload, undefined);
 }
-for (const auth of [
-  { email_confirmed_at: null },
-  { email: "other@example.test" },
-  { banned_until: "2099-01-01T00:00:00Z" },
-  { new_email: "other@example.test" },
-  { deleted_at: "2026-09-01T00:00:00Z" },
-  { is_anonymous: true },
-]) {
+for (const [auth, code] of [
+  [{ email_confirmed_at: null }, "email_unconfirmed"],
+  [{ email: "other@example.test" }, "email_mismatch"],
+  [{ banned_until: "2099-01-01T00:00:00Z" }, "account_banned"],
+  [{ new_email: "other@example.test" }, "email_change_pending"],
+  [{ deleted_at: "2026-09-01T00:00:00Z" }, "account_deleted"],
+  [{ is_anonymous: true }, "anonymous_account"],
+] as const) {
   const blocked = await exercise({ auth });
   assert.equal(blocked.result.status, 409);
+  assert.equal(blocked.result.body.code, code);
+  assert.equal(blocked.calls.payload, undefined);
+}
+for (const row of [
+  { first_name: null },
+  { topics: [] },
+  { topics: ["constructor"] },
+  { topics: ["zodiac"], birthday: null },
+]) {
+  const blocked = await exercise({ row });
+  assert.equal(blocked.result.status, 409);
+  assert.equal(blocked.result.body.code, "signup_incomplete");
+  assert.equal(blocked.calls.authReads, 1, "profile checks follow Auth verification");
   assert.equal(blocked.calls.payload, undefined);
 }
 assert.equal((await exercise({ authError: true })).result.status, 503);

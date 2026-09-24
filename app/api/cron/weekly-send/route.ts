@@ -13,6 +13,7 @@ import {
 } from "@/lib/email";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
+import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import { braveRateLimitedCount, type BraveQuotaState } from "@/lib/brave";
 import { youRateLimitedCount } from "@/lib/you-search";
 import { geminiRateLimitedCount } from "@/lib/engine/gemini-client";
@@ -1055,6 +1056,9 @@ export async function GET(req: Request) {
       issue: Issue,
       kind: "live" | "backup-shared" | "backup-fresh" | "backup-stale"
     ): Promise<DeliveryAttemptOutcome> {
+      if (!issueIsReaderVisible(issue)) {
+        throw new Error("Issue contains a leaked source diagnostic; delivery stopped before persistence.");
+      }
       // Ensure the row EXISTS so the atomic claim below (an UPDATE) has
       // something to match — but never overwrite content here.
       // ignoreDuplicates makes this INSERT ... ON CONFLICT DO NOTHING: if the
@@ -1394,6 +1398,9 @@ export async function GET(req: Request) {
               PER_USER_DEADLINE_MS,
               "generateIssue(subscriber)"
             );
+      if (!issueIsReaderVisible(issue)) {
+        throw new Error("Issue contains a leaked source diagnostic; trying a safe backup.");
+      }
       usableIssue = issue;
       if (persistedRetry) {
         console.log(
@@ -1454,9 +1461,10 @@ export async function GET(req: Request) {
       // live issue as the durable retry candidate. The next scheduled attempt
       // reuses the exact persisted payload and the same provider idempotency
       // key, which is safe even when the prior transport outcome was unclear.
-      if (usableIssue) {
-        console.warn(
-          "[cron/weekly-send] preserving completed issue for exact retry; content backups skipped"
+      if (usableIssue || (persistedRetry && !issueIsReaderVisible(persistedRetry))) {
+        console.warn(usableIssue
+          ? "[cron/weekly-send] preserving completed issue for exact retry; content backups skipped"
+          : "[cron/weekly-send] marked pending issue needs review; content backups skipped to preserve exact retry identity"
         );
         deliveryRetryRequiredUserIds.add(row.id);
         continue;
@@ -1506,7 +1514,9 @@ export async function GET(req: Request) {
       // processed (nothing cached yet) — falls through to layer 1 then.
       try {
         const cached = await getCachedBlurbs(GENERIC_FALLBACK_TOPICS, weekOf);
-        const available = [...cached.values()].filter((b) => b.items.length > 0);
+        const available = [...cached.values()].filter((b) =>
+          b.items.length > 0 && issueIsReaderVisible({ sections: [b] })
+        );
         // Floor of 2: a 1-section backup letter reads too thin to send as a
         // real issue — falls through to layer 1's fast fresh retry instead of
         // shipping something that thin.
@@ -1595,19 +1605,26 @@ export async function GET(req: Request) {
           // real failure in the last-resort fallback be told apart from a
           // subscriber having no delivery history, which matters for
           // diagnosing whether the fallback itself is broken mid-outage.
-          const { data: prior, error: priorErr } = await sb
+          // Read a bounded window because the newest prior letter may be one
+          // of the old issues with a source-process note in reader text.
+          // The extra row tells us whether the safety bound was exhausted.
+          const { data: priorRows, error: priorErr } = await sb
             .from("issues")
             .select("sections")
             .eq("user_id", row.id)
             .not("delivered_at", "is", null)
             .lt("week_of", weekOf)
             .order("week_of", { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .limit(26);
           if (priorErr) {
             console.error(
               `[cron/weekly-send] backup lookup query failed: ${priorErr.message}`
             );
+          }
+          const prior = (priorRows ?? []).slice(0, 25)
+            .find((candidate) => candidate.sections && issueIsReaderVisible(candidate));
+          if (!prior && (priorRows?.length ?? 0) > 25) {
+            console.warn("[cron/weekly-send] stale backup search exhausted its 25-issue safety bound; older usable issues may exist");
           }
           if (prior?.sections) {
             backupIssue = buildBackupIssue(

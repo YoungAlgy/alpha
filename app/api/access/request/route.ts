@@ -15,6 +15,7 @@ import {
   normalizeAccessRequestEmail,
 } from "@/lib/access-request-ownership";
 import { sendOpsWebhookAlert } from "@/lib/email";
+import { hasUsableReaderProfile } from "@/lib/reader-profile-state";
 
 export const runtime = "nodejs";
 
@@ -193,7 +194,7 @@ export async function POST(req: Request) {
 
   const { data: existing, error: existingError } = await sb
     .from("users")
-    .select("id, subscribed_at, cancelled_at, access_granted_at, stripe_customer_id")
+    .select("id, updated_at, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, topics, subscribed_at, cancelled_at, access_granted_at, stripe_customer_id")
     .eq("id", userId)
     .maybeSingle();
   if (existingError) {
@@ -207,12 +208,63 @@ export async function POST(req: Request) {
       existing?.access_granted_at
     )
   ) {
-    return NextResponse.json({ error: "This account already has Alpha access." }, { status: 409 });
+    // An owner can approve an auth-created row before the reader finishes
+    // onboarding. Let that reader explicitly fill only missing profile fields.
+    // A completed reader's older browser draft must never replace saved data.
+    if (!existing?.access_granted_at || hasUsableReaderProfile(existing)) {
+      return NextResponse.json({ error: "This account already has Alpha access." }, { status: 409 });
+    }
+    const repair = {
+      first_name: existing.first_name?.trim() ? existing.first_name : profile.first_name,
+      topics: hasUsableReaderProfile({
+        first_name: existing.first_name || profile.first_name,
+        topics: existing.topics,
+        birthday: existing.birthday || profile.birthday,
+      })
+        ? existing.topics : profile.topics,
+      city: existing.city || profile.city,
+      job_blurb: existing.job_blurb || profile.job_blurb,
+      project_blurb: existing.project_blurb || profile.project_blurb,
+      fun_blurb: existing.fun_blurb || profile.fun_blurb,
+      birthday: existing.birthday || profile.birthday,
+      gender: existing.gender || profile.gender,
+    };
+    let repairWrite = sb.from("users").update(repair)
+      .eq("id", userId)
+      .eq("access_granted_at", existing.access_granted_at);
+    repairWrite = existing.updated_at
+      ? repairWrite.eq("updated_at", existing.updated_at)
+      : repairWrite.is("updated_at", null);
+    const repaired = await repairWrite.select("id").maybeSingle();
+    if (repaired.error) {
+      console.error("[access/request] approved profile repair failed:", repaired.error.message);
+      return NextResponse.json({ error: "We couldn't save your profile. Try again shortly." }, { status: 503 });
+    }
+    if (!repaired.data) {
+      return NextResponse.json({ error: "Your account changed while saving. Check your profile and try again." }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, repaired: true });
   }
 
-  const result = existing
-    ? await sb.from("users").update(profile).eq("id", userId).select("id").maybeSingle()
-    : await sb.from("users").insert({ id: userId, ...profile }).select("id").maybeSingle();
+  let result;
+  if (existing) {
+    let requestWrite = sb.from("users").update(profile).eq("id", userId);
+    requestWrite = existing.subscribed_at
+      ? requestWrite.eq("subscribed_at", existing.subscribed_at)
+      : requestWrite.is("subscribed_at", null);
+    requestWrite = existing.access_granted_at
+      ? requestWrite.eq("access_granted_at", existing.access_granted_at)
+      : requestWrite.is("access_granted_at", null);
+    requestWrite = existing.updated_at
+      ? requestWrite.eq("updated_at", existing.updated_at)
+      : requestWrite.is("updated_at", null);
+    result = await requestWrite.select("id").maybeSingle();
+  } else {
+    result = await sb.from("users").insert({ id: userId, ...profile }).select("id").maybeSingle();
+  }
+  if (result.error?.code === "23505" || (!result.error && !result.data)) {
+    return NextResponse.json({ error: "Your account changed while saving. Refresh and try again." }, { status: 409 });
+  }
   if (result.error || !result.data) {
     console.error("[access/request] profile write failed:", result.error?.message ?? "no row returned");
     return NextResponse.json({ error: "We couldn't receive that request. Try again shortly." }, { status: 503 });

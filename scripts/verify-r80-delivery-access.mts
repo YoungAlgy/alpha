@@ -21,6 +21,7 @@ type RevokeRow = {
   subscribed_at: string | null;
   access_granted_at: string | null;
   cancelled_at: string | null;
+  delivery_enrolled: boolean;
 };
 
 function isRevokeRowField(field: string): field is keyof RevokeRow {
@@ -30,7 +31,8 @@ function isRevokeRowField(field: string): field is keyof RevokeRow {
     field === "access_requested_at" ||
     field === "subscribed_at" ||
     field === "access_granted_at" ||
-    field === "cancelled_at"
+    field === "cancelled_at" ||
+    field === "delivery_enrolled"
   );
 }
 
@@ -40,7 +42,7 @@ function revokeSupabaseDouble(
 ) {
   const currentRow: RevokeRow = { ...row };
   let writeStarted = false;
-  const writeFilters: Array<{ field: keyof RevokeRow; value: string | null }> = [];
+  const writeFilters: Array<{ field: keyof RevokeRow; value: string | boolean | null }> = [];
   let writes = 0;
   const chain = {
     select: (fields: string) => {
@@ -58,7 +60,7 @@ function revokeSupabaseDouble(
     },
     eq: (field: string, value: unknown) => {
       if (writeStarted && field !== "id") {
-        if (!isRevokeRowField(field) || (value !== null && typeof value !== "string")) {
+        if (!isRevokeRowField(field) || (value !== null && typeof value !== "string" && typeof value !== "boolean")) {
           throw new Error(`unexpected revoke compare-and-swap filter: ${field}`);
         }
         writeFilters.push({
@@ -70,7 +72,7 @@ function revokeSupabaseDouble(
     },
     is: (field: string, value: unknown) => {
       if (writeStarted && field !== "id") {
-        if (!isRevokeRowField(field) || (value !== null && typeof value !== "string")) {
+        if (!isRevokeRowField(field) || (value !== null && typeof value !== "string" && typeof value !== "boolean")) {
           throw new Error(`unexpected revoke compare-and-swap filter: ${field}`);
         }
         writeFilters.push({
@@ -108,8 +110,8 @@ console.log("(1) free-access revocation closes send and archive access atomicall
   const branch = src.slice(start, end);
   check("revoke branch stamps an explicit revocation time", /const revokedAt = new Date\(\)\.toISOString\(\);/.test(branch));
   check(
-    "one UPDATE clears subscribed_at, the pending request, invite access, and sets cancelled_at",
-    /\.update\(\{[\s\S]*?subscribed_at:\s*null,[\s\S]*?access_requested_at:\s*null,[\s\S]*?access_granted_at:\s*null,[\s\S]*?cancelled_at:\s*revokedAt,[\s\S]*?\}\)/.test(
+    "one UPDATE clears subscribed_at, the pending request, invite access, pauses letters, and sets cancelled_at",
+    /\.update\(\{[\s\S]*?subscribed_at:\s*null,[\s\S]*?access_requested_at:\s*null,[\s\S]*?access_granted_at:\s*null,[\s\S]*?cancelled_at:\s*revokedAt,[\s\S]*?delivery_enrolled:\s*false,[\s\S]*?\}\)/.test(
       branch
     )
   );
@@ -151,6 +153,7 @@ console.log("(1) free-access revocation closes send and archive access atomicall
     subscribed_at: null,
     access_granted_at: null,
     cancelled_at: null,
+    delivery_enrolled: true,
   });
   const existingSubscriptionResult = await runRevoke(
     { action: "revoke_free", userId: "reader-1" },
@@ -170,6 +173,7 @@ console.log("(1) free-access revocation closes send and archive access atomicall
     subscribed_at: null,
     access_granted_at: null,
     cancelled_at: null,
+    delivery_enrolled: true,
   }, { stripe_subscription_id: "sub_arrived" });
   const attachedMidFlightResult = await runRevoke(
     { action: "revoke_free", userId: "reader-2" },
@@ -193,6 +197,7 @@ console.log("(1) free-access revocation closes send and archive access atomicall
         subscribed_at: before,
         access_granted_at: before,
         cancelled_at: before,
+        delivery_enrolled: true,
       }, { [field]: "2026-09-05T12:00:00.000Z" });
       const result = await runRevoke(
         { action: "revoke_free", userId: "reader-3" },
@@ -212,6 +217,7 @@ console.log("(1) free-access revocation closes send and archive access atomicall
     subscribed_at: null,
     access_granted_at: null,
     cancelled_at: null,
+    delivery_enrolled: true,
   });
   const unchangedResult = await runRevoke(
     { action: "revoke_free", userId: "reader-4" },

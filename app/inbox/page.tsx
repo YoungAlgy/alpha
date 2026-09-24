@@ -15,6 +15,9 @@ import { LetterTOC } from "@/components/LetterTOC";
 import { ShareButton } from "@/components/ShareButton";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { getSignupAccountState } from "@/lib/signup-progress";
+import { hasUsableReaderProfile } from "@/lib/reader-profile-state";
+import { issueIsReaderVisible } from "@/lib/issue-visibility";
+import { latestVisibleIssue } from "@/lib/latest-visible-issue";
 import { useOnboarding } from "@/lib/onboarding-state";
 import { currentPeriodIso, nextSendIso, SEND_HOUR_UTC } from "@/lib/cadence";
 import { fanfare } from "@/lib/audio";
@@ -22,6 +25,13 @@ import { SHARE_LEAD } from "@/lib/copy";
 import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
+type InboxIssueRow = {
+  week_of: string;
+  volume: number;
+  number: number;
+  editor_intro: string;
+  sections: Issue["sections"];
+};
 
 export default function InboxPage() {
   const router = useRouter();
@@ -32,9 +42,8 @@ export default function InboxPage() {
   const [celebrate, setCelebrate] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [accessEnded, setAccessEnded] = useState(false);
-  const [signupState, setSignupState] = useState<"pending" | "incomplete" | null>(null);
+  const [signupState, setSignupState] = useState<"pending" | "incomplete" | "approved-incomplete" | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
-  const clearTarget = useRef<{ path: string; opts: { skipSignOut?: boolean } }>({ path: "/welcome", opts: {} });
   // alpha-drift-r43-02 (2026-08-19, self-audit): a genuine Supabase query
   // failure (network blip, transient RLS/DB error) used to fall through
   // the SAME path as "no letter yet" -- the identical bug class round 42
@@ -47,15 +56,23 @@ export default function InboxPage() {
   // no indication anything actually went wrong and no retry affordance.
   const [loadError, setLoadError] = useState(false);
   const mountedRef = useRef(true);
+  const loadAttempt = useRef(0);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // Invalidate the latest request, not the sequence captured at mount.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      loadAttempt.current++;
     };
   }, []);
 
   const load = useCallback(async () => {
+    const attempt = ++loadAttempt.current;
+    const isCurrentLoad = () => mountedRef.current && attempt === loadAttempt.current;
     setMissing(false);
+    setChecked(false);
+    setSignedIn(false);
     setLoadError(false);
     setAccessEnded(false);
     setSignupState(null);
@@ -77,7 +94,7 @@ export default function InboxPage() {
           // loadError screen the data-query errors below already use,
           // matching this page's own r43-02 precedent one call earlier.
           const { data: { session }, error: sessionErr } = await sb.auth.getSession();
-          if (!mountedRef.current) return;
+          if (!isCurrentLoad()) return;
           if (sessionErr) {
             console.warn("[inbox] getSession failed:", sessionErr.message);
             setLoadError(true);
@@ -89,19 +106,19 @@ export default function InboxPage() {
             // /letter) instead of two sequential round trips on the app's
             // most-visited page.
             const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
-              sb
+              latestVisibleIssue<InboxIssueRow>((from, to) => sb
                 .from("issues")
                 .select("week_of, volume, number, editor_intro, sections")
                 .lte("week_of", currentPeriodIso())
                 .order("week_of", { ascending: false })
-                .limit(1)
-                .maybeSingle(),
+                .range(from, to)),
               sb
                 .from("users")
-                .select("first_name, city, theme, subscribed_at, cancelled_at, access_requested_at, access_granted_at")
+                .select("first_name, topics, birthday, city, theme, subscribed_at, cancelled_at, access_requested_at, access_granted_at")
                 .eq("id", session.user.id)
                 .maybeSingle(),
             ]);
+            if (!isCurrentLoad()) return;
             // alpha-drift-r16-15: RLS also enforces this
             // (20260807000000_issues_rls_active_access_only.sql, live since
             // 2026-08-07 -- alpha-drift-r52-01, 2026-08-20: this comment
@@ -130,7 +147,7 @@ export default function InboxPage() {
             }
             if (!userRow) {
               const { data: { user }, error: identityError } = await sb.auth.getUser();
-              if (!mountedRef.current) return;
+              if (!isCurrentLoad()) return;
               if (identityError) {
                 setLoadError(true);
                 return;
@@ -162,6 +179,10 @@ export default function InboxPage() {
               setLoadError(true);
               return;
             }
+            if (!data && !hasUsableReaderProfile(userRow)) {
+              setSignupState("approved-incomplete");
+              return;
+            }
             if (data) {
               const themeToApply = coerceThemeId(userRow?.theme) ?? coerceThemeId(state.theme) ?? "forest";
               document.documentElement.setAttribute("data-theme", themeToApply);
@@ -177,6 +198,10 @@ export default function InboxPage() {
               });
               return; // authenticated path complete
             }
+            // A signed-in reader with no visible server issue must never see
+            // a cached first issue left by a different account on this device.
+            setMissing(true);
+            return;
           }
         } catch (e) {
           // alpha-drift-r43-02: a thrown exception fetching session/data
@@ -195,8 +220,9 @@ export default function InboxPage() {
           // already belongs to an actual signed-in reader, so it now
           // matches its siblings (app/archive/page.tsx, app/inbox/
           // [issueId]/page.tsx) and sets loadError unconditionally.
+          if (!isCurrentLoad()) return;
           console.warn("[inbox] supabase read failed:", e);
-          if (mountedRef.current) setLoadError(true);
+          setLoadError(true);
           return;
         }
       }
@@ -208,6 +234,10 @@ export default function InboxPage() {
           return;
         }
         const parsed: Issue = JSON.parse(raw);
+        if (!issueIsReaderVisible(parsed)) {
+          setMissing(true);
+          return;
+        }
         setIssue(parsed);
         if (state.theme) {
           document.documentElement.setAttribute("data-theme", state.theme);
@@ -227,7 +257,7 @@ export default function InboxPage() {
       // A `finally` here (not code after the try) is load-bearing: several
       // branches above return early (accessEnded, loadError, issue found),
       // and only `finally` still runs after those.
-      if (mountedRef.current) setChecked(true);
+      if (isCurrentLoad()) setChecked(true);
     }
   }, [state.theme]);
 
@@ -238,46 +268,13 @@ export default function InboxPage() {
     void load();
   }, [loaded, load]);
 
-  // Clear any session, then HARD-navigate. This client-side redirect (below,
-  // the "already signed in" branch) is the ONLY thing that bounces a
-  // signed-in reader off /signin and /welcome back to /inbox -- middleware.ts
-  // only handles the apex/www host redirect now (alpha-drift-r15-04, found
-  // 2026-08-06: the old server-side version was deliberately NOT carried
-  // over during the Cloudflare migration, per src/worker-entry.ts's own
-  // comment -- losing it just brings back a one-time page flash, not a
-  // functional bug). A Link straight to /signin or /welcome would still loop
-  // a signed-in (or stale-cookie) reader right back to this screen via that
-  // client-side redirect, so signing out first drops the cookie so the
-  // destination actually renders; window.location forces a full reload so
-  // the cleared cookie is what the destination page's own check sees.
-  //
-  // Skipped for "/signin" specifically: signOut() defaults to GLOBAL scope,
-  // which revokes whatever session is CURRENTLY in the shared cookie at call
-  // time -- not necessarily this tab's own stale view of it. Concrete race:
-  // this tab's signedIn=false is a mount-time snapshot; if the reader signs
-  // in fresh in another tab on the same browser and then clicks "Sign in" in
-  // THIS one, a pre-emptive signOut() here would revoke the OTHER tab's
-  // brand-new session seconds after it was created. Unneeded anyway --
-  // signInWithOtp()/verifyOtp() on the /signin page naturally supersede any
-  // existing session.
-  //
-  // alpha-drift-r26-03 (2026-08-14): the IDENTICAL race applies to the "I'm
-  // new, start fresh" button below, which also calls clearAndGo("/welcome")
-  // from a context where THIS tab already believes signedIn is false -- same
-  // stale-snapshot exposure as /signin, same fix. The two OTHER /welcome
-  // call sites (accessEnded's "Start a new letter →", and "Sign out" in the
-  // no-letter-yet screen's signedIn branch) are different: both fire from a
-  // context where this tab's own signed-in state is real and current, so
-  // there's a genuine session here worth clearing before navigating, and
-  // skipping it would reintroduce the original signed-in-reader-bounced-
-  // back-from-/welcome loop this function exists to prevent. skipSignOut
-  // lets each call site opt into whichever behavior actually matches what it
-  // knows about its own auth state, instead of keying it off the path alone.
-  async function clearAndGo(path: string, opts: { skipSignOut?: boolean } = {}) {
-    clearTarget.current = { path, opts };
+  // Only explicit sign-out clears the device. Sign-in and resume links keep
+  // the draft and never revoke another tab's newly established session.
+  async function signOutAndClearDevice() {
+    loadAttempt.current++;
     setClearError(null);
     try {
-      if (path !== "/signin" && !opts.skipSignOut && supabaseConfigured()) {
+      if (supabaseConfigured()) {
         const { error } = await supabaseClient().auth.signOut();
         if (error) throw error;
       }
@@ -298,7 +295,9 @@ export default function InboxPage() {
       setClearError("This browser wouldn't clear your saved answers. Try again, or clear Alpha's site data in your browser before sharing this device.");
       return;
     }
-    window.location.assign(path);
+    // Drop cached private React state after clearing the session and draft.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/welcome");
   }
 
   if (clearError) {
@@ -306,7 +305,7 @@ export default function InboxPage() {
       <main className="min-h-screen flex items-center justify-center px-6">
         <div className="text-center space-y-6 max-w-md">
           <p role="alert" className="alpha-ui">{clearError}</p>
-          <button type="button" className="alpha-button" onClick={() => clearAndGo(clearTarget.current.path, clearTarget.current.opts)}>Try again</button>
+          <button type="button" className="alpha-button" onClick={signOutAndClearDevice}>Try again</button>
         </div>
       </main>
     );
@@ -355,15 +354,17 @@ export default function InboxPage() {
           <p className="alpha-ui text-base leading-relaxed" style={{ color: "var(--ink-soft)" }}>
             {signupState === "pending"
               ? "You're waiting for Alex to approve access. Your answers are saved. You don't need to sign up again."
+              : signupState === "approved-incomplete"
+              ? "Your free access is approved. Save your name and topics so Alpha can build your letters. Any answers saved in this browser can still be used."
               : "Your email is confirmed. Finish your profile to request access. Any answers saved in this browser will be filled in."}
           </p>
           <div className="flex flex-col items-center gap-4">
             {signupState === "pending" ? (
               <button type="button" onClick={() => load()} className="alpha-button">Check approval status</button>
             ) : (
-              <Link href="/name" className="alpha-button">Continue signup →</Link>
+              <Link href={signupState === "approved-incomplete" ? "/checkout" : "/name"} className="alpha-button">Continue signup →</Link>
             )}
-            <button type="button" onClick={() => clearAndGo("/welcome")} className="alpha-ui text-sm underline py-2">
+            <button type="button" onClick={signOutAndClearDevice} className="alpha-ui text-sm underline py-2">
               Sign out and clear this device
             </button>
           </div>
@@ -447,7 +448,7 @@ export default function InboxPage() {
                     file's "Contact support" link above. */}
                 <button
                   type="button"
-                  onClick={() => clearAndGo("/welcome")}
+                  onClick={signOutAndClearDevice}
                   className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
                   style={{ color: "var(--ink-soft)" }}
                 >
@@ -466,8 +467,7 @@ export default function InboxPage() {
                 your first letter in a couple of minutes.
               </p>
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
-                {/* Buttons (not Links) that clear any stale cookie first, so a
-                    half-signed-in reader can't get bounced back to /inbox. */}
+                {/* Returning visitors keep their saved signup answers. */}
                 <Link href="/signin" className="alpha-button">
                   Sign in to see my letters →
                 </Link>

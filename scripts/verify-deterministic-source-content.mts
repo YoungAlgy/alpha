@@ -53,6 +53,14 @@ const finalDeep = buildDeterministicBlurb({
   context: context.split("=== MORE THIS WEEK")[0] + "All URLs labeled SOURCE or listed above are real and citable. Do NOT invent URLs.",
 });
 check("last deep source excludes the resolver footer", finalDeep?.items[0]?.body === "The Official U.K. Albums Chart");
+for (const separator of [", ", "... ", " - "]) {
+  const variant = buildDeterministicBlurb({
+    ...base,
+    context: context.replace("unavailable — snippet:", `unavailable${separator}snippet:`),
+  });
+  check(`${JSON.stringify(separator)} resolver wrapper is removed before voice cleanup`,
+    variant?.items[0]?.body === "The Official U.K. Albums Chart");
+}
 
 const structuredSignal = {
   ...base,

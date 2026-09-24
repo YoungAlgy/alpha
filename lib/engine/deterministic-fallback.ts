@@ -58,7 +58,7 @@ function parseDeepSources(signal: TopicSignal): SignalSource[] {
     const titleLine = lines.find((line, index) => index < sourceLine && firstLineTitle(line) !== null);
     const title = (titleLine && firstLineTitle(titleLine)) || new URL(url).hostname;
     const raw = lines.slice(sourceLine + 1).join("\n").trim();
-    const excerpt = raw.replace(/^\(full text unavailable — snippet: ([\s\S]*)\)$/, "$1");
+    const excerpt = raw.replace(/^\(full text unavailable(?:\s|[—–\-.,:…]){0,32}snippet:\s*([\s\S]*)\)$/i, "$1");
     sources.push({ title, url, excerpt });
   }
   return sources;

@@ -2,6 +2,7 @@ import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
 import { resolveTopicSignal } from "./source-resolver";
 import { getCachedBlurbs, getRecentlyCitedUrls, setCachedBlurb } from "./blurb-cache";
+import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import { normalizeUrl } from "./url-guard";
 import { selectLetterSections } from "./select-sections";
 import { buildDeterministicBlurb } from "./deterministic-fallback";
@@ -177,7 +178,9 @@ export async function generateIssue(
     // got guard-dropped when it was generated isn't worth a slot, so it must
     // never be served (to this reader or any later one) and the topic should
     // backfill instead.
-    if (cached && cached.items.length > 0) return { ...cached, topicLabel: topicLabel(id) };
+    if (cached && cached.items.length > 0 && issueIsReaderVisible({ sections: [cached] })) {
+      return { ...cached, topicLabel: topicLabel(id) };
+    }
     const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
     if (dryCache.has(dryKey)) return null; // searched dry earlier this batch — no re-search
     if (failedCache.has(dryKey)) return null; // hard-failed earlier this batch — no re-pay

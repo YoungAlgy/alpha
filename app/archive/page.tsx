@@ -7,6 +7,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { hasReaderAccess } from "@/lib/access";
 import { currentPeriodIso } from "@/lib/cadence";
+import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import type { Issue } from "@/lib/types";
 
 const STORAGE_KEY_ISSUE = "alpha-first-issue";
@@ -33,6 +34,8 @@ export default function ArchivePage() {
   const [items, setItems] = useState<ArchiveItem[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [hasMore, setHasMore] = useState(false);
+  // Range offsets count database rows, including ones hidden from readers.
+  const [rawCount, setRawCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   // alpha-drift-r66-02 (2026-08-21, accessibility-resweep-newer-code-r14):
   // loadMore() appended new letters with zero announcement anywhere in this
@@ -131,7 +134,7 @@ export default function ArchivePage() {
           const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
             sb
               .from("issues")
-              .select("id, week_of, editor_intro")
+              .select("id, week_of, editor_intro, sections")
               .lte("week_of", currentPeriodIso())
               .order("week_of", { ascending: false })
               .range(0, PAGE_SIZE - 1),
@@ -170,9 +173,10 @@ export default function ArchivePage() {
             setState("error");
             return;
           }
-          const rows = (data || []) as Array<{ id: string; week_of: string; editor_intro: string }>;
+          const rows = (data || []) as Array<{ id: string; week_of: string; editor_intro: string; sections: unknown }>;
+          setRawCount(rows.length);
           setItems(
-            rows.map((row) => ({
+            rows.filter(issueIsReaderVisible).map((row) => ({
               id: row.id,
               weekOf: row.week_of,
               firstLine: row.editor_intro,
@@ -193,7 +197,9 @@ export default function ArchivePage() {
       if (!mountedRef.current) return;
       if (raw) {
         const issue = JSON.parse(raw) as Issue;
-        setItems([{ id: "inbox", weekOf: issue.weekOf, firstLine: issue.editorIntro }]);
+        setItems(issueIsReaderVisible(issue)
+          ? [{ id: "inbox", weekOf: issue.weekOf, firstLine: issue.editorIntro }]
+          : []);
       } else {
         setItems([]);
       }
@@ -217,7 +223,7 @@ export default function ArchivePage() {
       } = await sb.auth.getSession();
       if (sessionErr) console.warn("[archive] loadMore getSession failed:", sessionErr.message);
       if (!mountedRef.current || !session) return;
-      const from = items.length;
+      const from = rawCount;
       // alpha-drift-r17-10 (found+fixed 2026-08-07): loadMore only ever
       // checked session existence, not current subscriber access -- load() (above)
       // already gates on it, but load() only runs once at mount. If a
@@ -228,7 +234,7 @@ export default function ArchivePage() {
       const [{ data, error }, { data: userRow, error: userError }] = await Promise.all([
         sb
           .from("issues")
-          .select("id, week_of, editor_intro")
+          .select("id, week_of, editor_intro, sections")
           .lte("week_of", currentPeriodIso())
           .order("week_of", { ascending: false })
           .range(from, from + PAGE_SIZE - 1),
@@ -254,18 +260,20 @@ export default function ArchivePage() {
         return;
       }
       if (error) return; // leave the existing list intact; the button just stays visible to retry
-      const rows = (data || []) as Array<{ id: string; week_of: string; editor_intro: string }>;
-      const newTotal = items.length + rows.length;
+      const rows = (data || []) as Array<{ id: string; week_of: string; editor_intro: string; sections: unknown }>;
+      const visibleRows = rows.filter(issueIsReaderVisible);
+      setRawCount(from + rows.length);
+      const newTotal = items.length + visibleRows.length;
       setItems((prev) => [
         ...prev,
-        ...rows.map((row) => ({ id: row.id, weekOf: row.week_of, firstLine: row.editor_intro })),
+        ...visibleRows.map((row) => ({ id: row.id, weekOf: row.week_of, firstLine: row.editor_intro })),
       ]);
       const stillMore = rows.length === PAGE_SIZE;
       setHasMore(stillMore);
       setLoadMoreMsg(
         rows.length === 0
           ? "No more letters to load."
-          : `Loaded ${rows.length} more letter${rows.length === 1 ? "" : "s"} -- ${newTotal} shown.${stillMore ? "" : " That's all of them."}`
+          : `Loaded ${visibleRows.length} more letter${visibleRows.length === 1 ? "" : "s"} -- ${newTotal} shown.${stillMore ? "" : " That's all of them."}`
       );
     } finally {
       if (mountedRef.current) {
@@ -273,7 +281,7 @@ export default function ArchivePage() {
         setLoadMoreCount((c) => c + 1);
       }
     }
-  }, [items.length, loadingMore]);
+  }, [items.length, loadingMore, rawCount]);
 
   useEffect(() => {
     // Initial client data loading is the external synchronization owned here.
@@ -366,10 +374,16 @@ export default function ArchivePage() {
           </div>
         )}
 
-        {state === "ready" && items.length === 0 && (
+        {state === "ready" && items.length === 0 && hasMore && (
+          <p className="alpha-display text-lg" style={{ color: "var(--ink-soft)" }}>
+            Load more to see earlier letters.
+          </p>
+        )}
+
+        {state === "ready" && items.length === 0 && !hasMore && (
           <div className="space-y-5">
             <p className="alpha-display text-lg" style={{ color: "var(--ink-soft)" }}>
-              No letters yet. Your first one lands right after you subscribe.
+              No available letters yet.
             </p>
             <Link href="/inbox" className="alpha-button">
               Go to your inbox →

@@ -17,6 +17,7 @@ import {
 } from "../lib/access-request-ownership.ts";
 import { clientKeyFromRequest, rateLimit } from "../lib/rate-limit.ts";
 import { isValidTopicId, MAX_CUSTOM_TOPIC_LEN, CUSTOM_PREFIX } from "../lib/topics.ts";
+import { hasUsableReaderProfile } from "../lib/reader-profile-state.ts";
 
 type JsonResponse = { body: Record<string, unknown>; status: number; headers: Headers };
 type UserRow = Record<string, unknown>;
@@ -62,6 +63,7 @@ function compileRoute(): string {
     'import { isInviteOnly } from "@/lib/access-mode";',
     'import { hasReaderAccess } from "@/lib/access";',
     'import { sendOpsWebhookAlert } from "@/lib/email";',
+    'import { hasUsableReaderProfile } from "@/lib/reader-profile-state";',
   ];
   let source = routeSource;
   for (const statement of imports) source = source.replace(statement, "");
@@ -115,9 +117,27 @@ function makeRoute(scenario: Scenario = {}) {
 
   function query(kind: "read" | "insert" | "update", value?: UserRow) {
     let targetId = "";
+    const fencedColumns = new Set<string>();
     return {
       select() { return this; },
-      eq(column: string, id: string) { assert.equal(column, "id", "route targets its authenticated owner by id"); targetId = id; return this; },
+      eq(column: string, filterValue: string) {
+        if (column === "id") targetId = filterValue;
+        else {
+          assert.equal(kind, "update", "only updates use snapshot fences");
+          assert.ok(["subscribed_at", "access_granted_at", "updated_at"].includes(column), `known write fence: ${column}`);
+          assert.equal(filterValue, scenario.existing?.[column], `snapshot fence matches ${column}`);
+          fencedColumns.add(column);
+        }
+        return this;
+      },
+      is(column: string, value: null) {
+        assert.equal(kind, "update", "only updates use snapshot fences");
+        assert.equal(value, null);
+        assert.ok(["subscribed_at", "access_granted_at", "updated_at"].includes(column), `known null fence: ${column}`);
+        assert.equal(scenario.existing?.[column] ?? null, null, `null fence matches ${column}`);
+        fencedColumns.add(column);
+        return this;
+      },
       maybeSingle: async () => {
         if (kind === "read") {
           reads.push(targetId);
@@ -126,6 +146,10 @@ function makeRoute(scenario: Scenario = {}) {
             : { data: scenario.existing ?? null, error: null };
         }
         assert.ok(value, "write query has a value");
+        if (kind === "update") {
+          assert.deepEqual([...fencedColumns].sort(), ["access_granted_at", "subscribed_at", "updated_at"],
+            "existing-row requests fence grant, subscription, and account clock");
+        }
         const allowedColumns = kind === "insert" ? ["id", ...profileColumns].sort() : profileColumns;
         assert.deepEqual(Object.keys(value).sort(), allowedColumns, `${kind} has exactly the allowed profile columns`);
         writes.push({ kind, id: targetId || String(value.id), value });
@@ -175,6 +199,7 @@ function makeRoute(scenario: Scenario = {}) {
     coerceThemeId,
     isInviteOnly: () => true,
     hasReaderAccess,
+    hasUsableReaderProfile,
     authOwnsAccessRequestEmail,
     normalizeAccessRequestEmail,
     sendOpsWebhookAlert: async () => undefined,
@@ -327,7 +352,7 @@ async function main() {
   }
   await expectStatus(makeRoute({ readError: "read failed" }).POST!, post(validBody(), "198.51.100.114"), 503);
   await expectStatus(makeRoute({ writeError: "write failed" }).POST!, post(validBody(), "198.51.100.115"), 503);
-  await expectStatus(makeRoute({ noWriteData: true }).POST!, post(validBody(), "198.51.100.116"), 503);
+  await expectStatus(makeRoute({ noWriteData: true }).POST!, post(validBody(), "198.51.100.116"), 409);
   await expectStatus(makeRoute({ afterThrows: true }).POST!, post(validBody(), "198.51.100.117"), 200);
 
   console.log("PASS verify-invite-request-route (offline)");

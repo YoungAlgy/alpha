@@ -81,7 +81,7 @@ console.log("(3) source-level regression guard: the admin accounts page no longe
   // Match the real style-value usage specifically (color: "var(--accent-ink)"),
   // not the fix's own explanatory comment, which quotes the token in prose.
   check("(3) zero remaining var(--accent-ink) style-color usages on this page", !/color:\s*"var\(--accent-ink\)"/.test(src));
-  check("(3) statusLabel's Paying/Free-granted colors use var(--ink) now", /label: "Paying", color: "var\(--ink\)"/.test(src) && /label: "Free \(granted\)", color: "var\(--ink\)"/.test(src));
+  check("(3) shared access status uses var(--ink)", /style=\{\{ color: "var\(--ink\)" \}\}[\s\n]*>[\s\n]*\{account\.accessLabel\.toUpperCase\(\)\}/.test(src));
 }
 
 console.log("(4) alpha-drift-r21-10 (found+fixed 2026-08-14): --ink-soft (this app's secondary/meta-text color, used everywhere -- dates, city, byline info, not just this admin page) now clears 4.5:1 AA in EVERY theme");

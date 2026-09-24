@@ -11,6 +11,9 @@ import { isProfileComplete } from "@/lib/checkout-guards";
 import { isInviteOnly } from "@/lib/access-mode";
 import { readOnboardingAccountState } from "@/lib/onboarding-account";
 import { incompleteSignupPath } from "@/lib/signup-progress";
+import { supabaseClient } from "@/lib/supabase/client";
+import { authOwnsAccessRequestEmail } from "@/lib/access-request-ownership";
+import { hasUsableReaderProfile } from "@/lib/reader-profile-state";
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -21,6 +24,8 @@ export default function CheckoutPage() {
   const [alreadySubscribed, setAlreadySubscribed] = useState(false);
   const [signInRequired, setSignInRequired] = useState(false);
   const [accessRequested, setAccessRequested] = useState(false);
+  const [approvedNeedsProfile, setApprovedNeedsProfile] = useState(false);
+  const [approvedAccountEmail, setApprovedAccountEmail] = useState<string | null>(null);
   const [accountChecked, setAccountChecked] = useState(!isInviteOnly());
   const [accountCheckError, setAccountCheckError] = useState<string | null>(null);
   const [accountCheckAttempt, setAccountCheckAttempt] = useState(0);
@@ -31,8 +36,26 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!isInviteOnly()) return;
     let cancelled = false;
-    readOnboardingAccountState().then((status) => {
+    readOnboardingAccountState().then(async (status) => {
       if (cancelled) return;
+      if (status === "reader") {
+        const sb = supabaseClient();
+        const { data: { session }, error: sessionError } = await sb.auth.getSession();
+        if (sessionError || !session) throw new Error("Couldn't check your sign-in.");
+        const { data: profile, error: profileError } = await sb.from("users")
+          .select("first_name, topics, birthday, access_granted_at")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        if (profileError || !profile) throw new Error("Couldn't check your profile.");
+        if (cancelled) return;
+        if (profile.access_granted_at && !hasUsableReaderProfile(profile)) {
+          setApprovedAccountEmail(session.user.email ?? null);
+          setApprovedNeedsProfile(true);
+          setAccountCheckError(null);
+          setAccountChecked(true);
+          return;
+        }
+      }
       if (status === "reader" || status === "ended") {
         router.replace("/inbox" as never);
         return;
@@ -115,10 +138,10 @@ export default function CheckoutPage() {
   // (app/welcome/page.tsx, components/onboarding/QuestionStep.tsx,
   // app/you/page.tsx), which already use replace for the same reason.
   useEffect(() => {
-    if (!loaded || !accountChecked || accessRequested) return;
+    if (!loaded || !accountChecked || accessRequested || approvedNeedsProfile) return;
     const path = incompleteSignupPath(state);
     if (path) router.replace(path as never);
-  }, [loaded, accountChecked, accessRequested, state, router]);
+  }, [loaded, accountChecked, accessRequested, approvedNeedsProfile, state, router]);
 
   function rememberCheckoutSignIn() {
     try {
@@ -194,7 +217,8 @@ export default function CheckoutPage() {
   }
 
   async function requestAccess() {
-    if (requestInFlight.current || !accountChecked || accessRequested || !isProfileComplete(state)) return;
+    if (requestInFlight.current || !accountChecked || accessRequested || !isProfileComplete(state) ||
+        (approvedNeedsProfile && !authOwnsAccessRequestEmail(approvedAccountEmail, state.email))) return;
     requestInFlight.current = true;
     setSubscribing(true);
     setStripeErr(null);
@@ -217,7 +241,7 @@ export default function CheckoutPage() {
       });
       const data = await res
         .json()
-        .catch(() => ({} as { error?: string; message?: string }));
+        .catch(() => ({} as { error?: string; message?: string; repaired?: boolean }));
       if (cancelledRef.current) return;
       if (res.status === 401 && data.error === "identity_verification_required") {
         rememberCheckoutSignIn();
@@ -229,6 +253,10 @@ export default function CheckoutPage() {
         throw new Error(
           data.message || data.error || "Couldn't send your request. Try again."
         );
+      }
+      if (data.repaired) {
+        router.replace("/inbox" as never);
+        return;
       }
       setAccessRequested(true);
       setSubscribing(false);
@@ -267,13 +295,13 @@ export default function CheckoutPage() {
       <div className="space-y-10">
         <div>
           <h1 className="alpha-display text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-3">
-            {accessRequested ? "Your request is saved." : `Almost there, ${firstName}.`}
+            {accessRequested ? "Your request is saved." : approvedNeedsProfile ? "Finish your profile." : `Almost there, ${firstName}.`}
           </h1>
           <p
             className="alpha-display text-lg md:text-xl leading-relaxed"
             style={{ color: "var(--ink-soft)" }}
           >
-            {accessRequested ? "You don't need to sign up again." : isInviteOnly() ? "Request access and we'll review your profile." : "Subscribe and we'll write your first letter on the spot."}
+            {accessRequested ? "You don't need to sign up again." : approvedNeedsProfile ? "Your access is approved. Save your name and topics to finish setup." : isInviteOnly() ? "Request access and we'll review your profile." : "Subscribe and we'll write your first letter on the spot."}
           </p>
         </div>
 
@@ -376,7 +404,21 @@ export default function CheckoutPage() {
           }}
         >
           {isInviteOnly() ? (
-            accessRequested ? (
+            approvedNeedsProfile ? (
+              <div className="space-y-3" role="status">
+                {isProfileComplete(state) && authOwnsAccessRequestEmail(approvedAccountEmail, state.email) ? (
+                  <button type="button" onClick={requestAccess} disabled={subscribing}
+                    className="alpha-button alpha-button-accent w-full justify-center text-base py-4">
+                    {subscribing ? "Saving profile…" : "Finish signup →"}
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => router.push("/settings" as never)}
+                    className="alpha-button alpha-button-accent w-full justify-center text-base py-4">
+                    Finish in settings →
+                  </button>
+                )}
+              </div>
+            ) : accessRequested ? (
               <div className="space-y-3" role="status">
                 <p className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>
                   Your request is in. Alex will review it personally. Come back after access is approved.

@@ -112,7 +112,7 @@ assert.ok(serviceClientIndex > ownershipIndex);
 assert.ok(accessMarkerIndex > serviceClientIndex);
 const profileWriteBlock = accessRoute.slice(
   accessRoute.indexOf("const profile = {"),
-  accessRoute.indexOf("return NextResponse.json({ ok: true")
+  accessRoute.indexOf("return NextResponse.json({ ok: true, requestedAt: now })")
 );
 assert.doesNotMatch(
   profileWriteBlock.slice(0, profileWriteBlock.indexOf("const { data: existing")),
@@ -120,7 +120,7 @@ assert.doesNotMatch(
 );
 assert.match(
   profileWriteBlock,
-  /const result = existing[\s\S]*?\.update\(profile\)\.eq\("id", userId\)[\s\S]*?: await sb\.from\("users"\)\.insert\(\{ id: userId, \.\.\.profile \}\)/
+  /if \(existing\)[\s\S]*?\.update\(profile\)\.eq\("id", userId\)[\s\S]*?\.eq\("updated_at", existing\.updated_at\)[\s\S]*?\.insert\(\{ id: userId, \.\.\.profile \}\)/
 );
 const requestStoredIndex = accessRoute.indexOf("if (result.error || !result.data)");
 const requestAlertIndex = accessRoute.indexOf("sendOpsWebhookAlert(");
@@ -204,7 +204,8 @@ assert.match(
 const adminPage = source("../app/settings/accounts/page.tsx");
 const adminRoute = source("../app/api/admin/users/route.ts");
 assert.match(adminPage, /Approve access/);
-assert.match(adminPage, /Keep invite access/);
+assert.match(adminPage, /account\.grantAction/);
+assert.doesNotMatch(adminPage, /Keep invite access|Invited, billing ended|This does not cancel Stripe billing/);
 assert.match(adminPage, /pendingRequests: number/);
 assert.match(adminPage, /params\.set\("pending", "1"\)/);
 assert.match(adminPage, /"deny_access"[\s\S]*?Deny request/);
@@ -255,7 +256,7 @@ assert.match(
 );
 assert.match(
   inviteDecisionBlock,
-  /\.update\(\{ access_requested_at: null, access_granted_at: null \}\)/
+  /\.update\(\{ access_requested_at: null, access_granted_at: null, delivery_enrolled: false \}\)/
 );
 
 const grantFreeStart = adminRoute.indexOf('if (body.action === "grant_free")');

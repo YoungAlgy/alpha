@@ -53,7 +53,7 @@ const stripeCancel = read("../lib/stripe-cancel.ts");
 const updateQuantity = read("../app/api/stripe/update-quantity/route.ts");
 
 console.log("(1) carried checkout, privacy, and form findings");
-check("checkout heading has a neutral pre-hydration state", /loaded \? `Almost there, \$\{firstName\}\.\` : "Almost there\."/.test(checkoutPage));
+check("checkout hides the greeting until saved signup state loads", checkoutPage.includes("if (!loaded || !accountChecked)") && checkoutPage.includes("Checking your saved signup...") && checkoutPage.indexOf("if (!loaded || !accountChecked)") < checkoutPage.indexOf('`Almost there, ${firstName}.`'));
 check("checkout response JSON is guarded", /\.json\(\)\s*\n\s*\.catch\(\(\) => \(\{\}/.test(checkoutPage));
 const cityPage = read("../app/city/page.tsx");
 const profileEditor = read("../components/ProfileEditor.tsx");
@@ -81,16 +81,17 @@ const input = questionStep.match(/<input[\s\S]*?\/>/)?.[0] ?? "";
 check("required textarea exposes native and ARIA semantics", textarea.includes("required={!optional || undefined}") && textarea.includes("aria-required={!optional || undefined}"));
 check("required input exposes native and ARIA semantics", input.includes("required={!optional || undefined}") && input.includes("aria-required={!optional || undefined}"));
 
-console.log("(2) paid checkout identity and one-time fulfillment");
+console.log("(2) invite checkout guard and retained paid fulfillment");
 check("missing Stripe configuration fails generation closed outside development", /NODE_ENV === "development"[\s\S]{0,300}Payment verification is temporarily unavailable/.test(generateRoute));
 check("checkout validates mode, the one exact Alpha line item, and live subscription", /session\.mode !== "subscription"/.test(generateRoute) && generateRoute.includes("lineItems.length === 1") && generateRoute.includes("priceId === STRIPE_PRICE_ID") && generateRoute.includes("isLiveForManagement(subscription.status)"));
 check("generation binds the current subscription to the same Alpha customer", generateRoute.includes("exactAlphaSubscription") && generateRoute.includes("subscriptionCustomerId !== sessionCustomerId"));
 check(
-  "validated profile is staged before Stripe",
-  checkoutRoute.includes('sb.rpc(\n      "stage_checkout_profile"') &&
-    checkoutRoute.indexOf('"stage_checkout_profile"') <
-      checkoutRoute.indexOf("stripe.checkout.sessions.create") &&
-    checkoutSessionParams.includes("alpha_profile_id: input.profileId")
+  "invite checkout closes before staging a profile or creating a Stripe Session",
+  checkoutRoute.includes("if (isInviteOnly(true))") &&
+    checkoutRoute.indexOf("if (isInviteOnly(true))") < checkoutRoute.indexOf('"stage_checkout_profile"') &&
+    checkoutRoute.indexOf('"stage_checkout_profile"') < checkoutRoute.indexOf("stripe.checkout.sessions.create") &&
+    checkoutSessionParams.includes("alpha_profile_id: input.profileId") &&
+    /error: "invite_only"[\s\S]{0,180}status: 410/.test(checkoutRoute)
 );
 check(
   "expired abandoned checkout profiles are swept",
@@ -111,10 +112,9 @@ check(
     !checkoutRoute.includes("Math.floor(Date.now() / 30000)")
 );
 check(
-  "checkout returns a URL only after storing its exact Session binding",
-  checkoutRoute.includes('sb.rpc(\n      "bind_checkout_session"') &&
-    checkoutRoute.indexOf('"bind_checkout_session"') <
-      checkoutRoute.indexOf("NextResponse.json({ url: session.url })") &&
+  "retained legacy checkout binds its Session before returning a URL",
+  checkoutRoute.indexOf("if (isInviteOnly(true))") < checkoutRoute.indexOf('"bind_checkout_session"') &&
+    checkoutRoute.indexOf('"bind_checkout_session"') < checkoutRoute.indexOf("NextResponse.json({ url: session.url })") &&
     checkoutMigration.includes("create or replace function public.bind_checkout_session")
 );
 check(
@@ -173,7 +173,7 @@ check("persistence reports profile and issue durability separately", persist.inc
 check("generation sends and renders the canonical durable issue", persist.includes("persistedIssue: Issue | null") && generateRoute.includes("persistence?.persistedIssue ?? generatedIssue"));
 check("production generation refuses a missing archive write", generateRoute.includes("subscriber profile or issue did not persist"));
 check("email delivery requires the persisted issue result", generateRoute.indexOf("subscriber profile or issue did not persist") < generateRoute.indexOf("deliverLetterOnce({"));
-check("cron skips content backups after a usable issue exists", cron.includes("if (usableIssue)") && cron.includes("content backups skipped"));
+check("cron skips content backups after a usable issue exists", cron.includes("if (usableIssue || (persistedRetry && !issueIsReaderVisible(persistedRetry)))") && cron.includes("content backups skipped"));
 check("suppression DB write failures return retriable 500", /suppression write failed[\s\S]{0,120}status: 500/.test(resendWebhook));
 
 console.log("(4) provider fallbacks do not depend on one paid subscription");
@@ -193,7 +193,7 @@ check("account deletion stops before auth deletion on uncertain billing state", 
 const adminRoute = read("../app/api/admin/users/route.ts");
 check(
   "free-access revoke stamps cancellation and clears request plus invite grants",
-  /update\(\{[\s\S]*subscribed_at: null,[\s\S]*access_requested_at: null,[\s\S]*access_granted_at: null,[\s\S]*cancelled_at: revokedAt,[\s\S]*\}\)/.test(
+  /update\(\{[\s\S]*subscribed_at: null,[\s\S]*access_requested_at: null,[\s\S]*access_granted_at: null,[\s\S]*cancelled_at: revokedAt,[\s\S]*delivery_enrolled: false,[\s\S]*\}\)/.test(
     adminRoute
   )
 );

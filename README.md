@@ -103,7 +103,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 - **Theme-first onboarding** — `/theme` is step 2 (right after `/welcome`). The chosen theme is applied app-wide via `ThemeApplier` (root layout) so every step from `/name` through `/checkout` adopts the user's palette. ThemeApplier reads from `public.users` for signed-in users, falls back to localStorage for mid-funnel users.
 - **Shared topic_blurbs cache** (`lib/engine/blurb-cache.ts`) — generate each topic-week's content once in Supabase, serve to every subscriber. ~10× cost reduction vs. naive per-user generation.
 - **Onboarding-first funnel** (11 screens) — `welcome → theme → name → city → role → focus → topics → fun → you → email → checkout`, reached via a minimal public landing page (`/`) for cold/SEO traffic. Conversion play borrowed from Headway/Noom.
-- **Confirmed account before checkout** — the email-code step creates and confirms the Supabase Auth owner before Stripe starts. Checkout stores the validated profile on that exact canonical user, and keeps only a pseudonymous billing reservation for Session matching and one-time fulfillment. `/writing` requires the same confirmed session owner.
+- **Confirmed account before requesting access**: the email-code step confirms the Supabase Auth owner. The access-request route stores the validated profile on that matching account before reporting success. Approval and letter enrollment remain separate owner actions. Historical billing settlement stays isolated from signup.
 - **Returning sign-in: 6-digit code** — `/signin` uses Supabase `signInWithOtp` + `verifyOtp({ type: "email" })`. Magic Link template is overridden with `{{ .Token }}` only. No clickable email links for returning users.
 - **RLS-by-default** — every PII table (`users`, `issues`, `support_tickets`) has row level security enabled. `users` keeps self-read/self-update policies scoped to `auth.uid()` (billing/identity columns further locked by a trigger); `issues` keeps a self-read policy gated on active access; `support_tickets` has zero policies as of 2026-08-05 (its one anonymous-insert policy was dropped as dead code) — all access, including the public `/support` form, goes through the service role. Service role bypasses RLS for every server-side operation (webhook upsert, generate persistence, admin endpoint).
 - **Admin Accounts panel** at `/settings/accounts` — gated to `youngalgy@gmail.com` via server-side session check. List, approve invite access, preserve permanent invite access for a Stripe-linked reader, revoke invite or free access, view delivery-review state, and delete. Invite actions do not change Stripe billing.
@@ -132,9 +132,9 @@ app/
   api/
     generate                  source-grounded generation pipeline with bounded provider use and deterministic writer fallback
     support                   support form → Supabase + email notify
-    stripe/checkout           creates Stripe Checkout Session (success_url uses NEXT_PUBLIC_APP_URL)
+    stripe/checkout           permanently closed to new payments (HTTP 410)
     stripe/webhook            handles checkout.session.completed (upsert), sub events
-    stripe/portal             customer-portal session for billing self-service
+    stripe/portal             permanently closed billing portal (HTTP 410)
     admin/users               admin list, invite/free access, delivery review, and deletion actions (email gate)
     health                    uptime + env-var presence + active email provider
   auth/callback               Supabase magic-link handler — client page, handles BOTH PKCE + implicit flows
@@ -153,7 +153,7 @@ lib/
   topics.ts                   38-topic registry (latest add: trading-cards, 2026-06-10, plus more since)
   themes.ts                   25-theme registry
   audio.ts                    Web Audio synth sound palette
-  onboarding-state.ts         localStorage state + ONBOARDING_STEPS ordering
+  onboarding-state.ts         saved signup draft, session fallback, cross-tab reset + step ordering
   user-sync.ts                Supabase user sync + delete-account
   rate-limit.ts               per-isolate burst bucket
   distributed-rate-limit.ts   Supabase-backed cross-isolate request ceilings
@@ -289,7 +289,7 @@ The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalg
 
 ## Operational notes
 
-- **Stripe** — dedicated Alpha account, fully Alpha-branded checkout. FOUNDER coupon (100%-off forever, owner-curated promo codes) for testing.
+- **Billing**: new payments and paid plan changes are closed in source. Retained billing code exists for historical settlement and cleanup, not signup.
 - **Email** — Resend is the sole provider. Letters send as `"alpha." <alpha@everyday.report>`; Supabase sign-in emails (custom SMTP through Resend) send as `"alpha." <noreply@everyday.report>`. The everyday.report sending domain is verified via records in Cloudflare's DNS zone (migrated from Vercel DNS 2026-07-30).
 - **Transport capacity**. Search and writing have several bounded fallbacks, but subscriber email still has one transport. Resend availability, reputation controls, and account quota remain hard limits. The current app cannot honestly promise free delivery to hundreds or thousands of readers until a second approved transport or verified capacity plan exists.
 - **Supabase** — free tier in "Algy" org. Daily traffic prevents the 7-day idle pause.

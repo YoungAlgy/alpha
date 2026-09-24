@@ -6,6 +6,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
 import { isValidCalendarDate } from "@/lib/demographics";
+import { hasUsableReaderProfile } from "@/lib/reader-profile-state";
 import {
   isAccountDeletionBlockedBySuppressionRecovery,
   removeAccountAuthAndCompleteSaga,
@@ -23,6 +24,8 @@ interface Stats {
   paying: number;
   freeGranted: number;
   inviteGranted: number;
+  lettersEnabled: number;
+  signupIncomplete: number;
   cancelled: number;
   unsubscribed: number;
   notSubscribed: number;
@@ -44,6 +47,8 @@ async function gatherStats(): Promise<Stats> {
     cancelled_at: string | null;
     unsubscribed_at: string | null;
     stripe_customer_id: string | null;
+    stripe_subscription_id: string | null;
+    delivery_enrolled: boolean;
     access_requested_at: string | null;
     access_granted_at: string | null;
   };
@@ -64,7 +69,7 @@ async function gatherStats(): Promise<Stats> {
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data: page, error: pageError } = await sb
       .from("users")
-      .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id, access_requested_at, access_granted_at")
+      .select("subscribed_at, cancelled_at, unsubscribed_at, stripe_customer_id, stripe_subscription_id, access_requested_at, access_granted_at, delivery_enrolled")
       .order("id")
       .range(from, from + PAGE_SIZE - 1);
     if (pageError) {
@@ -82,16 +87,20 @@ async function gatherStats(): Promise<Stats> {
     paying: 0,
     freeGranted: 0,
     inviteGranted: 0,
+    lettersEnabled: 0,
+    signupIncomplete: 0,
     cancelled: 0,
     unsubscribed: 0,
     notSubscribed: 0,
   };
-  // Mutually exclusive buckets so the counts sum to totalUsers (the old
-  // version double-counted a user who was both unsubscribed and paying).
-  // Priority mirrors what the owner cares about most: opted out > cancelled >
-  // paying > free > never-subscribed.
+  // Access and delivery are independent dimensions. Opting out of email does
+  // not remove free reading access or put a reader back in the request queue.
   for (const r of rows) {
     if (r.access_requested_at && !r.access_granted_at) stats.pendingRequests++;
+    if (r.delivery_enrolled) stats.lettersEnabled++;
+    if (!r.access_requested_at && !r.subscribed_at && !r.access_granted_at && !r.cancelled_at) stats.signupIncomplete++;
+    if (hasReaderAccess(r.subscribed_at, r.cancelled_at, r.access_granted_at) &&
+        (r.access_granted_at || (!r.stripe_customer_id && !r.stripe_subscription_id))) stats.freeGranted++;
     // Invite access is an overlay. A reader can still have a paid period open
     // while their permanent invite is already recorded, so this count is
     // intentionally independent from the mutually exclusive billing buckets.
@@ -102,8 +111,8 @@ async function gatherStats(): Promise<Stats> {
     // letters, so it falls through to the paying bucket — matches
     // hasActiveAccess, the single source of truth the cron + access gates use.
     else if (r.cancelled_at && !hasActiveAccess(r.cancelled_at)) stats.cancelled++;
-    else if (r.subscribed_at && r.stripe_customer_id) stats.paying++;
-    else if (r.subscribed_at && !r.stripe_customer_id) stats.freeGranted++;
+    else if (r.subscribed_at && r.stripe_customer_id && hasActiveAccess(r.cancelled_at)) stats.paying++;
+    else if (r.subscribed_at && !r.stripe_customer_id) { /* Counted above. */ }
     else stats.notSubscribed++;
   }
 
@@ -258,7 +267,7 @@ export async function GET(req: Request) {
     // .is("bounced_at", null).is("complained_at", null) filter with no way
     // for an admin to even SEE it happened. The panel keeps the delivery
     // review state visible while provider recovery is held.
-    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, subscribed_at, access_requested_at, access_granted_at, delivery_enrolled, cancelled_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_started_at, created_at");
+    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, stripe_subscription_id, subscribed_at, access_requested_at, access_granted_at, delivery_enrolled, cancelled_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_started_at, suppression_recovery_token, created_at");
   if (escapedQ) {
     usersQuery = usersQuery
       .ilike("email", `%${escapedQ}%`)
@@ -314,7 +323,13 @@ export async function GET(req: Request) {
   } else {
     console.error("[admin/users] gatherStats failed:", statsSettled.reason instanceof Error ? statsSettled.reason.message : statsSettled.reason);
   }
-  return NextResponse.json({ users, stats });
+  // Recovery tokens are private control values. Expose only the boolean the
+  // owner needs to understand why enrollment is held.
+  const safeUsers = users?.map(({ suppression_recovery_token, ...user }) => ({
+    ...user,
+    has_suppression_recovery: !!suppression_recovery_token,
+  }));
+  return NextResponse.json({ users: safeUsers, stats });
 }
 
 const ActionBodySchema = z.object({
@@ -381,7 +396,7 @@ export async function POST(req: Request) {
     }
     const { data: existing, error: existingError } = await sb
       .from("users")
-      .select("email, subscribed_at, cancelled_at, access_granted_at, delivery_enrolled, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_token, suppression_recovery_started_at, delivery_suppression_cleared_at")
+      .select("email, first_name, topics, birthday, subscribed_at, cancelled_at, access_granted_at, delivery_enrolled, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_token, suppression_recovery_started_at, delivery_suppression_cleared_at")
       .eq("id", body.userId)
       .maybeSingle();
     if (existingError) {
@@ -411,15 +426,28 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Couldn't confirm this reader's sign-in identity. Try again." }, { status: 503 });
       }
       const authUser = auth.user;
-      if (
-        !authUser.email_confirmed_at ||
-        !authUser.email || authUser.email.toLowerCase().trim() !== existing.email ||
-        authUser.new_email || authUser.deleted_at || authUser.is_anonymous ||
-        (authUser.banned_until &&
+      if (!authUser.email_confirmed_at) {
+        return NextResponse.json({ code: "email_unconfirmed", error: "The reader must confirm their email before letters can be enabled." }, { status: 409 });
+      }
+      if (!authUser.email || authUser.email.toLowerCase().trim() !== existing.email) {
+        return NextResponse.json({ code: "email_mismatch", error: "The sign-in email differs from the account email. Review the account before enabling letters." }, { status: 409 });
+      }
+      if (authUser.new_email) {
+        return NextResponse.json({ code: "email_change_pending", error: "The reader has an email change pending. Wait for confirmation before enabling letters." }, { status: 409 });
+      }
+      if (authUser.deleted_at) {
+        return NextResponse.json({ code: "account_deleted", error: "This sign-in account was deleted. Letters cannot be enabled." }, { status: 409 });
+      }
+      if (authUser.is_anonymous) {
+        return NextResponse.json({ code: "anonymous_account", error: "The reader needs a confirmed email account before letters can be enabled." }, { status: 409 });
+      }
+      if (authUser.banned_until &&
           (!Number.isFinite(new Date(authUser.banned_until).getTime()) ||
-            new Date(authUser.banned_until).getTime() > Date.now()))
-      ) {
-        return NextResponse.json({ error: "Confirm the reader's current email and account status before enabling letters." }, { status: 409 });
+            new Date(authUser.banned_until).getTime() > Date.now())) {
+        return NextResponse.json({ code: "account_banned", error: "This sign-in account is blocked. Letters cannot be enabled." }, { status: 409 });
+      }
+      if (!hasUsableReaderProfile(existing)) {
+        return NextResponse.json({ code: "signup_incomplete", error: "Finish this reader's name and topic choices before enabling letters." }, { status: 409 });
       }
     }
     if (existing.delivery_enrolled === enable) {
@@ -438,6 +466,8 @@ export async function POST(req: Request) {
       subscribed_at: existing.subscribed_at,
       cancelled_at: existing.cancelled_at,
       access_granted_at: existing.access_granted_at,
+      first_name: existing.first_name,
+      birthday: existing.birthday,
       unsubscribed_at: existing.unsubscribed_at,
       bounced_at: existing.bounced_at,
       complained_at: existing.complained_at,
@@ -449,6 +479,12 @@ export async function POST(req: Request) {
     for (const [field, value] of Object.entries(snapshot)) {
       update = value === null ? update.is(field, null) : update.eq(field, value);
     }
+    // topics is a Postgres text array. Array containment in both directions
+    // catches a concurrent blank or replacement without relying on an array
+    // string literal in an equality filter.
+    update = existing.topics === null
+      ? update.is("topics", null)
+      : update.contains("topics", existing.topics).containedBy("topics", existing.topics);
     const { data: changed, error: updateError } = await update.select("id");
     if (updateError) {
       if (updateError.message.includes("delivery state change blocked by active provider lease")) {
@@ -653,7 +689,7 @@ export async function POST(req: Request) {
     const { data: existing, error: existingError } = await sb
       .from("users")
       .select(
-        "stripe_customer_id, subscribed_at, access_requested_at, access_granted_at"
+        "stripe_customer_id, subscribed_at, access_requested_at, access_granted_at, delivery_enrolled"
       )
       .eq("id", body.userId)
       .maybeSingle();
@@ -738,21 +774,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    if (!existing.access_granted_at) {
+    if (!existing.access_granted_at && !existing.delivery_enrolled) {
       return NextResponse.json({ ok: true, alreadyRevoked: true });
     }
     let revoke = sb
       .from("users")
-      .update({ access_requested_at: null, access_granted_at: null })
+      .update({ access_requested_at: null, access_granted_at: null, delivery_enrolled: false })
       .eq("id", body.userId)
       .eq("stripe_customer_id", existing.stripe_customer_id)
-      .eq("access_granted_at", existing.access_granted_at);
+      .eq("delivery_enrolled", existing.delivery_enrolled);
+    revoke = existing.access_granted_at
+      ? revoke.eq("access_granted_at", existing.access_granted_at)
+      : revoke.is("access_granted_at", null);
     revoke = existing.access_requested_at
       ? revoke.eq("access_requested_at", existing.access_requested_at)
       : revoke.is("access_requested_at", null);
     const { data: updated, error } = await revoke
       .select("id");
     if (error) {
+      if (error.message.includes("delivery state change blocked by active provider lease")) {
+        return NextResponse.json({ error: "A letter send is still in progress. Wait a few minutes, refresh, and try again." }, { status: 409 });
+      }
       console.error("[admin/users] revoke_invite failed");
       return NextResponse.json(
         { error: "Couldn't revoke invite access. Try again." },
@@ -879,7 +921,7 @@ export async function POST(req: Request) {
     const { data: row, error: rowError } = await sb
       .from("users")
       .select(
-        "stripe_customer_id, stripe_subscription_id, access_requested_at, subscribed_at, access_granted_at, cancelled_at"
+        "stripe_customer_id, stripe_subscription_id, access_requested_at, subscribed_at, access_granted_at, cancelled_at, delivery_enrolled"
       )
       .eq("id", body.userId)
       .maybeSingle();
@@ -915,6 +957,7 @@ export async function POST(req: Request) {
         access_requested_at: null,
         access_granted_at: null,
         cancelled_at: revokedAt,
+        delivery_enrolled: false,
       })
       .eq("id", body.userId);
     revoke = row.access_requested_at
@@ -929,11 +972,15 @@ export async function POST(req: Request) {
     revoke = row.cancelled_at
       ? revoke.eq("cancelled_at", row.cancelled_at)
       : revoke.is("cancelled_at", null);
+    revoke = revoke.eq("delivery_enrolled", row.delivery_enrolled);
     const { error, data: updated } = await revoke
       .is("stripe_customer_id", null)
       .is("stripe_subscription_id", null)
       .select("id");
     if (error) {
+      if (error.message.includes("delivery state change blocked by active provider lease")) {
+        return NextResponse.json({ error: "A letter send is still in progress. Wait a few minutes, refresh, and try again." }, { status: 409 });
+      }
       console.error("[admin/users] revoke_free failed:", error.message);
       return NextResponse.json({ error: "Couldn't revoke free access. Try again." }, { status: 500 });
     }

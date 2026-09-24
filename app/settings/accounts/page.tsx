@@ -7,7 +7,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { topicLabel } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { demographicSummary } from "@/lib/demographics";
-import { hasActiveAccess, hasReaderAccess } from "@/lib/access";
+import { getAdminAccountState } from "@/lib/admin-account-state";
 import { MANUAL_PROVIDER_SUPPRESSION_REMOVAL_HOLD_MESSAGE } from "@/lib/suppression-recovery-policy";
 
 interface AdminUserRow {
@@ -20,6 +20,7 @@ interface AdminUserRow {
   theme: string | null;
   topics: string[] | null;
   stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
   subscribed_at: string | null;
   access_requested_at: string | null;
   access_granted_at: string | null;
@@ -30,6 +31,7 @@ interface AdminUserRow {
   complained_at: string | null;
   suppression_cleanup_pending_at: string | null;
   suppression_recovery_started_at: string | null;
+  has_suppression_recovery: boolean;
   created_at: string;
 }
 
@@ -39,6 +41,8 @@ interface Stats {
   paying: number;
   freeGranted: number;
   inviteGranted: number;
+  lettersEnabled: number;
+  signupIncomplete: number;
   cancelled: number;
   unsubscribed: number;
   notSubscribed: number;
@@ -61,6 +65,8 @@ export default function AdminAccountsPage() {
   // error to react to by blanking the whole card again) or leaving it silent.
   const [statsStale, setStatsStale] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   // alpha-drift-r48-02 (2026-08-20): this used to be a single `busy: string
   // | null` slot -- disabling was scoped to whichever ONE userId was in it,
   // so acting on a SECOND row overwrote the shared slot and silently
@@ -182,6 +188,7 @@ export default function AdminAccountsPage() {
     append?: boolean;
     pending?: boolean;
   }) {
+    if (!mountedRef.current) return;
     // alpha-drift-r45-04 (2026-08-19): this never cleared a prior `err` on
     // a later successful load -- if the initial mount load() 401'd (e.g.
     // the auth cookie hadn't hydrated yet) and a subsequent retry/search
@@ -204,6 +211,9 @@ export default function AdminAccountsPage() {
     if (opts?.append) setActionMsg(null);
     const seq = ++loadSeqRef.current;
     const isStale = () => !mountedRef.current || seq !== loadSeqRef.current;
+    setLoading(true);
+    // Never show old rows under a newly selected filter or search heading.
+    if (!opts?.append) setUsers(null);
     try {
       const params = new URLSearchParams();
       if (opts?.search) params.set("q", opts.search);
@@ -211,13 +221,17 @@ export default function AdminAccountsPage() {
         if (opts?.pending) params.set("pending", "1");
         if (opts?.before) params.set("before", opts.before);
       }
-      const res = await fetch(`/api/admin/users${params.toString() ? `?${params}` : ""}`);
+      const res = await fetch(`/api/admin/users${params.toString() ? `?${params}` : ""}`, { cache: "no-store" });
       if (isStale()) return;
       if (res.status === 401) {
+        setUsers(null);
+        setStats(null);
         setErr("Sign in first.");
         return;
       }
       if (res.status === 403) {
+        setUsers(null);
+        setStats(null);
         setErr("Not authorized.");
         return;
       }
@@ -265,12 +279,13 @@ export default function AdminAccountsPage() {
       setHasMore(data.users.length === 200);
     } catch (e) {
       if (!isStale()) setErr(e instanceof Error ? e.message : "Couldn't load users.");
+    } finally {
+      if (!isStale()) setLoading(false);
     }
   }
 
   useEffect(() => {
     // This mount effect hydrates the admin list from the server.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load({ pending: true });
     // `load` is intentionally mount-only. It is recreated during render and
     // adding it here would turn this hydration effect into a request loop.
@@ -291,9 +306,11 @@ export default function AdminAccountsPage() {
   function runSearch(e: React.FormEvent) {
     e.preventDefault();
     if (busyRowsRef.current.size > 0) return;
-    setActiveSearch(q);
+    const search = q.trim();
+    setQ(search);
+    setActiveSearch(search);
     setPendingOnly(false);
-    load({ search: q });
+    load({ search });
   }
 
   function clearSearch() {
@@ -322,7 +339,7 @@ export default function AdminAccountsPage() {
   }
 
   async function loadMore() {
-    if (loadingMore || !users || users.length === 0) return;
+    if (loading || loadingMore || busyRowsRef.current.size > 0 || activeSearch || !users || users.length === 0) return;
     setLoadingMore(true);
     try {
       const last = users[users.length - 1];
@@ -350,10 +367,11 @@ export default function AdminAccountsPage() {
     confirmMsg?: string
   ) {
     if (confirmMsg && !confirm(confirmMsg)) return;
-    if (busyRowsRef.current.has(userId)) return;
+    if (loading || busyRowsRef.current.has(userId)) return;
     busyRowsRef.current.add(userId);
     setBusyRows(new Set(busyRowsRef.current));
     setActionMsg(null);
+    setRowErrors((prev) => ({ ...prev, [userId]: "" }));
     try {
       const res = await fetch("/api/admin/users", {
         method: "POST",
@@ -370,17 +388,19 @@ export default function AdminAccountsPage() {
           : action === "revoke_free"
           ? "Revoked free access from"
           : action === "grant_invite"
-          ? "Granted permanent invite access to"
+          ? "Granted free access to"
           : action === "revoke_invite"
-          ? "Revoked permanent invite access from"
+          ? "Revoked free access from"
           : action === "enable_delivery"
           ? "Enabled letters for"
           : action === "pause_delivery"
           ? "Paused letters for"
           : "Denied the access request from";
-      setActionMsg(`${verb} ${email}.`);
+      if (mountedRef.current) setActionMsg(`${verb} ${email}.`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Action failed.");
+      if (mountedRef.current) setRowErrors((prev) => ({
+        ...prev, [userId]: e instanceof Error ? e.message : "Action failed.",
+      }));
     } finally {
       // alpha-drift-r46-01 (2026-08-19): this used to only reload on the
       // clean-success path. An action can commit before a later operation
@@ -396,6 +416,8 @@ export default function AdminAccountsPage() {
           ? { pending: true }
           : undefined
       );
+      busyRowsRef.current.delete(userId);
+      if (!mountedRef.current) return;
       // alpha-drift-r65-03 (2026-08-21, accessibility-resweep-newer-code-
       // r13): used to sit in the try block's success-only branch (see
       // actionCount's own comment above for the r61-03 "all 4 actions"
@@ -406,7 +428,6 @@ export default function AdminAccountsPage() {
       // focus to <body> with no restoration. Moved here so it fires
       // whenever this reload actually ran, not just on a clean response.
       setActionCount((c) => c + 1);
-      busyRowsRef.current.delete(userId);
       setBusyRows(new Set(busyRowsRef.current));
     }
   }
@@ -422,38 +443,6 @@ export default function AdminAccountsPage() {
   // this admin-only page -- not a fix to the shared accent-ink token itself,
   // which is used for non-text accents elsewhere in the app and is a bigger,
   // deliberate design-system question outside this page's scope.
-  function statusLabel(u: AdminUserRow): { label: string; color: string } {
-    if (u.access_requested_at && !u.access_granted_at) {
-      return { label: "Access requested", color: "var(--ink)" };
-    }
-    if (u.access_granted_at) {
-      if (u.unsubscribed_at) {
-        return { label: "Invited, letters paused", color: "var(--ink)" };
-      }
-      if (
-        u.stripe_customer_id &&
-        u.cancelled_at &&
-        !hasActiveAccess(u.cancelled_at)
-      ) {
-        return { label: "Invited, billing ended", color: "var(--ink)" };
-      }
-      if (u.stripe_customer_id) {
-        return { label: "Paying + invited", color: "var(--ink)" };
-      }
-      return { label: "Free (granted)", color: "var(--ink)" };
-    }
-    if (u.unsubscribed_at) return { label: "Unsubscribed", color: "var(--ink-soft)" };
-    // "Cancelled" = actually churned (cancel date in the PAST). A FUTURE
-    // cancelled_at is cancel-at-period-end: still paying, still getting
-    // letters, so it falls through to the Paying row below — matches
-    // hasActiveAccess, the single source of truth the cron + access gates use
-    // (and the same rule gatherStats applies to the stat tile above).
-    if (u.cancelled_at && !hasActiveAccess(u.cancelled_at)) return { label: "Cancelled", color: "var(--ink-soft)" };
-    if (u.subscribed_at && u.stripe_customer_id) return { label: "Paying", color: "var(--ink)" };
-    if (u.subscribed_at && !u.stripe_customer_id) return { label: "Free (granted)", color: "var(--ink)" };
-    return { label: "Not subscribed", color: "var(--ink-soft)" };
-  }
-
   return (
     <main className="min-h-screen flex flex-col">
       <nav className="px-6 py-6 max-w-5xl mx-auto w-full flex items-center justify-between">
@@ -474,7 +463,7 @@ export default function AdminAccountsPage() {
       </nav>
 
       <section className="flex-1 max-w-5xl mx-auto px-6 py-10 w-full">
-        <div className="flex items-baseline justify-between mb-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-3 mb-2">
           <h1
             ref={accountsHeadingRef}
             tabIndex={-1}
@@ -497,10 +486,10 @@ export default function AdminAccountsPage() {
           )}
         </div>
         <p className="alpha-ui text-sm mb-6" style={{ color: "var(--ink-soft)" }}>
-          Admin-only. Everyone who has signed up for alpha. Grant free, delete, or just look.
+          Free, owner-approved access. Approve access first, then enable letters separately.
         </p>
 
-        <form onSubmit={runSearch} className="flex gap-3 mb-10">
+        <form onSubmit={runSearch} className="flex flex-wrap gap-3 mb-10">
           <input
             type="text"
             // alpha-drift-r69-01 (2026-08-21, form-validation-consistency-
@@ -527,7 +516,7 @@ export default function AdminAccountsPage() {
             // real accessible name without changing the visual layout.
             aria-label="Search by email"
             disabled={busyRows.size > 0}
-            className="alpha-ui text-sm flex-1 px-3 py-2 border"
+            className="alpha-ui text-sm flex-1 min-w-0 px-3 py-2 border"
             style={{ borderColor: "var(--rule)", borderRadius: "var(--radius-card)", background: "var(--paper)", opacity: busyRows.size > 0 ? 0.6 : 1 }}
           />
           <button
@@ -551,7 +540,7 @@ export default function AdminAccountsPage() {
           )}
         </form>
 
-        <div className="flex gap-4 -mt-6 mb-10">
+        <div className="flex flex-wrap gap-4 -mt-6 mb-4">
           <button
             type="button"
             disabled={busyRows.size > 0 || pendingOnly}
@@ -577,7 +566,20 @@ export default function AdminAccountsPage() {
           >
             All accounts
           </button>
+          <button
+            type="button"
+            disabled={loading || busyRows.size > 0}
+            onClick={() => load(activeSearch ? { search: activeSearch } : { pending: pendingOnly })}
+            className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
+        <p className="alpha-ui text-sm mb-6" style={{ color: "var(--ink-soft)" }}>
+          Pending requests appear after email confirmation and the final Request access step.
+          All accounts also includes people who have only started signup. Approved requests move out of Pending.
+        </p>
 
         {stats && (
           <div
@@ -607,30 +609,15 @@ export default function AdminAccountsPage() {
               )}
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <Stat label="Paying" value={stats.paying} />
               <Stat label="Free (granted)" value={stats.freeGranted} />
-              <Stat label="Invite access" value={stats.inviteGranted} />
+              <Stat label="Letters enabled" value={stats.lettersEnabled} sub="Enrollment only. Delivery blocks still apply." />
               <Stat label="Pending requests" value={stats.pendingRequests} />
-              <Stat label="Cancelled" value={stats.cancelled} />
+              <Stat label="Signup started" value={stats.signupIncomplete} />
               <Stat label="Unsubscribed" value={stats.unsubscribed} />
-              <Stat
-                label="Latest issue"
-                value={stats.latestIssueWeekOf || "—"}
-                sub={
-                  stats.latestIssueWeekOf
-                    ? `${stats.latestIssueCount} sent`
-                    : undefined
-                }
-              />
               <Stat
                 label="Email"
                 value="Resend"
                 sub="alpha@everyday.report"
-              />
-              <Stat
-                label="Send cron"
-                value="armed"
-                sub="Daily, 14:00 UTC"
               />
               <Stat label="Total users" value={stats.totalUsers} />
             </div>
@@ -645,7 +632,7 @@ export default function AdminAccountsPage() {
 
         {/* alpha-drift-r32-04 (2026-08-14): sr-only, announces act()'s
             result -- see the state comment above. */}
-        <p role="status" aria-live="polite" className="sr-only">
+        <p role="status" aria-live="polite" className="alpha-ui text-sm mb-4">
           {actionMsg}
         </p>
 
@@ -678,52 +665,31 @@ export default function AdminAccountsPage() {
         {users && users.length > 0 && (
           <ul className="space-y-4">
             {users.map((u) => {
-              const status = statusLabel(u);
+              const account = getAdminAccountState(u);
               const theme = u.theme ? THEMES.find((t) => t.id === u.theme)?.label || u.theme : "—";
               const topics = (u.topics || [])
                 .map((id) => topicLabel(id))
                 .filter(Boolean)
                 .join(" · ");
               const created = new Date(u.created_at).toLocaleDateString();
-              const readerAccess = hasReaderAccess(
-                u.subscribed_at,
-                u.cancelled_at,
-                u.access_granted_at
-              );
-              const isGranted = readerAccess && !u.stripe_customer_id;
-              const isInviteGranted = !!u.access_granted_at;
-              const hasPendingAccessRequest =
-                !!u.access_requested_at && !isInviteGranted;
-              const isBusy = busyRows.has(u.id);
-              const canGrantFree = !u.stripe_customer_id && !readerAccess;
-              const canGrantInvite =
-                !!u.stripe_customer_id && !!u.subscribed_at && !isInviteGranted;
-              const needsBillingReview =
-                hasPendingAccessRequest &&
-                !!u.stripe_customer_id &&
-                !u.subscribed_at;
+              const hasPendingAccessRequest = account.pending;
+              const isBusy = loading || busyRows.has(u.id);
               // alpha-drift-r20-06: deliverability suppression is orthogonal
               // to billing status (statusLabel above) -- a Paying subscriber
               // can be silently bounce-suppressed too, so this is its own
               // badge, not folded into status.label.
-              const isSuppressed =
-                !!u.bounced_at ||
-                !!u.complained_at ||
-                !!u.suppression_cleanup_pending_at;
-              const recoveryInProgress = !!u.suppression_recovery_started_at;
-              const canEnableDelivery =
-                readerAccess && !u.delivery_enrolled && !u.unsubscribed_at &&
-                !isSuppressed && !recoveryInProgress;
+              const isSuppressed = account.suppressed;
+              const recoveryInProgress = account.recovery;
               return (
                 <li
                   key={u.id}
                   className="border-b pb-4"
                   style={{ borderColor: "var(--rule)" }}
                 >
-                  <div className="flex items-baseline justify-between gap-4 mb-1">
-                    <div>
+                  <div className="flex flex-wrap items-baseline justify-between gap-3 mb-1">
+                    <div className="min-w-0 break-words">
                       <span className="alpha-display text-lg font-semibold">
-                        {u.first_name || "—"}
+                        {u.first_name || "Name not saved"}
                       </span>
                       <span
                         className="alpha-ui text-sm ml-3"
@@ -732,34 +698,12 @@ export default function AdminAccountsPage() {
                         {u.email}
                       </span>
                     </div>
-                    <span className="flex items-center gap-2 shrink-0">
-                      {hasPendingAccessRequest && (
-                        <span
-                          className="alpha-mono text-xs"
-                          style={{ color: "var(--ink)" }}
-                          title={`Access requested ${new Date(
-                            u.access_requested_at as string
-                          ).toLocaleDateString()}`}
-                        >
-                          REQUESTED
-                        </span>
-                      )}
-                      {isInviteGranted && (
-                        <span
-                          className="alpha-mono text-xs"
-                          style={{ color: "var(--ink)" }}
-                          title={`Permanent invite access granted ${new Date(
-                            u.access_granted_at as string
-                          ).toLocaleDateString()}`}
-                        >
-                          INVITED
-                        </span>
-                      )}
+                    <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <span
                         className="alpha-mono text-xs"
                         style={{ color: "var(--ink)" }}
                       >
-                        {u.delivery_enrolled ? "LETTERS ENABLED" : "LETTERS PAUSED"}
+                        {account.deliveryLabel.toUpperCase()}
                       </span>
                       {(isSuppressed || recoveryInProgress) && (
                         <span
@@ -797,9 +741,9 @@ export default function AdminAccountsPage() {
                       )}
                       <span
                         className="alpha-mono text-xs"
-                        style={{ color: status.color }}
+                        style={{ color: "var(--ink)" }}
                       >
-                        {status.label.toUpperCase()}
+                        {account.accessLabel.toUpperCase()}
                       </span>
                     </span>
                   </div>
@@ -821,6 +765,21 @@ export default function AdminAccountsPage() {
                       {topics}
                     </div>
                   )}
+                  {u.access_requested_at && account.pending && (
+                    <p className="alpha-ui text-xs mt-2" style={{ color: "var(--ink-soft)" }}>
+                      Requested {new Date(u.access_requested_at).toLocaleString()}
+                    </p>
+                  )}
+                  {account.deliveryBlockReason && (
+                    <p className="alpha-ui text-sm mt-2" style={{ color: "var(--ink-soft)" }}>
+                      {account.deliveryBlockReason}
+                    </p>
+                  )}
+                  {rowErrors[u.id] && (
+                    <p role="alert" className="alpha-ui text-sm mt-2" style={{ color: "var(--ink)" }}>
+                      {rowErrors[u.id]}
+                    </p>
+                  )}
                   {/* alpha-drift-r53-03 (2026-08-20, accessibility-resweep-
                       newer-code): these 4 buttons carried zero touch-target
                       padding -- under the WCAG 2.5.8 24px minimum, unlike
@@ -832,20 +791,21 @@ export default function AdminAccountsPage() {
                       p-2 -m-2) deliberately avoids colliding with this row's
                       own gap-3 horizontal spacing. */}
                   <div className="flex flex-wrap gap-3 mt-3">
-                    {canEnableDelivery && (
+                    {!u.delivery_enrolled && (
                       <button
                         type="button"
-                        disabled={isBusy}
+                        disabled={isBusy || !account.canEnableDelivery}
                         onClick={() =>
                           act(
                             u.id,
                             u.email,
                             "enable_delivery",
-                            `Enable Alpha letters for ${u.email}? Access approval alone does not send letters.`
+                            `Enable daily Alpha letters for ${u.email}? They will join the next scheduled send. This will not send old issues.`
                           )
                         }
                         className="alpha-ui text-xs underline underline-offset-4 min-h-11 px-3 py-2"
-                        style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
+                        style={{ color: "var(--ink)", opacity: isBusy || !account.canEnableDelivery ? 0.4 : 1 }}
+                        title={account.deliveryBlockReason || undefined}
                       >
                         Enable letters
                       </button>
@@ -861,7 +821,7 @@ export default function AdminAccountsPage() {
                         Pause letters
                       </button>
                     )}
-                    {canGrantFree && (
+                    {account.grantAction && (
                       <button
                         type="button"
                         disabled={isBusy}
@@ -869,8 +829,8 @@ export default function AdminAccountsPage() {
                           act(
                             u.id,
                             u.email,
-                            "grant_free",
-                            `${u.access_requested_at ? "Approve" : "Grant"} ${u.email} ${u.access_requested_at ? "for Alpha access" : "a free Alpha account"}?`
+                            account.grantAction!,
+                            `Approve free Alpha access for ${u.email}? Letter delivery stays a separate setting.`
                           )
                         }
                         className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
@@ -879,10 +839,10 @@ export default function AdminAccountsPage() {
                           opacity: isBusy ? 0.4 : 1,
                         }}
                       >
-                        {u.access_requested_at ? "Approve access" : "Grant free"}
+                        {hasPendingAccessRequest ? "Approve access" : "Grant free"}
                       </button>
                     )}
-                    {isGranted && (
+                    {account.revokeAction && (
                       <button
                         type="button"
                         disabled={isBusy}
@@ -890,34 +850,14 @@ export default function AdminAccountsPage() {
                           act(
                             u.id,
                             u.email,
-                            "revoke_free",
-                            `Revoke ${u.email}'s free access?`
+                            account.revokeAction!,
+                            `Revoke ${u.email}'s free access and pause future letters?${account.revokeNote}`
                           )
                         }
                         className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
                         style={{ color: "var(--ink-soft)", opacity: isBusy ? 0.4 : 1 }}
                       >
-                        Revoke free
-                      </button>
-                    )}
-                    {canGrantInvite && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() =>
-                          act(
-                            u.id,
-                            u.email,
-                            "grant_invite",
-                            `Give ${u.email} permanent invite access? This does not cancel Stripe billing. Turn renewal off separately.`
-                          )
-                        }
-                        className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
-                        style={{ color: "var(--ink)", opacity: isBusy ? 0.4 : 1 }}
-                      >
-                        {hasPendingAccessRequest
-                          ? "Approve invite access"
-                          : "Keep invite access"}
+                        Revoke access
                       </button>
                     )}
                     {hasPendingAccessRequest && (
@@ -941,31 +881,13 @@ export default function AdminAccountsPage() {
                         Deny request
                       </button>
                     )}
-                    {needsBillingReview && (
+                    {account.needsAccountReview && (
                       <span
                         className="alpha-ui text-xs basis-full"
                         style={{ color: "var(--ink-soft)" }}
                       >
-                        Review billing before approval
+                        This historical account needs review before access can change.
                       </span>
-                    )}
-                    {u.stripe_customer_id && isInviteGranted && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() =>
-                          act(
-                            u.id,
-                            u.email,
-                            "revoke_invite",
-                            `Remove ${u.email}'s permanent invite access? Any paid access stays active through its Stripe end date.`
-                          )
-                        }
-                        className="alpha-ui text-xs underline underline-offset-4 py-2 -my-2"
-                        style={{ color: "var(--ink-soft)", opacity: isBusy ? 0.4 : 1 }}
-                      >
-                        Revoke invite
-                      </button>
                     )}
                     {isSuppressed && !recoveryInProgress && (
                       <span
@@ -1020,7 +942,7 @@ export default function AdminAccountsPage() {
             // this fix exists to prevent. loadMore()'s own leading guard
             // (if (loadingMore) ... return;) does the re-entrancy job
             // disabled used to.
-            aria-disabled={loadingMore}
+            aria-disabled={loading || loadingMore || busyRows.size > 0}
             onClick={loadMore}
             className="alpha-ui text-sm mt-6 underline underline-offset-4 py-2 -my-2"
             style={{ color: "var(--ink)", opacity: loadingMore ? 0.4 : 1 }}

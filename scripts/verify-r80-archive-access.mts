@@ -3,6 +3,7 @@
 // It never loads environment files or contacts Supabase or any provider.
 import { readFileSync } from "node:fs";
 import { hasReaderAccess, hasSubscriberAccess } from "../lib/access.ts";
+import { getSignupAccountState } from "../lib/signup-progress.ts";
 
 let passed = 0;
 let failed = 0;
@@ -48,10 +49,32 @@ console.log("(2) every reader-facing database path uses the shared predicate");
   ];
   for (const reader of readers) {
     const src = read(reader.path);
-    const calls = (src.match(/hasReaderAccess\(\s*userRow/g) ?? []).length;
+    const throughSignupState = reader.label === "/inbox";
+    const helper = throughSignupState ? read("../lib/signup-progress.ts") : src;
+    const calls = throughSignupState
+      ? (src.match(/getSignupAccountState\(userRow\)/g) ?? []).length
+      : (src.match(/hasReaderAccess\(\s*userRow/g) ?? []).length;
     const selected = (src.match(/select\([^\n]*subscribed_at[^\n]*cancelled_at[^\n]*access_granted_at[^\n]*\)/g) ?? []).length;
-    check(`${reader.label}: imports shared reader-access helper`, /import \{ hasReaderAccess \} from "@\/lib\/access";/.test(src));
+    check(`${reader.label}: imports shared reader-access helper`, /import \{ hasReaderAccess \} from "@\/lib\/access";/.test(helper) &&
+      (!throughSignupState || /import \{ getSignupAccountState \} from "@\/lib\/signup-progress";/.test(src)));
     check(`${reader.label}: every access gate uses hasReaderAccess (${reader.calls})`, calls === reader.calls);
+    if (throughSignupState) {
+      check("/inbox: signup classification uses the shared grant and cancellation predicate",
+        /hasReaderAccess\(row\.subscribed_at, row\.cancelled_at, row\.access_granted_at\)/.test(helper));
+      check("/inbox: incomplete, pending and ended accounts return before rendering an issue",
+        /accountState === "pending" \|\| accountState === "incomplete"[\s\S]*?return;[\s\S]*?accountState === "ended" \|\| !userRow[\s\S]*?return;[\s\S]*?setIssue\(/.test(src));
+      for (const row of [
+        null,
+        { subscribed_at: null, access_granted_at: "2020-01-01" },
+        { subscribed_at: "2020-01-01", cancelled_at: "2020-01-02" },
+        { subscribed_at: "2020-01-01", cancelled_at: "2020-01-02", access_granted_at: "2020-01-03" },
+        { subscribed_at: "2020-01-01", cancelled_at: null },
+        { access_requested_at: "2020-01-01" },
+      ]) {
+        check(`/inbox: reader classification matches access for ${JSON.stringify(row)}`,
+          (getSignupAccountState(row) === "reader") === hasReaderAccess(row?.subscribed_at, row?.cancelled_at, row?.access_granted_at));
+      }
+    }
     check(`${reader.label}: every users query selects paid and invite access fields (${reader.selects})`, selected === reader.selects);
     check(`${reader.label}: cancellation-only helper is absent`, !/hasActiveAccess\(/.test(src));
   }
@@ -74,7 +97,7 @@ console.log("(3) database enforcement matches application enforcement");
   const admin = read("../app/api/admin/users/route.ts");
   check(
     "free revoke clears subscribed_at, the pending request, invite marker, and cancelled_at atomically",
-    /if \(body\.action === "revoke_free"\)[\s\S]*?\.update\(\{[\s\S]*?subscribed_at:\s*null,[\s\S]*?access_requested_at:\s*null,[\s\S]*?access_granted_at:\s*null,[\s\S]*?cancelled_at:\s*revokedAt,[\s\S]*?\}\)/.test(
+    /if \(body\.action === "revoke_free"\)[\s\S]*?\.update\(\{[\s\S]*?subscribed_at:\s*null,[\s\S]*?access_requested_at:\s*null,[\s\S]*?access_granted_at:\s*null,[\s\S]*?cancelled_at:\s*revokedAt,[\s\S]*?delivery_enrolled:\s*false,[\s\S]*?\}\)/.test(
       admin
     )
   );

@@ -437,7 +437,7 @@ export default function TopicsPage() {
         // not silently overwrite shared onboarding state or redirect them.
         if (cancelledRef.current) return;
         confirm();
-        update({ topics: picked });
+        update({ topics: picked }, { sync: false });
         router.push((consumeLegacyCheckoutReturnPath() || "/settings") as never);
         return;
       }

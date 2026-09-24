@@ -7,6 +7,8 @@ import { supabaseServiceClient } from "@/lib/supabase/server";
 import { coerceThemeId } from "@/lib/themes";
 import { hasReaderAccess } from "@/lib/access";
 import { currentPeriodIso } from "@/lib/cadence";
+import { issueIsReaderVisible } from "@/lib/issue-visibility";
+import { latestVisibleIssue } from "@/lib/latest-visible-issue";
 import type { Issue, ThemeId } from "@/lib/types";
 
 // The weekly email's "Read the full letter" target — the view-in-browser
@@ -55,14 +57,17 @@ export default async function LetterPage({
     // subscriber reported all her letters looking "exactly the same".)
     // Legacy v1 tokens carry no weekOf and fall back to latest, matching
     // their historical behavior.
-    let issueQuery = sb
+    const issueQuery = () => sb
       .from("issues")
       .select("week_of, volume, number, editor_intro, sections")
       .lte("week_of", currentPeriodIso())
-      .eq("user_id", userId);
-    if (weekOf) {
-      issueQuery = issueQuery.eq("week_of", weekOf);
-    }
+      .eq("user_id", userId)
+      .order("week_of", { ascending: false });
+    // v2 names one exact issue. Legacy v1 has no week stamp, so walk past a
+    // hidden historical issue to the newest usable one within the safety bound.
+    const issueRead = weekOf
+      ? issueQuery().eq("week_of", weekOf).limit(1).maybeSingle()
+      : latestVisibleIssue<IssueRow>((from, to) => issueQuery().range(from, to));
     // alpha-drift-r65-04 (2026-08-21, duplicate-code-audit-r15): the
     // issues-query error used to be discarded entirely -- unlike the
     // sibling pages this Promise.all pattern was copied to (inbox,
@@ -77,10 +82,11 @@ export default async function LetterPage({
     // destructured but never logged either -- same gap, same fix.
     const [{ data: userRow, error: userError }, { data: issueRow, error: issueError }] = await Promise.all([
       sb.from("users").select("first_name, city, theme, subscribed_at, cancelled_at, access_granted_at").eq("id", userId).maybeSingle(),
-      issueQuery.order("week_of", { ascending: false }).limit(1).maybeSingle(),
+      issueRead,
     ]);
     if (userError) console.error("[letter] users query error:", userError.message);
-    if (issueError) console.error("[letter] issues query error:", issueError.message);
+    if (issueError) console.error("[letter] issues query error:",
+      issueError instanceof Error ? issueError.message : (issueError as { message?: string }).message ?? "unknown error");
     // alpha-drift-r15-03: this route uses the service-role client (a signed
     // token, not a session), which bypasses the issues table's RLS policy
     // entirely -- so the subscription/access-window check that policy now enforces for
@@ -118,7 +124,7 @@ export default async function LetterPage({
           ))
       ) {
         accessEnded = true;
-      } else if (issueRow) {
+      } else if (issueRow && issueIsReaderVisible(issueRow)) {
         const row = issueRow as IssueRow;
         theme = coerceThemeId(userRow?.theme) ?? "forest";
         issue = {

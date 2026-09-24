@@ -29,6 +29,7 @@ type Row = {
   stripe_subscription_id: string | null;
   access_requested_at: string | null;
   access_granted_at: string | null;
+  delivery_enrolled: boolean;
   unsubscribed_at: string | null;
   bounced_at: string | null;
   complained_at: string | null;
@@ -44,6 +45,7 @@ const baseRow = (): Row => ({
   cancelled_at: "2026-09-20T19:20:29.000Z",
   access_requested_at: "2026-09-19T00:00:00.000Z",
   access_granted_at: null,
+  delivery_enrolled: true,
   unsubscribed_at: "2026-09-01T00:00:00.000Z",
   bounced_at: "2026-09-02T00:00:00.000Z",
   complained_at: "2026-09-03T00:00:00.000Z",
@@ -57,7 +59,7 @@ type Options = {
   race?: (row: Row) => void;
 };
 
-type Filter = { kind: "eq" | "is"; column: keyof Row; value: string | null };
+type Filter = { kind: "eq" | "is"; column: keyof Row; value: string | boolean | null };
 
 type InertDb = {
   row: Row | null;
@@ -102,7 +104,7 @@ function createInertDb(row: Row | null, options: Options = {}): InertDb {
         patch = next;
         return query;
       },
-      eq(column: keyof Row, value: string) {
+      eq(column: keyof Row, value: string | boolean) {
         filters.push({ kind: "eq", column, value });
         return query;
       },
@@ -245,13 +247,14 @@ await test("already-granted pending request clears only the request and preserve
   assert.equal(row.access_granted_at, "2026-09-10T00:00:00.000Z");
 });
 
-await test("revoke touches only invite fields and leaves billing cancellation and delivery state intact", async () => {
+await test("revoke clears invite access and pauses letters while preserving billing and suppression", async () => {
   const row = { ...baseRow(), access_granted_at: "2026-09-10T00:00:00.000Z" };
   const before = structuredClone(row);
   const db = createInertDb(row);
   const response = await invoke("revoke_invite", db);
   assert.deepEqual(response, { value: { ok: true }, status: 200 });
-  assert.deepEqual(db.updates, [{ access_requested_at: null, access_granted_at: null }]);
+  assert.deepEqual(db.updates, [{ access_requested_at: null, access_granted_at: null, delivery_enrolled: false }]);
+  assert.equal(row.delivery_enrolled, false);
   assert.equal(row.cancelled_at, before.cancelled_at);
   assert.equal(row.subscribed_at, before.subscribed_at);
   assert.equal(row.unsubscribed_at, before.unsubscribed_at);

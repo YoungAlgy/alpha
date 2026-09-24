@@ -34,8 +34,27 @@ function storage() {
   };
 }
 
-function runtime(local = storage(), session = storage()) {
+function channelHub(queued = false) {
+  const channels = new Set<{ onmessage?: (event: { data: unknown }) => void }>();
+  const pending: Array<() => void> = [];
+  return class BroadcastChannelDouble {
+    static flush() { for (const deliver of pending.splice(0)) deliver(); }
+    onmessage?: (event: { data: unknown }) => void;
+    constructor(_name: string) { channels.add(this); }
+    postMessage(data: unknown) {
+      for (const channel of channels) if (channel !== this) {
+        const deliver = () => channel.onmessage?.({ data });
+        if (queued) pending.push(deliver);
+        else deliver();
+      }
+    }
+    close() { channels.delete(this); }
+  };
+}
+
+function runtime(local = storage(), session = storage(), BroadcastChannel = channelHub()) {
   let active: any;
+  let cleanup: (() => void) | undefined;
   const syncCalls: any[] = [];
   const react = {
     useState(initial: unknown) {
@@ -43,7 +62,7 @@ function runtime(local = storage(), session = storage()) {
       if (!(index in active.values)) active.values[index] = initial;
       return [active.values[index], (value: unknown) => { active.values[index] = value; }];
     },
-    useEffect(effect: () => void) {
+    useEffect(effect: () => void | (() => void)) {
       const index = active.index++;
       if (!active.effectsRun.has(index)) active.pending.push([index, effect]);
     },
@@ -66,27 +85,35 @@ function runtime(local = storage(), session = storage()) {
       removeEventListener(type: string, listener: (event: { key: string | null; newValue: string | null }) => void) {
         if (type === "storage") storageListeners.delete(listener);
       },
-    }, Date, JSON,
+    }, BroadcastChannel, Date, JSON,
   }, { filename: "lib/onboarding-state.ts" });
   function mount() {
+    cleanup?.();
     active = { values: [], index: 0, pending: [], effectsRun: new Set<number>() };
     const render = () => { active.index = 0; return exports.useOnboarding(); };
     render();
     for (const [index, effect] of active.pending) {
       active.effectsRun.add(index);
-      effect();
+      cleanup = effect();
     }
     return render;
   }
   return {
     local, session, mount, syncCalls,
+    unmount() { cleanup?.(); cleanup = undefined; },
     externalRemoval() {
-      local.data.delete(key);
+      if (!local.data.delete(key)) return; // Browser sends no event for a no-op remove.
       for (const listener of storageListeners) listener({ key, newValue: null });
     },
     externalClear() {
+      if (local.data.size === 0) return; // Clearing an empty store is also a no-op.
       local.data.clear();
       for (const listener of storageListeners) listener({ key: null, newValue: null });
+    },
+    externalResetMarker() {
+      const value = local.data.get("alpha-onboarding-reset-at");
+      if (value === undefined) return;
+      for (const listener of storageListeners) listener({ key: "alpha-onboarding-reset-at", newValue: value });
     },
   };
 }
@@ -99,6 +126,7 @@ let page = app.mount();
 assert.equal(page().update({ firstName: "Test reader", email: "reader@example.test" }), true);
 assert.equal(page().state.firstName, "Test reader");
 assert.equal(page().storageError, null);
+assert.equal(app.syncCalls.length, 1); // Default updates still sync.
 assert.equal(session.data.has(key), false);
 assert.equal(app.mount()().state.email, "reader@example.test");
 app = runtime(local, session); // full reload, fresh module memory
@@ -116,21 +144,107 @@ assert.equal(removalApp.mount()().state.firstName, undefined);
 // the currently mounted answers. A reload must not bring them back.
 const fallbackLocal = storage();
 const fallbackSession = storage();
+const fallbackOtherSession = storage();
+const fallbackChannels = channelHub();
 fallbackLocal.faults.write = true;
-const fallbackApp = runtime(fallbackLocal, fallbackSession);
+const fallbackApp = runtime(fallbackLocal, fallbackSession, fallbackChannels);
+const fallbackOtherTab = runtime(fallbackLocal, fallbackOtherSession, fallbackChannels);
 let fallbackPage = fallbackApp.mount();
 assert.equal(fallbackPage().update({ firstName: "Fallback private" }), true);
 assert.equal(fallbackSession.data.has(key), true);
-fallbackApp.externalRemoval();
+assert.equal(fallbackLocal.data.has(key), false);
+const fallbackOtherPage = fallbackOtherTab.mount();
+assert.equal(fallbackOtherPage().reset(), true); // no local key, so no storage event
 assert.equal(fallbackPage().state.firstName, undefined);
 assert.equal(fallbackSession.data.has(key), false);
 assert.equal(fallbackApp.mount()().state.firstName, undefined);
 assert.equal(runtime(fallbackLocal, fallbackSession).mount()().state.firstName, undefined);
 fallbackPage = fallbackApp.mount();
 assert.equal(fallbackPage().update({ firstName: "Clear event" }), true);
+fallbackLocal.data.set("unrelated-key", "present");
 fallbackApp.externalClear();
 assert.equal(fallbackSession.data.has(key), false);
 assert.equal(fallbackApp.mount()().state.firstName, undefined);
+
+// A reset that can overwrite but cannot remove the shared key also clears
+// another tab's newer session fallback and its mounted form.
+const deniedSharedLocal = storage();
+const deniedSharedSession = storage();
+const deniedSharedChannels = channelHub();
+const deniedSharedTab = runtime(deniedSharedLocal, deniedSharedSession, deniedSharedChannels);
+const deniedResetTab = runtime(deniedSharedLocal, storage(), deniedSharedChannels);
+let deniedSharedPage = deniedSharedTab.mount();
+assert.equal(deniedSharedPage().update({ firstName: "Private backup" }), true);
+deniedSharedLocal.faults.write = true;
+assert.equal(deniedSharedPage().update({ city: "Private city" }), true);
+assert.equal(deniedSharedSession.data.has(key), true);
+deniedSharedLocal.faults.write = false;
+deniedSharedLocal.faults.remove = true;
+assert.equal(deniedResetTab.mount()().reset(), true);
+assert.equal(deniedSharedPage().state.firstName, undefined);
+assert.equal(deniedSharedSession.data.has(key), false);
+assert.equal(runtime(deniedSharedLocal, deniedSharedSession).mount()().state.firstName, undefined);
+
+// A tab on another route misses the live message, then rejects its old
+// session-only draft on remount using the durable reset marker.
+const dormantLocal = storage();
+const dormantSession = storage();
+const dormantChannels = channelHub();
+const dormantTab = runtime(dormantLocal, dormantSession, dormantChannels);
+const dormantResetTab = runtime(dormantLocal, storage(), dormantChannels);
+dormantLocal.faults.write = true;
+const dormantPage = dormantTab.mount();
+assert.equal(dormantPage().update({ firstName: "Dormant private" }), true);
+assert.equal(dormantSession.data.has(key), true);
+dormantTab.unmount();
+dormantLocal.faults.write = false;
+assert.equal(dormantResetTab.mount()().reset(), true);
+assert.equal(dormantSession.data.has(key), true); // No listener was mounted.
+assert.equal(dormantTab.mount()().state.firstName, undefined);
+assert.equal(runtime(dormantLocal, dormantSession).mount()().state.firstName, undefined);
+
+// With no BroadcastChannel, a reset marker storage event clears an open tab
+// whose session draft has no shared draft key. Receiving it does not publish
+// a second marker or create a reset loop.
+const unavailableChannel = class {
+  onmessage?: (event: { data: unknown }) => void;
+  constructor(_name: string) { throw Error("test-only channel unavailable"); }
+  postMessage(_data: unknown) {}
+  close() {}
+};
+const markerLocal = storage();
+const markerSession = storage();
+const markerTab = runtime(markerLocal, markerSession, unavailableChannel);
+const markerResetTab = runtime(markerLocal, storage(), unavailableChannel);
+markerLocal.faults.write = true;
+const markerPage = markerTab.mount();
+assert.equal(markerPage().update({ firstName: "Marker private" }), true);
+markerLocal.faults.write = false;
+assert.equal(markerResetTab.mount()().reset(), true);
+const publishedReset = markerLocal.data.get("alpha-onboarding-reset-at");
+assert.ok(publishedReset);
+markerTab.externalResetMarker();
+assert.equal(markerPage().state.firstName, undefined);
+assert.equal(markerSession.data.has(key), false);
+assert.equal(markerLocal.data.get("alpha-onboarding-reset-at"), publishedReset);
+
+// The live signal can arrive after the reader has already saved a new draft.
+// Its older reset timestamp must not erase that post-reset work.
+const delayedLocal = storage();
+const delayedSession = storage();
+const delayedChannels = channelHub(true);
+const delayedTab = runtime(delayedLocal, delayedSession, delayedChannels);
+const delayedResetTab = runtime(delayedLocal, storage(), delayedChannels);
+delayedLocal.faults.write = true;
+const delayedPage = delayedTab.mount();
+assert.equal(delayedPage().update({ firstName: "Old draft" }), true);
+delayedLocal.faults.write = false;
+assert.equal(delayedResetTab.mount()().reset(), true);
+delayedLocal.faults.write = true;
+assert.equal(delayedPage().update({ firstName: "New draft" }), true);
+delayedChannels.flush();
+assert.equal(delayedPage().state.firstName, "New draft");
+assert.equal(delayedSession.data.has(key), true);
 
 // A tab that hydrated earlier merges onto another tab's latest local save.
 const otherTab = runtime(local, storage());
@@ -139,6 +253,14 @@ page = app.mount();
 assert.equal(otherPage().update({ theme: "classic" }), true);
 assert.equal(page().update({ city: "Tampa" }), true);
 assert.equal(JSON.parse(local.data.get(key)!).theme, "classic");
+
+// A server-authoritative save can mirror locally without another profile sync.
+const syncBeforeMirror = app.syncCalls.length;
+assert.equal(page().update({ topics: ["tech"] as any }, { sync: false }), true);
+assert.equal(app.syncCalls.length, syncBeforeMirror);
+assert.equal(JSON.parse(local.data.get(key)!).topics[0], "tech");
+assert.equal(page().update({ jobBlurb: "Default sync check" }), true);
+assert.equal(app.syncCalls.length, syncBeforeMirror + 1);
 
 // A stale local copy must not beat a newer same-tab fallback.
 local.faults.write = true;

@@ -5,6 +5,8 @@ import type { TopicId, ThemeId, Gender } from "./types";
 import { syncUserProfile } from "./user-sync";
 
 const STORAGE_KEY = "alpha-onboarding";
+const RESET_CHANNEL = "alpha-onboarding-reset";
+const RESET_KEY = "alpha-onboarding-reset-at";
 
 export interface OnboardingState {
   firstName?: string;
@@ -70,6 +72,15 @@ function readStore(store: "localStorage" | "sessionStorage"): { draft?: Onboardi
   }
 }
 
+function readResetAt(): number {
+  try {
+    const value = Number(window.localStorage.getItem(RESET_KEY));
+    return Number.isSafeInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function readRaw(): { draft: OnboardingState; storageError: boolean } {
   if (typeof window === "undefined") return { draft: EMPTY, storageError: false };
   const local = readStore("localStorage");
@@ -85,7 +96,12 @@ function readRaw(): { draft: OnboardingState; storageError: boolean } {
   }
   // Local wins ties to retain the existing cross-tab behavior. A newer
   // session copy wins when local writes failed after an older local save.
-  const candidates = [local.draft, session.draft, memoryDraft];
+  // A closed tab cannot hear a live reset. The shared marker invalidates its
+  // older session-only copy when it opens again, if localStorage was writable.
+  const resetAt = readResetAt();
+  const candidates = [local.draft, session.draft, memoryDraft].filter(
+    (candidate) => candidate && (!resetAt || (candidate.draftSavedAt ?? 0) > resetAt),
+  );
   const draft = candidates.reduce<OnboardingState | undefined>((newest, candidate) => {
     if (!candidate) return newest;
     return !newest || (candidate.draftSavedAt ?? 0) > (newest.draftSavedAt ?? 0)
@@ -133,12 +149,12 @@ function write(s: OnboardingState): boolean {
   }
 }
 
-function clearStoredDraft(): boolean {
-  const resetAt = Math.max(Date.now(), (readRaw().draft.draftSavedAt ?? 0) + 1);
+function clearStoredDraft(publishReset = true): { cleared: boolean; resetAt: number } {
+  const resetAt = Math.max(Date.now(), readResetAt() + 1, (readRaw().draft.draftSavedAt ?? 0) + 1);
   if (typeof window === "undefined") {
     memoryDraft = undefined;
     memoryKind = undefined;
-    return false;
+    return { cleared: false, resetAt };
   }
   let failed = false;
   const empty = JSON.stringify({ draftSavedAt: resetAt });
@@ -150,9 +166,12 @@ function clearStoredDraft(): boolean {
       try { window[store].setItem(STORAGE_KEY, empty); } catch { failed = true; }
     }
   }
+  if (publishReset) {
+    try { window.localStorage.setItem(RESET_KEY, String(resetAt)); } catch { /* Live tab signal still works. */ }
+  }
   memoryDraft = failed ? { draftSavedAt: resetAt } : undefined;
   memoryKind = failed ? "failed-reset" : undefined;
-  return !failed;
+  return { cleared: !failed, resetAt };
 }
 
 export function useOnboarding() {
@@ -169,19 +188,47 @@ export function useOnboarding() {
     setEmailDraft(typeof stored.draft.email === "string" ? stored.draft.email : undefined);
     setStorageError(stored.storageError ? STORAGE_ERROR : null);
     setLoaded(true);
+    const clearFromOtherTab = () => {
+      const { cleared } = clearStoredDraft(false);
+      setState(EMPTY);
+      setEmailDraft(undefined);
+      setStorageError(cleared ? null : STORAGE_ERROR);
+    };
     const onStorage = (event: StorageEvent) => {
-      if ((event.key === STORAGE_KEY && event.newValue === null) || event.key === null) {
-        const cleared = clearStoredDraft();
-        setState(EMPTY);
-        setEmailDraft(undefined);
-        setStorageError(cleared ? null : STORAGE_ERROR);
+      if (event.key === RESET_KEY && event.newValue !== null) {
+        const resetAt = Number(event.newValue);
+        if (Number.isSafeInteger(resetAt) && (readRaw().draft.draftSavedAt ?? 0) > resetAt) return;
+        clearFromOtherTab();
+      } else if ((event.key === STORAGE_KEY && event.newValue === null) || event.key === null) {
+        if (event.key === STORAGE_KEY && event.oldValue) {
+          try {
+            const old: OnboardingState = JSON.parse(event.oldValue);
+            const resetAt = readResetAt();
+            if (resetAt >= (old.draftSavedAt ?? 0) && (readRaw().draft.draftSavedAt ?? 0) > resetAt) return;
+          } catch { /* Malformed old storage still gets cleared. */ }
+        }
+        clearFromOtherTab();
       }
     };
+    // A session-only draft has no localStorage key to remove, so another tab's
+    // reset cannot produce a storage event. The channel carries no draft data.
+    let resetChannel: BroadcastChannel | undefined;
+    try {
+      resetChannel = new BroadcastChannel(RESET_CHANNEL);
+      resetChannel.onmessage = (event: MessageEvent) => {
+        if (event.data?.type !== "reset" || !Number.isSafeInteger(event.data.resetAt)) return;
+        if ((readRaw().draft.draftSavedAt ?? 0) > event.data.resetAt) return;
+        clearFromOtherTab();
+      };
+    } catch { /* Storage events still handle localStorage draft removal. */ }
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      resetChannel?.close();
+    };
   }, []);
 
-  const update = useCallback((patch: Partial<OnboardingState>): boolean => {
+  const update = useCallback((patch: Partial<OnboardingState>, options: { sync?: boolean } = {}): boolean => {
     // Merge onto the freshest localStorage contents, not the in-memory
     // `state` -- another tab may have written since this tab last hydrated,
     // and a merge onto stale in-memory state would silently overwrite
@@ -198,7 +245,7 @@ export function useOnboarding() {
       ...current,
       ...patch,
       ...("email" in patch ? { emailSavedAt: Date.now() } : {}),
-      draftSavedAt: Math.max(Date.now(), (current.draftSavedAt ?? 0) + 1),
+      draftSavedAt: Math.max(Date.now(), readResetAt() + 1, (current.draftSavedAt ?? 0) + 1),
     };
     const saved = write(next);
     // Fire-and-forget Supabase sync if user is authed. Errors are swallowed
@@ -208,7 +255,7 @@ export function useOnboarding() {
     // apart from one that's merely present from an earlier, possibly-stale
     // localStorage snapshot -- see alpha-drift-r60-10 on syncUserProfile
     // itself for why that distinction matters for topics specifically.
-    if (saved) syncUserProfile(usableState(next), patch);
+    if (saved && options.sync !== false) syncUserProfile(usableState(next), patch);
     setState(usableState(next));
     setEmailDraft(typeof next.email === "string" ? next.email : undefined);
     setStorageError(saved ? null : STORAGE_ERROR);
@@ -216,7 +263,12 @@ export function useOnboarding() {
   }, []);
 
   const reset = useCallback((): boolean => {
-    const cleared = clearStoredDraft();
+    const { cleared, resetAt } = clearStoredDraft();
+    try {
+      const channel = new BroadcastChannel(RESET_CHANNEL);
+      channel.postMessage({ type: "reset", resetAt });
+      channel.close();
+    } catch { /* A localStorage removal still notifies other tabs when present. */ }
     setState(EMPTY);
     setEmailDraft(undefined);
     setStorageError(cleared ? null : STORAGE_ERROR);

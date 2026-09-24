@@ -13,6 +13,7 @@ import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { coerceThemeId } from "@/lib/themes";
 import { hasReaderAccess } from "@/lib/access";
 import { currentPeriodIso } from "@/lib/cadence";
+import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import type { Issue } from "@/lib/types";
 
 // Renders a specific past issue by ID (UUID from public.issues.id) for its
@@ -131,7 +132,7 @@ export default function IssuePage() {
             setLoadError(true);
             return;
           }
-          if (data) {
+          if (data && issueIsReaderVisible(data)) {
             const themeId = coerceThemeId(userRow?.theme);
             if (themeId) {
               document.documentElement.setAttribute("data-theme", themeId);
