@@ -109,9 +109,9 @@ concurrency:
 
 jobs:
   send:
-    # Manual-first release. Scheduled events remain inert until the first
-    # three protected issues are accepted in a separate reviewed release.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    # Owner-approved daily operation after the first three issues were
+    # delivered. Enrollment, no-model mode and bounded retries stay in place.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     # Preserve headroom around the bounded 55-minute delivery loop and final
     # 120-second process drain, including slow checkout/install/build days.
@@ -649,7 +649,7 @@ jobs:
                     if (!integer(s.subscribers) || !integer(s.sent) ||
                         !integer(s.backupSharedSent) || !integer(s.backupFreshSent) || !integer(s.backupStaleSent) ||
                         !integer(s.skippedAlreadyDelivered) || !integer(s.unsubscribedMidRunSkips) ||
-                        !integer(s.cancelledMidRunSkips) || !integer(s.suppressedMidRunSkips) ||
+                        !integer(s.cancelledMidRunSkips) || !integer(s.suppressedMidRunSkips) || !integer(s.unenrolledMidRunSkips) ||
                         !integer(s.checkoutRetentionErrors) || !integer(s.deliveryPageCount) ||
                         !integer(s.deliveryRetryRequiredTotal) || s.deliveryBatchSize!==250 ||
                         typeof s.deliveryPageComplete!=='boolean' || typeof s.deliveryRetryRequired!=='boolean' ||
@@ -674,7 +674,7 @@ jobs:
                         (s.deliveryCursorState==='empty'&&(s.deliveryPageCount!==0||s.deliveryPageBlocked)) ||
                         (s.deliveryCursorState==='override_read_only'&&s.deliveryCursorNext!==s.deliveryCursor)) throw new Error('contract');
                     const covered=s.sent+s.backupSharedSent+s.backupFreshSent+s.backupStaleSent;
-                    const excused=s.skippedAlreadyDelivered+s.unsubscribedMidRunSkips+s.cancelledMidRunSkips+s.suppressedMidRunSkips;
+                    const excused=s.skippedAlreadyDelivered+s.unsubscribedMidRunSkips+s.cancelledMidRunSkips+s.suppressedMidRunSkips+s.unenrolledMidRunSkips;
                     const uncovered=Math.max(s.subscribers-covered-excused,0);
                     if (uncovered!==s.deliveryRetryRequiredTotal) throw new Error('coverage');
                     process.stdout.write([

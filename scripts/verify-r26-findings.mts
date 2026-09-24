@@ -159,7 +159,7 @@ console.log("(4) app/api/account/email/reconcile/route.ts: the mirror read now c
 console.log("(5) .github/workflows/daily-send.yml: blank profiles stay uncovered in the paginated delivery contract");
 {
   const src = readFileSync(new URL("../.github/workflows/daily-send.yml", import.meta.url), "utf8");
-  check("(5a) only delivered or proved-ineligible rows are excused, so a blank profile remains uncovered", /const excused=s\.skippedAlreadyDelivered\+s\.unsubscribedMidRunSkips\+s\.cancelledMidRunSkips\+s\.suppressedMidRunSkips;/.test(src) && /const uncovered=Math\.max\(s\.subscribers-covered-excused,0\);/.test(src) && !/const blankCount/.test(src));
+  check("(5a) only delivered or proved-ineligible rows are excused, so a blank profile remains uncovered", /const excused=s\.skippedAlreadyDelivered\+s\.unsubscribedMidRunSkips\+s\.cancelledMidRunSkips\+s\.suppressedMidRunSkips\+s\.unenrolledMidRunSkips;/.test(src) && /const uncovered=Math\.max\(s\.subscribers-covered-excused,0\);/.test(src) && !/const blankCount/.test(src));
   check("(5b) every page validates the exact retry-required total", /!integer\(s\.deliveryRetryRequiredTotal\)/.test(src) && /if \(uncovered!==s\.deliveryRetryRequiredTotal\) throw new Error\('coverage'\);/.test(src));
   check("(5c) retry-required outcomes make the workflow fail after maintenance", /DELIVERY_BLOCKED_PAGE/.test(src) && /DELIVERY_RETRY_REQUIRED_TOTAL/.test(src) && /retry-required page outcome\(s\) were observed/.test(src));
 }

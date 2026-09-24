@@ -20,15 +20,16 @@ const checkoutRoute = read("../app/api/stripe/checkout/route.ts");
 
 for (const [source, hash] of [
   [accessPolicy, "b9f13a9d129a7884f92f9d3c88f012db0936faaffdcaf1e73cd52ea02768c542"],
-  [deliveryPolicy, "0d1acbb374dff7018f7d535e4c2d81b8a694cc207e3bace270e8357bd0da56b6"],
+  [deliveryPolicy, "8e6d64e863cab0d6569b5acd14fe8a936b9c4f0fee32a52843ff9bdeede97767"],
   [suppressionPolicy, "d8bdbbb14f0e258fc3d4c58af3c2742ad7671fe663e1556bd8655cbb468ad04b"],
 ] as const) {
   assert.equal(createHash("sha256").update(source).digest("hex"), hash);
   assert.ok(gate.includes(hash), `release gate must pin ${hash}`);
 }
 assert.match(gate, /expectedCheckoutMode !== "paused"/);
-assert.match(gate, /dailySendManualOnly/);
-assert.match(workflow, /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}$/m);
+assert.match(gate, /dailySendEventsVerified/);
+const approvedEventGate = "if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}";
+assert.match(workflow, /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ github\.event_name == 'workflow_dispatch' \|\| github\.event_name == 'schedule' \}\}$/m);
 
 const executableGate = gate.replace(/^import .*;\r?\n/gm, "");
 function runGate(overrides: Partial<Record<string, string>> = {}): number {
@@ -78,7 +79,7 @@ for (const [path, source] of [
   ["lib/access-mode.ts", `${accessPolicy}\n// drift`],
   ["lib/subscriber-delivery-policy.ts", deliveryPolicy.replace("SUBSCRIBER_LETTERS_ENABLED: boolean = true", "SUBSCRIBER_LETTERS_ENABLED: boolean = false")],
   ["lib/suppression-recovery-policy.ts", suppressionPolicy.replace("false", "true")],
-  [".github/workflows/daily-send.yml", workflow.replace("if: ${{ github.event_name == 'workflow_dispatch' }}", "if: ${{ true }}")],
+  [".github/workflows/daily-send.yml", workflow.replace(approvedEventGate, "if: ${{ true }}")],
 ] as const) {
   assert.equal(runGate({ [path]: source }), 1, `${path} drift must reject release`);
 }
@@ -125,6 +126,28 @@ for (const name of ["resend", "unsubscribe", "supabase"] as const) {
   };
   assert.equal(inviteRequiredHealthFailures(changed).join(), name, `${name} must block invite launch`);
 }
+
+// Execute the real release gate against unsafe or stale workflow variants.
+// Fixtures never change the checked-out workflow or contact GitHub.
+for (const eventGate of [
+  "if: ${{ github.event_name == 'workflow_dispatch' }}",
+  "if: ${{ github.event_name == 'schedule' }}",
+  "if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}",
+  "if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'push' }}",
+  "if: false",
+]) {
+  assert.equal(runGate({ ".github/workflows/daily-send.yml": workflow.replace(approvedEventGate, eventGate) }), 1);
+}
+for (const unsafeWorkflow of [
+  workflow.replace("ALPHA_NO_MODEL_MODE: '1'", "ALPHA_NO_MODEL_MODE: '0'"),
+  workflow.replace("ALPHA_ALLOW_PAID_AI: '0'", "ALPHA_ALLOW_PAID_AI: '1'"),
+  `${workflow}\n# inputs.weekOf`,
+  workflow.replace("    - cron: '0 14 * * *'", "    # primary slot removed"),
+  workflow.replace("    - cron: '0 18 * * *'", "    - cron: '0 14 * * *'"),
+  workflow.replace("  workflow_dispatch:", "  push:"),
+]) {
+  assert.equal(runGate({ ".github/workflows/daily-send.yml": unsafeWorkflow }), 1);
+}
 assert.equal(inviteRequiredHealthFailures({ ...inviteHealth, hardFailures: ["supabase"] }).join(), "hardFailures");
 assert.equal(inviteRequiredHealthFailures({ ...inviteHealth, hardFailures: null }).join(), "hardFailures");
 
@@ -162,4 +185,4 @@ assert.ok(
   "portal smoke must require the exact route response"
 );
 
-console.log("PASS verify-access-only-release (pinned holds, workflow hold, health and no-charge smoke predicates)");
+console.log("PASS verify-access-only-release (pinned policies, daily event gate, unsafe workflow rejection, health and no-charge smoke predicates)");

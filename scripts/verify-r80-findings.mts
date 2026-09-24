@@ -163,7 +163,7 @@ check(
   "blank profiles are no longer excused by workflow coverage",
   !dailyWorkflow.includes("const excused = blankCount +") &&
     dailyWorkflow.includes(
-      "const excused=s.skippedAlreadyDelivered+s.unsubscribedMidRunSkips+s.cancelledMidRunSkips+s.suppressedMidRunSkips;"
+      "const excused=s.skippedAlreadyDelivered+s.unsubscribedMidRunSkips+s.cancelledMidRunSkips+s.suppressedMidRunSkips+s.unenrolledMidRunSkips;"
     ) &&
     dailyWorkflow.includes("if (uncovered!==s.deliveryRetryRequiredTotal) throw new Error('coverage');")
 );

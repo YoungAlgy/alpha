@@ -93,7 +93,7 @@ for (const scenario of [{ dirty: true }, { release: "b".repeat(40) }, { mode: "o
 for (const scenario of [
   { accessPolicy: `${accessPolicy}\n// drift` },
   { deliveryPolicy: deliveryPolicy.replace("false", "true") },
-  { workflow: workflow.replace("if: ${{ github.event_name == 'workflow_dispatch' }}", "if: ${{ true }}") },
+  { workflow: workflow.replace("if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}", "if: ${{ true }}") },
   { accessPolicy: null },
   { deliveryPolicy: null },
   { workflow: null },

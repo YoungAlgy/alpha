@@ -25,7 +25,7 @@ readers. Keep reader identities in protected account data, not hard-coded
 allowlists. Removing old billing history or cancellation safeguards is a
 separate wind-down step, not a prerequisite for free invite access.
 
-The current release is manual-first delivery. `delivery_enrolled` is an
+The current release enables daily delivery for approved readers. `delivery_enrolled` is an
 owner-controlled account field, separate from reading access. It defaults to
 false, cannot be changed by subscribers, and is checked in the population
 query, immediately before sending, and in the locked provider-attempt claim.
@@ -35,13 +35,16 @@ action changes access, billing history, unsubscribe, or suppression markers.
 `lib/subscriber-delivery-policy.ts` enables the enrolled sender while keeping
 direct reader-triggered generation paused. Setting its global literal false
 remains the emergency stop. There is no environment override. The daily job
-accepts only manual dispatch until first-batch acceptance is recorded. It pins
+accepts only scheduled events or manual dispatch after verified first-batch delivery. It pins
 no-model mode on and paid AI off. Historical overrides and forced resends are
 closed during this rollout. Health reports subscriber delivery open, which
 does not itself prove a schedule is active or a letter has been delivered.
 Saved letters, invite approval, sign-in, support, and operator alerts remain
-available. Live deployment and first-batch evidence belong in the dated
-Desktop Files launch checkpoint.
+available. The 14:00 UTC primary slot and 15:00/18:00 UTC recovery slots share
+one concurrency group. Already-covered days skip installation and build.
+Live deployment and first-batch evidence belong in the dated Desktop Files
+launch checkpoint. Scheduled configuration alone does not prove that a future
+scheduled run started or completed.
 
 Access approval, signup, paid checkout, and email reconciliation preserve
 provider do-not-email blocks. Manual provider-suppression removal is

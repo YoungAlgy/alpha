@@ -156,5 +156,5 @@ handlePaused({ status: 503 }, { error: "subscriber_delivery_paused", message: "p
 assert.deepEqual(writingCalls, ["clearInterval", "clearTimeout", "setDeliveryPaused:true", "setError:paused"]);
 
 assert.match(health, /subscriberDeliveryMode:\s*SUBSCRIBER_LETTERS_ENABLED \? "open" : "paused"/);
-assert.match(workflow, /jobs:\s+send:[\s\S]{0,300}if:\s*\$\{\{\s*github\.event_name == 'workflow_dispatch'\s*\}\}/);
+assert.match(workflow, /jobs:\s+send:[\s\S]{0,300}if:\s*\$\{\{\s*github\.event_name == 'workflow_dispatch' \|\| github\.event_name == 'schedule'\s*\}\}/);
 console.log("PASS verify-subscriber-delivery-pause (executed production route prefixes, bearer guard, sender backstop, and writing pause branch)");

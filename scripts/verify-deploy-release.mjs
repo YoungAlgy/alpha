@@ -12,7 +12,7 @@ const SUPPRESSION_HOLD_SHA256 =
 const ACCESS_MODE_SHA256 =
   "b9f13a9d129a7884f92f9d3c88f012db0936faaffdcaf1e73cd52ea02768c542";
 const DELIVERY_HOLD_SHA256 =
-  "0d1acbb374dff7018f7d535e4c2d81b8a694cc207e3bace270e8357bd0da56b6";
+  "8e6d64e863cab0d6569b5acd14fe8a936b9c4f0fee32a52843ff9bdeede97767";
 let suppressionHoldVerified = false;
 try {
   const policy = readFileSync("lib/suppression-recovery-policy.ts", "utf8")
@@ -41,22 +41,25 @@ if (!pinnedSourceMatches("lib/access-mode.ts", ACCESS_MODE_SHA256)) {
   process.exit(1);
 }
 if (!pinnedSourceMatches("lib/subscriber-delivery-policy.ts", DELIVERY_HOLD_SHA256)) {
-  console.error("::error:: Reviewed manual-first subscriber delivery policy is missing or changed.");
+  console.error("::error:: Reviewed enrolled subscriber delivery policy is missing or changed.");
   process.exit(1);
 }
 
-let dailySendManualOnly = false;
+let dailySendEventsVerified = false;
 try {
   const workflow = readFileSync(".github/workflows/daily-send.yml", "utf8").replace(/\r\n/g, "\n");
-  dailySendManualOnly = /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}$/m.test(workflow) &&
+  const dailySlots = [...workflow.matchAll(/^    - cron: '([^']+)'/gm)].map((match) => match[1]);
+  dailySendEventsVerified = /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ github\.event_name == 'workflow_dispatch' \|\| github\.event_name == 'schedule' \}\}$/m.test(workflow) &&
+    dailySlots.join("|") === "0 14 * * *|0 15 * * *|0 18 * * *" &&
+    /^  workflow_dispatch:\s*$/m.test(workflow) &&
     !/inputs\.weekOf|WEEK_OF_INPUT|URL="\$\{URL\}\?weekOf=/.test(workflow) &&
     (workflow.match(/ALPHA_NO_MODEL_MODE: '1'/g) || []).length === 2 &&
     (workflow.match(/ALPHA_ALLOW_PAID_AI: '0'/g) || []).length === 2;
 } catch {
   // Missing or unreadable workflow must fail the release gate.
 }
-if (!dailySendManualOnly) {
-  console.error("::error:: Delivery job must remain dispatch-only, no-model, paid-AI-off, and without backfill input.");
+if (!dailySendEventsVerified) {
+  console.error("::error:: Delivery job must allow only dispatch or the approved daily slots, with no-model on, paid AI off, and no backfill input.");
   process.exit(1);
 }
 

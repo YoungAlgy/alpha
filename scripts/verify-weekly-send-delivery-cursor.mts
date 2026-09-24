@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 const route = readFileSync(
   new URL("../app/api/cron/weekly-send/route.ts", import.meta.url),
@@ -365,8 +366,8 @@ check(
     workflow.includes("Refusing to signal the workflow shell process group")
 );
 check(
-  "manual-first workflow has no backfill input",
-  workflow.includes("if: ${{ github.event_name == 'workflow_dispatch' }}") &&
+  "daily workflow allows only manual or scheduled runs with no backfill input",
+  workflow.includes("if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}") &&
     !workflow.includes("WEEK_OF_INPUT") &&
     !workflow.includes("inputs.weekOf") &&
     !workflow.includes('URL="${URL}?weekOf=')
@@ -374,9 +375,49 @@ check(
 check(
   "workflow treats mid-run ineligibility as settled coverage",
   workflow.includes(
-    "s.unsubscribedMidRunSkips+s.cancelledMidRunSkips+s.suppressedMidRunSkips"
+    "s.unsubscribedMidRunSkips+s.cancelledMidRunSkips+s.suppressedMidRunSkips+s.unenrolledMidRunSkips"
   )
 );
+
+// Run the exact embedded workflow parser locally with synthetic counters.
+// No shell, network, subscriber data or send path is used by this fixture.
+const parserMatch = workflow.replace(/\r\n/g, "\n").match(
+  /PAGE_STATE=\$\(echo "\$\{RESPONSE\}" \| node -e "\n([\s\S]*?)\n\s*"\)/
+);
+if (!parserMatch) throw new Error("Workflow parser not found");
+const parserSource = parserMatch[1];
+function parseWorkflowPage(overrides: Record<string, unknown> = {}): string {
+  const last = "00000000-0000-4000-8000-000000000001";
+  const page = {
+    subscribers: 3, sent: 2, backupSharedSent: 0, backupFreshSent: 0, backupStaleSent: 0,
+    skippedAlreadyDelivered: 0, unsubscribedMidRunSkips: 0, cancelledMidRunSkips: 0,
+    suppressedMidRunSkips: 0, unenrolledMidRunSkips: 1, checkoutRetentionErrors: 0,
+    deliveryPageCount: 3, deliveryBatchSize: 250, deliveryRetryRequiredTotal: 0,
+    deliveryPageComplete: true, deliveryRetryRequired: false, deliveryPageBlocked: false,
+    deliveryHasMore: false, deliveryWrapped: false, deliveryCursorAdvanceFailed: false,
+    deliveryCursorState: "advanced", deliveryCursor: null, deliveryCursorNext: last,
+    deliveryPageLastUserId: last, paidCallBudgetDate: "2026-09-24", paidCallCeilingHit: false,
+    paidCallReservationsGranted: 0, paidCallReservationsUsed: 0, paidCallReservationsUnused: 0,
+    paidCallReservationExhausted: false, paidCallReservationError: null, ...overrides,
+  };
+  let output = "";
+  const stdin = { on(event: string, callback: (chunk?: string) => void) {
+    if (event === "data") callback(JSON.stringify(page));
+    if (event === "end") callback();
+    return stdin;
+  } };
+  vm.runInNewContext(parserSource, {
+    process: { stdin, stdout: { write(value: string) { output += value; } } },
+  }, { timeout: 1000 });
+  return output;
+}
+check("actual workflow parser settles a mid-run enrollment pause", parseWorkflowPage().startsWith("OK|0|"));
+check("actual workflow parser accepts all three delivered", parseWorkflowPage({ sent: 3, unenrolledMidRunSkips: 0 }).startsWith("OK|0|"));
+check("actual workflow parser rejects an unexplained missed reader", parseWorkflowPage({ unenrolledMidRunSkips: 0 }) === "SHAPE_INVALID");
+for (const value of [undefined, null, -1, 0.5, "1"]) {
+  check(`actual workflow parser rejects invalid enrollment counter ${String(value)}`,
+    parseWorkflowPage({ unenrolledMidRunSkips: value }) === "SHAPE_INVALID");
+}
 check(
   "stale fixed subscriber-capacity estimate is gone",
   !route.includes("2,200-3,300") &&
