@@ -136,5 +136,8 @@ export async function resolveTopicSignalViaGemini(
   const context = `Research summary for ${topicId} (as of ${weekOf}), gathered live via Gemini grounded search (Brave was rate-limited this run):\n\n${cleanedAnswer}\n\n=== SOURCES (real, citable — verified direct links) ===\n${sourceLines}\n\nAll URLs listed above are real and citable. Do NOT invent URLs.`;
   const citableUrls = new Set(survivors.map((s) => s.norm));
 
-  return { topicId, weekOf, context, citableUrls };
+  // The synthesized answer spans all citations. It cannot be attributed to a
+  // single source, so a no-model fallback may reuse titles/links only.
+  const sources = survivors.map((s) => ({ title: s.title, url: s.url, excerpt: "" }));
+  return { topicId, weekOf, context, citableUrls, sources };
 }

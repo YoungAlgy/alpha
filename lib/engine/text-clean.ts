@@ -8,6 +8,7 @@
 // from it) so gemini-search.ts can reuse it too: source-resolver.ts itself
 // imports gemini-search.ts, so the reverse import would be circular.
 import { stripPromptFenceChars } from "@/lib/prompt-fence";
+import { decodeTextEntities } from "@/lib/text-entities";
 
 function stripTags(s: string): string {
   return s.replace(/<[^>]+>/g, "").trim();
@@ -33,8 +34,10 @@ function stripTags(s: string): string {
 // future reader looking for content-stripping behavior that was never
 // actually here.
 export function cleanField(s: string): string {
-  return stripPromptFenceChars(stripTags(s))
+  // Decode before stripping, so encoded tags/URL schemes get the same guards
+  // and entity semicolons cannot be mangled by later voice punctuation cleanup.
+  return stripPromptFenceChars(stripTags(decodeTextEntities(s)))
     .replace(/https?:\/\/[^\s)\]]+/gi, "")
-    .replace(/\s{2,}/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }

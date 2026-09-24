@@ -3,7 +3,7 @@ import { sanitizeVoice } from "./voice-guard";
 import { cleanField } from "./text-clean";
 import { normalizeUrl } from "./url-guard";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
-import type { TopicBlurb, TopicSignal, BlurbItem } from "./types";
+import type { TopicBlurb, TopicSignal, BlurbItem, SignalSource } from "./types";
 
 /**
  * A no-model last resort for a topic that already has a real live signal.
@@ -15,12 +15,6 @@ import type { TopicBlurb, TopicSignal, BlurbItem } from "./types";
  * zero-cost mode can preserve a grounded issue instead of dropping the topic
  * after search has already succeeded.
  */
-
-interface SourceExcerpt {
-  title: string;
-  url: string;
-  excerpt: string;
-}
 
 const MAX_SOURCES = 3;
 const MAX_TITLE_CHARS = 160;
@@ -41,16 +35,20 @@ function sourceIsAllowed(signal: TopicSignal, url: string): boolean {
 }
 
 function safeExcerpt(text: string): string {
-  const cleaned = sanitizeVoice(cleanField(text.replace(/\s+/g, " ")));
+  const cleaned = sanitizeVoice(cleanField(text));
   if (!cleaned) return "";
-  const truncated = codePointSafeTruncate(cleaned, MAX_EXCERPT_CHARS - 1);
-  return truncated.truncated ? `${truncated.text.trimEnd()}…` : truncated.text;
+  const truncated = codePointSafeTruncate(cleaned, MAX_EXCERPT_CHARS - 3);
+  return truncated.truncated ? `${truncated.text.trimEnd()}...` : truncated.text;
 }
 
-/** Extract the deep-read source blocks emitted by source-resolver.ts. */
-function parseDeepSources(signal: TopicSignal): SourceExcerpt[] {
-  const sources: SourceExcerpt[] = [];
-  const blocks = signal.context.split(/\n+----------\n+/);
+/** Compatibility for legacy context-only signals. Live resolvers use sources. */
+function parseDeepSources(signal: TopicSignal): SignalSource[] {
+  const sources: SignalSource[] = [];
+  // The resolver does not put a dashed separator before its breadth section or
+  // footer. Stop at those boundaries before reading the final source body.
+  const deepContext = signal.context.replace(/\r\n/g, "\n")
+    .split(/^=== (?:MORE THIS WEEK|THIS WEEK) \(headlines \+ links\) ===|^All URLs (?:labeled SOURCE|listed above)/m)[0];
+  const blocks = deepContext.split(/\n+----------\n+/);
   for (const block of blocks) {
     const lines = block.split("\n");
     const sourceLine = lines.findIndex((line) => /^\s*SOURCE:\s*https?:\/\//i.test(line));
@@ -59,15 +57,16 @@ function parseDeepSources(signal: TopicSignal): SourceExcerpt[] {
     if (!sourceIsAllowed(signal, url)) continue;
     const titleLine = lines.find((line, index) => index < sourceLine && firstLineTitle(line) !== null);
     const title = (titleLine && firstLineTitle(titleLine)) || new URL(url).hostname;
-    const excerpt = safeExcerpt(lines.slice(sourceLine + 1).join(" "));
+    const raw = lines.slice(sourceLine + 1).join("\n").trim();
+    const excerpt = raw.replace(/^\(full text unavailable — snippet: ([\s\S]*)\)$/, "$1");
     sources.push({ title, url, excerpt });
   }
   return sources;
 }
 
 /** Extract the headline-plus-snippet blocks emitted for breadth sources. */
-function parseHeadlineSources(signal: TopicSignal): SourceExcerpt[] {
-  const sources: SourceExcerpt[] = [];
+function parseHeadlineSources(signal: TopicSignal): SignalSource[] {
+  const sources: SignalSource[] = [];
   // Brave/You.com breadth blocks include a host in parentheses. Gemini's
   // grounded-search fallback emits the same bullet shape without that host.
   // Keep the parenthesized part optional so both resolver-owned formats are
@@ -81,21 +80,24 @@ function parseHeadlineSources(signal: TopicSignal): SourceExcerpt[] {
     const title = cleanField(match[1]);
     const url = match[2].trim();
     if (!title || !sourceIsAllowed(signal, url)) continue;
-    sources.push({ title, url, excerpt: safeExcerpt(match[3] ?? "") });
+    sources.push({ title, url, excerpt: match[3] ?? "" });
   }
   return sources;
 }
 
-function uniqueSources(signal: TopicSignal): SourceExcerpt[] {
+function uniqueSources(signal: TopicSignal): SignalSource[] {
   const seen = new Set<string>();
-  const result: SourceExcerpt[] = [];
-  for (const source of [...parseDeepSources(signal), ...parseHeadlineSources(signal)]) {
+  const result: SignalSource[] = [];
+  const candidates = signal.sources ?? [...parseDeepSources(signal), ...parseHeadlineSources(signal)];
+  for (const source of candidates) {
     const normalized = normalizeUrl(source.url);
-    if (!normalized || seen.has(normalized)) continue;
+    if (!normalized || !sourceIsAllowed(signal, source.url) || seen.has(normalized)) continue;
+    const title = sanitizeVoice(cleanField(source.title)) || new URL(source.url).hostname;
     seen.add(normalized);
     result.push({
       ...source,
-      title: codePointSafeTruncate(source.title, MAX_TITLE_CHARS).text.trim(),
+      title: codePointSafeTruncate(title, MAX_TITLE_CHARS).text.trim(),
+      excerpt: safeExcerpt(source.excerpt),
       // Keep the original absolute URL for the reader's clickable reference.
       // The normalized value is only an internal identity for deduplication
       // and the resolver's citable allow-set.
@@ -106,7 +108,7 @@ function uniqueSources(signal: TopicSignal): SourceExcerpt[] {
   return result;
 }
 
-function itemForSource(topic: string, source: SourceExcerpt): BlurbItem {
+function itemForSource(topic: string, source: SignalSource): BlurbItem {
   const body = source.excerpt
     ? source.excerpt
     : `Read the piece for the details on ${topic.toLowerCase()}.`;
@@ -115,7 +117,7 @@ function itemForSource(topic: string, source: SourceExcerpt): BlurbItem {
     headline: source.title,
     body,
     primaryRef: {
-      label: `Read ${source.title}`,
+      label: source.title,
       url: source.url,
     },
     supplementaryRefs: [],

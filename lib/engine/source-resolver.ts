@@ -12,7 +12,7 @@ import { cleanField } from "./text-clean";
 import { publicFeedFallbackEnabled, publicFeedSearch } from "./public-feed-search";
 import { noModelModeEnabled } from "./provider-policy";
 import type { TopicId, FixedTopicId } from "@/lib/types";
-import type { TopicSignal } from "./types";
+import type { TopicSignal, SignalSource } from "./types";
 
 // How many top sources we fetch in FULL per topic (the deep read), how many
 // more we include as headline+link breadth, and how many raw candidates we pull
@@ -295,7 +295,7 @@ async function fetchLiveSignal(
   //    host's cap slot and starve out a legitimate new one from the same host.
   //    Compare on the SAME normalizeUrl identity the citable allow-set uses so
   //    a match can't be dodged by a fragment.
-  const ranked = rankAndDedup(perQuery.flat(), 2, excludeUrls);
+  const ranked = rankAndDedup(perQuery.flat(), 2, excludeUrls, topicId);
   if (ranked.length === 0) {
     if (failedQueries > 0) {
       console.warn(
@@ -323,6 +323,18 @@ async function fetchLiveSignal(
     ? await Promise.all(deep.map((s) => fetchArticleText(s.url).catch(() => null)))
     : deep.map(() => null);
   const readCount = contents.filter(Boolean).length;
+  const sources: SignalSource[] = [
+    ...deep.map((s, i) => ({
+      title: cleanField(s.title),
+      url: s.url,
+      excerpt: cleanField(contents[i] || s.description),
+    })),
+    ...more.map((s) => ({
+      title: cleanField(s.title),
+      url: s.url,
+      excerpt: cleanField(s.description),
+    })),
+  ];
 
   // 4. Build the signal: full-text trusted sources + a breadth list of headlines.
   //    CITABLE URLs are built EXPLICITLY from the resolver's chosen SOURCE urls
@@ -382,6 +394,6 @@ async function fetchLiveSignal(
 
   return {
     state: "signal",
-    signal: { topicId: topicId as TopicId, weekOf, context, citableUrls },
+    signal: { topicId: topicId as TopicId, weekOf, context, citableUrls, sources },
   };
 }

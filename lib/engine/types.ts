@@ -25,10 +25,20 @@ export interface BlurbItem {
   supplementaryRefs?: BlurbRef[];
 }
 
+export interface SignalSource {
+  title: string;
+  url: string;
+  excerpt: string;
+}
+
 export interface TopicSignal {
   topicId: TopicId;
   weekOf: string;
   context: string;
+  // Resolver-owned source boundaries for the no-model formatter. Never parse
+  // model instructions to obtain a reader's excerpt when these are present.
+  // The citable allow-set still applies to every source URL.
+  sources?: SignalSource[];
   // The EXACT set of URLs the model may cite (normalized, as built by the
   // url-guard's extractSignalUrls over the curated SOURCE urls only). The live
   // path sets this so the citable allow-set comes from the resolver's chosen

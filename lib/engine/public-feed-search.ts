@@ -1,5 +1,6 @@
 import type { BraveResult, BraveSearchOptions } from "@/lib/brave";
 import { cleanField } from "./text-clean";
+import { decodeTextEntities } from "@/lib/text-entities";
 
 /**
  * Optional no-key search fallback. It uses the public Google News RSS search
@@ -16,25 +17,11 @@ export function publicFeedFallbackEnabled(): boolean {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
-function decodeEntities(value: string): string {
-  return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&#(\d+);/g, (_, digits: string) => {
-      const codePoint = Number(digits);
-      return Number.isSafeInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff
-        ? String.fromCodePoint(codePoint)
-        : "";
-    });
-}
-
 function tagValue(block: string, tag: string): string {
   const match = block.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return match?.[1] ? decodeEntities(match[1]).trim() : "";
+  return match?.[1]
+    ? decodeTextEntities(match[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1")).trim()
+    : "";
 }
 
 /** Pure XML parsing helper so the fallback can be checked without a network. */

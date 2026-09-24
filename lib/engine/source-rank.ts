@@ -1,6 +1,7 @@
 import type { BraveResult } from "@/lib/brave";
 import { hostTier, tierRank, type SourceTier } from "./source-authority";
 import { normalizeUrl, MIRROR_SUBDOMAIN_RE } from "./url-guard";
+import { sourceFitsTopic } from "./source-relevance";
 
 // Dedup + authority-rank raw Brave results into a shortlist. Pure (no I/O) so
 // it's unit-testable. The expensive part (reading the article) happens after —
@@ -77,10 +78,13 @@ export function rankAndDedup(
   // legitimate new one from the same host — the whole point of the cap is to
   // keep the shortlist varied, so it must only count candidates that can
   // actually survive to the letter.
-  excludeUrls?: Set<string>
+  excludeUrls?: Set<string>,
+  topicId?: string
 ): RankedSource[] {
   const enriched = results
-    .map((r, i) => {
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !topicId || sourceFitsTopic(topicId, r))
+    .map(({ r, i }) => {
       const host = hostOf(r.url);
       return { r, i, host, key: urlKey(r.url), tier: hostTier(host, r.url) };
     })
