@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import vm from "node:vm";
-import { getSignupAccountState, incompleteSignupPath } from "../lib/signup-progress.ts";
+import { getSignupAccountState, incompleteSignupPath, signInDestination } from "../lib/signup-progress.ts";
 import { isProfileComplete } from "../lib/checkout-guards.ts";
 import { TOPICS, isValidTopicId } from "../lib/topics.ts";
 import { authOwnsAccessRequestEmail } from "../lib/access-request-ownership.ts";
@@ -39,6 +39,20 @@ for (const [label, row, expected] of [
   ["invalid cancellation date fails closed", { subscribed_at: date, cancelled_at: "broken" }, "ended"],
 ] as const) {
   equal(getSignupAccountState(row), expected, label);
+}
+
+// Signing in with a new or unfinished account goes into setup, not an empty inbox.
+for (const [label, state, draft, expected] of [
+  ["brand-new email, nothing saved", "incomplete", {}, "/welcome"],
+  ["new email with a blank-name draft", "incomplete", { firstName: "  ", topics: [] }, "/welcome"],
+  ["unfinished account with saved name resumes", "incomplete", { firstName: "Reader" }, "/checkout"],
+  ["unfinished account with saved topics resumes", "incomplete", { topics: ["mental-health"] }, "/checkout"],
+  ["waiting for approval", "pending", {}, "/inbox"],
+  ["approved reader", "reader", { firstName: "Reader" }, "/inbox"],
+  ["ended access", "ended", {}, "/inbox"],
+  ["no session", "signed-out", {}, "/inbox"],
+] as const) {
+  equal(signInDestination(state, draft), expected, `sign-in destination: ${label}`);
 }
 
 for (const [label, profile, path] of [

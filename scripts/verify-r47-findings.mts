@@ -69,7 +69,7 @@ console.log("(2) app/signin/page.tsx: sendCode()/verifyCode() now have a cancell
   check("(2b) sendCode checks it right after signInWithOtp resolves, before the setStep/setCooldown block", /sb\.auth\.signInWithOtp\([\s\S]{0,600}?if \(cancelledRef\.current\) return;\s*\n\s*if \(error\) throw error;/.test(src));
   check(
     "(2c) verifyCode checks it right after verifyOtp resolves, before router.push",
-    /sb\.auth\.verifyOtp\([\s\S]{0,600}?if \(cancelledRef\.current\) return;\s*\n\s*if \(error\) throw error;\s*\n\s*audioConfirm\(\);\s*\n\s*router\.push\(\(takeSignInReturnPath\(\) \|\| "\/inbox"\) as never\);/.test(src)
+    /sb\.auth\.verifyOtp\([\s\S]{0,600}?if \(cancelledRef\.current\) return;\s*\n\s*if \(error\) throw error;\s*\n\s*audioConfirm\(\);\s*\n\s*const destination = await destinationAfterSignIn\(\);\s*\n\s*if \(cancelledRef\.current\) return;\s*\n\s*router\.push\(destination as never\);/.test(src)
   );
 }
 

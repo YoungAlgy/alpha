@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, FormEvent, useRef } from "react";
+import { useState, useEffect, FormEvent, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Footer } from "@/components/Footer";
 import { Wordmark } from "@/components/Wordmark";
@@ -9,6 +9,9 @@ import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { confirm as audioConfirm } from "@/lib/audio";
 import { isValidEmail } from "@/lib/validate-email";
 import { isAuthRateLimitError, isInvalidOrExpiredOtpError } from "@/lib/gotrue-errors";
+import { readOnboardingAccount } from "@/lib/onboarding-account";
+import { useOnboarding } from "@/lib/onboarding-state";
+import { signInDestination } from "@/lib/signup-progress";
 
 const REMEMBERED_EMAIL_KEY = "alpha-signin-email";
 const LEGACY_CHECKOUT_RETURN_KEY = "alpha-legacy-checkout-return";
@@ -66,6 +69,31 @@ export default function SigninPage() {
     return () => { cancelledRef.current = true; };
   }, []);
 
+  // The saved signup draft, read only to decide where a new account resumes.
+  // Refs so the async sign-in handlers below see the hydrated draft.
+  const { state: draft, emailDraft, update: updateDraft } = useOnboarding();
+  const draftRef = useRef({ draft, emailDraft, updateDraft });
+  useEffect(() => {
+    draftRef.current = { draft, emailDraft, updateDraft };
+  }, [draft, emailDraft, updateDraft]);
+
+  // Where a verified sign-in goes next. See signInDestination.
+  const destinationAfterSignIn = useCallback(async (): Promise<string> => {
+    const returnPath = takeSignInReturnPath();
+    if (returnPath) return returnPath;
+    try {
+      const account = await readOnboardingAccount();
+      const { draft: saved, emailDraft: savedEmail, updateDraft: save } = draftRef.current;
+      const destination = signInDestination(account.state, saved);
+      // They just proved this address, so the email step comes prefilled.
+      // Never overwrite an address already saved in this browser.
+      if (destination !== "/inbox" && account.email && !savedEmail) save({ email: account.email }, { sync: false });
+      return destination;
+    } catch {
+      return "/inbox";
+    }
+  }, []);
+
   // Tick the resend cooldown down to zero.
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -115,13 +143,15 @@ export default function SigninPage() {
           if (typeof window !== "undefined" && window.location.hash) {
             window.history.replaceState(null, "", window.location.pathname);
           }
-          router.replace((takeSignInReturnPath() || "/inbox") as never);
+          const destination = await destinationAfterSignIn();
+          if (cancelledRef.current) return;
+          router.replace(destination as never);
         }
       } catch {
         // ignore — stay on signin form
       }
     })();
-  }, [router]);
+  }, [router, destinationAfterSignIn]);
 
   // Auto-focus the code input when we land on step 2
   //
@@ -235,7 +265,9 @@ export default function SigninPage() {
       if (cancelledRef.current) return;
       if (error) throw error;
       audioConfirm();
-      router.push((takeSignInReturnPath() || "/inbox") as never);
+      const destination = await destinationAfterSignIn();
+      if (cancelledRef.current) return;
+      router.push(destination as never);
     } catch (e) {
       // alpha-drift-r35-02 (2026-08-14): never show GoTrue's raw vendor
       // wording ("Token has expired or is invalid.") -- see

@@ -21,6 +21,18 @@ export function getSignupAccountState(row: SignupAccountRow | null): SignupAccou
   return "incomplete";
 }
 
+// Where a verified sign-in lands when nothing asked to return somewhere.
+// An unfinished account (a brand-new email, or one that stopped partway)
+// goes into setup, not to an inbox with nothing in it yet. Answers already
+// saved in this browser resume at the first missing step via /checkout.
+export function signInDestination(
+  state: SignupAccountState | "signed-out",
+  draft: { firstName?: string; topics?: unknown[] },
+): "/inbox" | "/checkout" | "/welcome" {
+  if (state !== "incomplete") return "/inbox";
+  return draft.firstName?.trim() || (Array.isArray(draft.topics) && draft.topics.length > 0) ? "/checkout" : "/welcome";
+}
+
 // Repair only the missing required step. The draft's other answers stay intact.
 export function incompleteSignupPath(profile: CheckoutProfileInput): "/name" | "/topics" | "/email" | null {
   if (!profile.firstName?.trim()) return "/name";

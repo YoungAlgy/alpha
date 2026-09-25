@@ -592,6 +592,14 @@ export default function InboxPage() {
             label="Tell a friend"
             className="underline underline-offset-4 hover:opacity-80 py-2 -my-2"
           />
+          <span aria-hidden style={{ opacity: 0.4 }}>·</span>
+          <button
+            type="button"
+            onClick={signOutAndClearDevice}
+            className="underline underline-offset-4 hover:opacity-80 py-2 -my-2"
+          >
+            Sign out
+          </button>
         </div>
       </div>
       <LetterTOC issue={issue} />

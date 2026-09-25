@@ -165,6 +165,8 @@ export default function SettingsPage() {
   // flight -- the eventual reset()/localStorage-clear/redirect to /welcome
   // still fires afterward regardless of where they'd since navigated.
   const [deleting, setDeleting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabaseConfigured()) {
@@ -1005,6 +1007,48 @@ export default function SettingsPage() {
             >
               Download my data
             </button>
+            <br />
+            <button
+              type="button"
+              disabled={signingOut}
+              onClick={async () => {
+                setSigningOut(true);
+                setSignOutError(null);
+                try {
+                  if (supabaseConfigured()) {
+                    const { error } = await supabaseClient().auth.signOut();
+                    if (error) throw error;
+                  }
+                } catch (e) {
+                  // Never leave a shared computer signed in without saying so.
+                  console.warn("[settings] signOut failed:", e instanceof Error ? e.message : e);
+                  setSignOutError("Couldn't sign you out. Please try again before leaving this device.");
+                  setSigningOut(false);
+                  return;
+                }
+                // Same device wipe as the inbox's sign-out: saved answers and
+                // the cached first letter go too, so the next person on this
+                // browser starts clean.
+                if (!reset()) {
+                  setSignOutError("This browser wouldn't clear your saved answers. Try again, or clear Alpha's site data in your browser before sharing this device.");
+                  setSigningOut(false);
+                  return;
+                }
+                try { localStorage.removeItem("alpha-first-issue"); } catch { /* storage blocked */ }
+                // Drop cached private React state after clearing the session.
+                // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+                window.location.assign("/welcome");
+              }}
+              className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
+              style={{ color: "var(--accent-ink)", opacity: signingOut ? 0.5 : 1 }}
+            >
+              {signingOut ? "Signing out..." : "Sign out"}
+            </button>
+            {signOutError && (
+              <p role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>
+                {signOutError}
+              </p>
+            )}
             <br />
             <button
               type="button"
