@@ -6,6 +6,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { isFreeGrantEligible } from "@/lib/admin-users-guards";
 import { isUserNotFoundError } from "@/lib/gotrue-errors";
 import { isValidCalendarDate } from "@/lib/demographics";
+import { currentPeriodIso } from "@/lib/cadence";
 import { hasUsableReaderProfile } from "@/lib/reader-profile-state";
 import {
   isAccountDeletionBlockedBySuppressionRecovery,
@@ -97,10 +98,13 @@ async function gatherStats(): Promise<Stats> {
     if (r.unsubscribed_at) stats.unsubscribed++;
   }
 
-  // Latest issue snapshot — surfaces whether the weekly cron is running
+  // Latest issue snapshot — surfaces whether the weekly cron is running.
+  // Same period ceiling the reader pages use, so a far-future test row left
+  // in the table cannot pose as the newest send.
   const { data: latestIssues, error: latestIssuesError } = await sb
     .from("issues")
     .select("week_of")
+    .lte("week_of", currentPeriodIso())
     .order("week_of", { ascending: false })
     .limit(1);
   if (latestIssuesError) {

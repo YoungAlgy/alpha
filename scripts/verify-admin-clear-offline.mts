@@ -147,6 +147,7 @@ async function run(scenario: Scenario) {
       }
       if (name === "@/lib/suppression-recovery-policy") return policyExports;
       if (name === "@/lib/reader-profile-state") return { hasUsableReaderProfile: () => true };
+      if (name === "@/lib/cadence") return { currentPeriodIso: () => "2026-09-24" };
       throw new Error(`unexpected route import: ${name}`);
     },
   });
