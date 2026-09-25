@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { StepShell } from "@/components/onboarding/StepShell";
 import { useOnboarding } from "@/lib/onboarding-state";
@@ -12,6 +12,10 @@ import { isInviteOnly } from "@/lib/access-mode";
 import { readOnboardingAccount } from "@/lib/onboarding-account";
 import { incompleteSignupPath } from "@/lib/signup-progress";
 import { authOwnsAccessRequestEmail } from "@/lib/access-request-ownership";
+import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
+import { isAuthRateLimitError, isInvalidOrExpiredOtpError } from "@/lib/gotrue-errors";
+
+const RESEND_COOLDOWN_S = 30;
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -38,6 +42,20 @@ export default function CheckoutPage() {
   const [accountCheckError, setAccountCheckError] = useState<string | null>(null);
   const [accountCheckAttempt, setAccountCheckAttempt] = useState(0);
   const requestInFlight = useRef(false);
+  // Email confirmation happens right here, not on the separate sign-in page:
+  // Request access sends the code, and entering it sends the request.
+  const [code, setCode] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeSending, setCodeSending] = useState(false);
+  const [codeErr, setCodeErr] = useState<string | null>(null);
+  const [codeResent, setCodeResent] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const codeVerifiedRef = useRef(false);
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   // Read the stored request before checking the local draft. A pending reader
   // may return after clearing storage or from another device.
@@ -242,11 +260,16 @@ export default function CheckoutPage() {
         .catch(() => ({} as { error?: string; message?: string; repaired?: boolean }));
       if (cancelledRef.current) return;
       if (res.status === 401 && data.error === "identity_verification_required") {
-        rememberCheckoutSignIn();
         setSubscribing(false);
-        // The sign-in prompt renders below the approved-profile branch.
+        // The code step renders below the approved-profile branch.
         setApprovedNeedsProfile(false);
-        setSignInRequired(true);
+        if (codeVerifiedRef.current) {
+          // A code was just confirmed but the server saw no session. Start
+          // over on the next click instead of looping on a used code.
+          codeVerifiedRef.current = false;
+          throw new Error("Your email is confirmed, but this browser didn't keep the sign-in. Tap Request access again.");
+        }
+        await sendAccessCode();
         return;
       }
       if (!res.ok) {
@@ -270,6 +293,97 @@ export default function CheckoutPage() {
     } finally {
       requestInFlight.current = false;
     }
+  }
+
+  // Email the code for the address in this signup. Creates the sign-in
+  // account the first time, same as the sign-in page.
+  async function sendAccessCode(isResend = false) {
+    const addr = state.email?.trim();
+    if (!addr) {
+      router.replace("/email" as never);
+      return;
+    }
+    if (codeBusy || (isResend && resendCooldown > 0)) return;
+    setCodeBusy(true);
+    setCodeSending(true);
+    setCodeErr(null);
+    setCodeResent(false);
+    setSignInRequired(true);
+    try {
+      if (!supabaseConfigured()) throw new Error("Sign-in is not configured.");
+      const { error } = await supabaseClient().auth.signInWithOtp({
+        email: addr,
+        options: { shouldCreateUser: true },
+      });
+      if (cancelledRef.current) return;
+      if (error) throw error;
+      // Later visits to the sign-in page start with this address.
+      try { window.localStorage.setItem("alpha-signin-email", addr); } catch { /* optional */ }
+      setResendCooldown(RESEND_COOLDOWN_S);
+      if (isResend) setCodeResent(true);
+    } catch (e) {
+      console.warn("[checkout] send code failed:", e instanceof Error ? e.message : e);
+      if (cancelledRef.current) return;
+      const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
+      setCodeErr(
+        isAuthRateLimitError(shape)
+          ? "Too many codes too fast. Give it a minute, then try Resend."
+          : "Couldn't send the code. Try again?"
+      );
+    } finally {
+      if (!cancelledRef.current) {
+        setCodeBusy(false);
+        setCodeSending(false);
+      }
+    }
+  }
+
+  // Confirm the code, then send the access request without another click.
+  async function verifyAccessCode(e?: FormEvent) {
+    e?.preventDefault();
+    const token = code.replace(/\D/g, "");
+    if (token.length < 6) {
+      setCodeErr("Code is 6 digits.");
+      return;
+    }
+    const addr = state.email?.trim();
+    if (codeBusy || !addr) return;
+    setCodeBusy(true);
+    setCodeErr(null);
+    setCodeResent(false);
+    try {
+      const { error } = await supabaseClient().auth.verifyOtp({ email: addr, token, type: "email" });
+      if (cancelledRef.current) return;
+      if (error) throw error;
+    } catch (err) {
+      console.warn("[checkout] verify code failed:", err instanceof Error ? err.message : err);
+      if (cancelledRef.current) return;
+      const shape = err && typeof err === "object" ? (err as { status?: unknown; code?: unknown; message?: unknown }) : {};
+      setCodeErr(
+        isInvalidOrExpiredOtpError(shape)
+          ? "That code didn't work. It may have expired. Double-check it, or hit Resend for a fresh one."
+          : "Couldn't confirm the code. Try again."
+      );
+      setCodeBusy(false);
+      return;
+    }
+    codeVerifiedRef.current = true;
+    setCode("");
+    // An existing account may already be waiting or approved. If the
+    // account read fails, the request route still decides correctly.
+    const account = await readOnboardingAccount().catch(() => null);
+    if (cancelledRef.current) return;
+    setCodeBusy(false);
+    if (account?.state === "reader" || account?.state === "ended") {
+      router.replace("/inbox" as never);
+      return;
+    }
+    setSignInRequired(false);
+    if (account?.state === "pending") {
+      setAccessRequested(true);
+      return;
+    }
+    await requestAccess();
   }
 
   const firstName = state.firstName || "you";
@@ -435,23 +549,71 @@ export default function CheckoutPage() {
                 </button>
               </div>
             ) : signInRequired ? (
-              <div className="space-y-3" role="status">
+              <form onSubmit={verifyAccessCode} className="space-y-4">
                 <p
                   ref={accessSignInHeadingRef}
                   tabIndex={-1}
+                  role="status"
                   className="alpha-ui text-sm text-center"
                   style={{ color: "var(--ink)", outline: "none" }}
                 >
-                  Confirm this email before requesting access. This keeps the request tied to the right account.
+                  {codeSending
+                    ? `Sending a code to ${state.email}...`
+                    : `We emailed a 6-digit code to ${state.email}. Enter it to send your request.`}
                 </p>
+                <input
+                  type="text"
+                  aria-label="6-digit code from your email"
+                  required
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  pattern="\d{6}"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  disabled={codeBusy}
+                  className="w-full text-center alpha-display text-3xl tracking-[0.4em] bg-transparent border-b py-3 focus:outline-none placeholder:opacity-30 font-bold"
+                  style={{ color: "var(--ink)", borderColor: "var(--rule)", lineHeight: 1.35 }}
+                />
                 <button
-                  type="button"
-                  onClick={() => router.push("/signin" as never)}
+                  type="submit"
+                  disabled={codeBusy || subscribing || code.length < 6}
                   className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
+                  style={{ opacity: codeBusy || subscribing || code.length < 6 ? 0.6 : 1 }}
                 >
-                  Email me a code →
+                  {subscribing ? "Sending request..." : codeBusy && code ? "Checking code..." : "Confirm and request access →"}
                 </button>
-              </div>
+                <div className="alpha-ui text-xs flex items-center justify-center gap-4" style={{ color: "var(--ink-soft)" }}>
+                  <button
+                    type="button"
+                    onClick={() => sendAccessCode(true)}
+                    disabled={codeBusy || resendCooldown > 0}
+                    className="underline underline-offset-4 py-2 -my-2"
+                    style={{ opacity: codeBusy || resendCooldown > 0 ? 0.5 : 1 }}
+                  >
+                    {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
+                  </button>
+                  <span aria-hidden style={{ opacity: 0.4 }}>·</span>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/email" as never)}
+                    className="underline underline-offset-4 py-2 -my-2"
+                  >
+                    Use a different email
+                  </button>
+                </div>
+                {codeResent && !codeErr && (
+                  <p role="status" aria-live="polite" className="alpha-ui text-xs text-center" style={{ color: "var(--ink-soft)" }}>
+                    New code sent. Check your email.
+                  </p>
+                )}
+                {codeErr && (
+                  <p role="alert" className="alpha-ui text-xs text-center" style={{ color: "var(--ink)" }}>
+                    {codeErr}
+                  </p>
+                )}
+              </form>
             ) : (
               <>
                 <div className="flex items-baseline gap-3">
@@ -467,7 +629,7 @@ export default function CheckoutPage() {
                   className="alpha-button alpha-button-accent w-full justify-center text-base py-4"
                   style={{ opacity: subscribing ? 0.6 : 1 }}
                 >
-                  {subscribing ? "Sending request…" : "Request access →"}
+                  {subscribing ? "Sending request..." : "Request access →"}
                 </button>
               </>
             )

@@ -188,7 +188,7 @@ for (const [label, overrides] of [
 // Exercise the real page functions with deterministic React hooks and JSX objects.
 // Effects and Supabase results settle between renders, like a browser reload.
 type Element = { type: unknown; props: Record<string, any> };
-function pageRuntime(file: string, imports: Record<string, unknown>, allowEmptyStorage = false, navigationPaths?: string[]) {
+function pageRuntime(file: string, imports: Record<string, unknown>, allowEmptyStorage = false, navigationPaths?: string[], globals: Record<string, unknown> = {}) {
   const pageSource = readFileSync(resolve(root, file), "utf8");
   const pageCode = ts.transpileModule(pageSource, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -254,6 +254,7 @@ function pageRuntime(file: string, imports: Record<string, unknown>, allowEmptyS
     setTimeout,
     console,
     process: { env: { NODE_ENV: "test" } },
+    ...globals,
   }, { filename: file });
   function render() {
     index = 0;
@@ -292,7 +293,7 @@ function findElement(value: unknown, predicate: (element: Element) => boolean): 
 const dummy = () => null;
 function checkoutRuntime(accountRead: () => Promise<string>, profile: Record<string, unknown>, savedProfile: Record<string, unknown> = {
   first_name: "Reader", topics, access_granted_at: date,
-}, emailDraft = profile.email) {
+}, emailDraft = profile.email, overrides: { imports?: Record<string, unknown>; globals?: Record<string, unknown> } = {}) {
   const routes: string[] = [];
   const router = { replace: (path: string) => routes.push(path), push: (path: string) => routes.push(path) };
   // Mirrors lib/onboarding-account.ts: an owner grant without a saved profile
@@ -314,7 +315,10 @@ function checkoutRuntime(accountRead: () => Promise<string>, profile: Record<str
     "@/lib/onboarding-account": { readOnboardingAccount },
     "@/lib/signup-progress": { incompleteSignupPath },
     "@/lib/access-request-ownership": { authOwnsAccessRequestEmail },
-  });
+    "@/lib/supabase/client": { supabaseConfigured: () => true, supabaseClient: () => { throw Error("unexpected sign-in call"); } },
+    "@/lib/gotrue-errors": { isAuthRateLimitError: () => false, isInvalidOrExpiredOtpError: () => false },
+    ...overrides.imports,
+  }, false, undefined, overrides.globals);
   return { ...app, routes };
 }
 
@@ -374,6 +378,64 @@ checkoutTree = await failedCheckout.settle();
 assert.match(treeText(checkoutTree), /Your request is saved/);
 checks++;
 equal(accountAttempts, 2, "retry reruns saved account read");
+
+// Request access confirms the email right on this page: the code is sent at
+// once, entering it sends the request, and there's no detour to /signin.
+{
+  const authCalls: string[] = [];
+  let signedIn = false;
+  let requests = 0;
+  const auth = {
+    async signInWithOtp({ email }: { email: string }) { authCalls.push(`send:${email}`); return { error: null }; },
+    async verifyOtp({ email, token }: { email: string; token: string }) {
+      authCalls.push(`verify:${email}:${token}`);
+      signedIn = token === "123456";
+      return { error: signedIn ? null : { status: 403, code: "otp_expired", message: "expired" } };
+    },
+  };
+  const fetchStub = async () => {
+    requests++;
+    return signedIn
+      ? { status: 200, ok: true, json: async () => ({ ok: true }) }
+      : { status: 401, ok: false, json: async () => ({ error: "identity_verification_required" }) };
+  };
+  const run = checkoutRuntime(async () => "incomplete", complete, undefined, complete.email, {
+    imports: {
+      "@/lib/supabase/client": { supabaseConfigured: () => true, supabaseClient: () => ({ auth }) },
+      "@/lib/gotrue-errors": {
+        isAuthRateLimitError: () => false,
+        isInvalidOrExpiredOtpError: (e: { code?: string }) => e?.code === "otp_expired",
+      },
+    },
+    globals: { fetch: fetchStub },
+  });
+  let tree = await run.settle();
+  const request = findElement(tree, (el) => el.type === "button" && treeText(el).includes("Request access"));
+  assert.ok(request, "request button renders");
+  await request.props.onClick();
+  tree = await run.settle();
+  equal(authCalls[0], `send:${complete.email}`, "Request access emails the code right away");
+  assert.match(treeText(tree), new RegExp(`We emailed a 6-digit code to ${complete.email.replace(".", "\\.")}`));
+  checks++;
+  equal(run.routes.includes("/signin"), false, "no detour to the sign-in page");
+  const typeCode = async (value: string) => {
+    const input = findElement(tree, (el) => el.type === "input" && el.props.autoComplete === "one-time-code");
+    assert.ok(input, "code box renders on the request page");
+    input.props.onChange({ target: { value } });
+    tree = await run.settle();
+    await findElement(tree, (el) => el.type === "form")!.props.onSubmit({ preventDefault() {} });
+    tree = await run.settle();
+  };
+  await typeCode("111111");
+  assert.match(treeText(tree), /That code didn't work/);
+  checks++;
+  equal(requests, 1, "a wrong code does not send the request");
+  await typeCode("123456");
+  assert.match(treeText(tree), /Your request is saved/);
+  checks++;
+  equal(requests, 2, "the right code sends the request without another click");
+  equal(authCalls.filter((c) => c.startsWith("send:")).length, 1, "only one code email for the whole flow");
+}
 
 type InboxRow = Record<string, string | null> | null;
 type InboxQueryResult = { data: InboxRow; error: unknown };

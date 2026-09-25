@@ -178,10 +178,14 @@ assert.match(
 );
 const checkoutPage = source("../app/checkout/page.tsx");
 assert.match(checkoutPage, /Request access/);
+// Invite requests confirm the email in place: the 401 sends the code right on
+// this page, and the right code sends the request without a second click.
 assert.match(
   checkoutPage,
-  /res\.status === 401 && data\.error === "identity_verification_required"[\s\S]*?rememberCheckoutSignIn\(\)[\s\S]*?setSignInRequired\(true\)/
+  /res\.status === 401 && data\.error === "identity_verification_required"[\s\S]*?await sendAccessCode\(\);/
 );
+assert.match(checkoutPage, /signInWithOtp\(\{\s*email: addr,\s*options: \{ shouldCreateUser: true \},\s*\}\)/);
+assert.match(checkoutPage, /verifyOtp\(\{ email: addr, token, type: "email" \}\)[\s\S]*?await requestAccess\(\);/);
 assert.match(
   checkoutPage,
   /sessionStorage\.setItem\("alpha-signin-return", "\/checkout"\)/
@@ -190,10 +194,10 @@ assert.match(
   checkoutPage,
   /localStorage\.setItem\("alpha-signin-email", state\.email \|\| ""\)/
 );
-assert.match(
-  checkoutPage,
-  /Confirm this email before requesting access[\s\S]*?router\.push\("\/signin" as never\)/
-);
+assert.match(checkoutPage, /We emailed a 6-digit code to \$\{state\.email\}\. Enter it to send your request\./);
+// The legacy paid path still hands off to /signin. The invite path must not.
+const inviteBranch = checkoutPage.slice(checkoutPage.indexOf("{isInviteOnly() ? ("), checkoutPage.indexOf(") : alreadySubscribed ? ("));
+assert.ok(inviteBranch.length > 0 && !inviteBranch.includes('router.push("/signin"'), "invite requests never detour to /signin");
 assert.match(
   checkoutPage,
   /const accessSignInHeadingRef = useRef<HTMLParagraphElement>\(null\)[\s\S]*?if \(signInRequired\) accessSignInHeadingRef\.current\?\.focus\(\)/
