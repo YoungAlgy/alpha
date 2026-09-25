@@ -1,8 +1,8 @@
 // Verifies the ops-alert webhook fallback for real:
 //   1. Zero-config (current real prod state): Resend unset AND webhook unset
 //      → no-op, no throw. Confirms no regression to today's default behavior.
-//   2. Resend FORCED DOWN (invalid key) + a real webhook URL configured →
-//      the webhook actually receives a correctly-shaped POST. Verified against
+//   2. Discord webhook configured → it receives a correctly-shaped POST and
+//      Resend is never called (the owner wants alerts in Discord, not email). Verified against
 //      a real local HTTP server this script stands up itself (not a mock of
 //      fetch, not a third-party echo service whose own uptime we don't control)
 //      so we're checking the actual bytes our own code puts on the wire.
@@ -97,7 +97,34 @@ console.log("(2) Resend forced down (invalid key) + real local webhook server");
   check("(2) content-type is application/json", r?.contentType === "application/json");
   check("(2) payload has Discord `content` field with our subject", !!parsed?.content?.includes(subject));
   check("(2) payload includes the alert body", !!parsed?.content?.includes(body));
+  check("(2) Discord first: no email when the webhook succeeds", blockedResendCalls === 0);
+  check("(2) mentions are disabled", JSON.stringify((JSON.parse(r?.body ?? "{}") as { allowed_mentions?: unknown }).allowed_mentions) === JSON.stringify({ parse: [] }));
 
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
+// --- 2b) Webhook down → email fallback, and long alerts stay under 2000 ------
+console.log("(2b) Webhook fails → falls back to email; long content is capped");
+{
+  let lastLength = 0;
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      lastLength = Array.from((JSON.parse(Buffer.concat(chunks).toString("utf8")) as { content: string }).content).length;
+      res.writeHead(500);
+      res.end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  process.env.ALPHA_OPS_ALERT_WEBHOOK_URL = `http://127.0.0.1:${port}/webhook`;
+  process.env.ALPHA_ALLOW_LOCAL_OPS_WEBHOOK_TEST = "1";
+  const { sendOpsAlert } = await import("../lib/email.ts?t=2b");
+  const before = blockedResendCalls;
+  await sendOpsAlert("long alert", "x".repeat(5000));
+  check("(2b) a failed webhook falls back to email", blockedResendCalls === before + 1);
+  check("(2b) Discord content is capped under 2000 characters", lastLength > 0 && lastLength <= 2000);
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }
 
@@ -116,6 +143,7 @@ delete process.env.ALPHA_ALLOW_LOCAL_OPS_WEBHOOK_TEST;
 check("(3) no webhook configured → still resolves, never throws", !threw);
 }
 
+// Email only ran for the failed-webhook case (2b) and the no-webhook case (3).
 check("all Resend attempts were intercepted locally", blockedResendCalls === 2);
 {
   const { isApprovedAlphaOpsWebhookUrl } = await import("../lib/email.ts?t=4");

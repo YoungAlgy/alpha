@@ -467,13 +467,12 @@ export async function sendLetterNotification(
 // otherwise only surfaces when the owner happens to notice a missing letter
 // days later. Never throws: a broken alert must never break the send path.
 //
-// Two independent channels, tried in order: Resend (email), then a webhook
-// if Resend fails or isn't configured. Without the second channel, a full
-// Resend outage would silently take out the ONE mechanism meant to surface
-// that exact kind of outage — subscriber sends and the alert about them
-// failing together, with nothing left to notice either.
+// Two independent channels, tried in order: the owner's Discord ops channel,
+// then Resend (email) only if Discord fails or isn't configured. The owner
+// wants these in Discord, not his inbox. Keeping email as the fallback means
+// a Discord outage can't silently swallow the alert about a failed send.
 // ALPHA_OPS_ALERT_WEBHOOK_URL must point to an Alpha-only internal channel.
-// It is optional; leave it unset for the Resend-only behavior.
+// Leave it unset and alerts go to email as before.
 //
 // idempotencyKey is optional and caller-supplied (unlike sendLetterNotification,
 // there's no single natural key shared by every call site here) -- pass one
@@ -485,8 +484,8 @@ export async function sendOpsAlert(
   body: string,
   idempotencyKey?: string
 ): Promise<void> {
-  const viaResend = await sendOpsAlertViaResend(subject, body, idempotencyKey);
-  if (!viaResend) await sendOpsAlertViaWebhook(subject, body);
+  const viaWebhook = await sendOpsAlertViaWebhook(subject, body);
+  if (!viaWebhook) await sendOpsAlertViaResend(subject, body, idempotencyKey);
 }
 
 // Resend webhook anomalies must never alert through Resend itself. If the
@@ -580,11 +579,14 @@ async function sendOpsAlertViaWebhook(subject: string, body: string): Promise<bo
       console.warn("[ops-alert] webhook URL is not an approved Alpha Discord endpoint");
       return false;
     }
-    const message = `**[alpha ops alert]** ${subject}\n\n${body}`;
+    // Discord rejects content over 2000 characters, which would push a long
+    // alert to email. Alert text can carry reader-entered names, so never let
+    // it trigger @everyone or other mentions.
+    const message = codePointSafeTruncate(`**[alpha ops alert]** ${subject}\n\n${body}`, 1900).text;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: message }),
+      body: JSON.stringify({ content: message, allowed_mentions: { parse: [] } }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {

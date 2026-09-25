@@ -92,6 +92,7 @@ jobs:
           # meaningful new exposure the way the old secret key was.
           SUPABASE_KEY: ${{ secrets.WATCHDOG_SUPABASE_ANON_KEY }}
           RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
+          OPS_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
@@ -138,6 +139,21 @@ jobs:
 
           send_resend_alert() {
             local subject="$1" body="$2" payload resend_exit
+            # The owner's Discord ops channel first. Email only if Discord is
+            # unset or fails, so an outage alert still survives one channel.
+            # Same Discord-only URL shape the app accepts. No mentions, and
+            # content kept under Discord's 2000 character limit.
+            case "${OPS_WEBHOOK_URL:-}" in
+              https://discord.com/api/webhooks/*)
+                payload=$(jq -n --arg s "${subject}" --arg b "${body}" \
+                  '{content: ("**[alpha watchdog]** " + $s + "\n\n" + $b | .[0:1900]), allowed_mentions: {parse: []}}')
+                if curl -sS -f --max-time 15 --connect-timeout 5 -X POST "${OPS_WEBHOOK_URL}" \
+                  -H 'Content-Type: application/json' -d "${payload}" >/dev/null; then
+                  return 0
+                fi
+                echo "WARNING: Discord alert failed, falling back to email."
+                ;;
+            esac
             # everyday.report, NOT avahealth.co (fixed live 2026-08-05):
             # the from-domain must be verified under the SAME Resend account
             # as the API key or every send 403s with "domain is not
@@ -341,6 +357,7 @@ jobs:
       - name: Check the SEND_* secrets the real send actually uses, not Cloudflare's
         env:
           RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
+          OPS_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           GH_TOKEN: ${{ github.token }}
           # Read directly from THIS repo's secrets, not from a curl to the
           # Cloudflare Worker's /api/health. Repointed live 2026-08-05: the
@@ -419,6 +436,21 @@ jobs:
           # easy-to-miss inline block.
           send_resend_alert() {
             local subject="$1" body="$2" payload resend_exit
+            # The owner's Discord ops channel first. Email only if Discord is
+            # unset or fails, so an outage alert still survives one channel.
+            # Same Discord-only URL shape the app accepts. No mentions, and
+            # content kept under Discord's 2000 character limit.
+            case "${OPS_WEBHOOK_URL:-}" in
+              https://discord.com/api/webhooks/*)
+                payload=$(jq -n --arg s "${subject}" --arg b "${body}" \
+                  '{content: ("**[alpha watchdog]** " + $s + "\n\n" + $b | .[0:1900]), allowed_mentions: {parse: []}}')
+                if curl -sS -f --max-time 15 --connect-timeout 5 -X POST "${OPS_WEBHOOK_URL}" \
+                  -H 'Content-Type: application/json' -d "${payload}" >/dev/null; then
+                  return 0
+                fi
+                echo "WARNING: Discord alert failed, falling back to email."
+                ;;
+            esac
             # everyday.report, NOT avahealth.co (fixed live 2026-08-05):
             # the from-domain must be verified under the SAME Resend account
             # as the API key or every send 403s with "domain is not
