@@ -58,7 +58,8 @@ check("checkout response JSON is guarded", /\.json\(\)\s*\n\s*\.catch\(\(\) => \
 const cityPage = read("../app/city/page.tsx");
 const profileEditor = read("../components/ProfileEditor.tsx");
 const privacyPage = read("../app/privacy/page.tsx");
-check("live city helpers accurately say Alpha does not send city to Stripe", cityPage.includes("Alpha does not send this profile field to Stripe.") && profileEditor.includes("Alpha does not send this profile field to Stripe."));
+// Alpha is free now, so the city helpers no longer mention billing at all.
+check("live city helpers make no Stripe claim now that Alpha is free", !cityPage.includes("Stripe") && !profileEditor.includes("Stripe") && cityPage.includes("Lets the letter know when something nearby is worth mentioning"));
 check(
   "Stripe metadata contains only the opaque profile id",
   checkoutRoute.includes("alphaCheckoutSessionCreateParams({") &&

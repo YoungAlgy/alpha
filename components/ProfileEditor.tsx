@@ -278,7 +278,7 @@ export function ProfileEditor() {
           value={form.city}
           onChange={(v) => set("city", v)}
           placeholder="St. Petersburg, FL"
-          hint="Lets the letter flag what's nearby. Alpha does not send this profile field to Stripe."
+          hint="Lets the letter flag what's nearby."
           disabled={!loaded || busy}
           maxLength={120}
         />
