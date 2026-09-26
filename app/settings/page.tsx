@@ -9,6 +9,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { ProfileEditor } from "@/components/ProfileEditor";
 import { EmailChanger } from "@/components/EmailChanger";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { deleteUserAccount } from "@/lib/user-sync";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { hasActiveAccess, hasReaderAccess, ADMIN_EMAIL } from "@/lib/access";
@@ -18,6 +19,7 @@ import { poolCap } from "@/lib/engine/select-sections";
 
 export default function SettingsPage() {
   const { state, reset } = useOnboarding();
+  const { confirm, dialog } = useConfirmDialog();
   const [isAdmin, setIsAdmin] = useState(false);
   // Topic-quota state: quota = max topics they can pick (5/10/15/20/25),
   // priceCents = current monthly bill in cents. Both come from public.users
@@ -148,23 +150,14 @@ export default function SettingsPage() {
   // button. This action shared the exact same shape (async POST, busy-state-
   // gated button) as those two but was missing the guard.
   const resumeInFlight = useRef(false);
-  // Delete had NO busy state at all (not even React state), so confirm()
-  // blocking re-clicks during the dialog was the only guard -- once the user
-  // clicks OK, the button stays fully clickable for the entire multi-step
-  // await (Stripe cancel, support-ticket delete, then admin.deleteUser) with
-  // zero loading feedback. Found in review 2026-08-06.
+  // Block repeated clicks through both confirmation and the server request.
   const deleteInFlight = useRef(false);
-  // alpha-drift-r46-04 (2026-08-19): deleteInFlight (above) only ever
-  // blocked a second click of THIS button -- it did nothing to disable it
-  // visually or communicate that work was happening, unlike every other
-  // mutation control on this page (Save details, Send confirmation, Resume
-  // my letters) which all dim/disable and swap to an in-progress label.
-  // With nothing on screen indicating the multi-step delete (Stripe cancel,
-  // support-ticket delete, admin.deleteUser) was running, a reader could
-  // click elsewhere on the page (e.g. Back to inbox) while it was still in
-  // flight -- the eventual reset()/localStorage-clear/redirect to /welcome
-  // still fires afterward regardless of where they'd since navigated.
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDeletion, setConfirmingDeletion] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const exportInFlight = useRef(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportWarning, setExportWarning] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
@@ -446,6 +439,7 @@ export default function SettingsPage() {
 
   return (
     <main className="min-h-screen flex flex-col">
+      {dialog}
       <nav className="px-6 py-6 max-w-3xl mx-auto w-full flex items-center justify-between">
         <Link
           href="/inbox"
@@ -955,7 +949,12 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <button
               type="button"
+              disabled={exporting}
               onClick={async () => {
+                if (exportInFlight.current) return;
+                exportInFlight.current = true;
+                setExporting(true);
+                setExportWarning(null);
                 // Pull the real server-side record (profile + saved letters)
                 // when we can reach it — privacy/page.tsx promises "everything
                 // we have about you," and this device's localStorage is only
@@ -963,50 +962,57 @@ export default function SettingsPage() {
                 // empty or stale on its own. Fall back to the local onboarding
                 // state for the no-session/no-Supabase case, where there is no
                 // server record to fetch.
-                let exportData: unknown = state;
-                if (supabaseConfigured()) {
-                  try {
-                    const sb = supabaseClient();
-                    // alpha-drift-r63-05: used to discard `error` -- a
-                    // genuine getSession() failure fell into the same
-                    // silent local-only fallback as a real "not signed in"
-                    // result, with no alert, unlike the sibling !res.ok
-                    // branch two lines down. Now treated the same way: a
-                    // reader who asked for their FULL data, promised by
-                    // privacy.tsx, gets told the download is degraded
-                    // instead of silently receiving a subset with no cue.
-                    const { data: { session }, error: sessionErr } = await sb.auth.getSession();
-                    if (sessionErr) {
-                      console.warn("[settings] export getSession failed:", sessionErr.message);
-                      alert("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
-                    } else if (session) {
-                      const res = await fetch("/api/account/export");
-                      if (res.ok) {
-                        exportData = await res.json();
-                      } else {
-                        // alpha-drift-r35-09 (2026-08-14): em dash is a hard
-                        // no in reader-facing copy per house style.
-                        alert("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
+                try {
+                  let exportData: unknown = state;
+                  if (supabaseConfigured()) {
+                    try {
+                      const sb = supabaseClient();
+                      // A session error means the download may be only the
+                      // local subset. Tell the reader before saving it.
+                      const { data: { session }, error: sessionErr } = await sb.auth.getSession();
+                      if (sessionErr) {
+                        console.warn("[settings] export getSession failed:", sessionErr.message);
+                        setExportWarning("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
+                      } else if (session) {
+                        const res = await fetch("/api/account/export");
+                        if (res.ok) {
+                          exportData = await res.json();
+                        } else {
+                          setExportWarning("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
+                        }
                       }
+                    } catch {
+                      setExportWarning("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
                     }
-                  } catch {
-                    alert("Couldn't reach the server for your full data. Downloading what's saved on this device instead.");
                   }
+                  const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+                    type: "application/json",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "alpha-export.json";
+                  a.click();
+                  // Give the browser time to start reading the download.
+                  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+                } catch (e) {
+                  console.warn("[settings] export download failed:", e instanceof Error ? e.message : e);
+                  setExportWarning("Couldn't download your data. Please try again.");
+                } finally {
+                  exportInFlight.current = false;
+                  setExporting(false);
                 }
-                const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-                  type: "application/json",
-                });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "alpha-export.json";
-                a.click();
               }}
               className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
-              style={{ color: "var(--accent-ink)" }}
+              style={{ color: "var(--accent-ink)", opacity: exporting ? 0.5 : 1 }}
             >
-              Download my data
+              {exporting ? "Preparing download…" : "Download my data"}
             </button>
+            {exportWarning && (
+              <p role="status" aria-live="polite" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>
+                {exportWarning}
+              </p>
+            )}
             <br />
             <button
               type="button"
@@ -1053,41 +1059,68 @@ export default function SettingsPage() {
             <button
               type="button"
               disabled={deleting}
+              aria-disabled={confirmingDeletion || deleting}
               onClick={async () => {
-                // Paying users: the delete endpoint cancels their Stripe
-                // subscription before removing the account (best-effort), so we
-                // tell them it's handled and offer the portal as a double-check
-                // rather than the old "we won't cancel, you'll keep paying" warning.
-                // alpha-drift-r35-10 (2026-08-14): the old aside told the
-                // reader to "confirm it's gone in Manage subscription
-                // first" -- but the subscription isn't gone yet (it's
-                // cancelled AS PART OF this delete), so there's nothing to
-                // confirm beforehand, and the native confirm() dialog
-                // blocks the page anyway so "above" isn't even clickable.
-                // State the guarantee plainly instead.
-                const confirmMsg = hasPaidSub
-                  ? "Delete your alpha. account?\n\nThis removes your letters and profile and can't be undone. Any remaining Alpha subscription is cancelled too, so billing stops.\n\nDelete anyway?"
-                  : "Delete your alpha. account? This removes your saved letters and profile. Can't be undone.";
-                if (!confirm(confirmMsg)) return;
                 if (deleteInFlight.current) return;
                 deleteInFlight.current = true;
-                setDeleting(true);
-                const result = await deleteUserAccount();
-                if (!result.ok) {
-                  alert(`Couldn't delete: ${result.error}\nLocal data will still clear.`);
+                setConfirmingDeletion(true);
+                setDeleteError(null);
+                // Paying users: the delete endpoint cancels their Stripe
+                // subscription before removing the account. Include that in
+                // the confirmation so paying readers know what will happen.
+                try {
+                  const approved = await confirm({
+                    title: "Delete your alpha. account?",
+                    description: hasPaidSub
+                      ? "This removes your letters and profile and can't be undone. Any remaining Alpha subscription is cancelled too, so billing stops."
+                      : "This removes your saved letters and profile. Can't be undone.",
+                    confirmLabel: "Delete my account",
+                    cancelLabel: "Keep my account",
+                    destructive: true,
+                  });
+                  setConfirmingDeletion(false);
+                  if (!approved) return;
+                  setDeleting(true);
+                  const result = await deleteUserAccount();
+                  if (!result.ok) {
+                    setDeleteError(`Couldn't delete your account. ${result.error ? `${result.error} ` : ""}Please try again. Your data on this device has not been cleared.`);
+                    return;
+                  }
+                  const draftCleared = reset();
+                  let deviceCleared = draftCleared;
+                  for (const key of ["alpha-first-issue", "alpha-theme"]) {
+                    try {
+                      localStorage.removeItem(key);
+                    } catch {
+                      deviceCleared = false;
+                    }
+                  }
+                  if (!deviceCleared) {
+                    setDeleteError("Your account was deleted, but this browser couldn't clear all saved data. Clear Alpha's site data before sharing this device.");
+                    return;
+                  }
+                  // Auth and client stores are gone, so force a clean document.
+                  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+                  window.location.href = "/welcome";
+                } catch (e) {
+                  console.warn("[settings] account deletion failed:", e instanceof Error ? e.message : e);
+                  setDeleteError("Couldn't finish deleting your account. Please check your account status and try again.");
+                } finally {
+                  deleteInFlight.current = false;
+                  setConfirmingDeletion(false);
+                  setDeleting(false);
                 }
-                reset();
-                localStorage.removeItem("alpha-first-issue");
-                localStorage.removeItem("alpha-theme");
-                // Auth and client stores are gone, so force a clean document.
-                // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-                window.location.href = "/welcome";
               }}
               className="alpha-ui text-sm underline underline-offset-4 py-2 -my-2"
-              style={{ color: "var(--ink-soft)", opacity: deleting ? 0.5 : 1 }}
+              style={{ color: "var(--ink-soft)", opacity: confirmingDeletion || deleting ? 0.5 : 1 }}
             >
-              {deleting ? "Deleting…" : "Delete my account"}
+              {deleting ? "Deleting…" : confirmingDeletion ? "Waiting for confirmation…" : "Delete my account"}
             </button>
+            {deleteError && (
+              <p role="alert" className="alpha-ui text-sm" style={{ color: "var(--ink)" }}>
+                {deleteError}
+              </p>
+            )}
           </div>
         </Section>
       </section>

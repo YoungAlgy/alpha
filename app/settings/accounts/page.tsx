@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Footer } from "@/components/Footer";
 import { Wordmark } from "@/components/Wordmark";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { topicLabel } from "@/lib/topics";
 import { THEMES } from "@/lib/themes";
 import { demographicSummary } from "@/lib/demographics";
@@ -69,7 +70,19 @@ const ACTION_VERBS: Record<AdminAction, string> = {
   pause_delivery: "Paused letters for",
 };
 
+const ACTION_LABELS: Record<AdminAction, string> = {
+  delete: "Delete account",
+  grant_free: "Approve access",
+  grant_invite: "Approve access",
+  revoke_free: "Revoke access",
+  revoke_invite: "Revoke access",
+  deny_access: "Deny request",
+  enable_delivery: "Enable letters",
+  pause_delivery: "Pause letters",
+};
+
 export default function AdminAccountsPage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   // alpha-drift-r62-01 (2026-08-20, self-audit-r61): r61's Promise.allSettled
@@ -390,9 +403,23 @@ export default function AdminAccountsPage() {
     action: AdminAction,
     confirmMsg?: string
   ) {
-    if (confirmMsg && !confirm(confirmMsg)) return;
     if (loading || busyRowsRef.current.has(userId)) return;
     busyRowsRef.current.add(userId);
+    // Lock before awaiting the in-app question. Cancel must never reach the
+    // mutation or its reload, and unmount resolves the question as cancelled.
+    if (confirmMsg && !await confirm({
+      title: `${ACTION_LABELS[action]}?`,
+      description: confirmMsg,
+      confirmLabel: ACTION_LABELS[action],
+      destructive: action === "delete" || action === "revoke_free" || action === "revoke_invite",
+    })) {
+      busyRowsRef.current.delete(userId);
+      return;
+    }
+    if (!mountedRef.current) {
+      busyRowsRef.current.delete(userId);
+      return;
+    }
     setBusyRows(new Set(busyRowsRef.current));
     setActionMsg(null);
     setRowErrors((prev) => ({ ...prev, [userId]: "" }));
@@ -971,6 +998,7 @@ export default function AdminAccountsPage() {
         )}
       </section>
       <Footer />
+      {dialog}
     </main>
   );
 }

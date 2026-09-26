@@ -20,6 +20,13 @@ interface Entry {
 // Hand-curated. Edit this array to add new entries — never auto-generated.
 const ENTRIES: Entry[] = [
   {
+    date: "2026-09-26",
+    title: "Account confirmations stay in the app",
+    body:
+      "Account actions now use a confirmation that matches your theme. Download warnings and deletion errors stay on the page. If account deletion fails, your saved data on this device stays in place so you can try again.",
+    tag: "improved",
+  },
+  {
     date: "2026-07-03",
     title: "Your letter comes every day now",
     body:
