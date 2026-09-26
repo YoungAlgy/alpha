@@ -10,8 +10,8 @@
 // so at daily cadence they resolve to yesterday/tomorrow.
 export const CADENCE_UTC_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
-// alpha-drift-r33-02 (2026-08-14): the real daily-send hour, UTC (matches
-// the GitHub Actions cron trigger, "0 14 * * *"). Anything that converts a
+// alpha-drift-r33-02 (2026-08-14): the real daily-send time, UTC (matches
+// the GitHub Actions primary cron trigger, "17 14 * * *"). Anything that converts a
 // send's precise UTC instant to a READER's own local calendar day
 // (components/Digest.tsx's formatDateline, app/inbox/page.tsx's
 // nextSendLabel) must anchor to THIS -- not the T12:00:00Z used elsewhere
@@ -22,6 +22,7 @@ export const CADENCE_UTC_DAYS = [0, 1, 2, 3, 4, 5, 6];
 // that silently reintroduced the "reader sees yesterday's date" bug for
 // UTC+10/UTC+11 readers even after the localTimezone fix.
 export const SEND_HOUR_UTC = 14;
+export const SEND_MINUTE_UTC = 17;
 
 // Today's UTC date as YYYY-MM-DD = this send's period key (stored in week_of).
 export function currentPeriodIso(now: Date = new Date()): string {
@@ -54,7 +55,7 @@ export function sinceLastSendWindow(periodIso: string): `${string}to${string}` {
 }
 
 // The next scheduled send STRICTLY after `now` (at daily cadence: tomorrow,
-// unless today's own send hasn't fired yet -- see r41-02 below), as
+// unless today's own primary send hasn't fired yet -- see r41-02 below), as
 // YYYY-MM-DD. Drives the reader-facing "next one ships ..." label.
 //
 // alpha-drift-r41-02 (2026-08-19, self-audit): this used to unconditionally
@@ -62,10 +63,10 @@ export function sinceLastSendWindow(periodIso: string): `${string}to${string}` {
 // could never return today's date no matter what time `now` was. At daily
 // cadence that loop always breaks on its first iteration, so this always
 // said "tomorrow" -- even at, say, 08:00 UTC, six hours BEFORE today's real
-// 14:00 UTC (SEND_HOUR_UTC) send has fired, when today genuinely is the
+// 14:17 UTC (SEND_HOUR_UTC and SEND_MINUTE_UTC) send has fired, when today genuinely is the
 // next send. app/inbox/page.tsx's nextSendLabel() renders this
 // unconditionally in the sticky header ("NEXT ONE SHIPS ..."), so every
-// reader who opened /inbox between 00:00 and 14:00 UTC -- the entire US
+// reader who opened /inbox between 00:00 and 14:17 UTC -- the entire US
 // morning/overnight and a large slice of the day for Europe/Asia -- saw a
 // date one full day later than the truth. The exact same root cause
 // r35-07/r36-02 worked around on the settings page's resume copy (by
@@ -74,7 +75,7 @@ export function sinceLastSendWindow(periodIso: string): `${string}to${string}` {
 // whether today is still ahead of its own send instant first.
 export function nextSendIso(now: Date = new Date()): string {
   const todayIso = now.toISOString().slice(0, 10);
-  const todaysSendInstant = new Date(`${todayIso}T${String(SEND_HOUR_UTC).padStart(2, "0")}:00:00Z`);
+  const todaysSendInstant = new Date(`${todayIso}T${String(SEND_HOUR_UTC).padStart(2, "0")}:${String(SEND_MINUTE_UTC).padStart(2, "0")}:00Z`);
   if (isSendDay(todayIso) && now.getTime() < todaysSendInstant.getTime()) {
     return todayIso;
   }

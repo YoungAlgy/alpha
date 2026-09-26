@@ -142,8 +142,8 @@ for (const unsafeWorkflow of [
   workflow.replace("ALPHA_NO_MODEL_MODE: '1'", "ALPHA_NO_MODEL_MODE: '0'"),
   workflow.replace("ALPHA_ALLOW_PAID_AI: '0'", "ALPHA_ALLOW_PAID_AI: '1'"),
   `${workflow}\n# inputs.weekOf`,
-  workflow.replace("    - cron: '0 14 * * *'", "    # primary slot removed"),
-  workflow.replace("    - cron: '0 18 * * *'", "    - cron: '0 14 * * *'"),
+  workflow.replace("    - cron: '17 14 * * *'", "    # primary slot removed"),
+  workflow.replace("    - cron: '47 18 * * *'", "    - cron: '17 14 * * *'"),
   workflow.replace("  workflow_dispatch:", "  push:"),
 ]) {
   assert.equal(runGate({ ".github/workflows/daily-send.yml": unsafeWorkflow }), 1);

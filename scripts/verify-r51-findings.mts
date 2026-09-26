@@ -51,7 +51,7 @@ console.log("(1) lib/analytics.ts: the stray backtick/quote mismatch in round 50
 console.log("(2) app/api/cron/weekly-send/route.ts: the CRON comment now names all 3 daily-send schedule windows");
 {
   const src = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
-  check("(2a) the header comment now names 14:00, 15:00, AND 18:00 UTC", /"0 14 \* \* \*"\s*\n\s*\/\/ \(14:00 UTC primary\), "0 15 \* \* \*" \(first offset retry, added 2026-08-05\),\s*\n\s*\/\/ and "0 18 \* \* \*" \(second offset retry/.test(src));
+  check("(2a) the header comment names all current off-peak slots", /"17 14 \* \* \*" \(14:17 UTC primary\),\s*\n\s*\/\/ "37 15 \* \* \*" \(15:37 UTC first retry\), and "47 18 \* \* \*" \(18:47 UTC/.test(src));
   check("(2b) the sibling 'offset retry trigger' reference is now pluralized", /offset retry triggers\)/.test(src));
 }
 

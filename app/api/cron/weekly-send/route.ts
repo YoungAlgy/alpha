@@ -404,14 +404,10 @@ export async function GET(req: Request) {
 
   // Allow ?weekOf=YYYY-MM-DD override (useful for backfills + admin testing
   // when the schedule hasn't fired yet). Defaults to today (the send date).
-  // CRON: GitHub Actions' daily-send.yml drives every send: "0 14 * * *"
-  // (14:00 UTC primary), "0 15 * * *" (first offset retry, added 2026-08-05),
-  // and "0 18 * * *" (second offset retry, added 2026-08-06 after a real
-  // GitHub Actions platform-wide outage took out both the 14:00 and 15:00
-  // runs the same day -- alpha-drift-r51-01, 2026-08-20: this comment used
-  // to only mention two of the three, README.md already had the correct
-  // count). The handler derives the period from today's date, so one
-  // schedule set covers every send day.
+  // CRON: daily-send.yml uses "17 14 * * *" (14:17 UTC primary),
+  // "37 15 * * *" (15:37 UTC first retry), and "47 18 * * *" (18:47 UTC
+  // second retry). The handler derives the period from today's date, so
+  // one schedule set covers every send day. All retries share the same lane.
   // Spend is incurred on the invocation date, even when an explicitly
   // authorized backfill targets an older issue date. Keying the hard budget
   // to weekOf would let repeated historical overrides open a fresh 400-call
@@ -1942,4 +1938,3 @@ export async function GET(req: Request) {
 
   return NextResponse.json(summary);
 }
-

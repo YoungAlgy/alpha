@@ -2,7 +2,7 @@ import type { Issue, DigestItem, ItemKind } from "@/lib/types";
 import { ScrollFadeIn } from "./ScrollFadeIn";
 import { topicEmoji, topicAnchor, TOPIC_BY_ID } from "@/lib/topics";
 import { Wordmark } from "./Wordmark";
-import { SEND_HOUR_UTC } from "@/lib/cadence";
+import { SEND_HOUR_UTC, SEND_MINUTE_UTC } from "@/lib/cadence";
 
 // alpha-drift-r14-12 (review 2026-08-06): the only disclaimer anywhere in
 // the app was generic legal boilerplate on /terms -- a subscriber reading
@@ -29,12 +29,12 @@ interface DigestProps {
   // this, a subscriber roughly UTC+10 and above (Australia east coast, NZ,
   // Fiji, Tonga) sees YESTERDAY's date on the dateline even once it's
   // unambiguously today for them -- the letter landed at SEND_HOUR_UTC
-  // (14:00 UTC) and their local calendar has already crossed into the next
+  // (14:17 UTC) and their local calendar has already crossed into the next
   // day by the time they read it, once their offset is >= 24 - SEND_HOUR_UTC.
   // alpha-drift-r33-02: that affected-range figure was originally computed
   // against the wrong anchor (a plain noon UTC formatDateline used to parse
-  // against, not the real 14:00Z send hour) -- corrected here to UTC+10 and
-  // above, now that formatDateline actually anchors to SEND_HOUR_UTC.
+  // against, not the real 14:17Z send time) -- corrected here to UTC+10 and
+  // above, now that formatDateline anchors to the real send time.
   // alpha-drift-r34-04 (2026-08-14, self-audit): dropped the single "2-3am"
   // example clock time that survived the r33-02 edit -- it only held for the
   // narrow NZ/Tonga end (UTC+12/+13) of this now-widened range; at UTC+10
@@ -109,16 +109,16 @@ function safeUrl(url: string | undefined): string | null {
 // — format that case too, so every view carries an unmistakable human date
 // (a subscriber couldn't tell her letters apart; the day must be loud).
 // alpha-drift-r33-02 (2026-08-14): always parse as a precise UTC instant at
-// the REAL send hour (lib/cadence.ts's SEND_HOUR_UTC, 14:00Z) -- this used
+// the REAL send time (lib/cadence.ts's SEND_HOUR_UTC and SEND_MINUTE_UTC, 14:17Z) -- this used
 // to anchor to a plain noon (T12:00:00Z), a 2-hour-early value that was
 // never actually the send time. That gap silently broke the whole point of
 // localTimezone=true for UTC+10/UTC+11 readers (still showed yesterday's
 // date), and drifted from app/inbox/page.tsx's nextSendLabel(), which always
-// used the real 14:00Z anchor. Only the FORMAT step's timezone varies by
+// used the real send-time anchor. Only the FORMAT step's timezone varies by
 // caller -- see DigestProps' localTimezone comment for why.
 function formatDateline(weekOf: string, localTimezone: boolean): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(weekOf)) return weekOf; // already formatted
-  return new Date(`${weekOf}T${String(SEND_HOUR_UTC).padStart(2, "0")}:00:00Z`).toLocaleDateString("en-US", {
+  return new Date(`${weekOf}T${String(SEND_HOUR_UTC).padStart(2, "0")}:${String(SEND_MINUTE_UTC).padStart(2, "0")}:00Z`).toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",

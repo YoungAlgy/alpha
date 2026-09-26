@@ -127,7 +127,7 @@ assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
 assert.match(workflow, /persist-credentials: false/);
 assert.match(workflow, /check-delivery:[\s\S]*?permissions:\n\s+contents: read[^\n]*\n\s+issues: write/);
 assert.doesNotMatch(workflow.slice(0, workflow.indexOf("jobs:")), /contents: read/);
-assert.match(workflow, /- name: Check Supabase for real, complete delivery in the last 20 hours\n[^\n]*\n\s+if: \$\{\{ !cancelled\(\) \}\}/);
+assert.match(workflow, /- name: Check Supabase for real, complete delivery today UTC\n[^\n]*\n\s+if: \$\{\{ !cancelled\(\) \}\}/);
 assert.match(workflow, /--max-time 15 --connect-timeout 5 --max-filesize 8192/);
 assert.match(workflow, /node scripts\/alpha-watchdog-delivery-mode\.mjs/);
 assert.match(workflow, /Daily letter release state unverified/);

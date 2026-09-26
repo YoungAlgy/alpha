@@ -36,59 +36,16 @@ name: Daily letter send
 
 on:
   schedule:
-    - cron: '0 14 * * *' # primary send
-    # Offset retry, added 2026-08-05 as part of a full resilience audit that
-    # specifically verified this is safe: route.ts's delivered_at atomic
-    # compare-and-swap (a second caller updates 0 rows and skips), the
-    # prefetch already-delivered check, and Resend's own per-(user,day,kind)
-    # idempotency key give three independent layers against a duplicate
-    # send, and priorIssueCount ("Issue N") is computed per-user so a
-    # partial first run doesn't miscount either group. A transient npm
-    # registry blip, a dropped/delayed GitHub schedule event (GitHub does
-    # not guarantee on-time delivery), or a momentary Supabase/Resend hiccup
-    # at 14:00 UTC currently means a full missed day with no second attempt
-    # -- this recovers it automatically, same day, without Algy clicking
-    # anything. The 15:00 UTC retry is past the primary slot, and the shared
-    # concurrency group queues it if that run is still finishing. It is also
-    # a full hour before letter-watchdog.yml's 16:00 UTC check, so a
-    # successful retry is reflected before the watchdog samples state
-    # instead of the watchdog alerting on pre-retry data. It is nowhere near
-    # the 00:00 UTC boundary where lib/cadence.ts's currentPeriodIso()
-    # would roll over to a new day's weekOf and silently generate a SECOND
-    # real letter instead of recovering the missed one.
-    - cron: '0 15 * * *'
-    # Second offset retry, added 2026-08-06 after a real GitHub Actions
-    # platform-wide outage (githubstatus.com incident starting 15:22 UTC,
-    # "job was not acquired by Runner of type hosted even after multiple
-    # attempts") took out BOTH the 14:00 primary and the 15:00 retry above
-    # on the same day -- confirming a single offset retry isn't always
-    # enough. Recovered that day via a manual local run (build + `next
-    # start` + curl the same route directly, bypassing GitHub Actions
-    # entirely); this is the automated version of that same idea, three
-    # hours further out, giving a longer-than-usual GitHub-side incident
-    # more room to clear before requiring a human.
-    #
-    # 18:00 UTC specifically: (a) well past 16:00 UTC, so this is
-    # deliberately AFTER letter-watchdog.yml's check -- an alert may
-    # already have fired by the time this recovers things, which is fine
-    # (early signal beats no signal; see letter-watchdog.yml's own header
-    # for why it can't reliably self-heal-and-suppress mid-day), (b) still
-    # a comfortable 6 hours before the 00:00 UTC weekOf rollover, and (c)
-    # far enough past the 15:00 UTC retry that the shared concurrency group
-    # normally has time to drain before this last same-day attempt.
-    #
-    # This does NOT make alpha immune to a GitHub-wide outage -- the 2026-
-    # 08-06 incident lasted from 15:22 UTC to past midnight, well beyond
-    # even this retry's slot, and no number of same-platform retries can
-    # survive an outage that outlasts all of them. What it buys is coverage
-    # for the much more common case: a shorter (sub-4-hour) GitHub Actions
-    # degradation, which two retries already weren't guaranteed to clear
-    # but three comfortably should. A genuinely platform-independent dead-
-    # man's-switch (e.g. an external cron/uptime service pinging a
-    # heartbeat and alerting Algy directly if the daily send never
-    # completes) is the only way to close the remaining gap -- flagged to
-    # Algy, not built here, since it requires him to create that account.
-    - cron: '0 18 * * *'
+    # Off the top of the hour, where GitHub documents heavier scheduler load.
+    # This reduces one known delay risk, but does not guarantee arrival time.
+    - cron: '17 14 * * *' # primary send
+    # Same-day recovery only. Coverage checks, the shared concurrency group,
+    # durable attempts and provider idempotency still protect against repeats.
+    - cron: '37 15 * * *'
+    - cron: '47 18 * * *'
+    # The watchdog checks at 20:37 UTC, after the final slot plus its full
+    # 90-minute job budget. Delayed GitHub runs can still arrive later.
+    # These retries cannot survive a GitHub-wide outage on their own.
   workflow_dispatch:
 
 permissions:
@@ -118,8 +75,8 @@ jobs:
     timeout-minutes: 90
     steps:
       # Skips the expensive checkout/npm ci/build/start below when today's
-      # send is already fully covered -- mainly matters for the 15:00 and
-      # 18:00 UTC offset retries: on the common day the 14:00 primary
+      # send is already fully covered -- mainly matters for the 15:37 and
+      # 18:47 UTC offset retries: on the common day the 14:17 primary
       # already delivered to everyone, a retry used to pay for a full
       # install+build+server boot just to hit the route and find zero
       # undelivered subscribers.
@@ -171,9 +128,8 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Start of today UTC, not "N hours ago" (the watchdog's own
-          # cutoff) -- this specifically wants "has TODAY's send finished",
-          # not a rolling window.
+          # Start of today UTC, matching the watchdog. Yesterday's late
+          # delivery must not suppress today's attempt.
           CUTOFF=$(date -u +%Y-%m-%dT00:00:00Z)
 
           RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
@@ -198,7 +154,8 @@ jobs:
                     typeof data[0].uncovered_count === 'number' &&
                     typeof data[0].active_subscriber_count === 'number') {
                   if (Number.isSafeInteger(data[0].uncovered_count) && data[0].uncovered_count >= 0 &&
-                      Number.isSafeInteger(data[0].active_subscriber_count) && data[0].active_subscriber_count >= 0) {
+                      Number.isSafeInteger(data[0].active_subscriber_count) && data[0].active_subscriber_count >= 0 &&
+                      data[0].uncovered_count <= data[0].active_subscriber_count) {
                     uncovered = data[0].uncovered_count;
                     active = data[0].active_subscriber_count;
                   }

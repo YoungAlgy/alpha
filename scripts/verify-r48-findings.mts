@@ -68,7 +68,7 @@ console.log("(2) app/settings/accounts/page.tsx: per-row busy tracking replaces 
 console.log("(3) README.md now documents all 3 daily-send cron windows");
 {
   const src = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-  check("(3a) the Deployment section names 14:00, 15:00, and 18:00 UTC", /14:00 UTC primary \+ 15:00 UTC and 18:00 UTC retries/.test(src));
+  check("(3a) the Deployment section names the current off-peak daily slots", /14:17 UTC primary \+ 15:37 UTC and 18:47 UTC retries/.test(src));
 }
 
 console.log("(4) stale 'Vercel' platform references reworded to the actual current hosts across 4 files");

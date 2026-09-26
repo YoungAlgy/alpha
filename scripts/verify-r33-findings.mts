@@ -94,10 +94,11 @@ console.log("(1) app/api/admin/users/route.ts: clear_suppression is hard-held wh
   );
 }
 
-console.log("(2) lib/cadence.ts / components/Digest.tsx / app/inbox/page.tsx: dateline anchors share the real 14:00 UTC send hour");
+console.log("(2) lib/cadence.ts / components/Digest.tsx / app/inbox/page.tsx: dateline anchors share the real 14:17 UTC primary send time");
 {
   const cadenceSrc = readFileSync(new URL("../lib/cadence.ts", import.meta.url), "utf8");
   check("(2a) SEND_HOUR_UTC exported as 14", /export const SEND_HOUR_UTC = 14;/.test(cadenceSrc));
+  check("(2a-minute) SEND_MINUTE_UTC exported as 17", /export const SEND_MINUTE_UTC = 17;/.test(cadenceSrc));
   // Sanity: the pure-date-arithmetic helpers keep their own deliberately-
   // different noon anchor -- this round's fix must not have touched those.
   // (Matched against the real code lines, not the new comment above that
@@ -115,14 +116,14 @@ console.log("(2) lib/cadence.ts / components/Digest.tsx / app/inbox/page.tsx: da
   check("(2b-nextSendIso) still uses its own T12:00:00Z arithmetic anchor, untouched", /const d = new Date\(`\$\{todayIso\}T12:00:00Z`\);/.test(cadenceSrc));
 
   const digestSrc = readFileSync(new URL("../components/Digest.tsx", import.meta.url), "utf8");
-  check("(2c) Digest.tsx imports SEND_HOUR_UTC from lib/cadence", /import \{ SEND_HOUR_UTC \} from "@\/lib\/cadence";/.test(digestSrc));
-  check("(2d) formatDateline now anchors to SEND_HOUR_UTC, not a hardcoded T12:00:00Z", /new Date\(`\$\{weekOf\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:00:00Z`\)/.test(digestSrc));
+  check("(2c) Digest.tsx imports SEND_HOUR_UTC and SEND_MINUTE_UTC from lib/cadence", /import \{ SEND_HOUR_UTC, SEND_MINUTE_UTC \} from "@\/lib\/cadence";/.test(digestSrc));
+  check("(2d) formatDateline anchors to the shared hour and minute, not a hardcoded T12:00:00Z", /new Date\(`\$\{weekOf\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:\$\{String\(SEND_MINUTE_UTC\)\.padStart\(2, "0"\)\}:00Z`\)/.test(digestSrc));
   check("(2e) the old hardcoded noon anchor is gone from formatDateline", !/new Date\(`\$\{weekOf\}T12:00:00Z`\)/.test(digestSrc));
 
   const inboxSrc = readFileSync(new URL("../app/inbox/page.tsx", import.meta.url), "utf8");
   const inboxCadenceImports = namedImportsFrom(inboxSrc, "@/lib/cadence");
-  check("(2f) app/inbox/page.tsx imports SEND_HOUR_UTC alongside nextSendIso", inboxCadenceImports.has("SEND_HOUR_UTC") && inboxCadenceImports.has("nextSendIso"));
-  check("(2g) nextSendLabel() now derives its anchor from SEND_HOUR_UTC instead of a separate hardcoded literal", /const d = new Date\(`\$\{nextSendIso\(\)\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:00:00Z`\);/.test(inboxSrc));
+  check("(2f) app/inbox/page.tsx imports both send-time constants alongside nextSendIso", inboxCadenceImports.has("SEND_HOUR_UTC") && inboxCadenceImports.has("SEND_MINUTE_UTC") && inboxCadenceImports.has("nextSendIso"));
+  check("(2g) nextSendLabel() derives its anchor from both send-time constants", /const d = new Date\(`\$\{nextSendIso\(\)\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:\$\{String\(SEND_MINUTE_UTC\)\.padStart\(2, "0"\)\}:00Z`\);/.test(inboxSrc));
   check("(2h) the old separately-hardcoded T14:00:00Z literal in nextSendLabel is gone", !/const d = new Date\(`\$\{nextSendIso\(\)\}T14:00:00Z`\);/.test(inboxSrc));
 
   // Behavioral proof: the real bug was a 2-hour gap between formatDateline's
@@ -142,10 +143,10 @@ console.log("(2) lib/cadence.ts / components/Digest.tsx / app/inbox/page.tsx: da
   check("(2l) behavioral: the NEW anchor also correctly crosses midnight at UTC+11", localDateCrossesMidnight(14, 11) === true);
   check("(2m) behavioral: NZ/Fiji (UTC+12) was already covered under the old anchor too, consistent with why this slipped through unnoticed", localDateCrossesMidnight(12, 12) === true);
 
-  // Confirm the actual production cron trigger really is 14:00 UTC, so
-  // SEND_HOUR_UTC=14 isn't just an assumption.
+  // Confirm the primary cron really is 14:17 UTC, so the shared send-time
+  // constants are checked against the workflow itself.
   const workflowSrc = readFileSync(new URL("../.github/workflows/daily-send.yml", import.meta.url), "utf8");
-  check("(2n) sanity: the real GitHub Actions cron trigger is \"0 14 * * *\" (14:00 UTC), matching SEND_HOUR_UTC", /cron:\s*["']0 14 \* \* \*["']/.test(workflowSrc));
+  check("(2n) sanity: the real GitHub Actions primary cron trigger is \"17 14 * * *\", matching the shared time", /cron:\s*["']17 14 \* \* \*["']/.test(workflowSrc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

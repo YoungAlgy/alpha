@@ -7,8 +7,8 @@
 //   trio, the identical gap-class for the 10th straight round.
 // - lib/cadence.ts: a real, previously-undetected timezone bug --
 //   nextSendIso() always reported "tomorrow" even when today's own
-//   SEND_HOUR_UTC (14:00Z) send hadn't fired yet, so every /inbox visitor
-//   between 00:00-14:00 UTC saw a "next one ships" date one full day late.
+//   primary 14:17Z send hadn't fired yet, so every /inbox visitor
+//   between 00:00-14:17 UTC saw a "next one ships" date one full day late.
 //   The same root cause r35-07/r36-02 had worked around (by removing a
 //   specific-day claim elsewhere) rather than fixed at its actual source.
 // 4 refuted, all genuinely adjudicated: two more colon-lookalike
@@ -50,21 +50,22 @@ console.log("(1) lib/engine/voice-guard.ts: crucial/vital/critical now get the s
 console.log("(2) lib/cadence.ts: nextSendIso() no longer reports tomorrow when today's own send hasn't fired yet");
 {
   const src = readFileSync(new URL("../lib/cadence.ts", import.meta.url), "utf8");
-  check("(2a) nextSendIso now computes today's send instant and checks it", /const todaysSendInstant = new Date\(`\$\{todayIso\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:00:00Z`\);/.test(src));
+  check("(2a) nextSendIso computes today's 14:17 send instant and checks it", /const todaysSendInstant = new Date\(`\$\{todayIso\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:\$\{String\(SEND_MINUTE_UTC\)\.padStart\(2, "0"\)\}:00Z`\);/.test(src));
   check("(2b) early-returns todayIso when today is a cadence day and now is still before that instant", /if \(isSendDay\(todayIso\) && now\.getTime\(\) < todaysSendInstant\.getTime\(\)\) \{\s*\n\s*return todayIso;/.test(src));
   check("(2c) the forward-walk loop is still present for the after-send-hour / non-cadence-day case", /for \(let i = 0; i < 7; i\+\+\) \{\s*\n\s*d\.setUTCDate\(d\.getUTCDate\(\) \+ 1\);/.test(src));
 
   // Behavioral proof against the REAL exported nextSendIso, not a
   // reimplementation -- the exact scenario the finding describes.
-  const { nextSendIso } = await import("../lib/cadence.ts");
-  check("(2d) behavioral: 6 hours before today's 14:00Z send, nextSendIso correctly returns TODAY (was tomorrow, the exact bug)", nextSendIso(new Date("2026-08-19T08:00:00Z")) === "2026-08-19");
-  check("(2e) behavioral: 1 minute before the send instant, still returns TODAY", nextSendIso(new Date("2026-08-19T13:59:00Z")) === "2026-08-19");
-  check("(2f) behavioral: at the exact send instant (14:00:00Z), returns TOMORROW (today's send is firing now, not upcoming)", nextSendIso(new Date("2026-08-19T14:00:00Z")) === "2026-08-20");
-  check("(2g) behavioral: 1 hour after the send, returns TOMORROW", nextSendIso(new Date("2026-08-19T15:00:00Z")) === "2026-08-20");
+  const { nextSendIso, currentPeriodIso } = await import("../lib/cadence.ts");
+  check("(2d) behavioral: before today's 14:17Z send, nextSendIso correctly returns TODAY (was tomorrow, the exact bug)", nextSendIso(new Date("2026-08-19T08:00:00Z")) === "2026-08-19");
+  check("(2e) behavioral: one second before the send instant, still returns TODAY", nextSendIso(new Date("2026-08-19T14:16:59Z")) === "2026-08-19");
+  check("(2f) behavioral: at the exact send instant (14:17:00Z), returns TOMORROW", nextSendIso(new Date("2026-08-19T14:17:00Z")) === "2026-08-20");
+  check("(2f-period) period key remains today's UTC date across the new time boundary", currentPeriodIso(new Date("2026-08-19T14:16:59Z")) === "2026-08-19" && currentPeriodIso(new Date("2026-08-19T14:17:00Z")) === "2026-08-19");
+  check("(2g) behavioral: 1 hour after the send, returns TOMORROW", nextSendIso(new Date("2026-08-19T15:17:00Z")) === "2026-08-20");
   check("(2h) behavioral: late at night, returns TOMORROW", nextSendIso(new Date("2026-08-19T23:59:00Z")) === "2026-08-20");
 
   const inboxSrc = readFileSync(new URL("../app/inbox/page.tsx", import.meta.url), "utf8");
-  check("(2i) sanity: app/inbox/page.tsx's nextSendLabel() still calls the real exported nextSendIso() unchanged (fix is transparent to callers)", /const d = new Date\(`\$\{nextSendIso\(\)\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:00:00Z`\);/.test(inboxSrc));
+  check("(2i) sanity: app/inbox/page.tsx's nextSendLabel() uses nextSendIso with the exact shared time", /const d = new Date\(`\$\{nextSendIso\(\)\}T\$\{String\(SEND_HOUR_UTC\)\.padStart\(2, "0"\)\}:\$\{String\(SEND_MINUTE_UTC\)\.padStart\(2, "0"\)\}:00Z`\);/.test(inboxSrc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

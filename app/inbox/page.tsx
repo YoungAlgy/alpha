@@ -19,7 +19,7 @@ import { hasUsableReaderProfile } from "@/lib/reader-profile-state";
 import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import { latestVisibleIssue } from "@/lib/latest-visible-issue";
 import { useOnboarding } from "@/lib/onboarding-state";
-import { currentPeriodIso, nextSendIso, SEND_HOUR_UTC } from "@/lib/cadence";
+import { currentPeriodIso, nextSendIso, SEND_HOUR_UTC, SEND_MINUTE_UTC } from "@/lib/cadence";
 import { fanfare } from "@/lib/audio";
 import { SHARE_LEAD } from "@/lib/copy";
 import type { Issue } from "@/lib/types";
@@ -625,16 +625,16 @@ function weekLabel(weekOf: string): string {
 }
 
 // "Next one ships May 24" — the upcoming send (daily cadence: tomorrow).
-// Anchored to the real 14:00 UTC cron fire time, then rendered in the
+// Anchored to the real 14:17 UTC primary cron fire time, then rendered in the
 // reader's own local timezone (same convention as weekLabel above) — a
 // reader at UTC+10 or higher otherwise sees this read a full day earlier
 // than the day the letter actually lands on their local calendar.
 function nextSendLabel(): string {
   // alpha-drift-r33-02 (2026-08-14): now shares lib/cadence.ts's
-  // SEND_HOUR_UTC with components/Digest.tsx's formatDateline, instead of
-  // each hardcoding its own "14:00:00Z" literal -- that drift is exactly
+  // SEND_HOUR_UTC and SEND_MINUTE_UTC with components/Digest.tsx's
+  // formatDateline, instead of each hardcoding its own send-time literal -- that drift is exactly
   // what let Digest's copy silently fall 2 hours behind the real send time.
-  const d = new Date(`${nextSendIso()}T${String(SEND_HOUR_UTC).padStart(2, "0")}:00:00Z`);
+  const d = new Date(`${nextSendIso()}T${String(SEND_HOUR_UTC).padStart(2, "0")}:${String(SEND_MINUTE_UTC).padStart(2, "0")}:00Z`);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 

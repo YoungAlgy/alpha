@@ -410,7 +410,7 @@ export function prepareLetterNotification(
   }
   // Idempotency key: stable per (subscriber, send date, lane). If a send for
   // the same (user, week_of, lane) is retried — a GitHub Actions retry cron
-  // (daily-send.yml's 15:00/18:00 UTC offset schedules) racing the 14:00 UTC
+  // (daily-send.yml's 15:37/18:47 UTC offset schedules) racing the 14:17 UTC
   // primary run, the rollback path re-opening the delivered_at claim, a
   // workflow_dispatch re-trigger — Resend collapses it provider-side and the subscriber
   // gets ONE letter. The scheduled route deliberately keeps live and fallback

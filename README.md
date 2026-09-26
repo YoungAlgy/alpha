@@ -46,7 +46,7 @@ no-model mode on and paid AI off. Historical overrides and forced resends are
 closed during this rollout. Health reports subscriber delivery open, which
 does not itself prove a schedule is active or a letter has been delivered.
 Saved letters, invite approval, sign-in, support, and operator alerts remain
-available. The 14:00 UTC primary slot and 15:00/18:00 UTC recovery slots share
+available. The 14:17 UTC primary slot and 15:37/18:47 UTC recovery slots share
 one concurrency group. Already-covered days skip installation and build.
 Live deployment and first-batch evidence belong in the dated Desktop Files
 launch checkpoint. Scheduled configuration alone does not prove that a future
@@ -277,11 +277,18 @@ bash scripts/deploy-from-wsl.sh
 
 The daily letter send itself does **not** run on Cloudflare (see the CPU-limit note above) —
 it runs on GitHub Actions instead (`.github/workflows/daily-send.yml`, `next build && next start`,
-14:00 UTC primary + 15:00 UTC and 18:00 UTC retries — the second retry was added 2026-08-06 after
-a real GitHub Actions platform-wide outage took out both the 14:00 and 15:00 runs the same day),
+14:17 UTC primary + 15:37 UTC and 18:47 UTC retries. These off-peak minutes reduce
+top-of-hour contention, but GitHub does not guarantee punctual execution),
 starting its own temporary server on the GitHub runner and calling that server's
 `/api/cron/weekly-send` route over localhost. `.github/workflows/letter-watchdog.yml` checks delivery + secrets health daily and
-opens a GitHub Issue on failure.
+opens a GitHub Issue on failure. Its 20:37 UTC check follows the final retry's
+90-minute job budget and uses UTC midnight for coverage, so yesterday's late
+delivery cannot satisfy today's check. It shares GitHub with the sender and is
+not an independent safeguard against a GitHub-wide outage.
+
+In Tampa during daylight saving time, the target starts are 10:17 AM, 11:37 AM,
+and 2:47 PM, with the watchdog at 4:37 PM. During standard time each is one hour
+earlier. These are attempt times, not promised inbox arrival times.
 
 DNS for `everyday.report` is Cloudflare-managed (migrated from Vercel DNS 2026-07-30).
 

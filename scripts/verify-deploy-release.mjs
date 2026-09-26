@@ -50,7 +50,7 @@ try {
   const workflow = readFileSync(".github/workflows/daily-send.yml", "utf8").replace(/\r\n/g, "\n");
   const dailySlots = [...workflow.matchAll(/^    - cron: '([^']+)'/gm)].map((match) => match[1]);
   dailySendEventsVerified = /^  send:\n(?:^ {4}.*\n)*?^ {4}if: \$\{\{ github\.event_name == 'workflow_dispatch' \|\| github\.event_name == 'schedule' \}\}$/m.test(workflow) &&
-    dailySlots.join("|") === "0 14 * * *|0 15 * * *|0 18 * * *" &&
+    dailySlots.join("|") === "17 14 * * *|37 15 * * *|47 18 * * *" &&
     /^  workflow_dispatch:\s*$/m.test(workflow) &&
     !/inputs\.weekOf|WEEK_OF_INPUT|URL="\$\{URL\}\?weekOf=/.test(workflow) &&
     (workflow.match(/ALPHA_NO_MODEL_MODE: '1'/g) || []).length === 2 &&
