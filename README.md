@@ -96,7 +96,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 | AI | Optional Gemini, Groq, DeepSeek, and Anthropic writer tiers behind cost controls. `ALPHA_NO_MODEL_MODE` uses the local deterministic formatter. |
 | Web search | Bounded Brave, Gemini grounded search, You.com, and optional public RSS fallback |
 | Payments | Stripe, dedicated Alpha account, retained for exact cancellation and legacy paid-account cleanup. Invite approval creates no charge. |
-| Email | Resend — letters from `"alpha." <alpha@everyday.report>`, sign-in (Supabase SMTP) from `noreply@everyday.report`. Domain verified via Cloudflare DNS. Old sender was alpha@youngalgy.com (that domain now removed from Resend — free plan holds 1 domain). |
+| Email | Resend is primary for letters from `"alpha." <alpha@everyday.report>` and sign-in (Supabase SMTP) from `noreply@everyday.report`. Scheduled letters can select the separately verified Brevo backup before new send attempts. Sign-in stays on Resend. |
 
 ## Architecture highlights
 
@@ -190,7 +190,7 @@ of where each one lives and how to rotate it.
 
 ```
 ANTHROPIC_API_KEY=             # paid Claude writer tier, ignored unless ALPHA_ALLOW_PAID_AI is enabled
-RESEND_API_KEY=                # Email (sole provider)
+RESEND_API_KEY=                # Primary email provider
 RESEND_FROM="alpha." <alpha@everyday.report>  # optional -- every send site already defaults to this exact value if unset
 RESEND_WEBHOOK_SECRET=         # whsec_... for app/api/webhooks/resend (bounce/complaint suppression). If unset,
                                 # that route hard-503s -- bounces/complaints silently stop being suppressed, not a
@@ -297,8 +297,8 @@ The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalg
 ## Operational notes
 
 - **Billing**: new payments and paid plan changes are closed in source. Retained billing code exists for historical settlement and cleanup, not signup.
-- **Email** — Resend is the sole provider. Letters send as `"alpha." <alpha@everyday.report>`; Supabase sign-in emails (custom SMTP through Resend) send as `"alpha." <noreply@everyday.report>`. The everyday.report sending domain is verified via records in Cloudflare's DNS zone (migrated from Vercel DNS 2026-07-30).
-- **Transport capacity**. Search and writing have several bounded fallbacks, but subscriber email still has one transport. Resend availability, reputation controls, and account quota remain hard limits. The current app cannot honestly promise free delivery to hundreds or thousands of readers until a second approved transport or verified capacity plan exists.
+- **Email**. Resend remains primary. Letters send as `"alpha." <alpha@everyday.report>`; Supabase sign-in emails (custom SMTP through Resend) send as `"alpha." <noreply@everyday.report>`. The approved Brevo backup uses the separate `backup.alpha.everyday.report` domain for letters only. It does not replace sign-in SMTP.
+- **Transport capacity**. Scheduled daily preflight checks Resend sender verification and both usage windows against the known active-reader count. Quota exhaustion or a transient read-only provider outage may select Brevo after its Alpha account, free-plan credits, sender and domain checks pass. Bad credentials, unknown reader counts and malformed responses stop visibly. Selection happens before new attempts. Existing attempts keep their recorded provider, including after an uncertain send, so a provider error cannot cause a cross-provider duplicate. Manual runs keep their existing provider behavior. Both free allowances remain finite and quota reads do not reserve capacity. This does not promise unlimited free delivery or recovery from every outage.
 - **Supabase** — free tier in "Algy" org. Daily traffic prevents the 7-day idle pause.
 
 ## Decision records

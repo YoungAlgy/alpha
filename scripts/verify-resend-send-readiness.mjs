@@ -24,7 +24,7 @@ function transport({ domain = domains, quota = usage, status = 200, throwAt = -1
     return Response.json(paths.length === 1 ? domain : quota, { status });
   } };
 }
-assert.equal(BREVO_AUTOMATIC_FAILOVER_ENABLED, false);
+assert.equal(BREVO_AUTOMATIC_FAILOVER_ENABLED, true);
 let stub = transport();
 assert.deepEqual(await checkResendSendReadiness(settings, stub.fetch), { kind: "ready" });
 assert.equal(stub.paths.length, 2);

@@ -311,7 +311,7 @@ check(
     brevoPolicy.includes('from "./brevo-rollout-policy.mjs"') &&
     brevoPolicy.includes("BREVO_DELIVERY_SCHEMA_ENABLED,") &&
     brevoRolloutPolicy.includes("export const BREVO_DELIVERY_SCHEMA_ENABLED = true") &&
-    brevoRolloutPolicy.includes("export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = false") &&
+    brevoRolloutPolicy.includes("export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = true") &&
     !route.includes("to: row.email") &&
     route.indexOf("currentDeliveryEmail = freshUser.email.trim()") <
       route.indexOf("prepareLetterNotification({")

@@ -40,7 +40,7 @@ contains(policy, 'from "./brevo-rollout-policy.mjs"');
 contains(policy, "BREVO_DELIVERY_SCHEMA_ENABLED");
 contains(policy, "BREVO_SUBSCRIBER_DELIVERY_ENABLED");
 contains(rolloutPolicy, "export const BREVO_DELIVERY_SCHEMA_ENABLED = true");
-contains(rolloutPolicy, "export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = false");
+contains(rolloutPolicy, "export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = true");
 contains(delivery, "schemaEnabled: BREVO_DELIVERY_SCHEMA_ENABLED");
 contains(delivery, "brevoEnabled: canary ? BREVO_CANARY_DELIVERY_ENABLED : BREVO_SUBSCRIBER_DELIVERY_ENABLED");
 contains(delivery, "brevoWebhookReady: /^[A-Za-z0-9_-]{32,256}$/.test(process.env.BREVO_WEBHOOK_TOKEN || \"\")");
