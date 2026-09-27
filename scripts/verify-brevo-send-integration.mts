@@ -18,7 +18,7 @@ function excludes(source: string, fragment: string, label: string): void {
   checks++;
 }
 
-includes(rolloutPolicy, "export const BREVO_DELIVERY_SCHEMA_ENABLED = false", "shared schema gate stays off");
+includes(rolloutPolicy, "export const BREVO_DELIVERY_SCHEMA_ENABLED = true", "reviewed callback schema is enabled");
 includes(rolloutPolicy, "export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = false", "shared Brevo send gate stays off");
 includes(policy, 'from "./brevo-rollout-policy.mjs"', "TypeScript policy uses the shared flag source");
 includes(policy, "BREVO_DELIVERY_SCHEMA_ENABLED,", "TypeScript policy exposes the schema gate");

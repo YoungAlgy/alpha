@@ -468,7 +468,7 @@ check(
     subscriberDelivery.includes("sendResend: sendPreparedSubscriberEmail") &&
     brevoPolicy.includes('from "./brevo-rollout-policy.mjs"') &&
     brevoPolicy.includes("BREVO_DELIVERY_SCHEMA_ENABLED,") &&
-    brevoRolloutPolicy.includes("export const BREVO_DELIVERY_SCHEMA_ENABLED = false") &&
+    brevoRolloutPolicy.includes("export const BREVO_DELIVERY_SCHEMA_ENABLED = true") &&
     brevoRolloutPolicy.includes("export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = false"),
   "scheduled and forced sends must use the exact provider lane"
 );

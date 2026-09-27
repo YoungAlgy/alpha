@@ -25,7 +25,7 @@ const account = {
 const senders = { senders: [{ email: settings.sender, active: true }] };
 const domain = { domain: "backup.alpha.everyday.report", verified: true, authenticated: true };
 
-assert.equal(BREVO_DELIVERY_SCHEMA_ENABLED, false);
+assert.equal(BREVO_DELIVERY_SCHEMA_ENABLED, true);
 assert.equal(BREVO_SUBSCRIBER_DELIVERY_ENABLED, false);
 assert.equal(validateBrevoSendSettings(settings), null);
 for (const [change, reason] of [

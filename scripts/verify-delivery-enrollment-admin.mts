@@ -207,9 +207,9 @@ const enabled = await exercise();
 assert.equal(enabled.result.status, 200);
 assert.equal(enabled.row.delivery_enrolled, true);
 assert.equal(enabled.calls.authReads, 1);
-assert.equal(BREVO_DELIVERY_SCHEMA_ENABLED, false, "unreleased schema gate stays disabled");
-assert.ok(enabled.calls.selects.every((columns) => !columns.includes("brevo_unsubscribed_at")), "disabled schema does not read the new column");
-assert.ok(!enabled.calls.filters.some(([, field]) => field === "brevo_unsubscribed_at"), "disabled schema does not filter the new column");
+assert.equal(BREVO_DELIVERY_SCHEMA_ENABLED, true, "reviewed callback schema is enabled");
+assert.ok(enabled.calls.selects.some((columns) => columns.includes("brevo_unsubscribed_at")), "released schema reads Brevo suppression");
+assert.ok(enabled.calls.filters.some(([, field]) => field === "brevo_unsubscribed_at"), "released schema fences Brevo suppression in CAS");
 for (const field of [
   "email", "updated_at", "delivery_enrolled", "subscribed_at", "cancelled_at", "access_granted_at",
   "unsubscribed_at", "bounced_at", "complained_at", "suppression_cleanup_pending_at",
@@ -223,10 +223,10 @@ assert.ok(
 );
 assert.ok(!enabled.calls.filters.some(([, field]) => field === "topics"), "topics must not be sent as an array filter");
 
-const enabledWithSchema = await exercise({ schemaEnabled: true });
-assert.equal(enabledWithSchema.result.status, 200);
-assert.ok(enabledWithSchema.calls.selects.some((columns) => columns.includes("brevo_unsubscribed_at")), "enabled schema reads Brevo suppression");
-assert.ok(enabledWithSchema.calls.filters.some(([, field]) => field === "brevo_unsubscribed_at"), "enabled schema fences Brevo suppression in CAS");
+const oldSchema = await exercise({ schemaEnabled: false });
+assert.equal(oldSchema.result.status, 200);
+assert.ok(oldSchema.calls.selects.every((columns) => !columns.includes("brevo_unsubscribed_at")), "disabled schema does not read the new column");
+assert.ok(!oldSchema.calls.filters.some(([, field]) => field === "brevo_unsubscribed_at"), "disabled schema does not filter the new column");
 const brevoBlocked = await exercise({ schemaEnabled: true, row: { brevo_unsubscribed_at: "2026-09-01T00:00:00Z" } });
 assert.equal(brevoBlocked.result.status, 409, "Brevo unsubscribe blocks enrollment with the new schema");
 assert.equal(brevoBlocked.calls.payload, undefined);

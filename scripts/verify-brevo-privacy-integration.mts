@@ -39,7 +39,7 @@ const admin = read("app/api/admin/users/route.ts");
 contains(policy, 'from "./brevo-rollout-policy.mjs"');
 contains(policy, "BREVO_DELIVERY_SCHEMA_ENABLED");
 contains(policy, "BREVO_SUBSCRIBER_DELIVERY_ENABLED");
-contains(rolloutPolicy, "export const BREVO_DELIVERY_SCHEMA_ENABLED = false");
+contains(rolloutPolicy, "export const BREVO_DELIVERY_SCHEMA_ENABLED = true");
 contains(rolloutPolicy, "export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = false");
 contains(delivery, "schemaEnabled: BREVO_DELIVERY_SCHEMA_ENABLED");
 contains(delivery, "brevoEnabled: BREVO_SUBSCRIBER_DELIVERY_ENABLED");
