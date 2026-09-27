@@ -1,16 +1,16 @@
 import { resendConfigured, sendPreparedSubscriberEmail } from "./email";
 import { SUBSCRIBER_LETTERS_ENABLED } from "./subscriber-delivery-policy";
-import { BREVO_DELIVERY_SCHEMA_ENABLED, BREVO_SUBSCRIBER_DELIVERY_ENABLED } from "./brevo-delivery-policy";
+import { BREVO_CANARY_DELIVERY_ENABLED, BREVO_DELIVERY_SCHEMA_ENABLED, BREVO_SUBSCRIBER_DELIVERY_ENABLED } from "./brevo-delivery-policy";
 import {
   routeSubscriberLetter, subscriberDeliveryConfigured,
   type SubscriberDeliveryConfig, type SubscriberLetterDeliveryParams,
 } from "./subscriber-email-router";
 
-function deliveryConfig(): SubscriberDeliveryConfig {
+function deliveryConfig(canary = false): SubscriberDeliveryConfig {
   return {
     lettersEnabled: SUBSCRIBER_LETTERS_ENABLED,
     schemaEnabled: BREVO_DELIVERY_SCHEMA_ENABLED,
-    brevoEnabled: BREVO_SUBSCRIBER_DELIVERY_ENABLED,
+    brevoEnabled: canary ? BREVO_CANARY_DELIVERY_ENABLED : BREVO_SUBSCRIBER_DELIVERY_ENABLED,
     preferredProvider: process.env.ALPHA_SUBSCRIBER_EMAIL_PROVIDER?.trim() || "resend",
     resendReady: resendConfigured(),
     brevoApiKey: process.env.BREVO_API_KEY?.trim() || "",
@@ -19,9 +19,9 @@ function deliveryConfig(): SubscriberDeliveryConfig {
   };
 }
 
-export function subscriberEmailConfigured(providerOverride?: "brevo"): boolean {
-  const config = deliveryConfig();
-  return subscriberDeliveryConfigured(providerOverride ? { ...config, preferredProvider: providerOverride } : config);
+export function subscriberEmailConfigured(canary?: "brevo_canary"): boolean {
+  const config = deliveryConfig(canary === "brevo_canary");
+  return subscriberDeliveryConfigured(canary ? { ...config, preferredProvider: "brevo" } : config);
 }
 
 export function subscriberEmailStatus(): {
@@ -41,11 +41,11 @@ export function subscriberEmailStatus(): {
 
 export async function sendPreparedSubscriberLetter(
   params: SubscriberLetterDeliveryParams,
-  providerOverride?: "brevo",
+  canary?: "brevo_canary",
 ) {
-  const config = deliveryConfig();
-  return routeSubscriberLetter(providerOverride ? { ...params, requireProvider: providerOverride } : params, {
-    config: providerOverride ? { ...config, preferredProvider: providerOverride } : config,
+  const config = deliveryConfig(canary === "brevo_canary");
+  return routeSubscriberLetter(canary ? { ...params, requireProvider: "brevo" } : params, {
+    config: canary ? { ...config, preferredProvider: "brevo" } : config,
     sendResend: sendPreparedSubscriberEmail,
     brevoTransport: (url, init) => fetch(url, init),
   });

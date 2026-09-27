@@ -20,7 +20,7 @@ function same(actual: unknown, expected: unknown) { assert.deepEqual(actual, exp
 async function invoke(options: {
   workflow?: boolean;
   schema?: boolean;
-  sendGate?: boolean;
+  canaryGate?: boolean;
   noModel?: boolean;
   noPaid?: boolean;
   issue?: boolean;
@@ -52,7 +52,7 @@ async function invoke(options: {
     "@/lib/subscriber-delivery-policy": { SUBSCRIBER_LETTERS_ENABLED: true },
     "@/lib/brevo-delivery-policy": {
       BREVO_DELIVERY_SCHEMA_ENABLED: options.schema ?? true,
-      BREVO_SUBSCRIBER_DELIVERY_ENABLED: options.sendGate ?? true,
+      BREVO_CANARY_DELIVERY_ENABLED: options.canaryGate ?? true,
     },
     "@/lib/brevo-canary-policy": { parseBrevoCanaryRequest },
     "@/lib/supabase/server": { supabaseServiceClient: async () => { calls.push("supabaseServiceClient"); return sb; } },
@@ -85,7 +85,7 @@ const conflictingInput = await invoke({ path: `${url}&force=1` });
 same(conflictingInput.response.status, 400);
 same(conflictingInput.calls, []);
 
-for (const flags of [{ schema: false }, { sendGate: false }, { noModel: false }, { noPaid: false }]) {
+for (const flags of [{ schema: false }, { canaryGate: false }, { noModel: false }, { noPaid: false }]) {
   const denied = await invoke(flags);
   same(denied.response.status, 503);
   same(denied.calls, []);

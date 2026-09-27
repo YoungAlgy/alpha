@@ -20,12 +20,13 @@ function excludes(source: string, fragment: string, label: string): void {
 
 includes(rolloutPolicy, "export const BREVO_DELIVERY_SCHEMA_ENABLED = true", "reviewed callback schema is enabled");
 includes(rolloutPolicy, "export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = false", "shared Brevo send gate stays off");
+includes(rolloutPolicy, "export const BREVO_CANARY_DELIVERY_ENABLED = true", "exact-reader canary gate is open");
 includes(policy, 'from "./brevo-rollout-policy.mjs"', "TypeScript policy uses the shared flag source");
 includes(policy, "BREVO_DELIVERY_SCHEMA_ENABLED,", "TypeScript policy exposes the schema gate");
 includes(policy, "BREVO_SUBSCRIBER_DELIVERY_ENABLED,", "TypeScript policy exposes the send gate");
 for (const [label, route] of [["cron", cron], ["generate", generate]] as const) {
   includes(route, label === "cron"
-    ? 'subscriberEmailConfigured(canaryUserId ? "brevo" : undefined)'
+    ? 'subscriberEmailConfigured(canaryUserId ? "brevo_canary" : undefined)'
     : "subscriberEmailConfigured()", `${label} uses provider-aware readiness`);
   includes(route, "sendPreparedSubscriberLetter({", `${label} uses shared delivery router`);
   includes(route, "prepared: preparedEmail", `${label} sends its prepared object`);

@@ -9,7 +9,7 @@ import {
   prepareLetterNotification,
   sendOpsAlert,
 } from "@/lib/email";
-import { BREVO_DELIVERY_SCHEMA_ENABLED, BREVO_SUBSCRIBER_DELIVERY_ENABLED } from "@/lib/brevo-delivery-policy";
+import { BREVO_CANARY_DELIVERY_ENABLED, BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
 import { parseBrevoCanaryRequest } from "@/lib/brevo-canary-policy";
 import { subscriberEmailConfigured, sendPreparedSubscriberLetter } from "@/lib/subscriber-email-delivery";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
@@ -325,7 +325,7 @@ export async function GET(req: Request) {
   }
   const canaryUserId = canaryRequest.kind === "canary" ? canaryRequest.userId : null;
   const canaryDate = canaryUserId ? currentPeriodIso() : null;
-  if (canaryUserId && (!BREVO_DELIVERY_SCHEMA_ENABLED || !BREVO_SUBSCRIBER_DELIVERY_ENABLED)) {
+  if (canaryUserId && (!BREVO_DELIVERY_SCHEMA_ENABLED || !BREVO_CANARY_DELIVERY_ENABLED)) {
     return NextResponse.json({ error: "Brevo rollout gates are closed." }, { status: 503 });
   }
   if (canaryUserId && (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0")) {
@@ -1156,7 +1156,7 @@ export async function GET(req: Request) {
       // anything went wrong. Throwing routes this through the same per-user
       // catch as every other failure, so it's counted, alerted on, and
       // (once a persisted-issue-row retry path exists) safely retryable.
-      if (!subscriberEmailConfigured(canaryUserId ? "brevo" : undefined)) {
+      if (!subscriberEmailConfigured(canaryUserId ? "brevo_canary" : undefined)) {
         throw new Error("Subscriber email transport is not configured — cannot send.");
       }
 
@@ -1335,7 +1335,7 @@ export async function GET(req: Request) {
           deliveryLane: deliveryIdempotencyKind,
           expectedClaimedAt: force ? null : claimedAt,
           prepared: preparedEmail,
-        }, canaryUserId ? "brevo" : undefined);
+        }, canaryUserId ? "brevo_canary" : undefined);
         providerSent = delivery.providerSent;
         if (canaryUserId && delivery.provider === "brevo" && providerSent) {
           canaryBrevoAccepted = true;

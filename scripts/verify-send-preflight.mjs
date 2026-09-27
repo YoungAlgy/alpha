@@ -18,10 +18,12 @@
 import { isExactAlphaSupabaseUrl } from "./alpha-supabase-url.mjs";
 import { readBoundedJson } from "./alpha-preflight-response.mjs";
 import {
+  BREVO_CANARY_DELIVERY_ENABLED,
   BREVO_DELIVERY_SCHEMA_ENABLED,
   BREVO_SUBSCRIBER_DELIVERY_ENABLED,
 } from "../lib/brevo-rollout-policy.mjs";
 import { checkBrevoSendReadiness } from "./brevo-send-readiness.mjs";
+import { validateSendScope } from "./run-brevo-canary.mjs";
 
 const GENERATOR_KEYS = [
   "ANTHROPIC_API_KEY",
@@ -62,6 +64,9 @@ let baseFailures = 0;
 let deliveryReady = true;
 const preferredProvider = process.env.ALPHA_SUBSCRIBER_EMAIL_PROVIDER?.trim() || "resend";
 const brevoSelected = preferredProvider === "brevo";
+const canaryScope = validateSendScope(process.env);
+const brevoCanarySelected = brevoSelected && canaryScope.ok && canaryScope.canary &&
+  process.env.GITHUB_ACTIONS === "true";
 
 function configured(name) {
   return Boolean(process.env[name]?.trim());
@@ -100,7 +105,8 @@ if (preferredProvider !== "resend" && !brevoSelected) {
   console.error("::error::Unsupported subscriber email provider selection. Value withheld.");
   deliveryReady = false;
 }
-if (brevoSelected && (!BREVO_DELIVERY_SCHEMA_ENABLED || !BREVO_SUBSCRIBER_DELIVERY_ENABLED)) {
+if (brevoSelected && (!BREVO_DELIVERY_SCHEMA_ENABLED ||
+    !(BREVO_SUBSCRIBER_DELIVERY_ENABLED || (brevoCanarySelected && BREVO_CANARY_DELIVERY_ENABLED)))) {
   console.error("::error::Brevo subscriber delivery is disabled in source. Stopping before provider checks or generation.");
   deliveryReady = false;
 }

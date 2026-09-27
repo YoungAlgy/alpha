@@ -86,7 +86,7 @@ assert.deepEqual(await checkBrevoSendReadiness({ ...settings, apiKey: "bad" }, a
 const policyTs = read("../lib/brevo-delivery-policy.ts");
 assert.match(policyTs, /from "\.\/brevo-rollout-policy\.mjs"/);
 const preflight = read("./verify-send-preflight.mjs");
-assert.match(preflight, /BREVO_DELIVERY_SCHEMA_ENABLED \|\| !BREVO_SUBSCRIBER_DELIVERY_ENABLED/);
+assert.match(preflight, /BREVO_SUBSCRIBER_DELIVERY_ENABLED \|\| \(brevoCanarySelected && BREVO_CANARY_DELIVERY_ENABLED\)/);
 assert.match(preflight, /deliveryReady && brevoSelected/);
 assert.match(preflight, /deliveryReady && !brevoSelected/);
 const workflow = read("../.github/workflows/daily-send.yml");
