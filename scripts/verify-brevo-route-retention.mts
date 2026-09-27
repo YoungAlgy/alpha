@@ -37,9 +37,13 @@ same(await pruneUnownedBrevoEvents({ rpc: async () => { throw new Error("private
   { pruned: 0, remaining: true, errors: 1 });
 
 const route = read("app/api/webhooks/brevo/route.ts");
+const webhook = read("lib/brevo-webhook.ts");
 const maintenance = read("app/api/cron/account-deletion-maintenance/route.ts");
-same(route.includes("BREVO_DELIVERY_SCHEMA_ENABLED") &&
-  route.indexOf("if (!BREVO_DELIVERY_SCHEMA_ENABLED)") < route.indexOf("handleBrevoSuppressionWebhook(req"), true);
+same(route.includes("schemaEnabled: BREVO_DELIVERY_SCHEMA_ENABLED"), true);
+const authGate = webhook.indexOf("if (!authenticateBrevoWebhook(");
+const schemaGate = webhook.indexOf("if (options.schemaEnabled !== true)");
+const bodyRead = webhook.indexOf("await boundedBody(req,");
+same(authGate >= 0 && schemaGate > authGate && bodyRead > schemaGate, true);
 same(route.includes("secret: process.env.BREVO_WEBHOOK_TOKEN"), true);
 same(route.indexOf("handleBrevoSuppressionWebhook(req") < route.indexOf("const sb = await supabaseServiceClient()"), true);
 same(route.includes('sb.rpc("record_brevo_suppression_event"') &&

@@ -112,6 +112,36 @@ same(brevoDeliveryConfigured({ ...base, brevoSender: "alpha@example.com" }), fal
   same(db.calls[0], "resolve_subscriber_delivery_provider");
 }
 
+// A readiness-selected Brevo preference cannot move an existing Resend
+// attempt, even when claiming, sending or saving acceptance fails.
+for (const stage of ["claim", "send", "finalize"] as const) {
+  const db = fakeRpc("resend", stage === "claim" ? "manual_review" : "claimed");
+  const originalRpc = db.sb.rpc;
+  db.sb.rpc = async (name, args) => {
+    const result = await originalRpc(name, args);
+    if (name === "finalize_resend_delivery_attempt" && stage === "finalize") {
+      throw new Error("local finalize connection lost");
+    }
+    return result;
+  };
+  let resend = 0; let brevo = 0;
+  await rejects(routeSubscriberLetter({ ...params(), sb: db.sb as never }, {
+    config: { ...base, preferredProvider: "brevo" },
+    sendResend: async () => {
+      resend++;
+      if (stage === "send") throw new Error("local send timeout after possible acceptance");
+      return { id: "re_local_accepted" };
+    },
+    brevoTransport: async () => { brevo++; throw new Error("must not fail over"); },
+  }), /Resend delivery attempt|local finalize connection lost/);
+  same(resend, stage === "claim" ? 0 : 1);
+  same(brevo, 0);
+  same(db.calls, [
+    "resolve_subscriber_delivery_provider", "claim_resend_delivery_attempt",
+    ...(stage === "finalize" ? ["finalize_resend_delivery_attempt"] : []),
+  ]);
+}
+
 {
   const db = fakeRpc("resend"); let resend = 0; let brevo = 0;
   await rejects(routeSubscriberLetter({ ...params(), requireProvider: "brevo", sb: db.sb as never }, {

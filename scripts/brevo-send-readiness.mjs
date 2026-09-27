@@ -42,7 +42,10 @@ async function getReadinessJson(path, apiKey, fetchImpl) {
   return readBoundedJson(response, RESPONSE_LIMIT);
 }
 
-export async function checkBrevoSendReadiness(settings, fetchImpl = fetch) {
+export async function checkBrevoSendReadiness(settings, fetchImpl = fetch, requiredCredits = 1) {
+  if (!Number.isSafeInteger(requiredCredits) || requiredCredits < 1) {
+    return { ready: false, reason: "capacity_count_unavailable" };
+  }
   const configurationError = validateBrevoSendSettings(settings);
   if (configurationError) return { ready: false, reason: configurationError };
   if (typeof fetchImpl !== "function") return { ready: false, reason: "transport_missing" };
@@ -54,13 +57,15 @@ export async function checkBrevoSendReadiness(settings, fetchImpl = fetch) {
       return { ready: false, reason: "account_relay_unavailable" };
     }
     // This backup is authorized only on the displayed free email allowance.
-    // The account API is a point-in-time check, not a capacity reservation.
+    // credits means remaining credits, not a fixed daily limit. The account
+    // API is a point-in-time check, not a capacity reservation.
+    // https://github.com/getbrevo/brevo-java/blob/master/docs/GetAccountPlan.md
     const plans = account.plan;
     const freeEmail = Array.isArray(plans)
       ? plans.filter((plan) => plan?.type === "free" && plan?.creditsType === "sendLimit")
       : [];
     if (freeEmail.length !== 1 ||
-        !Number.isSafeInteger(freeEmail[0].credits) || freeEmail[0].credits <= 0 ||
+        !Number.isSafeInteger(freeEmail[0].credits) || freeEmail[0].credits < requiredCredits ||
         !plans.every((plan) => plan?.type === "sms" ||
           (plan?.type === "free" && plan?.creditsType === "sendLimit"))) {
       return { ready: false, reason: "free_capacity_unavailable" };

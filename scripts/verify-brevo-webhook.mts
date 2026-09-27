@@ -41,6 +41,7 @@ async function responseIs(response: Response, status: number, body: unknown): Pr
   equal(response.status, status);
   equal(await response.json(), body);
   equal(response.headers.get("cache-control"), "no-store");
+  equal(response.headers.get("retry-after"), status === 429 ? "600" : null);
 }
 
 function bodyWithPullMarker(): { body: ReadableStream<Uint8Array>; wasRead: () => boolean } {
@@ -77,6 +78,7 @@ async function main(): Promise<void> {
     });
   }
   equal(parseBrevoSuppressionEvent({ ...EVENT, event: "soft_bounce" }, NOW), { status: "ignored" });
+  equal(parseBrevoSuppressionEvent([EVENT], NOW), { status: "invalid" });
   for (const bad of [
     { ...EVENT, event: "hard_bounce;drop" },
     { ...EVENT, "message-id": "<a@example.com><b@example.com>" },
@@ -97,7 +99,7 @@ async function main(): Promise<void> {
     return [{ delivery_status: "applied", updated_count: 1 }];
   };
   const handle = (req: Request, options: Partial<Parameters<typeof handleBrevoSuppressionWebhook>[1]> = {}) =>
-    handleBrevoSuppressionWebhook(req, { secret: SECRET, record, nowMs: NOW, ...options });
+    handleBrevoSuppressionWebhook(req, { secret: SECRET, schemaEnabled: true, record, nowMs: NOW, ...options });
 
   await responseIs(await handle(jsonRequest(EVENT)), 200, { received: true });
   equal(recorded, [{ messageId: "Case.ID@example.com", recipient: "reader@example.com", type: "hard_bounce", eventAt: new Date(NOW).toISOString() }]);
@@ -110,11 +112,13 @@ async function main(): Promise<void> {
   for (const [headers, options, status, body] of [
     [{ authorization: `Bearer ${SECRET}x` }, {}, 401, { error: "unauthorized" }],
     [{ authorization: "" }, {}, 401, { error: "unauthorized" }],
-    [{}, { secret: undefined }, 503, { error: "webhook_not_configured" }],
+    [{ authorization: "" }, { schemaEnabled: false }, 401, { error: "unauthorized" }],
+    [{}, { schemaEnabled: false }, 429, { error: "webhook_not_configured" }],
+    [{}, { secret: undefined }, 429, { error: "webhook_not_configured" }],
     [{ "content-type": "text/plain" }, {}, 400, { error: "invalid_body" }],
     [{ "content-length": "16385" }, {}, 400, { error: "invalid_body" }],
     [{ "content-length": "nope" }, {}, 400, { error: "invalid_body" }],
-    [{}, { readTimeoutMs: 0 }, 503, { error: "webhook_not_configured" }],
+    [{}, { readTimeoutMs: 0 }, 429, { error: "webhook_not_configured" }],
   ] as const) {
     const marker = bodyWithPullMarker();
     await responseIs(await handle(request(marker.body, headers), options), status, body);
@@ -130,16 +134,41 @@ async function main(): Promise<void> {
   equal(recorded.length, 0);
 
   const hanging = new ReadableStream<Uint8Array>({ start() { /* Never enqueue. */ } });
-  await responseIs(await handle(request(hanging), { readTimeoutMs: 20 }), 503, { error: "body_read_timeout" });
+  await responseIs(await handle(request(hanging), { readTimeoutMs: 20 }), 429, { error: "body_read_timeout" });
   equal(recorded.length, 0);
 
   for (const output of [null, [], [{ delivery_status: "unknown", updated_count: 0 }],
     [{ delivery_status: "applied", updated_count: 2 }],
     [{ delivery_status: "pending_owner", updated_count: 1 }],
     [{ delivery_status: "applied", updated_count: 1 }, { delivery_status: "applied", updated_count: 1 }]]) {
-    await responseIs(await handle(jsonRequest(EVENT), { record: async () => output }), 503, { error: "suppression_write_failed" });
+    await responseIs(await handle(jsonRequest(EVENT), { record: async () => output }), 429, { error: "suppression_write_failed" });
   }
-  await responseIs(await handle(jsonRequest(EVENT), { record: async () => { throw new Error("sensitive provider details"); } }), 503, { error: "suppression_write_failed" });
+  await responseIs(await handle(jsonRequest(EVENT), { record: async () => { throw new Error("sensitive provider details"); } }), 429, { error: "suppression_write_failed" });
+
+  // Local transport contract: a later provider retry is accepted only after
+  // persistence confirms it. SQL remains responsible for idempotent writes.
+  for (const type of ["hard_bounce", "spam", "unsubscribed"] as const) {
+    const received: BrevoSuppressionEvent[] = [];
+    const retryRecord = async (event: BrevoSuppressionEvent) => {
+      received.push(event);
+      if (received.length === 1) throw new Error("local temporary write failure");
+      return [{ delivery_status: "applied", updated_count: 1 }];
+    };
+    const payload = {
+      ...EVENT, event: type, id: 123, date: "2023-11-14 23:13:20",
+      ts: 1_699_999_000, ts_epoch: 1_699_999_000_000,
+      subject: "Local fixture only", "X-Mailin-custom": "excluded",
+      sending_ip: "192.0.2.1", template_id: 42, tags: ["excluded"],
+    };
+    await responseIs(await handle(jsonRequest(payload), { record: retryRecord }), 429, { error: "suppression_write_failed" });
+    await responseIs(await handle(jsonRequest(payload), { record: retryRecord }), 200, { received: true });
+    equal(received.length, 2);
+    equal(received[0], received[1]);
+    equal(received[1], {
+      messageId: "Case.ID@example.com", recipient: "reader@example.com",
+      type, eventAt: new Date(NOW).toISOString(),
+    });
+  }
   for (const status of ["pending_owner", "manual_review"] as const) {
     await responseIs(await handle(jsonRequest(EVENT), { record: async () => [{ delivery_status: status, updated_count: 0 }] }), 200, { received: true, reviewRequired: true });
   }

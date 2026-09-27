@@ -18,11 +18,13 @@
 import { isExactAlphaSupabaseUrl } from "./alpha-supabase-url.mjs";
 import { readBoundedJson } from "./alpha-preflight-response.mjs";
 import {
+  BREVO_AUTOMATIC_FAILOVER_ENABLED,
   BREVO_CANARY_DELIVERY_ENABLED,
   BREVO_DELIVERY_SCHEMA_ENABLED,
   BREVO_SUBSCRIBER_DELIVERY_ENABLED,
 } from "../lib/brevo-rollout-policy.mjs";
 import { checkBrevoSendReadiness } from "./brevo-send-readiness.mjs";
+import { checkResendSendReadiness } from "./resend-send-readiness.mjs";
 import { validateSendScope } from "./run-brevo-canary.mjs";
 
 const GENERATOR_KEYS = [
@@ -64,7 +66,14 @@ let baseFailures = 0;
 let deliveryReady = true;
 const preferredProvider = process.env.ALPHA_SUBSCRIBER_EMAIL_PROVIDER?.trim() || "resend";
 const brevoSelected = preferredProvider === "brevo";
+let selectedProvider = preferredProvider;
 const canaryScope = validateSendScope(process.env);
+const automaticFailoverEnabled = BREVO_AUTOMATIC_FAILOVER_ENABLED &&
+  BREVO_SUBSCRIBER_DELIVERY_ENABLED && BREVO_DELIVERY_SCHEMA_ENABLED &&
+  preferredProvider === "resend" && process.env.ALPHA_SEND_OPERATION === "daily" &&
+  process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_EVENT_NAME === "schedule" &&
+  canaryScope.ok && !canaryScope.canary;
+const activeReaderCount = Number(process.env.ALPHA_ACTIVE_READER_COUNT);
 const brevoCanarySelected = brevoSelected && canaryScope.ok && canaryScope.canary &&
   process.env.GITHUB_ACTIONS === "true";
 
@@ -190,7 +199,37 @@ console.log(
 // unrelated business's unverified domain). GET /domains costs nothing and
 // sends no email, but proves both facts: the key authenticates, and we can
 // cross-check the from-domain against what Resend actually has verified.
-if (deliveryReady && !brevoSelected) {
+if (deliveryReady && !brevoSelected && automaticFailoverEnabled) {
+  const result = await checkResendSendReadiness({
+    apiKey: process.env.RESEND_API_KEY,
+    sender: process.env.RESEND_FROM,
+    requiredCount: activeReaderCount,
+  });
+  if (result.kind === "ready") {
+    console.log("OK: Resend sender and both usage windows have capacity for the active readers.");
+  } else if (result.kind === "unavailable") {
+    // A failed GET has sent nothing. Existing provider attempts remain pinned
+    // by the ledger. A later provider call can never trigger this switch.
+    const backup = await checkBrevoSendReadiness({
+      apiKey: process.env.BREVO_API_KEY,
+      sender: process.env.BREVO_FROM_EMAIL,
+      webhookToken: process.env.BREVO_WEBHOOK_TOKEN,
+      expectedAccountEmail: process.env.BREVO_EXPECTED_ACCOUNT_EMAIL,
+    }, fetch, activeReaderCount);
+    if (backup.ready) {
+      selectedProvider = "brevo";
+      console.warn(`::warning::Resend pre-send check unavailable (${result.reason}); selecting bounded Brevo backup for new attempts.`);
+    } else {
+      console.error(`::error::Resend pre-send check unavailable and Brevo readiness failed (${backup.reason}).`);
+      deliveryReady = false;
+    }
+  } else {
+    console.error(`::error::Resend sender or usage check blocked (${result.reason}).`);
+    deliveryReady = false;
+  }
+}
+
+if (deliveryReady && !brevoSelected && !automaticFailoverEnabled) {
   try {
     const res = await fetch("https://api.resend.com/domains", {
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
@@ -226,7 +265,7 @@ if (deliveryReady && brevoSelected) {
     sender: process.env.BREVO_FROM_EMAIL,
     webhookToken: process.env.BREVO_WEBHOOK_TOKEN,
     expectedAccountEmail: process.env.BREVO_EXPECTED_ACCOUNT_EMAIL,
-  });
+  }, fetch, brevoCanarySelected ? 1 : activeReaderCount);
   if (!result.ready) {
     console.error(`::error::Brevo readiness failed (${result.reason}). Stopping before install, build or generation. Values withheld.`);
     deliveryReady = false;
@@ -240,3 +279,4 @@ if (!deliveryReady) {
   console.error("::error::Delivery preflight failed. No install, build or generation may follow.");
   process.exit(1);
 }
+await setWorkflowOutput("selected_provider", selectedProvider);

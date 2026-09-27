@@ -107,6 +107,19 @@ function resultResponse(status: number, body: Record<string, unknown>): Response
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+/** Brevo discards callbacks on 5xx. Its documented retryable response is 429.
+ * Keep transient failures unacknowledged and preserve the provider's bounded
+ * retry schedule. This does not retry an email or weaken request validation.
+ * https://developers.brevo.com/docs/retry-mechanism */
+function brevoWebhookRetryResponse(
+  error: "webhook_not_configured" | "body_read_timeout" | "suppression_write_failed",
+): Response {
+  return Response.json({ error }, {
+    status: 429,
+    headers: { "Cache-Control": "no-store", "Retry-After": "600" },
+  });
+}
+
 /** Isolated ingress. Callers inject persistence after shared ownership and
  * suppression RPCs are installed. No environment loading or provider calls.
  * A failed persistence operation is never acknowledged as received. */
@@ -114,6 +127,7 @@ export async function handleBrevoSuppressionWebhook(
   req: Request,
   options: {
     secret: string | undefined;
+    schemaEnabled: boolean;
     record: (event: BrevoSuppressionEvent) => Promise<unknown>;
     nowMs?: number;
     readTimeoutMs?: number;
@@ -121,11 +135,14 @@ export async function handleBrevoSuppressionWebhook(
 ): Promise<Response> {
   if (req.method !== "POST") return resultResponse(405, { error: "method_not_allowed" });
   if (!brevoWebhookSecretConfigured(options.secret)) {
-    return resultResponse(503, { error: "webhook_not_configured" });
+    return brevoWebhookRetryResponse("webhook_not_configured");
   }
   if (!authenticateBrevoWebhook(req.headers.get("authorization"), options.secret)) {
     return resultResponse(401, { error: "unauthorized" });
   }
+  // Authenticate even while the schema gate is closed. No body read or
+  // persistence is allowed until the protected audit table is available.
+  if (options.schemaEnabled !== true) return brevoWebhookRetryResponse("webhook_not_configured");
   const contentType = req.headers.get("content-type") ?? "";
   const length = req.headers.get("content-length");
   if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(contentType) ||
@@ -134,13 +151,13 @@ export async function handleBrevoSuppressionWebhook(
   }
   const timeoutMs = options.readTimeoutMs ?? MAX_READ_MS;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_READ_MS) {
-    return resultResponse(503, { error: "webhook_not_configured" });
+    return brevoWebhookRetryResponse("webhook_not_configured");
   }
   let parsed: ParsedEvent;
   try {
     parsed = parseBrevoSuppressionEvent(await boundedBody(req, timeoutMs), options.nowMs);
   } catch (error) {
-    if (error instanceof BodyReadTimeout) return resultResponse(503, { error: "body_read_timeout" });
+    if (error instanceof BodyReadTimeout) return brevoWebhookRetryResponse("body_read_timeout");
     return resultResponse(400, { error: "invalid_body" });
   }
   if (parsed.status === "invalid") return resultResponse(400, { error: "invalid_event" });
@@ -151,7 +168,7 @@ export async function handleBrevoSuppressionWebhook(
     if (!row || !RECORD_STATUSES.has(row.delivery_status) ||
         !Number.isSafeInteger(row.updated_count) || row.updated_count < 0 || row.updated_count > 1 ||
         (row.delivery_status !== "applied" && row.updated_count !== 0)) {
-      return resultResponse(503, { error: "suppression_write_failed" });
+      return brevoWebhookRetryResponse("suppression_write_failed");
     }
     return resultResponse(200, {
       received: true,
@@ -159,6 +176,6 @@ export async function handleBrevoSuppressionWebhook(
         ? { reviewRequired: true } : {}),
     });
   } catch {
-    return resultResponse(503, { error: "suppression_write_failed" });
+    return brevoWebhookRetryResponse("suppression_write_failed");
   }
 }

@@ -5,15 +5,11 @@ import { supabaseServiceClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 export async function POST(req: Request): Promise<Response> {
-  // A provider can be configured before the matching SQL release. The route
-  // cannot acknowledge events until their protected audit table is installed.
-  if (!BREVO_DELIVERY_SCHEMA_ENABLED) {
-    return Response.json({ error: "webhook_not_configured" }, {
-      status: 503, headers: { "Cache-Control": "no-store" },
-    });
-  }
   return handleBrevoSuppressionWebhook(req, {
     secret: process.env.BREVO_WEBHOOK_TOKEN,
+    // The handler authenticates first, then requests a retry if the matching
+    // protected audit schema is not released yet. No body or database read.
+    schemaEnabled: BREVO_DELIVERY_SCHEMA_ENABLED,
     // The isolated handler authenticates before reading a body or calling this.
     // No database client exists for an unauthenticated request.
     record: async (event) => {

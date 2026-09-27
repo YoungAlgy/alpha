@@ -186,6 +186,7 @@ jobs:
             [ -n "${ACTIVE_COUNT}" ] || ACTIVE_COUNT=-1
           fi
           echo "uncovered=${UNCOVERED_COUNT} active=${ACTIVE_COUNT}"
+          echo "active_count=${ACTIVE_COUNT}" >> "$GITHUB_OUTPUT"
 
           # Only skip on confident delivery coverage. Uncertain RPC output and
           # zero active subscribers proceed through the normal pipeline.
@@ -233,6 +234,7 @@ jobs:
           BREVO_WEBHOOK_TOKEN: ${{ secrets.SEND_BREVO_WEBHOOK_TOKEN }}
           BREVO_EXPECTED_ACCOUNT_EMAIL: ${{ secrets.SEND_BREVO_EXPECTED_ACCOUNT_EMAIL }}
           ALPHA_SUBSCRIBER_EMAIL_PROVIDER: ${{ vars.SEND_ALPHA_SUBSCRIBER_EMAIL_PROVIDER }}
+          ALPHA_ACTIVE_READER_COUNT: ${{ steps.precheck.outputs.active_count }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
           ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           ALPHA_NO_MODEL_MODE: '1'
@@ -316,6 +318,7 @@ jobs:
           BREVO_FROM_EMAIL: ${{ secrets.SEND_BREVO_FROM_EMAIL }}
           BREVO_WEBHOOK_TOKEN: ${{ secrets.SEND_BREVO_WEBHOOK_TOKEN }}
           ALPHA_SUBSCRIBER_EMAIL_PROVIDER: ${{ vars.SEND_ALPHA_SUBSCRIBER_EMAIL_PROVIDER }}
+          ALPHA_PREFLIGHT_SELECTED_PROVIDER: ${{ steps.preflight.outputs.selected_provider }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
           # route.ts's sendOpsAlert() falls back to this when Resend itself
           # is the thing that's broken (see lib/email.ts's comment on
@@ -335,6 +338,11 @@ jobs:
           if [ "${ALPHA_SEND_OPERATION}" = "brevo_canary" ]; then
             export ALPHA_BREVO_CANARY_MODE=1
             export ALPHA_SUBSCRIBER_EMAIL_PROVIDER=resend
+          else
+            case "${ALPHA_PREFLIGHT_SELECTED_PROVIDER}" in
+              resend|brevo) export ALPHA_SUBSCRIBER_EMAIL_PROVIDER="${ALPHA_PREFLIGHT_SELECTED_PROVIDER}" ;;
+              *) echo "::error::Preflight did not select a valid sender."; exit 1 ;;
+            esac
           fi
 
           # server.log can contain subscriber-entered topic text, model output,

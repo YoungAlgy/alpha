@@ -61,6 +61,12 @@ async function fixtureTransport(overrides = {}) {
 const ready = await fixtureTransport();
 assert.deepEqual(await checkBrevoSendReadiness(settings, ready.transport), { ready: true });
 assert.deepEqual(ready.calls, expectedPaths);
+assert.deepEqual(await checkBrevoSendReadiness(settings, (await fixtureTransport()).transport, 301), {
+  ready: false, reason: "free_capacity_unavailable",
+});
+assert.deepEqual(await checkBrevoSendReadiness(settings, (await fixtureTransport()).transport, 0), {
+  ready: false, reason: "capacity_count_unavailable",
+});
 for (const [override, reason, expectedCalls] of [
   [{ account: { ...account, email: "other@fixture.invalid" } }, "account_relay_unavailable", 1],
   [{ account: { ...account, relay: { enabled: false } } }, "account_relay_unavailable", 1],
