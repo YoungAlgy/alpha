@@ -2,6 +2,8 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { reconcileStaleAccountDeletions } from "@/lib/account-deletion-reconciler";
 import { pruneUnownedResendEvents } from "@/lib/resend-event-retention";
+import { pruneUnownedBrevoEvents } from "@/lib/brevo-event-retention";
+import { BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
 import { sendOpsAlert } from "@/lib/email";
 import { supabaseServiceClient } from "@/lib/supabase/server";
 
@@ -40,6 +42,9 @@ export async function GET(req: Request) {
   // Run retention before slower Auth/billing recovery. A failed item must not
   // prevent the next scheduled batch from removing expired webhook evidence.
   const resendEventRetention = await pruneUnownedResendEvents(sb);
+  const brevoEventRetention = BREVO_DELIVERY_SCHEMA_ENABLED
+    ? await pruneUnownedBrevoEvents(sb)
+    : null;
   const nowIso = new Date().toISOString();
   const accountDeletion = await reconcileStaleAccountDeletions(sb, {
     nowIso,
@@ -122,6 +127,7 @@ export async function GET(req: Request) {
     dueDeletionTombstones,
     dueDeletionTombstoneCountErrors,
     resendEventRetention,
+    ...(brevoEventRetention ? { brevoEventRetention } : {}),
   };
   console.log(
     "[cron/account-deletion-maintenance] summary:",
@@ -138,7 +144,9 @@ export async function GET(req: Request) {
     summary.dueDeletionTombstones > 0 ||
     summary.dueDeletionTombstoneCountErrors > 0 ||
     resendEventRetention.errors > 0 ||
-    resendEventRetention.remaining;
+    resendEventRetention.remaining ||
+    (brevoEventRetention?.errors ?? 0) > 0 ||
+    (brevoEventRetention?.remaining ?? false);
   if (needsAttention) {
     await sendOpsAlert(
       "[alpha] account deletion maintenance needs review",
@@ -147,6 +155,9 @@ export async function GET(req: Request) {
         `Pending account deletion sagas: ${pendingDeletionSagas}.`,
         `Due deletion tombstones remaining: ${dueDeletionTombstones}.`,
         `Expired unowned delivery events removed: ${resendEventRetention.pruned}. More due: ${resendEventRetention.remaining}. Retention errors: ${resendEventRetention.errors}.`,
+        brevoEventRetention
+          ? `Expired unowned Brevo events removed: ${brevoEventRetention.pruned}. More may be due: ${brevoEventRetention.remaining}. Retention errors: ${brevoEventRetention.errors}.`
+          : "",
         deletionPruneErrors > 0
           ? "Completed deletion-marker pruning failed."
           : "",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { rateLimit } from "@/lib/rate-limit";
+import { BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
 
 export const runtime = "nodejs";
 
@@ -59,6 +60,24 @@ export async function POST() {
   }
 
   const svc = await supabaseServiceClient();
+  if (BREVO_DELIVERY_SCHEMA_ENABLED) {
+    // Only Alpha's own pause can be cleared here. A provider opt-out needs
+    // reviewed provider-side recovery before this screen can promise mail.
+    const { data: resumed, error: resumeError } = await svc.from("users")
+      .update({ unsubscribed_at: null })
+      .eq("id", user.id)
+      .is("brevo_unsubscribed_at", null)
+      .select("id");
+    if (resumeError) {
+      return NextResponse.json({ error: "Couldn't resume. Try again." }, { status: 503 });
+    }
+    if (!resumed || resumed.length !== 1) {
+      return NextResponse.json({
+        error: "Your email provider has an unsubscribe block. Contact support to review it before resuming letters.",
+      }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true });
+  }
   const { error } = await svc
     .from("users")
     .update({ unsubscribed_at: null })

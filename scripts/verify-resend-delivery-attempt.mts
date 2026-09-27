@@ -362,6 +362,22 @@ const generate = readFileSync(
   new URL("../app/api/generate/route.ts", import.meta.url),
   "utf8"
 );
+const subscriberRouter = readFileSync(
+  new URL("../lib/subscriber-email-router.ts", import.meta.url),
+  "utf8"
+);
+const subscriberDelivery = readFileSync(
+  new URL("../lib/subscriber-email-delivery.ts", import.meta.url),
+  "utf8"
+);
+const brevoPolicy = readFileSync(
+  new URL("../lib/brevo-delivery-policy.ts", import.meta.url),
+  "utf8"
+);
+const brevoRolloutPolicy = readFileSync(
+  new URL("../lib/brevo-rollout-policy.mjs", import.meta.url),
+  "utf8"
+);
 const exportRoute = readFileSync(
   new URL("../app/api/account/export/route.ts", import.meta.url),
   "utf8"
@@ -439,19 +455,32 @@ check(
   "finalized attempt replay must repair the issue proof pair"
 );
 check(
-  weekly.includes("sendWithResendDeliveryAttempt({") &&
+  weekly.includes("sendPreparedSubscriberLetter({") &&
     weekly.includes("deliveryLane: deliveryIdempotencyKind") &&
-    weekly.includes("payloadFingerprint: preparedEmail.requestFingerprint") &&
+    weekly.includes("prepared: preparedEmail") &&
     weekly.includes("deliveryDate: weekOf") &&
-    weekly.includes("expectedClaimedAt: force ? null : claimedAt"),
+    weekly.includes("expectedClaimedAt: force ? null : claimedAt") &&
+    subscriberRouter.includes("sendWithResendDeliveryAttempt({") &&
+    subscriberRouter.includes("recipient: prepared.recipient, deliveryLane: params.deliveryLane") &&
+    subscriberRouter.includes("payloadFingerprint: prepared.requestFingerprint, expectedClaimedAt: params.expectedClaimedAt") &&
+    subscriberRouter.includes("if (recipient !== prepared.recipient)") &&
+    subscriberRouter.includes("return dependencies.sendResend(prepared)") &&
+    subscriberDelivery.includes("sendResend: sendPreparedSubscriberEmail") &&
+    brevoPolicy.includes('from "./brevo-rollout-policy.mjs"') &&
+    brevoPolicy.includes("BREVO_DELIVERY_SCHEMA_ENABLED,") &&
+    brevoRolloutPolicy.includes("export const BREVO_DELIVERY_SCHEMA_ENABLED = false") &&
+    brevoRolloutPolicy.includes("export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = false"),
   "scheduled and forced sends must use the exact provider lane"
 );
 check(
-  generate.includes("sendWithResendDeliveryAttempt({") &&
+  generate.includes("sendPreparedSubscriberLetter({") &&
     generate.includes('deliveryLane: "live"') &&
-    generate.includes("payloadFingerprint: preparedEmail.requestFingerprint") &&
+    generate.includes("prepared: preparedEmail") &&
     generate.includes("deliveryDate: weekOf") &&
-    generate.includes("expectedClaimedAt: deliveryClaimedAt"),
+    generate.includes("expectedClaimedAt: deliveryClaimedAt") &&
+    subscriberRouter.includes("prepared.idempotencyKey !== `alpha-letter-${params.userId}-${params.weekOf}-${params.deliveryLane}`") &&
+    subscriberRouter.includes("snapshot.requestFingerprint !== actual") &&
+    subscriberRouter.includes("snapshot.recipient !== payload.to"),
   "onboarding and scheduled first-letter delivery must share the live lane"
 );
 check(

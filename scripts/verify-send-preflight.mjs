@@ -17,6 +17,11 @@
 
 import { isExactAlphaSupabaseUrl } from "./alpha-supabase-url.mjs";
 import { readBoundedJson } from "./alpha-preflight-response.mjs";
+import {
+  BREVO_DELIVERY_SCHEMA_ENABLED,
+  BREVO_SUBSCRIBER_DELIVERY_ENABLED,
+} from "../lib/brevo-rollout-policy.mjs";
+import { checkBrevoSendReadiness } from "./brevo-send-readiness.mjs";
 
 const GENERATOR_KEYS = [
   "ANTHROPIC_API_KEY",
@@ -38,6 +43,14 @@ const DELIVERY_REQUIRED = [
   "UNSUBSCRIBE_SECRET",
 ];
 
+const BREVO_DELIVERY_REQUIRED = [
+  "BREVO_API_KEY",
+  "BREVO_FROM_EMAIL",
+  "BREVO_WEBHOOK_TOKEN",
+  "BREVO_EXPECTED_ACCOUNT_EMAIL",
+  "UNSUBSCRIBE_SECRET",
+];
+
 const SOFT_RESILIENCE_TIER = [
   ...GENERATOR_KEYS,
   "BRAVE_SEARCH_API_KEY",
@@ -47,6 +60,8 @@ const SOFT_RESILIENCE_TIER = [
 
 let baseFailures = 0;
 let deliveryReady = true;
+const preferredProvider = process.env.ALPHA_SUBSCRIBER_EMAIL_PROVIDER?.trim() || "resend";
+const brevoSelected = preferredProvider === "brevo";
 
 function configured(name) {
   return Boolean(process.env[name]?.trim());
@@ -81,7 +96,16 @@ if (
   baseFailures++;
 }
 
-for (const name of DELIVERY_REQUIRED) {
+if (preferredProvider !== "resend" && !brevoSelected) {
+  console.error("::error::Unsupported subscriber email provider selection. Value withheld.");
+  deliveryReady = false;
+}
+if (brevoSelected && (!BREVO_DELIVERY_SCHEMA_ENABLED || !BREVO_SUBSCRIBER_DELIVERY_ENABLED)) {
+  console.error("::error::Brevo subscriber delivery is disabled in source. Stopping before provider checks or generation.");
+  deliveryReady = false;
+}
+
+for (const name of brevoSelected ? BREVO_DELIVERY_REQUIRED : DELIVERY_REQUIRED) {
   if (!configured(name)) {
     console.error(`::error::${name} is not set (or empty). Stopping before install, build or generation.`);
     deliveryReady = false;
@@ -160,7 +184,7 @@ console.log(
 // unrelated business's unverified domain). GET /domains costs nothing and
 // sends no email, but proves both facts: the key authenticates, and we can
 // cross-check the from-domain against what Resend actually has verified.
-if (deliveryReady) {
+if (deliveryReady && !brevoSelected) {
   try {
     const res = await fetch("https://api.resend.com/domains", {
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
@@ -187,6 +211,21 @@ if (deliveryReady) {
   } catch {
     console.error("::error::Resend connectivity or response check failed. Stopping before install, build or generation. Details withheld.");
     deliveryReady = false;
+  }
+}
+
+if (deliveryReady && brevoSelected) {
+  const result = await checkBrevoSendReadiness({
+    apiKey: process.env.BREVO_API_KEY,
+    sender: process.env.BREVO_FROM_EMAIL,
+    webhookToken: process.env.BREVO_WEBHOOK_TOKEN,
+    expectedAccountEmail: process.env.BREVO_EXPECTED_ACCOUNT_EMAIL,
+  });
+  if (!result.ready) {
+    console.error(`::error::Brevo readiness failed (${result.reason}). Stopping before install, build or generation. Values withheld.`);
+    deliveryReady = false;
+  } else {
+    console.log("OK: Brevo account relay, active Alpha sender, and authenticated sender domain are ready.");
   }
 }
 

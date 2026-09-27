@@ -1,4 +1,25 @@
 import { NextResponse } from "next/server";
+import { BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
+
+type DeliveryEnrollmentSnapshot = {
+  email: string;
+  first_name: string | null;
+  topics: string[] | null;
+  birthday: string | null;
+  updated_at: string | null;
+  subscribed_at: string | null;
+  cancelled_at: string | null;
+  access_granted_at: string | null;
+  delivery_enrolled: boolean;
+  unsubscribed_at: string | null;
+  brevo_unsubscribed_at?: string | null;
+  bounced_at: string | null;
+  complained_at: string | null;
+  suppression_cleanup_pending_at: string | null;
+  suppression_recovery_token: string | null;
+  suppression_recovery_started_at: string | null;
+  delivery_suppression_cleared_at: string | null;
+};
 import { z } from "zod";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { hasReaderAccess, ADMIN_EMAIL } from "@/lib/access";
@@ -252,7 +273,7 @@ export async function GET(req: Request) {
     // .is("bounced_at", null).is("complained_at", null) filter with no way
     // for an admin to even SEE it happened. The panel keeps the delivery
     // review state visible while provider recovery is held.
-    .select("id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, stripe_subscription_id, subscribed_at, access_requested_at, access_granted_at, delivery_enrolled, cancelled_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_started_at, suppression_recovery_token, created_at");
+    .select(`id, email, first_name, city, birthday, gender, theme, topics, stripe_customer_id, stripe_subscription_id, subscribed_at, access_requested_at, access_granted_at, delivery_enrolled, cancelled_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_started_at, suppression_recovery_token, created_at${BREVO_DELIVERY_SCHEMA_ENABLED ? ", brevo_unsubscribed_at" : ""}`);
   if (escapedQ) {
     usersQuery = usersQuery
       .ilike("email", `%${escapedQ}%`)
@@ -289,7 +310,9 @@ export async function GET(req: Request) {
   // to the frontend, which already renders that gracefully (app/settings/
   // accounts/page.tsx's `{stats && (...)}` gate) -- the row list and every
   // action button still work normally.
-  const [usersSettled, statsSettled] = await Promise.allSettled([usersQuery, gatherStats()]);
+  const [usersSettled, statsSettled] = await Promise.allSettled([
+    usersQuery.returns<Record<string, unknown>[]>(), gatherStats(),
+  ]);
   if (usersSettled.status === "rejected") {
     // Supabase-js resolves query errors rather than rejecting -- this
     // shouldn't happen in practice, but handled defensively rather than
@@ -381,8 +404,9 @@ export async function POST(req: Request) {
     }
     const { data: existing, error: existingError } = await sb
       .from("users")
-      .select("email, first_name, topics, birthday, updated_at, subscribed_at, cancelled_at, access_granted_at, delivery_enrolled, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_token, suppression_recovery_started_at, delivery_suppression_cleared_at")
+      .select(`email, first_name, topics, birthday, updated_at, subscribed_at, cancelled_at, access_granted_at, delivery_enrolled, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, suppression_recovery_token, suppression_recovery_started_at, delivery_suppression_cleared_at${BREVO_DELIVERY_SCHEMA_ENABLED ? ", brevo_unsubscribed_at" : ""}`)
       .eq("id", body.userId)
+      .returns<DeliveryEnrollmentSnapshot[]>()
       .maybeSingle();
     if (existingError) {
       console.error("[admin/users] delivery enrollment read failed");
@@ -400,6 +424,7 @@ export async function POST(req: Request) {
       }
       if (
         existing.unsubscribed_at || existing.bounced_at || existing.complained_at ||
+        (BREVO_DELIVERY_SCHEMA_ENABLED && existing.brevo_unsubscribed_at) ||
         existing.suppression_cleanup_pending_at || existing.suppression_recovery_token ||
         existing.suppression_recovery_started_at
       ) {
@@ -469,6 +494,7 @@ export async function POST(req: Request) {
       suppression_recovery_token: existing.suppression_recovery_token,
       suppression_recovery_started_at: existing.suppression_recovery_started_at,
       delivery_suppression_cleared_at: existing.delivery_suppression_cleared_at,
+      ...(BREVO_DELIVERY_SCHEMA_ENABLED ? { brevo_unsubscribed_at: existing.brevo_unsubscribed_at } : {}),
     };
     for (const [field, value] of Object.entries(snapshot)) {
       update = value === null ? update.is(field, null) : update.eq(field, value);

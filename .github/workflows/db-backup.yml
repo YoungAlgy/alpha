@@ -72,6 +72,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
+          ALPHA_BACKUP_FORMAT_VERSION: '5'
         run: |
           export BACKUP_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           node scripts/backup-critical-tables.mjs "${RUNNER_TEMP}/alpha-db-backup"

@@ -6,6 +6,7 @@ import {
 } from "@/lib/account-privacy";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { rateLimit } from "@/lib/rate-limit";
+import { BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
 
 export const runtime = "nodejs";
 
@@ -67,6 +68,7 @@ export async function GET() {
   let issues: unknown[];
   let deliveryAttempts: unknown[];
   let suppressionEvents: unknown[];
+  let brevoSuppressionEvents: unknown[] = [];
   let supportTickets: unknown[];
   const orphanedSupportTickets: unknown[] = [];
   try {
@@ -124,6 +126,22 @@ export async function GET() {
         };
       }
     );
+
+    if (BREVO_DELIVERY_SCHEMA_ENABLED) {
+      brevoSuppressionEvents = await fetchCompleteExportRows(
+        "Brevo suppression events",
+        async (from, to) => {
+          const result = await svc.from("brevo_suppression_events")
+            .select("*", { count: "exact" })
+            .eq("owner_user_id", user.id)
+            .order("message_id", { ascending: true })
+            .order("event_type", { ascending: true })
+            .order("event_at", { ascending: true })
+            .range(from, to);
+          return { data: result.data, count: result.count, error: result.error };
+        }
+      );
+    }
 
     supportTickets = await fetchCompleteExportRows(
       "support tickets linked to the account",
@@ -202,6 +220,7 @@ export async function GET() {
       issues,
       resend_delivery_attempts: deliveryAttempts,
       resend_suppression_events: suppressionEvents,
+      ...(BREVO_DELIVERY_SCHEMA_ENABLED ? { brevo_suppression_events: brevoSuppressionEvents } : {}),
       // Merged: tickets linked by id, plus signed-out submissions under either
       // the current Auth email or the stale public mirror email. The two sets
       // cannot overlap because the second query requires user_id IS NULL.

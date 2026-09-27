@@ -5,6 +5,22 @@ const route = readFileSync(
   new URL("../app/api/cron/weekly-send/route.ts", import.meta.url),
   "utf8"
 );
+const subscriberRouter = readFileSync(
+  new URL("../lib/subscriber-email-router.ts", import.meta.url),
+  "utf8"
+);
+const subscriberDelivery = readFileSync(
+  new URL("../lib/subscriber-email-delivery.ts", import.meta.url),
+  "utf8"
+);
+const brevoPolicy = readFileSync(
+  new URL("../lib/brevo-delivery-policy.ts", import.meta.url),
+  "utf8"
+);
+const brevoRolloutPolicy = readFileSync(
+  new URL("../lib/brevo-rollout-policy.mjs", import.meta.url),
+  "utf8"
+);
 const migration = readFileSync(
   new URL(
     "../supabase/migrations/20260830010000_weekly_send_delivery_cursors.sql",
@@ -286,8 +302,16 @@ check(
   ) &&
     route.includes("currentDeliveryEmail = freshUser.email.trim()") &&
     route.includes("to: currentDeliveryEmail") &&
-    route.includes("recipient: preparedEmail.recipient") &&
-    route.includes("sendPreparedSubscriberEmail(preparedEmail)") &&
+    route.includes("sendPreparedSubscriberLetter({") &&
+    route.includes("prepared: preparedEmail") &&
+    subscriberRouter.includes("recipient: prepared.recipient, deliveryLane: params.deliveryLane") &&
+    subscriberRouter.includes("if (recipient !== prepared.recipient)") &&
+    subscriberRouter.includes("return dependencies.sendResend(prepared)") &&
+    subscriberDelivery.includes("sendResend: sendPreparedSubscriberEmail") &&
+    brevoPolicy.includes('from "./brevo-rollout-policy.mjs"') &&
+    brevoPolicy.includes("BREVO_DELIVERY_SCHEMA_ENABLED,") &&
+    brevoRolloutPolicy.includes("export const BREVO_DELIVERY_SCHEMA_ENABLED = false") &&
+    brevoRolloutPolicy.includes("export const BREVO_SUBSCRIBER_DELIVERY_ENABLED = false") &&
     !route.includes("to: row.email") &&
     route.indexOf("currentDeliveryEmail = freshUser.email.trim()") <
       route.indexOf("prepareLetterNotification({")
@@ -313,9 +337,8 @@ check(
     )
 );
 check(
-  "manual continuation remains read-only",
-  route.includes('deliveryCursorState = "override_read_only"') &&
-    route.includes("if (cursorOverride) {")
+  "manual continuation and the exact-reader canary remain read-only",
+  /if \(canaryUserId \|\| cursorOverride\) \{\s*deliveryCursorState = "override_read_only";/.test(route)
 );
 check(
   "cursor advancement remains compare-and-swap",

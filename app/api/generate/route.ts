@@ -13,10 +13,11 @@ import { persistIssueIfPossible } from "@/lib/engine/persist";
 import { isValidTopicId, MAX_CUSTOM_TOPIC_LEN, CUSTOM_PREFIX } from "@/lib/topics";
 import {
   prepareLetterNotification,
-  resendConfigured,
   sendOpsAlert,
-  sendPreparedSubscriberEmail,
 } from "@/lib/email";
+import { BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
+import { subscriberEmailConfigured, sendPreparedSubscriberLetter } from "@/lib/subscriber-email-delivery";
+import { RECLAIM_GRANDFATHER_CUTOFF } from "@/lib/delivery-proof";
 import { rateLimit, clientKeyFromRequest } from "@/lib/rate-limit";
 import { consumeDistributedRateLimit } from "@/lib/distributed-rate-limit";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
@@ -29,7 +30,6 @@ import { parseBirthday, isValidCalendarDateString } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
 import { BLURB_CAPS, type Issue } from "@/lib/types";
 import { deliverLetterOnce, type DeliveryStore } from "@/lib/letter-delivery";
-import { sendWithResendDeliveryAttempt } from "@/lib/resend-delivery-attempt";
 import { createDailyPaidCallGuard } from "@/lib/paid-call-reservation";
 import {
   isLiveForManagement,
@@ -2158,7 +2158,7 @@ export async function POST(req: Request) {
     const inboxUrl = `${origin}/inbox`;
     let emailSent = false;
     let deliveryRecipientEmail: string | null = null;
-    if (resendConfigured() && persistence?.userId) {
+    if (subscriberEmailConfigured() && persistence?.userId) {
       // The signed checkout event owns subscription and suppression state.
       // Generation can finish before that webhook, or while its provider-side
       // suppression cleanup is retrying. Re-read the durable user row and use
@@ -2166,12 +2166,27 @@ export async function POST(req: Request) {
       // claiming delivered_at. Leaving the issue unclaimed keeps it eligible
       // for a later safe delivery path.
       const sb = await supabaseServiceClient();
+      const deliveryUserColumns =
+        BREVO_DELIVERY_SCHEMA_ENABLED
+          ? "email, delivery_enrolled, subscribed_at, cancelled_at, access_granted_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at, brevo_unsubscribed_at"
+          : "email, delivery_enrolled, subscribed_at, cancelled_at, access_granted_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at";
+      type FreshDeliveryUser = {
+        email: string | null;
+        delivery_enrolled: boolean | null;
+        subscribed_at: string | null;
+        cancelled_at: string | null;
+        access_granted_at: string | null;
+        unsubscribed_at: string | null;
+        bounced_at: string | null;
+        complained_at: string | null;
+        suppression_cleanup_pending_at: string | null;
+        brevo_unsubscribed_at?: string | null;
+      };
       const { data: deliveryUser, error: deliveryUserError } = await sb
         .from("users")
-        .select(
-          "email, delivery_enrolled, subscribed_at, cancelled_at, access_granted_at, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at"
-        )
+        .select(deliveryUserColumns)
         .eq("id", persistence.userId)
+        .returns<FreshDeliveryUser[]>()
         .maybeSingle();
       if (deliveryUserError) {
         console.warn(
@@ -2189,7 +2204,8 @@ export async function POST(req: Request) {
         !deliveryUser.unsubscribed_at &&
         !deliveryUser.bounced_at &&
         !deliveryUser.complained_at &&
-        !deliveryUser.suppression_cleanup_pending_at
+        !deliveryUser.suppression_cleanup_pending_at &&
+        !(BREVO_DELIVERY_SCHEMA_ENABLED && deliveryUser.brevo_unsubscribed_at)
       ) {
         deliveryRecipientEmail = deliveryUser.email?.toLowerCase().trim() || null;
       } else {
@@ -2208,7 +2224,7 @@ export async function POST(req: Request) {
     // the send instead: they already saw their letter rendered live on this
     // page regardless, and the alert below makes the gap visible rather
     // than a silent, permanent loss of their first email.
-    if (profile.email && resendConfigured() && !persistence?.userId) {
+    if (profile.email && subscriberEmailConfigured() && !persistence?.userId) {
       console.warn(
         `[generate] skipping onboarding email for ${profile.email} -- no persisted userId, would ship with no unsubscribe mechanism`
       );
@@ -2234,12 +2250,18 @@ export async function POST(req: Request) {
           // failure silently left issueNumber at its default of 1 (a wrong
           // "Issue 1" subject line for an existing reader) with the exact
           // console.warn below never actually firing for that failure mode.
-          const { count, error: countErr } = await sb
+          let issueCountQuery = sb
             .from("issues")
             .select("*", { count: "exact", head: true })
             .eq("user_id", persistence.userId)
             .lt("week_of", weekOf)
             .not("delivered_at", "is", null);
+          if (BREVO_DELIVERY_SCHEMA_ENABLED) {
+            issueCountQuery = issueCountQuery.or(
+              `resend_message_id.not.is.null,brevo_message_id.not.is.null,delivered_at.lt.${RECLAIM_GRANDFATHER_CUTOFF}`
+            );
+          }
+          const { count, error: countErr } = await issueCountQuery;
           if (countErr) throw countErr;
           issueNumber = (count ?? 0) + 1;
         } catch (e) {
@@ -2273,24 +2295,17 @@ export async function POST(req: Request) {
             userId: persistence.userId,
             deliveryDate: weekOf,
           });
-          const delivery = await sendWithResendDeliveryAttempt({
+          const delivery = await sendPreparedSubscriberLetter({
             sb: deliverySb,
             userId: persistence.userId,
             weekOf,
-            recipient: preparedEmail.recipient,
             deliveryLane: "live",
-            payloadFingerprint: preparedEmail.requestFingerprint,
             expectedClaimedAt: deliveryClaimedAt,
-            send: (storedRecipient) => {
-              if (storedRecipient !== preparedEmail.recipient) {
-                throw new Error("staged recipient changed before provider send");
-              }
-              return sendPreparedSubscriberEmail(preparedEmail);
-            },
+            prepared: preparedEmail,
           });
           if (delivery.suppressionReviewRequired) {
             console.warn(
-              "[generate] provider accepted the letter but its suppression evidence needs review"
+              `[generate] ${delivery.provider} accepted the letter but its suppression evidence needs review`
             );
           }
           return { id: delivery.messageId };

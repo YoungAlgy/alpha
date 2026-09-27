@@ -8,6 +8,7 @@ import ts from "typescript";
 import { hasReaderAccess } from "../lib/access.ts";
 import { blocksCsrf } from "../lib/csrf-guard.ts";
 import { hasUsableReaderProfile } from "../lib/reader-profile-state.ts";
+import { BREVO_DELIVERY_SCHEMA_ENABLED } from "../lib/brevo-delivery-policy.ts";
 
 const source = (path: string) =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
@@ -67,7 +68,7 @@ const deliveryBranch = post.body.statements.find(
 );
 assert.ok(deliveryBranch, "separate delivery action branch must exist");
 const runnable = ts.transpileModule(
-  `async function run(body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile, console) { ${deliveryBranch.getText(parsed)} }`,
+  `async function run(body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile, BREVO_DELIVERY_SCHEMA_ENABLED, console) { ${deliveryBranch.getText(parsed)} }`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
 
@@ -88,6 +89,7 @@ type Row = {
   suppression_recovery_token: string | null;
   suppression_recovery_started_at: string | null;
   delivery_suppression_cleared_at: string | null;
+  brevo_unsubscribed_at: string | null;
 };
 
 const userId = "245fb183-0d73-4a57-bf17-38bd57e37fb6";
@@ -109,6 +111,7 @@ const defaultRow = (): Row => ({
   suppression_recovery_token: null,
   suppression_recovery_started_at: null,
   delivery_suppression_cleared_at: null,
+  brevo_unsubscribed_at: null,
 });
 const defaultAuth = () => ({
   email: expectedEmail,
@@ -127,12 +130,13 @@ async function exercise(options: {
   race?: boolean;
   updateError?: string;
   authError?: boolean;
+  schemaEnabled?: boolean;
 } = {}) {
   const row = { ...defaultRow(), ...options.row };
   const auth = { ...defaultAuth(), ...options.auth };
   const action = options.action ?? "enable_delivery";
-  const calls: { payload?: Record<string, unknown>; filters: Array<[string, string, unknown]>; authReads: number } = {
-    filters: [], authReads: 0,
+  const calls: { payload?: Record<string, unknown>; filters: Array<[string, string, unknown]>; selects: string[]; authReads: number } = {
+    filters: [], selects: [], authReads: 0,
   };
   const accessBefore = [row.subscribed_at, row.cancelled_at, row.access_granted_at];
   const sb = {
@@ -146,8 +150,11 @@ async function exercise(options: {
       assert.equal(table, "users");
       let writing = false;
       const query = {
-        select: (_columns: string) => {
-          if (!writing) return query;
+        select: (columns: string) => {
+          if (!writing) {
+            calls.selects.push(columns);
+            return query;
+          }
           if (options.updateError) return Promise.resolve({ data: null, error: { message: options.updateError } });
           if (options.race) return Promise.resolve({ data: [], error: null });
           assert.deepEqual(Object.keys(calls.payload ?? {}), ["delivery_enrolled"]);
@@ -159,6 +166,7 @@ async function exercise(options: {
           calls.payload = payload;
           return query;
         },
+        returns: () => query,
         eq: (field: string, value: unknown) => {
           calls.filters.push(["eq", field, value]);
           return query;
@@ -182,8 +190,10 @@ async function exercise(options: {
       ({ body: value, status: opts?.status ?? 200 }),
   };
   const result = await runInNewContext(
-    `${runnable}\nrun(body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile, console)`,
-    { body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile, console: { error() {} } },
+    `${runnable}\nrun(body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile, BREVO_DELIVERY_SCHEMA_ENABLED, console)`,
+    { body, sb, NextResponse, hasReaderAccess, hasUsableReaderProfile,
+      BREVO_DELIVERY_SCHEMA_ENABLED: options.schemaEnabled ?? BREVO_DELIVERY_SCHEMA_ENABLED,
+      console: { error() {} } },
   ) as { body: Record<string, unknown>; status: number };
   assert.deepEqual(
     [row.subscribed_at, row.cancelled_at, row.access_granted_at],
@@ -197,6 +207,9 @@ const enabled = await exercise();
 assert.equal(enabled.result.status, 200);
 assert.equal(enabled.row.delivery_enrolled, true);
 assert.equal(enabled.calls.authReads, 1);
+assert.equal(BREVO_DELIVERY_SCHEMA_ENABLED, false, "unreleased schema gate stays disabled");
+assert.ok(enabled.calls.selects.every((columns) => !columns.includes("brevo_unsubscribed_at")), "disabled schema does not read the new column");
+assert.ok(!enabled.calls.filters.some(([, field]) => field === "brevo_unsubscribed_at"), "disabled schema does not filter the new column");
 for (const field of [
   "email", "updated_at", "delivery_enrolled", "subscribed_at", "cancelled_at", "access_granted_at",
   "unsubscribed_at", "bounced_at", "complained_at", "suppression_cleanup_pending_at",
@@ -209,6 +222,14 @@ assert.ok(
   "the row fence compares the exact updated_at read above",
 );
 assert.ok(!enabled.calls.filters.some(([, field]) => field === "topics"), "topics must not be sent as an array filter");
+
+const enabledWithSchema = await exercise({ schemaEnabled: true });
+assert.equal(enabledWithSchema.result.status, 200);
+assert.ok(enabledWithSchema.calls.selects.some((columns) => columns.includes("brevo_unsubscribed_at")), "enabled schema reads Brevo suppression");
+assert.ok(enabledWithSchema.calls.filters.some(([, field]) => field === "brevo_unsubscribed_at"), "enabled schema fences Brevo suppression in CAS");
+const brevoBlocked = await exercise({ schemaEnabled: true, row: { brevo_unsubscribed_at: "2026-09-01T00:00:00Z" } });
+assert.equal(brevoBlocked.result.status, 409, "Brevo unsubscribe blocks enrollment with the new schema");
+assert.equal(brevoBlocked.calls.payload, undefined);
 
 const paused = await exercise({ action: "pause_delivery", row: { delivery_enrolled: true } });
 assert.equal(paused.result.status, 200);

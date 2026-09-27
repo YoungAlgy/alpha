@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   BACKUP_FORMAT_VERSION,
-  CRITICAL_TABLES,
+  criticalTablesForFormatVersion,
   sha256Hex,
 } from "./critical-table-backup-format.mjs";
 
@@ -121,11 +121,12 @@ export function validateBackupDirectory(backupDir) {
     fail("backup manifest is not valid JSON");
   }
 
-  const tableNames = CRITICAL_TABLES.map(({ name }) => name);
   if (!plainRow(manifest)) fail("backup manifest must be a JSON object");
-  if (manifest.formatVersion !== BACKUP_FORMAT_VERSION) {
-    fail(`backup manifest format must be ${BACKUP_FORMAT_VERSION}`);
+  if (manifest.formatVersion !== BACKUP_FORMAT_VERSION && manifest.formatVersion !== 5) {
+    fail("backup manifest format must be 4 or 5");
   }
+  const criticalTables = criticalTablesForFormatVersion(manifest.formatVersion);
+  const tableNames = criticalTables.map(({ name }) => name);
   if (manifest.failed !== false) fail("backup manifest is marked failed");
   if (!sameStrings(manifest.tables, tableNames)) {
     fail("backup manifest table order is not the recovery order");
@@ -142,7 +143,7 @@ export function validateBackupDirectory(backupDir) {
 
   const tables = new Map();
   let totalRows = 0;
-  for (const table of CRITICAL_TABLES) {
+  for (const table of criticalTables) {
     if (manifest.orderBy[table.name] !== table.order) {
       fail(`${table.name}: backup ordering marker does not match`);
     }
@@ -257,17 +258,21 @@ function dollarLiteral(value, label) {
   }
 }
 
-function tableArraySql() {
-  return `ARRAY[${CRITICAL_TABLES.map(({ name }) => sqlString(name)).join(", ")}]::text[]`;
+function tableArraySql(criticalTables) {
+  return `ARRAY[${criticalTables.map(({ name }) => sqlString(name)).join(", ")}]::text[]`;
 }
 
 export function buildRestoreSql(snapshot) {
-  const tableNames = CRITICAL_TABLES.map(({ name }) => name);
+  const criticalTables = criticalTablesForFormatVersion(snapshot.manifest?.formatVersion);
+  const tableNames = criticalTables.map(({ name }) => name);
+  if (!sameStrings([...snapshot.tables.keys()], tableNames)) {
+    fail("validated backup table inventory does not match its format");
+  }
   const qualifiedTables = tableNames.map(
     (name) => `public.${quoteIdentifier(name)}`
   );
   const lockTargets = ["auth.users", ...qualifiedTables].join(", ");
-  const tableArray = tableArraySql();
+  const tableArray = tableArraySql(criticalTables);
   const anchorsJson = JSON.stringify(snapshot.anchors);
   const anchorsLiteral = dollarLiteral(anchorsJson, "anchors");
 
@@ -287,7 +292,7 @@ export function buildRestoreSql(snapshot) {
     .join("\n");
 
   const inserts = [];
-  for (const { name } of CRITICAL_TABLES) {
+  for (const { name } of criticalTables) {
     const table = snapshot.tables.get(name);
     if (table.rowCount === 0) continue;
     const columns = table.columns.map(quoteIdentifier).join(", ");
@@ -299,7 +304,7 @@ export function buildRestoreSql(snapshot) {
     );
   }
 
-  const countChecks = CRITICAL_TABLES.map(({ name }) => {
+  const countChecks = criticalTables.map(({ name }) => {
     const expected = snapshot.tables.get(name).rowCount;
     return `if (select count(*) from public.${quoteIdentifier(name)}) <> ${expected} then raise exception 'restored row count mismatch: ${name}'; end if;`;
   }).join("\n  ");
@@ -551,7 +556,7 @@ export function runLocalRestore({ backupDir, databaseUrl, psqlBin }) {
   }
   return {
     anchorCount: snapshot.anchors.length,
-    tableCount: CRITICAL_TABLES.length,
+    tableCount: criticalTablesForFormatVersion(snapshot.manifest.formatVersion).length,
     totalRows: snapshot.totalRows,
   };
 }

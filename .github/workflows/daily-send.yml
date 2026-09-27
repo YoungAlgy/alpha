@@ -47,6 +47,20 @@ on:
     # 90-minute job budget. Delayed GitHub runs can still arrive later.
     # These retries cannot survive a GitHub-wide outage on their own.
   workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Daily delivery or one explicitly approved Brevo test'
+        type: choice
+        options:
+          - daily
+          - brevo_canary
+        default: daily
+        required: true
+      canary_user_id:
+        description: 'Exact existing reader UUID. Only for brevo_canary.'
+        type: string
+        default: ''
+        required: false
 
 permissions:
   contents: read
@@ -73,6 +87,9 @@ jobs:
     # Preserve headroom around the bounded 55-minute delivery loop and final
     # 120-second process drain, including slow checkout/install/build days.
     timeout-minutes: 90
+    env:
+      ALPHA_SEND_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'daily' }}
+      ALPHA_CANARY_USER_ID: ${{ inputs.canary_user_id }}
     steps:
       # Skips the expensive checkout/npm ci/build/start below when today's
       # send is already fully covered -- mainly matters for the 15:37 and
@@ -191,7 +208,11 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Pre-flight — every required secret present + Resend actually deliverable
+      - name: Validate exact send scope before provider access
+        if: steps.precheck.outputs.skip != 'true'
+        run: node scripts/run-brevo-canary.mjs --validate
+
+      - name: Pre-flight — required secrets and selected provider deliverability
         id: preflight
         if: steps.precheck.outputs.skip != 'true'
         env:
@@ -207,20 +228,31 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
+          BREVO_API_KEY: ${{ secrets.SEND_BREVO_API_KEY }}
+          BREVO_FROM_EMAIL: ${{ secrets.SEND_BREVO_FROM_EMAIL }}
+          BREVO_WEBHOOK_TOKEN: ${{ secrets.SEND_BREVO_WEBHOOK_TOKEN }}
+          BREVO_EXPECTED_ACCOUNT_EMAIL: ${{ secrets.SEND_BREVO_EXPECTED_ACCOUNT_EMAIL }}
+          ALPHA_SUBSCRIBER_EMAIL_PROVIDER: ${{ vars.SEND_ALPHA_SUBSCRIBER_EMAIL_PROVIDER }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
           ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           ALPHA_NO_MODEL_MODE: '1'
           ALPHA_ALLOW_PAID_AI: '0'
           ALPHA_PUBLIC_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK }}
         # Deliberately runs BEFORE `npm ci` -- no dependencies needed (just
-        # Node's built-in fetch), so missing values fail immediately and the
-        # live Resend check is capped at 15 seconds. Added
+        # Node's built-in fetch). The default Resend check stays capped at
+        # 15 seconds. A future source-enabled Brevo selection checks its
+        # account, sender and domain with bounded read-only requests. Added
         # 2026-08-05 after two real same-day incidents this would have caught
         # instantly: UNSUBSCRIBE_SECRET missing entirely (every subscriber
         # failed only after generating real content for all 4), and a broken
         # Resend key + an unverified sender domain (real AI generation costs
         # spent locally before anyone noticed delivery was impossible).
-        run: node scripts/verify-send-preflight.mjs
+        run: |
+          if [ "${ALPHA_SEND_OPERATION}" = "brevo_canary" ]; then
+            ALPHA_SUBSCRIBER_EMAIL_PROVIDER=brevo node scripts/verify-send-preflight.mjs
+          else
+            node scripts/verify-send-preflight.mjs
+          fi
 
       - name: Install dependencies
         if: steps.precheck.outputs.skip != 'true'
@@ -280,6 +312,10 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.SEND_RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.SEND_RESEND_FROM }}
+          BREVO_API_KEY: ${{ secrets.SEND_BREVO_API_KEY }}
+          BREVO_FROM_EMAIL: ${{ secrets.SEND_BREVO_FROM_EMAIL }}
+          BREVO_WEBHOOK_TOKEN: ${{ secrets.SEND_BREVO_WEBHOOK_TOKEN }}
+          ALPHA_SUBSCRIBER_EMAIL_PROVIDER: ${{ vars.SEND_ALPHA_SUBSCRIBER_EMAIL_PROVIDER }}
           UNSUBSCRIBE_SECRET: ${{ secrets.SEND_UNSUBSCRIBE_SECRET }}
           # route.ts's sendOpsAlert() falls back to this when Resend itself
           # is the thing that's broken (see lib/email.ts's comment on
@@ -291,6 +327,15 @@ jobs:
         run: |
           set -uo pipefail
           set +e
+
+          # Only this one manual invocation can open the exact-reader path.
+          # The normal sender preference stays Resend even in this process.
+          # No repository variable or public Worker setting is changed.
+          export ALPHA_BREVO_CANARY_MODE=0
+          if [ "${ALPHA_SEND_OPERATION}" = "brevo_canary" ]; then
+            export ALPHA_BREVO_CANARY_MODE=1
+            export ALPHA_SUBSCRIBER_EMAIL_PROVIDER=resend
+          fi
 
           # server.log can contain subscriber-entered topic text, model output,
           # provider response bodies, UUIDs, emails, and billing identifiers.
@@ -517,6 +562,17 @@ jobs:
 
           if ! start_alpha_server; then
             exit 1
+          fi
+
+          if [ "${ALPHA_SEND_OPERATION}" = "brevo_canary" ]; then
+            # One request, no page drain, provider retry or fallback dispatch.
+            node scripts/run-brevo-canary.mjs
+            CANARY_EXIT=$?
+            if ! stop_alpha_server 120; then
+              echo "::error::Could not prove the canary server stopped."
+              exit 1
+            fi
+            exit "${CANARY_EXIT}"
           fi
 
           URL="http://localhost:3100/api/cron/weekly-send"

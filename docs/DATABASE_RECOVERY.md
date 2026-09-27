@@ -22,6 +22,28 @@ The files in `MANIFEST.json` are ordered for restore dependencies:
 11. `refund_reviews`
 12. `legacy_checkout_fulfillments`
 
+Format 4 remains the default. An explicit `ALPHA_BACKUP_FORMAT_VERSION=5` adds
+`brevo_suppression_events` immediately after `resend_delivery_attempts`, ordered
+by `message_id`, `event_type`, and `event_at`. Format 5 requires that table and
+its file even when it has zero rows. The restore tool reads each validated
+package's own version, so existing format 4 packages remain readable.
+The existing `formatVersion: 4` inventory still has all twelve tables above.
+
+The callback release has a required order:
+
+1. Apply and verify the Brevo schema migration. Setting format 5 before the
+   `brevo_suppression_events` table exists makes the backup fail closed.
+2. Run the backup workflow with `ALPHA_BACKUP_FORMAT_VERSION=5`. Confirm the
+   actual encrypted format 5 artifact includes the Brevo table, then verify an
+   isolated restore of that artifact.
+3. Release the callback with `BREVO_DELIVERY_SCHEMA_ENABLED=true` and
+   `BREVO_SUBSCRIBER_DELIVERY_ENABLED=false`. Keep subscriber delivery on Resend.
+
+Enabling Brevo subscriber sends is a separate future release decision. Do not
+turn on the send flag as part of callback rollout. Format 4 packages remain
+readable for earlier recovery points, but omit Brevo suppression ownership and
+review records from a Brevo-enabled period.
+
 This preserves subscriber profiles and letters, immutable email retry identity,
 durable Resend suppression ownership and review records, support requests,
 checkout ownership and replay guards, account-deletion work, exact subscription
@@ -47,6 +69,13 @@ hash, or JSON array length that differs from `rowCount`.
 
 ## Important limit
 
+The REST exporter reads pages and tables in separate requests. Exact counts,
+stable ordering and file hashes do not create one database snapshot. A live
+change that leaves the row count unchanged can still produce a mixed package.
+For a release recovery point, keep all relevant writers quiescent for the
+export or use an approved database-consistent backup mechanism. An isolated
+restore of a quiet fixture does not prove consistency during live writes.
+
 `public.users.id` references `auth.users(id)`. The JSON snapshot does not export
 `auth.users`, passwordless identities, Supabase configuration, storage, database
 functions, triggers, grants, or provider account settings. Restoring these JSON
@@ -59,8 +88,11 @@ Do not invent replacement accounts or import `public.users` under new IDs.
 ## Before relying on a snapshot
 
 - Confirm the workflow completed and uploaded only `backup.tar.gz.enc`.
-- Confirm `MANIFEST.json` has `formatVersion: 4`, `failed: false`, all twelve tables
-  in the order above, and `rowCount`, `bytes`, and `sha256` for every file.
+- Confirm `MANIFEST.json` has `failed: false`, `rowCount`, `bytes`, and `sha256`
+  for every file. Format 4 requires the twelve tables above. Format 5 requires
+  all thirteen tables, including `brevo_suppression_events` after delivery
+  attempts. A format 4 artifact is not complete evidence for a Brevo-enabled
+  period.
 - Keep the current `BACKUP_ENCRYPTION_KEY_V2` outside the artifact. Never print
   it in a log. Keep the older `BACKUP_ENCRYPTION_KEY` only for decrypting
   historical artifacts that were created with that key.
@@ -78,15 +110,15 @@ redirect the explicit loopback target.
 
 The local tool performs these steps before it commits anything:
 
-1. Validate the complete format 4 manifest, file inventory, exact byte counts,
+1. Validate the complete format 4 or 5 manifest, file inventory, exact byte counts,
    SHA-256 hashes, JSON arrays, per-table row counts, and aggregate row count.
 2. Read only `id` and `email` from the validated `users.json` rows. Require
    unique valid UUIDs and emails, then prepare those exact local Auth anchors.
    It never prints the anchors or any backup row.
-3. Open one PostgreSQL transaction, take an advisory lock, lock Auth and all twelve
-   public tables, and require every destination table to be empty.
+3. Open one PostgreSQL transaction, take an advisory lock, lock Auth and every
+   table required by the package's format, and require each destination to be empty.
 4. Pause user-defined triggers inside the transaction, insert the exact local
-   Auth anchors, and restore the twelve public tables in the documented order.
+   Auth anchors, and restore all required public tables in the documented order.
    Constraint triggers remain active.
 5. Re-enable user-defined triggers. Verify every table count, every exact Auth
    anchor, all validated foreign keys, and the absence of foreign-key orphans.
@@ -114,6 +146,45 @@ flag. Production recovery remains the approved, provider-supported manual path
 below.
 
 ## Repeatable local drill
+
+### Brevo format 5 candidate
+
+`scripts/drill-brevo-backup-restore.mjs` is the focused drill for the 43-migration
+Brevo candidate. It uses the installed PostgreSQL 17.11 binaries at
+`/home/algy/alpha-pg17-test-20260909/pgsql-17.11/bin` in a nonroot Linux process.
+Run the reviewed script from WSL with the installed Node binary:
+
+```text
+node scripts/drill-brevo-backup-restore.mjs
+```
+
+It creates a new loopback-only cluster and synthetic fixtures in all thirteen
+tables. It runs the real exporter with a test-only, local SQL-backed fetch
+adapter, including a second page of Brevo events. No HTTP request reaches
+Supabase. It encrypts and decrypts the package using a disposable in-memory
+key, then invokes the unchanged local restore CLI against an empty database.
+
+Assertions compare every exported and restored row, exact Auth anchors,
+provider-specific IDs, opt-out timestamps, suppression ownership/review state,
+trigger modes and sequence state. Damaged files, incomplete inventories,
+remote destinations, a repeated restore and invalid database rows must fail.
+Constraint failures must roll back rows and trigger changes. The restored
+opt-out and delivery-identity guards must remain active.
+
+The cluster is stopped in `finally`. Its disposable fixtures and aggregate
+`RESULT.json` are written under the printed `/tmp/alpha-brevo-restore-*`
+directory. That directory can disappear between WSL invocations, so save the
+aggregate console result in the dated Desktop Files checkpoint. Temporary
+fixtures are not durable evidence. No production data or actual backup key is used.
+This does not verify a downloaded hosted artifact, hosted REST permissions,
+concurrent-write consistency or full Supabase Auth recovery. The live
+format-5 artifact and approved isolated restore remain a rollout gate.
+
+### Earlier Round 80 format 4 drill
+
+The older drill below targets its matching Round 80 migration chain. Use the
+focused format-5 drill above for the current Brevo candidate. Do not interpret
+a historical Round 80 result as verification of the changed migration chain.
 
 The drill uses synthetic fixture data only. It never reads `.env.local`, opens
 a real backup, or contacts Supabase, Stripe, Resend, an AI provider, or any

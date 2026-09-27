@@ -7,6 +7,8 @@ import { hardProductFailures } from "@/lib/health-status";
 import { checkoutMode } from "@/lib/checkout-maintenance";
 import { alphaAccessMode } from "@/lib/access-mode";
 import { SUBSCRIBER_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
+import { BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
+import { subscriberEmailStatus } from "@/lib/subscriber-email-delivery";
 import { noModelModeEnabled } from "@/lib/engine/provider-policy";
 import { publicFeedFallbackEnabled } from "@/lib/engine/public-feed-search";
 
@@ -88,10 +90,12 @@ export async function GET(req: Request) {
 
   const strictNoModel = noModelModeEnabled();
   const publicFeed = publicFeedFallbackEnabled();
+  const subscriberEmail = BREVO_DELIVERY_SCHEMA_ENABLED ? subscriberEmailStatus() : null;
   const checks = {
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     resend: !!process.env.RESEND_API_KEY,
-    emailProvider: process.env.RESEND_API_KEY ? "resend" : "none",
+    emailProvider: subscriberEmail?.provider ?? (process.env.RESEND_API_KEY ? "resend" : "none"),
+    ...(subscriberEmail ? { subscriberEmail: subscriberEmail.configured } : {}),
     stripe: !!process.env.STRIPE_SECRET_KEY,
     stripeWebhook: !!process.env.STRIPE_WEBHOOK_SECRET,
     checkoutBinding: !!process.env.CHECKOUT_BINDING_SECRET,

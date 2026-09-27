@@ -7,10 +7,11 @@ import { poolCap } from "@/lib/engine/select-sections";
 import { getCachedBlurbs } from "@/lib/engine/blurb-cache";
 import {
   prepareLetterNotification,
-  resendConfigured,
   sendOpsAlert,
-  sendPreparedSubscriberEmail,
 } from "@/lib/email";
+import { BREVO_DELIVERY_SCHEMA_ENABLED, BREVO_SUBSCRIBER_DELIVERY_ENABLED } from "@/lib/brevo-delivery-policy";
+import { parseBrevoCanaryRequest } from "@/lib/brevo-canary-policy";
+import { subscriberEmailConfigured, sendPreparedSubscriberLetter } from "@/lib/subscriber-email-delivery";
 import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
 import { issueIsReaderVisible } from "@/lib/issue-visibility";
@@ -37,7 +38,6 @@ import { coerceGender, isValidCalendarDateString } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";
 import { RECLAIM_GRANDFATHER_CUTOFF } from "@/lib/delivery-proof";
 import { scrubExpiredCheckoutProfiles } from "@/lib/checkout-profile-retention";
-import { sendWithResendDeliveryAttempt } from "@/lib/resend-delivery-attempt";
 
 export const runtime = "nodejs";
 // This value no longer means what its name implies. It WAS a Vercel Pro
@@ -316,6 +316,21 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
+  const canaryRequest = parseBrevoCanaryRequest(
+    url.searchParams,
+    process.env.ALPHA_BREVO_CANARY_MODE === "1" && process.env.GITHUB_ACTIONS === "true",
+  );
+  if (canaryRequest.kind === "rejected") {
+    return NextResponse.json({ error: canaryRequest.error }, { status: canaryRequest.status });
+  }
+  const canaryUserId = canaryRequest.kind === "canary" ? canaryRequest.userId : null;
+  const canaryDate = canaryUserId ? currentPeriodIso() : null;
+  if (canaryUserId && (!BREVO_DELIVERY_SCHEMA_ENABLED || !BREVO_SUBSCRIBER_DELIVERY_ENABLED)) {
+    return NextResponse.json({ error: "Brevo rollout gates are closed." }, { status: 503 });
+  }
+  if (canaryUserId && (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0")) {
+    return NextResponse.json({ error: "Brevo canary requires no-model, no-paid-AI mode." }, { status: 503 });
+  }
   // Initial owner-reviewed rollout only sends the current issue once.
   // Keep historical and forced delivery paths closed until separately reviewed.
   if (url.searchParams.has("weekOf") || url.searchParams.get("force") === "1") {
@@ -362,11 +377,19 @@ export async function GET(req: Request) {
   const deliveryIdempotencyKind = force ? `force-${forceId}` : "live";
 
   const sb = await supabaseServiceClient();
+  if (canaryUserId) {
+    // All target and duplicate checks precede the issue insert, retention,
+    // reclaim, cursor work and paid generation reservations.
+    const { data: existingIssue, error: issueError } = await sb.from("issues")
+      .select("id").eq("user_id", canaryUserId).eq("week_of", canaryDate!).maybeSingle();
+    if (issueError) return NextResponse.json({ error: "Canary issue state could not be verified." }, { status: 503 });
+    if (existingIssue) return NextResponse.json({ error: "Canary issue or attempt already exists for today." }, { status: 409 });
+  }
   const retentionNow = new Date().toISOString();
   // Keep the pre-send maintenance leg database-only. Provider-backed Stripe
   // and deletion repair runs through the separate maintenance endpoint after
   // delivery, so an outage there cannot delay active subscribers' letters.
-  const retentionErrors = await scrubExpiredCheckoutProfiles(
+  const retentionErrors = canaryUserId ? [] : await scrubExpiredCheckoutProfiles(
     sb,
     retentionNow,
     false
@@ -412,7 +435,7 @@ export async function GET(req: Request) {
   // authorized backfill targets an older issue date. Keying the hard budget
   // to weekOf would let repeated historical overrides open a fresh 400-call
   // allowance for every date in one real day.
-  const paidCallBudgetDate = currentPeriodIso();
+  const paidCallBudgetDate = canaryDate ?? currentPeriodIso();
   // alpha-drift-r26-06 (2026-08-14): a shape-only regex check accepts an
   // impossible calendar date (e.g. "2026-04-31") that JS's Date parser
   // silently rolls over rather than rejecting -- the same gap fixed in
@@ -474,7 +497,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "afterUserId must be a UUID." }, { status: 400 });
   }
   let persistedDeliveryCursor: string | null = null;
-  if (!cursorOverride) {
+  if (!cursorOverride && !canaryUserId) {
     const { data: cursorRow, error: cursorError } = await sb
       .from("weekly_send_delivery_cursors")
       .select("cursor_user_id")
@@ -486,7 +509,7 @@ export async function GET(req: Request) {
     }
     persistedDeliveryCursor = cursorRow?.cursor_user_id ?? null;
   }
-  const deliveryCursor = cursorOverride ?? persistedDeliveryCursor;
+  const deliveryCursor = canaryUserId ? null : cursorOverride ?? persistedDeliveryCursor;
   // The former unbounded .select() silently truncated at
   // PostgREST's default db.max_rows (1,000), and does so with error === null,
   // so nothing downstream would ever see a failure. Every guard built on top
@@ -523,6 +546,7 @@ export async function GET(req: Request) {
       .order("id")
       .limit(SUBSCRIBER_QUERY_LIMIT);
     if (afterUserId) query = query.gt("id", afterUserId);
+    if (BREVO_DELIVERY_SCHEMA_ENABLED) query = query.is("brevo_unsubscribed_at", null);
     return query;
   };
 
@@ -530,7 +554,20 @@ export async function GET(req: Request) {
   let deliveryWrapped = false;
   let deliveryHasMore = false;
   {
-    let { data: page, error } = await fetchSubscriberPage(deliveryCursor);
+    let { data: page, error } = canaryUserId
+      ? await sb.from("users")
+          .select("id, email, first_name, city, job_blurb, project_blurb, fun_blurb, birthday, gender, theme, topics, topic_quota")
+          .eq("id", canaryUserId)
+          .eq("delivery_enrolled", true)
+          .not("subscribed_at", "is", null)
+          .or(`access_granted_at.not.is.null,cancelled_at.is.null,cancelled_at.gt.${nowIso}`)
+          .is("unsubscribed_at", null)
+          .is("bounced_at", null)
+          .is("complained_at", null)
+          .is("suppression_cleanup_pending_at", null)
+          .is("brevo_unsubscribed_at", null)
+          .limit(2)
+      : await fetchSubscriberPage(deliveryCursor);
 
     // UUIDs are not chronological. A reader approved after this run's cursor
     // can sort before it, and an earlier failed reader also remains before it.
@@ -540,6 +577,7 @@ export async function GET(req: Request) {
     if (
       !error &&
       !cursorOverride &&
+      !canaryUserId &&
       deliveryCursor &&
       (!page || page.length === 0)
     ) {
@@ -550,6 +588,9 @@ export async function GET(req: Request) {
     if (error) {
       console.error("[cron/weekly-send] subscriber fetch failed:", error.message);
       return NextResponse.json({ error: "Couldn't fetch subscribers. Try again." }, { status: 500 });
+    }
+    if (canaryUserId && page?.length !== 1) {
+      return NextResponse.json({ error: "Canary target is not one eligible enrolled reader." }, { status: 409 });
     }
     deliveryHasMore = (page?.length ?? 0) > SUBSCRIBER_BATCH_SIZE;
     if (page) rows.push(...((page as SubscriberRow[]).slice(0, SUBSCRIBER_BATCH_SIZE)));
@@ -578,7 +619,7 @@ export async function GET(req: Request) {
   const priorIssueCountsPromise =
     rows.length > 0
       ? sb
-          .rpc("prior_issue_counts", {
+          .rpc(BREVO_DELIVERY_SCHEMA_ENABLED ? "prior_provider_issue_counts" : "prior_issue_counts", {
             week_of_cutoff: weekOf,
             target_user_ids: rows.map((r) => r.id),
           })
@@ -613,6 +654,7 @@ export async function GET(req: Request) {
   // the post-run summary — see that constant's comment for why.
   const paidCallBaseline = currentPaidCallSnapshot();
   let sent = 0;
+  let canaryBrevoAccepted = false;
   // Live generation failed/timed out but a backup layer covered it (see the
   // catch block below) — counted separately from `sent`/`failed` so the
   // summary distinguishes "the pipeline had a problem, but nobody got
@@ -738,13 +780,17 @@ export async function GET(req: Request) {
   // wrong to treat a real success as broken, and it would fire a false
   // "reclaimed a stuck claim" ops alert. Irrelevant for every future day's
   // send -- only matters for reprocessing this exact date.
-  if (!force) {
+  if (!force && !canaryUserId) {
     const reclaimCutoff = new Date(Date.now() - RECLAIM_SAFETY_MARGIN_MS).toISOString();
-    const { data: reclaimed, error: reclaimErr } = await sb
+    let reclaimQuery = sb
       .from("issues")
       .update({ delivered_at: null })
       .eq("week_of", weekOf)
-      .is("resend_message_id", null)
+      .is("resend_message_id", null);
+    if (BREVO_DELIVERY_SCHEMA_ENABLED) {
+      reclaimQuery = reclaimQuery.is("brevo_message_id", null);
+    }
+    const { data: reclaimed, error: reclaimErr } = await reclaimQuery
       .not("delivered_at", "is", null)
       .gte("delivered_at", RECLAIM_GRANDFATHER_CUTOFF)
       .lt("delivered_at", reclaimCutoff)
@@ -833,13 +879,20 @@ export async function GET(req: Request) {
     const stampsPromise =
       !force && rows.length > 0
         ? Promise.all(
-            idChunks.map((ids) =>
-              sb
+            idChunks.map((ids) => {
+              let query = sb
                 .from("issues")
                 .select("user_id")
                 .eq("week_of", weekOf)
                 .not("delivered_at", "is", null)
-                .in("user_id", ids)
+                .in("user_id", ids);
+              if (BREVO_DELIVERY_SCHEMA_ENABLED) {
+                query = query.or(
+                  `resend_message_id.not.is.null,brevo_message_id.not.is.null,delivered_at.lt.${RECLAIM_GRANDFATHER_CUTOFF}`
+                );
+              }
+              return query;
+            }
             )
           ).then((results) => {
             warnOnChunkErrors(results, "alreadyDelivered");
@@ -1103,8 +1156,8 @@ export async function GET(req: Request) {
       // anything went wrong. Throwing routes this through the same per-user
       // catch as every other failure, so it's counted, alerted on, and
       // (once a persisted-issue-row retry path exists) safely retryable.
-      if (!resendConfigured()) {
-        throw new Error("Resend is not configured (RESEND_API_KEY missing) — cannot send.");
+      if (!subscriberEmailConfigured(canaryUserId ? "brevo" : undefined)) {
+        throw new Error("Subscriber email transport is not configured — cannot send.");
       }
 
       // ATOMIC delivered_at CLAIM — the race-safe idempotency guard. The
@@ -1147,12 +1200,27 @@ export async function GET(req: Request) {
       // snapshot and one page can run long enough for any of those fields to
       // change. Sending to its stale address after the account email moved is
       // a privacy failure, so a missing current address also fails closed.
+      const freshUserColumns =
+        BREVO_DELIVERY_SCHEMA_ENABLED
+          ? "email, delivery_enrolled, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at, brevo_unsubscribed_at"
+          : "email, delivery_enrolled, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at";
+      type FreshDeliveryUser = {
+        email: string | null;
+        delivery_enrolled: boolean | null;
+        subscribed_at: string | null;
+        access_granted_at: string | null;
+        unsubscribed_at: string | null;
+        cancelled_at: string | null;
+        bounced_at: string | null;
+        complained_at: string | null;
+        suppression_cleanup_pending_at: string | null;
+        brevo_unsubscribed_at?: string | null;
+      };
       const { data: freshUser, error: freshUserErr } = await sb
         .from("users")
-        .select(
-          "email, delivery_enrolled, subscribed_at, access_granted_at, unsubscribed_at, cancelled_at, bounced_at, complained_at, suppression_cleanup_pending_at"
-        )
+        .select(freshUserColumns)
         .eq("id", row.id)
+        .returns<FreshDeliveryUser[]>()
         .maybeSingle();
       if (freshUserErr || !freshUser) {
         // Eligibility is a privacy and access decision. If the current row
@@ -1169,6 +1237,10 @@ export async function GET(req: Request) {
       } else if (freshUser.unsubscribed_at) {
         unsubscribedMidRunSkips++;
         console.log("[cron/weekly-send] skipped (unsubscribed mid-run)");
+        return "settled";
+      } else if (BREVO_DELIVERY_SCHEMA_ENABLED && freshUser.brevo_unsubscribed_at) {
+        unsubscribedMidRunSkips++;
+        console.log("[cron/weekly-send] skipped (provider unsubscribe mid-run)");
         return "settled";
       } else if (
         !hasReaderAccess(
@@ -1256,25 +1328,21 @@ export async function GET(req: Request) {
           idempotencyKind: deliveryIdempotencyKind,
           deliveryDate: weekOf,
         });
-        const delivery = await sendWithResendDeliveryAttempt({
+        const delivery = await sendPreparedSubscriberLetter({
           sb,
           userId: row.id,
           weekOf,
-          recipient: preparedEmail.recipient,
           deliveryLane: deliveryIdempotencyKind,
-          payloadFingerprint: preparedEmail.requestFingerprint,
           expectedClaimedAt: force ? null : claimedAt,
-          send: (storedRecipient) => {
-            if (storedRecipient !== preparedEmail.recipient) {
-              throw new Error("staged recipient changed before provider send");
-            }
-            return sendPreparedSubscriberEmail(preparedEmail);
-          },
-        });
+          prepared: preparedEmail,
+        }, canaryUserId ? "brevo" : undefined);
         providerSent = delivery.providerSent;
+        if (canaryUserId && delivery.provider === "brevo" && providerSent) {
+          canaryBrevoAccepted = true;
+        }
         if (delivery.suppressionReviewRequired) {
           console.warn(
-            "[cron/weekly-send] provider accepted the letter but its suppression evidence needs review"
+            `[cron/weekly-send] ${delivery.provider} accepted the letter but its suppression evidence needs review`
           );
         }
       } catch (sendErr) {
@@ -1304,8 +1372,8 @@ export async function GET(req: Request) {
         return "settled";
       }
 
-      // Count + log only on an ACTUAL send — inside resendConfigured's
-      // early-return above so a dev/misconfig run with Resend unset doesn't
+      // Count + log only on an ACTUAL send, after the transport configuration
+      // check above, so a dev/misconfig run with no sender doesn't
       // over-report for letters that never went out.
       if (kind === "backup-shared") {
         backupSharedSent++;
@@ -1452,6 +1520,10 @@ export async function GET(req: Request) {
       const msg = e instanceof Error ? e.message : "unknown";
       failures.push({ email: currentDeliveryEmail, error: msg });
       console.error(`[cron/weekly-send] FAILED: ${msg}`);
+      if (canaryUserId) {
+        deliveryRetryRequiredUserIds.add(row.id);
+        continue;
+      }
 
       // Once a complete issue exists, a persistence or delivery failure must
       // never replace it with different content in this same run. Keep the
@@ -1703,7 +1775,7 @@ export async function GET(req: Request) {
   // when one reader needs retry. The exact retry count keeps the workflow red,
   // and proof-of-delivery coverage makes later same-day slots wrap and retry
   // unresolved readers without starving readers beyond a bounded page cap.
-  if (cursorOverride) {
+  if (canaryUserId || cursorOverride) {
     deliveryCursorState = "override_read_only";
   } else if (!deliveryPageLastUserId) {
     deliveryCursorState = "empty";
@@ -1734,6 +1806,11 @@ export async function GET(req: Request) {
   const deliveryPageBlocked =
     !deliveryPageComplete || deliveryCursorAdvanceFailed;
   const summary = {
+    ...(canaryUserId ? {
+      canary: true,
+      canaryProvider: "brevo" as const,
+      canarySent: canaryBrevoAccepted && sent === 1 && backupSharedSent === 0 && backupFreshSent === 0 && backupStaleSent === 0,
+    } : {}),
     weekOf,
     subscribers: rows.length,
     sent,
@@ -1820,7 +1897,7 @@ export async function GET(req: Request) {
   // exhaustion, or readers deferred for time should be loud and visible.
   // letter is noticed missing. Best-effort single email per run (sendOpsAlert
   // never throws), only when something actually went wrong.
-  if (
+  if (!canaryUserId && (
     skippedBlankSubscribers.length > 0 ||
     failed > 0 ||
     braveRateLimited > 0 ||
@@ -1832,7 +1909,7 @@ export async function GET(req: Request) {
     eligibilityRecheckFailures > 0 ||
     retentionErrors.length > 0 ||
     deliveryCursorAdvanceFailed
-  ) {
+  )) {
     // This exact set is also the cursor-advance guard. It avoids inferring
     // coverage from aggregate counters when a failed generation was rescued,
     // or when a reader became ineligible during a backup attempt.
@@ -1936,5 +2013,23 @@ export async function GET(req: Request) {
     );
   }
 
+  if (canaryUserId) {
+    return NextResponse.json({
+      canary: true,
+      canaryProvider: "brevo",
+      canarySent: summary.canarySent,
+      weekOf,
+      subscribers: rows.length,
+      sent,
+      backupSharedSent,
+      backupFreshSent,
+      backupStaleSent,
+      deliveryRetryRequired: summary.deliveryRetryRequired,
+      deliveryRetryRequiredTotal,
+      deliveryHasMore: false,
+      deliveryCursorAdvanceFailed,
+      checkoutRetentionErrors: 0,
+    }, { status: summary.canarySent ? 200 : 409 });
+  }
   return NextResponse.json(summary);
 }

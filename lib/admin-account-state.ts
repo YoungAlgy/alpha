@@ -13,6 +13,7 @@ export interface AdminAccountStateInput {
   access_granted_at: string | null;
   delivery_enrolled: boolean;
   unsubscribed_at: string | null;
+  brevo_unsubscribed_at?: string | null;
   bounced_at: string | null;
   complained_at: string | null;
   suppression_cleanup_pending_at: string | null;
@@ -29,10 +30,12 @@ export function getAdminAccountState(row: AdminAccountStateInput) {
   const freeGranted = readerAccess && (!!row.access_granted_at || !billingBound);
   const pending = !!row.access_requested_at && !row.access_granted_at;
   const recovery = !!row.suppression_recovery_started_at || !!row.has_suppression_recovery;
-  const suppressed = !!(row.bounced_at || row.complained_at || row.suppression_cleanup_pending_at);
+  const suppressed = !!(row.bounced_at || row.complained_at || row.suppression_cleanup_pending_at || row.brevo_unsubscribed_at);
   const profileComplete = hasUsableReaderProfile(row);
   const deliveryBlockReason = !readerAccess
     ? "Approve free access before enabling letters."
+    : row.brevo_unsubscribed_at
+    ? "This reader has a provider unsubscribe block. Reviewed recovery is required before letters can resume."
     : row.unsubscribed_at
     ? "This reader unsubscribed. They must resume letters from their account."
     : recovery || suppressed

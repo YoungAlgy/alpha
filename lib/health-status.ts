@@ -10,15 +10,19 @@ export const HARD_PRODUCT_CHECK_NAMES = [
 
 export type HardProductCheckName = (typeof HARD_PRODUCT_CHECK_NAMES)[number];
 export type HardProductChecks = Record<HardProductCheckName, boolean>;
+export type ProductFailureName = HardProductCheckName | "subscriberEmail";
 
 export function hardProductFailures(
-  checks: HardProductChecks,
+  checks: HardProductChecks & { subscriberEmail?: boolean },
   accessMode: "invite" | "paid" = "paid"
-): HardProductCheckName[] {
+): ProductFailureName[] {
   const required = accessMode === "invite"
     ? HARD_PRODUCT_CHECK_NAMES.filter(
         (name) => !["stripe", "stripeWebhook", "checkoutBinding", "legacyCheckoutCutoff"].includes(name)
       )
     : HARD_PRODUCT_CHECK_NAMES;
-  return required.filter((name) => !checks[name]);
+  const senderCheck: ProductFailureName = typeof checks.subscriberEmail === "boolean"
+    ? "subscriberEmail" : "resend";
+  return required.map((name) => name === "resend" ? senderCheck : name)
+    .filter((name) => name === "subscriberEmail" ? !checks.subscriberEmail : !checks[name]);
 }

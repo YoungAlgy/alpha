@@ -45,11 +45,21 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildBackupManifest,
-  CRITICAL_TABLES,
+  criticalTablesForFormatVersion,
+  selectedBackupFormatVersion,
   serializeTableRows,
   tableFileMetadata,
 } from "./critical-table-backup-format.mjs";
 import { requireExactAlphaSupabaseUrl } from "./alpha-supabase-url.mjs";
+
+let backupFormatVersion;
+try {
+  backupFormatVersion = selectedBackupFormatVersion(process.env.ALPHA_BACKUP_FORMAT_VERSION);
+} catch (error) {
+  console.error(`::error:: ${error instanceof Error ? error.message : "invalid backup format version"}`);
+  process.exit(1);
+}
+const criticalTables = criticalTablesForFormatVersion(backupFormatVersion);
 
 const rawUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -262,7 +272,7 @@ try {
   const summary = [];
   const files = {};
   let totalRows = 0;
-  for (const table of CRITICAL_TABLES) {
+  for (const table of criticalTables) {
     try {
       const rows = await fetchAllRows(table);
       totalRows += rows.length;
@@ -294,6 +304,7 @@ try {
       backedUpAt: process.env.BACKUP_TIMESTAMP || new Date().toISOString(),
       files,
       failed,
+      formatVersion: backupFormatVersion,
     });
     const manifestPath = path.join(outDir, "MANIFEST.json");
     writtenPaths.push(manifestPath);

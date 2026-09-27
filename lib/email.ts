@@ -213,9 +213,9 @@ const BRAND_GOLD = "#C9A961";
 // footer of both had bare inline styles with no class, so Gmail's dark mode
 // could still invert them even after the round-14 fix.
 const WORDMARK_MASTHEAD = `<div class="alpha-ink" style="font-family:Georgia,serif;font-size:30px;font-weight:700;letter-spacing:-0.01em;color:#1F3D2E;text-align:center;margin:0 0 10px;">alpha<span class="alpha-gold" style="color:${BRAND_GOLD};">.</span></div>`;
-// CAN-SPAM (15 U.S.C. 7704, 16 CFR 316.4) requires a valid physical postal
-// address on every commercial email -- alpha is a paid recurring
-// subscription, not a purely transactional receipt.
+// Free invite-only Alpha retains this real owner-approved postal address for
+// newsletter/provider compliance. Email's legal classification depends on
+// its actual content and purpose, not pricing alone.
 const MAILING_ADDRESS = "3608 S Belcher Dr, Tampa, FL 33629";
 const wordmarkFooter = (prefix = "") =>
   `${prefix}alpha<span class="alpha-gold" style="color:${BRAND_GOLD};">.</span> · A PERSONAL LETTER · ${new Date().getFullYear()}<br>${MAILING_ADDRESS}`;
