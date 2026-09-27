@@ -28,6 +28,49 @@ assert.equal(BREVO_AUTOMATIC_FAILOVER_ENABLED, true);
 let stub = transport();
 assert.deepEqual(await checkResendSendReadiness(settings, stub.fetch), { kind: "ready" });
 assert.equal(stub.paths.length, 2);
+// The sender comes from the daily workflow secret, not the quota probe's
+// hardcoded display string. Test its supported shapes without loading secrets.
+for (const sender of [
+  'alpha. <alpha@everyday.report>',
+  'Alpha <alpha@everyday.report>',
+  '"Alpha Daily" <alpha@everyday.report>',
+  'alpha@everyday.report',
+  '  "alpha." <alpha@everyday.report>  ',
+  'Alpha <daily.letter+news@everyday.report>',
+]) {
+  stub = transport();
+  assert.deepEqual(await checkResendSendReadiness({ ...settings, sender }, stub.fetch),
+    { kind: "ready" });
+  assert.equal(stub.paths.length, 2);
+}
+for (const sender of [
+  undefined, null, 1, '', ' ', 'bad',
+  'Alpha <alpha@other.invalid>',
+  'Alpha <alpha@everyday.report.other.invalid>',
+  'Alpha <alpha@backup.alpha.everyday.report>',
+  'Alpha <alpha@everyday.report>, Other <other@everyday.report>',
+  'alpha@everyday.report;other@everyday.report',
+  'Alpha <alpha@everyday.report> extra',
+  'Alpha <<alpha@everyday.report>>',
+  '"Alpha <alpha@everyday.report>',
+  '"Alpha" extra <alpha@everyday.report>',
+  'Alpha <alpha @everyday.report>',
+  'Alpha <@everyday.report>',
+  '.alpha@everyday.report', 'alpha.@everyday.report', 'al..pha@everyday.report',
+  `${'a'.repeat(65)}@everyday.report`,
+  `${'A'.repeat(321)} <alpha@everyday.report>`,
+  'Alpha\r\nBcc: other@everyday.report <alpha@everyday.report>',
+  '\nalpha@everyday.report', 'alpha@everyday.report\n',
+  'Alpha\t<alpha@everyday.report>', 'Alpha\0 <alpha@everyday.report>',
+  'Alpha\u007f <alpha@everyday.report>', 'Alpha\u2028 <alpha@everyday.report>',
+]) {
+  let reads = 0;
+  assert.deepEqual(await checkResendSendReadiness({ ...settings, sender }, async () => {
+    reads++;
+    throw new Error('invalid sender must block before provider reads');
+  }), { kind: "blocked", reason: "invalid_settings" });
+  assert.equal(reads, 0);
+}
 for (const [input, expected] of [
   [{ domain: { data: [] } }, { kind: "blocked", reason: "sender_domain_unverified" }],
   [{ quota: { ...usage, emails: { ...usage.emails, daily: { used: 2, limit: 4 } } } },

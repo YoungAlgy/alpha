@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { readBoundedJson } from "./alpha-preflight-response.mjs";
 import { validateSendScope } from "./run-brevo-canary.mjs";
+import { checkResendSendReadiness as actualResendReadiness } from "./resend-send-readiness.mjs";
 
 let source = readFileSync(new URL("./verify-send-preflight.mjs", import.meta.url), "utf8");
 source = source.replace(/^#![^\r\n]*\r?\n/, "");
@@ -27,10 +28,11 @@ const env = {
   ALPHA_ACTIVE_READER_COUNT: "3", GITHUB_ACTIONS: "true", GITHUB_EVENT_NAME: "schedule",
 };
 async function run({ auto = false, general = false, changes = {}, resend = { kind: "ready" },
-  brevo = { ready: true } } = {}) {
+  brevo = { ready: true }, realResend = false, remaining = 3 } = {}) {
   const outputs = {};
   const calls = { resend: 0, brevo: 0, oldDomains: 0 };
   const logs = [];
+  const readinessReads = [];
   const context = {
     outputs, Response, AbortSignal,
     process: { env: { ...env, ...changes }, exit: (code) => { throw new Error(`exit:${code}`); } },
@@ -43,6 +45,20 @@ async function run({ auto = false, general = false, changes = {}, resend = { kin
     readBoundedJson,
     checkResendSendReadiness: async (settings) => {
       calls.resend++;
+      if (realResend) {
+        assert.equal(settings.sender, changes.RESEND_FROM ?? env.RESEND_FROM);
+        return actualResendReadiness(settings, async (url, init) => {
+          assert.equal(init.method, "GET");
+          readinessReads.push(url);
+          assert.equal(url, `https://api.resend.com/${readinessReads.length === 1 ? 'domains' : 'usage'}`);
+          assert.ok(readinessReads.length <= 2);
+          return Response.json(readinessReads.length === 1
+            ? { data: [{ name: "everyday.report", status: "verified" }] }
+            : { object: "usage", emails: {
+              daily: { used: 0, limit: remaining }, monthly: { used: 0, limit: remaining },
+            } });
+        });
+      }
       if (!Number.isSafeInteger(settings.requiredCount) || settings.requiredCount < 1) {
         return { kind: "blocked", reason: "capacity_count_unavailable" };
       }
@@ -63,10 +79,10 @@ async function run({ auto = false, general = false, changes = {}, resend = { kin
   };
   try {
     await vm.runInNewContext(`(async () => { ${source} })()`, context);
-    return { outputs, calls, logs, exit: null };
+    return { outputs, calls, logs, readinessReads, exit: null };
   } catch (error) {
     if (error?.message !== "exit:1") throw error;
-    return { outputs, calls, logs, exit: 1 };
+    return { outputs, calls, logs, readinessReads, exit: 1 };
   }
 }
 
@@ -108,4 +124,28 @@ result = await run({ changes: { RESEND_API_KEY: "" } });
 assert.equal(result.exit, 1);
 assert.equal(result.outputs.selected_provider, undefined);
 assert.deepEqual(result.calls, { resend: 0, brevo: 0, oldDomains: 0 });
+// Exercise the real validator through the scheduled body, rather than only a
+// hardcoded sender or a mocked readiness result. All provider reads stay local.
+result = await run({ auto: true, general: true, realResend: true,
+  changes: { RESEND_FROM: '  Alpha <daily@everyday.report>  ' } });
+assert.equal(result.exit, null);
+assert.equal(result.outputs.selected_provider, "resend");
+assert.equal(result.outputs.delivery_ready, "true");
+assert.deepEqual(result.calls, { resend: 1, brevo: 0, oldDomains: 0 });
+assert.equal(result.readinessReads.length, 2);
+assert.equal(result.logs.some((line) => line.includes('daily@')), false);
+result = await run({ auto: true, general: true, realResend: true, remaining: 2,
+  changes: { RESEND_FROM: 'Alpha <daily@everyday.report>' } });
+assert.equal(result.outputs.selected_provider, "brevo");
+assert.deepEqual(result.calls, { resend: 1, brevo: 1, oldDomains: 0 });
+assert.equal(result.readinessReads.length, 2);
+for (const sender of ['Alpha <daily@other.invalid>', 'Alpha\r\n <daily@everyday.report>']) {
+  result = await run({ auto: true, general: true, realResend: true,
+    changes: { RESEND_FROM: sender } });
+  assert.equal(result.exit, 1);
+  assert.equal(result.outputs.selected_provider, undefined);
+  assert.deepEqual(result.calls, { resend: 1, brevo: 0, oldDomains: 0 });
+  assert.equal(result.readinessReads.length, 0);
+  assert.equal(result.logs.some((line) => line.includes(sender)), false);
+}
 console.log("PASS full preflight sender selection and output routing fixtures");

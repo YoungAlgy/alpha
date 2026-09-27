@@ -3,6 +3,20 @@ import { readBoundedJson } from "./alpha-preflight-response.mjs";
 const API = "https://api.resend.com";
 const LIMIT = 65_536;
 
+function isAlphaSender(sender) {
+  // Match the effective sender used by lib/email.ts without rewriting it.
+  // The prior daily preflight pinned Alpha's domain, not one display string.
+  // Reject controls before trim so a header injection cannot be normalized away.
+  if (typeof sender !== "string" || sender.length > 320 || /[^\x20-\x7e]/.test(sender)) {
+    return false;
+  }
+  const value = sender.trim();
+  const named = /^(?:"[^"<>@,;\\]+"|[A-Za-z0-9][A-Za-z0-9 ._'-]*) +<([^<>]+)>$/.exec(value);
+  const mailbox = named ? named[1] : value;
+  return /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@everyday\.report$/.test(mailbox) &&
+    !mailbox.startsWith(".") && !mailbox.includes("..") && !mailbox.includes(".@");
+}
+
 // Official usage contract: daily/monthly used includes sent and received mail.
 // A null daily limit denotes a monthly subscription, outside this free-only gate.
 // https://github.com/resend/resend-openapi/blob/main/resend.yaml
@@ -34,7 +48,7 @@ async function get(path, key, fetchImpl) {
 
 export async function checkResendSendReadiness({ apiKey, sender, requiredCount }, fetchImpl = fetch) {
   if (typeof apiKey !== "string" || !/^[\x21-\x7e]{1,2048}$/.test(apiKey) ||
-      typeof sender !== "string" || !/^"alpha\." <alpha@everyday\.report>$/.test(sender)) {
+      !isAlphaSender(sender)) {
     return { kind: "blocked", reason: "invalid_settings" };
   }
   if (!Number.isSafeInteger(requiredCount) || requiredCount < 1) {
