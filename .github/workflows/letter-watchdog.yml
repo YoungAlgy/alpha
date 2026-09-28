@@ -174,9 +174,10 @@ jobs:
           }
 
           # Skip coverage only when the checked-out source policy and the live
-          # Worker both prove the SAME exact release is paused. A push ahead of
-          # deployment, an old live Worker, a broken health endpoint, or an
-          # unrecognized policy is an alert, never permission to skip.
+          # Worker both prove the SAME exact release is paused. Matching open
+          # policies proceed to coverage even across different valid releases,
+          # allowing sender-only updates without a website deployment. Broken
+          # health, unrecognized policy, or mode disagreement still alerts.
           RELEASE_SEARCH_PHRASE="Daily letter release state unverified"
           RELEASE_ISSUE_TITLE="⚠️ ${RELEASE_SEARCH_PHRASE}"
           HEALTH_FILE="${RUNNER_TEMP}/alpha-watchdog-health.json"
@@ -199,12 +200,12 @@ jobs:
           fi
           if [ -n "${MODE_CHECK_REASON}" ]; then
             echo "ALERT: the expected subscriber-delivery state could not be verified (${MODE_CHECK_REASON})."
-            ALERT_BODY="The watchdog could not prove that the checked-out source policy and live Alpha health agree on one exact release. Health HTTP status: ${HEALTH_HTTP_STATUS:-unavailable}. No delivery skip was accepted. Check the release SHA, live health, and source policy. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            ALERT_BODY="The watchdog could not verify agreement between the checked-out delivery policy and live Alpha health. Both must report open to check coverage. Skipping coverage for a pause also requires an exact release match. Health HTTP status: ${HEALTH_HTTP_STATUS:-unavailable}. No delivery skip was accepted. Check the release SHA, live health, and source policy. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             send_resend_alert "[alpha] Delivery release state unverified" "${ALERT_BODY}"
             open_or_update_issue "${RELEASE_SEARCH_PHRASE}" "${RELEASE_ISSUE_TITLE}" "${ALERT_BODY}"
             exit 1
           fi
-          close_issue_if_open "${RELEASE_SEARCH_PHRASE}" "Resolved: live health and the checked-out delivery policy agree on the exact release as of $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+          close_issue_if_open "${RELEASE_SEARCH_PHRASE}" "Resolved: live health and the checked-out delivery policy agree on ${MODE} as of $(date -u +%Y-%m-%dT%H:%M:%SZ). Open delivery still requires coverage checks. A paused skip requires an exact release match. This does not prove delivery."
           if [ "${MODE}" = "paused" ]; then
             echo "OK: subscriber letters are intentionally paused in the exact live release. Delivery coverage is not expected."
             close_issue_if_open "Daily letter send may be broken" "Closed because the exact live release intentionally pauses subscriber letters. This does not prove historical missed deliveries were recovered."

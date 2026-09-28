@@ -286,6 +286,12 @@ opens a GitHub Issue on failure. Its 20:37 UTC check follows the final retry's
 delivery cannot satisfy today's check. It shares GitHub with the sender and is
 not an independent safeguard against a GitHub-wide outage.
 
+The watchdog checks coverage when its source policy and healthy live website
+both report delivery open. Their valid release SHAs may differ after a
+sender-only update. Skipping coverage for a pause still requires both policies
+to report paused and the exact live release to match the checked-out release.
+Unrecognized health, invalid release SHAs and policy disagreement still alert.
+
 In Tampa during daylight saving time, the target starts are 10:17 AM, 11:37 AM,
 and 2:47 PM, with the watchdog at 4:37 PM. During standard time each is one hour
 earlier. These are attempt times, not promised inbox arrival times.

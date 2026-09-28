@@ -51,6 +51,9 @@ assert.equal(parseSubscriberDeliveryPolicy("export // reviewed\n const SUBSCRIBE
 
 assert.deepEqual(decide(), { mode: "paused", reason: "matched" });
 assert.deepEqual(decide({ policySource: openPolicy, healthBody: health("open") }), { mode: "open", reason: "matched" });
+assert.deepEqual(decide({ policySource: openPolicy, healthBody: health("open", otherSha) }), {
+  mode: "open", reason: "open_across_releases",
+});
 assert.equal(decide({ policySource: "" }).mode, "unknown");
 assert.equal(decide({ expectedSha: undefined }).reason, "checkout_release_ref_mismatch");
 assert.equal(decide({ checkoutSha: otherSha }).reason, "checkout_release_ref_mismatch");
@@ -65,10 +68,41 @@ assert.equal(decide({ healthBody: health("unknown") }).reason, "live_delivery_mo
 assert.equal(decide({ healthBody: health("open") }).reason, "live_source_policy_mismatch");
 assert.equal(decide({ policySource: openPolicy }).reason, "live_source_policy_mismatch");
 
+// Different releases can only allow a coverage check, never authorize a pause.
+for (const release of [sha, otherSha]) {
+  assert.equal(decide({ healthBody: health("open", release) }).reason, "live_source_policy_mismatch");
+  assert.equal(decide({ policySource: openPolicy, healthBody: health("paused", release) }).reason, "live_source_policy_mismatch");
+}
+for (const mode of ["open", "paused"]) {
+  const policySource = mode === "open" ? openPolicy : pausedPolicy;
+  for (const release of [undefined, null, "", "a".repeat(39), "a".repeat(41), "g".repeat(40), [sha], 123]) {
+    const healthBody = JSON.stringify({ ok: true, accessMode: "invite", subscriberDeliveryMode: mode, release });
+    assert.equal(decide({ policySource, healthBody }).reason, "live_release_ref_invalid");
+  }
+}
+const openAcrossReleases = { policySource: openPolicy, healthBody: health("open", otherSha) };
+for (const overrides of [
+  { expectedSha: undefined },
+  { expectedSha: "short", checkoutSha: "short" },
+  { checkoutSha: otherSha },
+  { healthHttpStatus: 503 },
+  { healthBody: "not json" },
+  { healthBody: "x".repeat(8193) },
+  { healthBody: null },
+  { healthBody: "[]" },
+  { healthBody: "null" },
+  { healthBody: health("unknown", otherSha) },
+  { healthBody: JSON.stringify({ ok: false, accessMode: "invite", subscriberDeliveryMode: "open", release: otherSha }) },
+  { healthBody: JSON.stringify({ ok: true, accessMode: "paid", subscriberDeliveryMode: "open", release: otherSha }) },
+  { policySource: "" },
+]) {
+  assert.equal(decide({ ...openAcrossReleases, ...overrides }).mode, "unknown");
+}
+
 // Exercise the actual CLI through a relative script path, with only the three
 // required environment values and temporary local policy input. No network.
 const helperPath = resolve(dirname(fileURLToPath(import.meta.url)), "alpha-watchdog-delivery-mode.mjs");
-const runCli = (policySource, liveMode) => {
+const runCli = (policySource, liveMode, release = sha) => {
   const fixtureDir = mkdtempSync(join(tmpdir(), "alpha-watchdog-"));
   assert.ok(resolve(fixtureDir).startsWith(resolve(tmpdir()) + sep));
   try {
@@ -78,7 +112,7 @@ const runCli = (policySource, liveMode) => {
     }
     return spawnSync(process.execPath, [relative(fixtureDir, helperPath)], {
       cwd: fixtureDir,
-      input: health(liveMode),
+      input: health(liveMode, release),
       encoding: "utf8",
       timeout: 3000,
       maxBuffer: 4096,
@@ -103,6 +137,23 @@ assert.equal(openCli.error, undefined);
 assert.equal(openCli.status, 0);
 assert.equal(openCli.stdout, "open");
 assert.equal(openCli.stderr, "");
+const openDriftCli = runCli(openPolicy, "open", otherSha);
+assert.equal(openDriftCli.error, undefined);
+assert.equal(openDriftCli.status, 0);
+assert.equal(openDriftCli.stdout, "open");
+assert.equal(openDriftCli.stderr, "");
+for (const [policySource, liveMode, release, reason] of [
+  [pausedPolicy, "paused", otherSha, "live_release_ref_mismatch"],
+  [openPolicy, "paused", otherSha, "live_source_policy_mismatch"],
+  [pausedPolicy, "open", otherSha, "live_source_policy_mismatch"],
+  [openPolicy, "open", "short", "live_release_ref_invalid"],
+]) {
+  const blockedCli = runCli(policySource, liveMode, release);
+  assert.equal(blockedCli.error, undefined);
+  assert.equal(blockedCli.status, 2);
+  assert.equal(blockedCli.stdout, "");
+  assert.equal(blockedCli.stderr.trim(), "Watchdog release state unverified: " + reason);
+}
 const manualFirstCli = runCli(manualFirstPolicy, "open");
 assert.equal(manualFirstCli.error, undefined);
 assert.equal(manualFirstCli.status, 0);
@@ -131,6 +182,7 @@ assert.match(workflow, /- name: Check Supabase for real, complete delivery today
 assert.match(workflow, /--max-time 15 --connect-timeout 5 --max-filesize 8192/);
 assert.match(workflow, /node scripts\/alpha-watchdog-delivery-mode\.mjs/);
 assert.match(workflow, /Daily letter release state unverified/);
+assert.match(workflow, /if \[ -n "\$\{MODE_CHECK_REASON\}" \]; then[\s\S]*?exit 1[\s\S]*?if \[ "\$\{MODE\}" = "paused" \]/);
 assert.match(workflow, /if \[ "\$\{MODE\}" = "paused" \]; then[\s\S]*?exit 0[\s\S]*?watchdog_delivery_check/);
 assert.match(workflow, /if \[ "\$\{DELIVERED_COUNT\}" -lt 0 \]; then[\s\S]*?open_or_update_issue/);
 assert.match(workflow, /if \[ "\$\{UNCOVERED_COUNT\}" -gt 0 \]; then[\s\S]*?open_or_update_issue/);

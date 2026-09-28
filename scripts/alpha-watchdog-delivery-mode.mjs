@@ -53,7 +53,7 @@ export function decideWatchdogDeliveryMode({
 }) {
   const policyMode = parseSubscriberDeliveryPolicy(policySource);
   if (!policyMode) return { mode: "unknown", reason: "source_policy_unrecognized" };
-  if (!SHA.test(expectedSha ?? "") || checkoutSha !== expectedSha) {
+  if (typeof expectedSha !== "string" || !SHA.test(expectedSha) || checkoutSha !== expectedSha) {
     return { mode: "unknown", reason: "checkout_release_ref_mismatch" };
   }
   if (healthHttpStatus !== 200) {
@@ -74,14 +74,22 @@ export function decideWatchdogDeliveryMode({
   if (health.ok !== true || health.accessMode !== "invite") {
     return { mode: "unknown", reason: "live_health_unhealthy_or_unrecognized" };
   }
-  if (health.release !== expectedSha) {
-    return { mode: "unknown", reason: "live_release_ref_mismatch" };
+  if (typeof health.release !== "string" || !SHA.test(health.release)) {
+    return { mode: "unknown", reason: "live_release_ref_invalid" };
   }
   if (health.subscriberDeliveryMode !== "open" && health.subscriberDeliveryMode !== "paused") {
     return { mode: "unknown", reason: "live_delivery_mode_unrecognized" };
   }
   if (health.subscriberDeliveryMode !== policyMode) {
     return { mode: "unknown", reason: "live_source_policy_mismatch" };
+  }
+  // Sender-only releases can advance without a website deployment. When both
+  // policies are open, coverage still has to be checked. Only an exact paused
+  // release match can authorize skipping that check.
+  if (health.release !== expectedSha) {
+    return policyMode === "open"
+      ? { mode: "open", reason: "open_across_releases" }
+      : { mode: "unknown", reason: "live_release_ref_mismatch" };
   }
   return { mode: policyMode, reason: "matched" };
 }
