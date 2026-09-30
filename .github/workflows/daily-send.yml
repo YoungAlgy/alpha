@@ -243,6 +243,7 @@ jobs:
           ALPHA_NO_KEY_SOURCES: ${{ vars.SEND_ALPHA_NO_KEY_SOURCES }}
           ALPHA_GDELT_FALLBACK: ${{ vars.SEND_ALPHA_GDELT_FALLBACK }}
           ALPHA_PUBLISHER_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLISHER_FEED_FALLBACK }}
+          ALPHA_OPEN_NEWS_FALLBACK: ${{ vars.SEND_ALPHA_OPEN_NEWS_FALLBACK }}
           ALPHA_DURABLE_SOURCE_BUDGET: '1'
         # Deliberately runs BEFORE `npm ci` -- no dependencies needed (just
         # Node's built-in fetch). The default Resend check stays capped at
@@ -316,6 +317,7 @@ jobs:
           ALPHA_NO_KEY_SOURCES: ${{ vars.SEND_ALPHA_NO_KEY_SOURCES }}
           ALPHA_GDELT_FALLBACK: ${{ vars.SEND_ALPHA_GDELT_FALLBACK }}
           ALPHA_PUBLISHER_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLISHER_FEED_FALLBACK }}
+          ALPHA_OPEN_NEWS_FALLBACK: ${{ vars.SEND_ALPHA_OPEN_NEWS_FALLBACK }}
           ALPHA_DURABLE_SOURCE_BUDGET: '1'
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}

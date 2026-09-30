@@ -8,6 +8,7 @@ import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import type { Issue, Reference } from "../lib/types";
+import * as sourceAttribution from "../lib/source-attribution";
 
 const source = readFileSync(new URL("../components/Digest.tsx", import.meta.url), "utf8");
 const exports: { Digest?: (props: { issue: Issue }) => ReactNode } = {};
@@ -22,6 +23,7 @@ vm.runInNewContext(ts.transpileModule(source, {
   fetch() { networkAttempts++; throw new Error("Network forbidden in render check"); },
   require(name: string) {
     if (name === "react/jsx-runtime") return jsxRuntime;
+    if (name === "@/lib/source-attribution") return sourceAttribution;
     if (name === "./ScrollFadeIn") return { ScrollFadeIn: ({ children }: { children: ReactNode }) => children };
     if (name === "./Wordmark") return { Wordmark: () => "Alpha" };
     if (name === "@/lib/cadence") return { SEND_HOUR_UTC: 14 };

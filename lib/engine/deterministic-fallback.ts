@@ -4,6 +4,7 @@ import { cleanField } from "./text-clean";
 import { normalizeUrl } from "./url-guard";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
 import { WRAPPED_SOURCE_NOTE } from "@/lib/issue-visibility";
+import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicBlurb, TopicSignal, BlurbItem, SignalSource } from "./types";
 
 /**
@@ -91,6 +92,7 @@ function uniqueSources(signal: TopicSignal): SignalSource[] {
   const result: SignalSource[] = [];
   const candidates = signal.sources ?? [...parseDeepSources(signal), ...parseHeadlineSources(signal)];
   for (const source of candidates) {
+    if (source.attribution !== undefined && !validatedSourceAttribution(source.url, source.attribution)) continue;
     const normalized = normalizeUrl(source.url);
     if (!normalized || !sourceIsAllowed(signal, source.url) || seen.has(normalized)) continue;
     const title = sanitizeVoice(cleanField(source.title)) || new URL(source.url).hostname;
@@ -122,6 +124,7 @@ function itemForSource(topic: string, source: SignalSource): BlurbItem {
       url: source.url,
     },
     supplementaryRefs: [],
+    attribution: validatedSourceAttribution(source.url, source.attribution),
   };
 }
 

@@ -204,7 +204,9 @@ export async function generateTopicBlurb(
   // formatter can preserve grounded source material without consuming model
   // quota. A signal that cannot be parsed remains a hard failure for the
   // caller's existing backup path.
-  if (noModelModeEnabled()) {
+  // Licensed feed metadata keeps its fixed attribution even if runtime policy
+  // changes between discovery and writing. Never ask a model to rewrite it.
+  if (noModelModeEnabled() || signal.sources?.some((source) => source.attribution !== undefined)) {
     const deterministic = buildDeterministicBlurb(signal);
     if (deterministic) return deterministic;
     throw new Error(`${topicId} ${weekOf}: no-model mode could not parse safe source material`);

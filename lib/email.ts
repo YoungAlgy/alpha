@@ -1,7 +1,8 @@
 import { Resend } from "resend";
 import type { CreateEmailResponse } from "resend";
 import { createHash } from "node:crypto";
-import type { Issue } from "@/lib/types";
+import type { Issue, SourceAttribution } from "@/lib/types";
+import { sourceAttributionCredit, validatedSourceAttribution } from "@/lib/source-attribution";
 import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
 import { requireResendMessageId } from "@/lib/resend-response";
@@ -357,6 +358,7 @@ export function prepareLetterNotification(
       return lead ? `• ${safeLabel}: ${lead}` : `• ${safeLabel}`;
     })
     .join("\n");
+  const sourceCredits = sourceCreditsForIssue(params.issue);
 
   // Build the unsubscribe URL once and reuse it everywhere (HTML link, plain
   // text link, and the RFC 8058 List-Unsubscribe header that Gmail / Apple
@@ -373,6 +375,7 @@ export function prepareLetterNotification(
     letterUrl: params.letterUrl ?? null,
     weekOf: displayWeekOf,
     unsubscribeUrl: unsubUrl,
+    sourceCredits,
   });
 
   const text = renderText({
@@ -384,6 +387,7 @@ export function prepareLetterNotification(
     letterUrl: params.letterUrl ?? null,
     weekOf: displayWeekOf,
     unsubscribeUrl: unsubUrl,
+    sourceCredits,
   });
 
   // List-Unsubscribe + List-Unsubscribe-Post (RFC 2369 + 8058) tell Gmail /
@@ -685,6 +689,22 @@ function fullDeliveryDate(value: string): string {
   });
 }
 
+type SourceCredit = { url: string; attribution: SourceAttribution };
+
+// Every headline reused in a preview keeps its publisher credit. No story
+// bodies are copied here, and license links never enter story deduplication.
+export function sourceCreditsForIssue(issue: Pick<Issue, "sections">): SourceCredit[] {
+  const seen = new Set<string>();
+  return issue.sections.flatMap((section) => section.items.flatMap((item) => {
+    if (item.attribution === undefined) return [];
+    const attribution = validatedSourceAttribution(item.primaryRef?.url, item.attribution);
+    if (!attribution || !item.primaryRef) throw new Error("Invalid licensed source attribution");
+    if (seen.has(item.primaryRef.url)) return [];
+    seen.add(item.primaryRef.url);
+    return [{ url: item.primaryRef.url, attribution }];
+  }));
+}
+
 interface RenderArgs {
   firstName: string;
   teaser: string;
@@ -694,11 +714,17 @@ interface RenderArgs {
   letterUrl?: string | null;
   weekOf: string;
   unsubscribeUrl: string | null;
+  sourceCredits?: SourceCredit[];
 }
 
 // Exported (pure, no I/O) so the email can be previewed/snapshot-tested
 // without ever triggering a live send.
-export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl, letterUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
+export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl, letterUrl, weekOf, unsubscribeUrl, sourceCredits = [] }: RenderArgs): string {
+  const creditsHtml = sourceCredits.map(({ url, attribution }) => {
+    const credit = sourceAttributionCredit(url, attribution);
+    if (!credit) throw new Error("Invalid licensed source attribution");
+    return `<p style="font-size:13px;line-height:1.5;margin:0 0 12px;overflow-wrap:anywhere;word-break:break-word;">By ${escapeHtml(credit.author)}. <a href="${escapeAttr(credit.articleUrl)}">Global Voices, ${escapeHtml(credit.date)}</a>. <a href="${escapeAttr(credit.licenseUrl)}">${credit.licenseLabel}</a>. ${credit.changes}</p>`;
+  }).join("");
   // CTA prefers the tokenized /letter URL — it opens the letter directly with
   // no session, on any device (the view-in-browser pattern). Falls back to
   // /inbox for legacy callers without a letter token.
@@ -792,6 +818,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
                 <h1 class="alpha-ink" style="font-size:32px;font-weight:700;letter-spacing:-0.01em;margin:0 0 24px;overflow-wrap:anywhere;word-break:break-word;">
                   Hi ${escapeHtml(firstName)},
                 </h1>
+                ${creditsHtml}
                 <!-- alpha-drift-r35-14 (2026-08-14): same overflow-wrap/
                      word-break gap as the h1 (firstName) and pre
                      (sectionList) above/below -- teaser is derived from
@@ -842,13 +869,18 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
 </html>`;
 }
 
-function renderText({ firstName, teaser, sectionList, inboxUrl, letterUrl, weekOf, unsubscribeUrl }: RenderArgs): string {
+export function renderText({ firstName, teaser, sectionList, inboxUrl, letterUrl, weekOf, unsubscribeUrl, sourceCredits = [] }: RenderArgs): string {
+  const creditsText = sourceCredits.map(({ url, attribution }) => {
+    const credit = sourceAttributionCredit(url, attribution);
+    if (!credit) throw new Error("Invalid licensed source attribution");
+    return `By ${credit.author}. Global Voices, ${credit.date}: ${credit.articleUrl}\n${credit.licenseLabel}: ${credit.licenseUrl}. ${credit.changes}\n\n`;
+  }).join("");
   const unsubLine = unsubscribeUrl ? `\n\nUnsubscribe: ${unsubscribeUrl}` : "";
   return `${weekOf}
 
 Hi ${firstName},
 
-${teaser}
+${creditsText}${teaser}
 
 IN THIS ISSUE
 ${sectionList}

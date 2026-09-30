@@ -88,12 +88,20 @@ export interface Reference {
   note?: string;
 }
 
+// A recognized source identity, never a publisher-supplied license URL.
+export interface SourceAttribution {
+  publisher: "global-voices";
+  author: string;
+  publishedAt: string;
+}
+
 export interface DigestItem {
   kind: ItemKind;
   headline: string;
   body: string;
   primaryRef?: Reference;
   supplementaryRefs?: Reference[];
+  attribution?: SourceAttribution;
   // Legacy field kept for backward-compat with older renderer outputs
   source?: string;
   sourceUrl?: string;

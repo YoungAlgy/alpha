@@ -1,4 +1,4 @@
-import type { TopicId } from "@/lib/types";
+import type { TopicId, SourceAttribution } from "@/lib/types";
 
 export interface TopicBlurb {
   topicId: TopicId;
@@ -23,12 +23,14 @@ export interface BlurbItem {
   body: string;
   primaryRef?: BlurbRef;
   supplementaryRefs?: BlurbRef[];
+  attribution?: SourceAttribution;
 }
 
 export interface SignalSource {
   title: string;
   url: string;
   excerpt: string;
+  attribution?: SourceAttribution;
 }
 
 export interface TopicSignal {

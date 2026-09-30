@@ -13,6 +13,8 @@ import { publicFeedFallbackEnabled, publicFeedSearch } from "./public-feed-searc
 import { noModelModeEnabled, noKeySourcesEnabled } from "./provider-policy";
 import { gdeltFallbackEnabled, gdeltSearch } from "./gdelt-search";
 import { publisherFeedFallbackEnabled, publisherFeedSearch } from "./publisher-feed-search";
+import { openNewsFeedFallbackEnabled, openNewsFeedSearch } from "./open-news-feed-search";
+import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
 
@@ -140,6 +142,14 @@ export async function resolveTopicSignal(
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaPublisher) return viaPublisher;
+      }
+      if (openNewsFeedFallbackEnabled()) {
+        const viaOpenNews = await tryFallback(topicId, "licensed public news feeds", () =>
+          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, openNewsFeedSearch, "Global Voices RSS", false)
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaOpenNews) return viaOpenNews;
       }
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {
@@ -322,7 +332,9 @@ async function fetchLiveSignal(
   //    host's cap slot and starve out a legitimate new one from the same host.
   //    Compare on the SAME normalizeUrl identity the citable allow-set uses so
   //    a match can't be dodged by a fragment.
-  const ranked = rankAndDedup(perQuery.flat(), 2, excludeUrls, topicId);
+  const candidates = perQuery.flat().filter((source) => source.attribution === undefined ||
+    !!validatedSourceAttribution(source.url, source.attribution));
+  const ranked = rankAndDedup(candidates, 2, excludeUrls, topicId);
   if (ranked.length === 0) {
     if (failedQueries > 0) {
       console.warn(
@@ -355,11 +367,13 @@ async function fetchLiveSignal(
       title: cleanField(s.title),
       url: s.url,
       excerpt: cleanField(contents[i] || s.description),
+      attribution: validatedSourceAttribution(s.url, s.attribution),
     })),
     ...more.map((s) => ({
       title: cleanField(s.title),
       url: s.url,
       excerpt: cleanField(s.description),
+      attribution: validatedSourceAttribution(s.url, s.attribution),
     })),
   ];
 

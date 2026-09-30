@@ -107,6 +107,21 @@ host; no HTTP request is made. Source titles and
 attribution are retained; article bodies, images and feed descriptions are not
 republished. A failed feed cannot discard a result already obtained elsewhere.
 
+`ALPHA_OPEN_NEWS_FALLBACK=1` adds licensed Global Voices music and general-news
+feeds after Google and the mapped first-party feeds. It also requires no-model
+mode. Requests use fixed URLs. Topic/genre matching is local, with no reader
+data sent to the publisher. Both the RSS publication timestamp and dated
+article path must fit the requested freshness window. Missing bylines, invalid
+dates, unsupported topics and uncertain genre matches are rejected. Only
+headline/date/link/byline/category metadata is read. Article bodies and media
+are discarded. The publisher's [republishing policy](https://globalvoices.org/about/global-voices-attribution-policy/)
+and [CC BY 3.0 license](https://creativecommons.org/licenses/by/3.0/) provide the
+reuse basis. Each item and its email preview keep author/original-story credit,
+license and formatting notice. License links are separate from story citations
+and repeated-link checks. Licensed feed signals always use the local formatter.
+This is a limited backup with sparse music coverage, not all-topic daily search.
+It is off by default, including in strict no-key mode.
+
 `ALPHA_GDELT_FALLBACK=1` adds an independent public discovery tier after RSS
 and the enabled publisher feeds have no usable sources. It makes one topic-phrase query, never reads full article
 bodies, and uses dated headline/link metadata. Source timestamps are discovery
@@ -129,8 +144,10 @@ across runs. Raw-feed caches and failure-triggered cooldowns remain process-loca
 
 The scheduled runtime pins `ALPHA_DURABLE_SOURCE_BUDGET=1`. The existing private
 Supabase rate-limit RPC then caps all runs together at 60 Google, 12 publisher
-and 12 GDELT requests per fixed fifteen-minute provider window. Reservations
-use fixed provider identities, no query or reader data. A missing/exhausted/
+and 12 GDELT requests per fixed fifteen-minute provider window. Global Voices
+shares the existing 12-request publisher ceiling. Its two fixed endpoints
+share one process-local outage cooldown. Reservations use fixed provider
+identities, no query or reader data. A missing/exhausted/
 unavailable budget blocks that source request. These are ceilings, not provider
 quota guarantees or a persisted failure circuit. The caller stops waiting at
 three seconds; the shared client's database request can continue up to ten
@@ -138,7 +155,8 @@ seconds and consume a slot without causing a later source fetch. No new schema
 or secret is needed. A database outage still blocks daily delivery itself.
 
 The daily workflow passes `SEND_ALPHA_NO_KEY_SOURCES`,
-`SEND_ALPHA_PUBLISHER_FEED_FALLBACK` and `SEND_ALPHA_GDELT_FALLBACK` into both
+`SEND_ALPHA_PUBLISHER_FEED_FALLBACK`, `SEND_ALPHA_OPEN_NEWS_FALLBACK` and
+`SEND_ALPHA_GDELT_FALLBACK` into both
 preflight and runtime.
 Enabling new sources or switching a live run to no-key mode requires a reviewed
 release and separate owner approval. A release must verify public-source
@@ -294,6 +312,7 @@ ALPHA_PUBLIC_FEED_FALLBACK=    # set to "1" to allow the bounded no-key Google N
 ALPHA_NO_KEY_SOURCES=         # set to "1" to skip all keyed source search and enable Google RSS (optional, off by default)
 ALPHA_GDELT_FALLBACK=         # set to "1" for bounded public GDELT discovery after RSS (optional, off by default)
 ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA topic-matched feeds (optional, off by default)
+ALPHA_OPEN_NEWS_FALLBACK=     # set to "1" for licensed Global Voices metadata in no-model mode (optional, off by default)
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release
 

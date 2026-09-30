@@ -3,6 +3,8 @@
 // grounded search, You.com, and the optional public RSS tier. No tier is
 // treated as unlimited, and a paid-plan change requires a separate decision.
 
+import type { SourceAttribution } from "@/lib/types";
+
 const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 
 // Degradation signal for the cron's end-of-run ops summary: how many queries
@@ -48,6 +50,8 @@ export interface BraveResult {
   description: string;
   age?: string;
   meta_url?: { hostname?: string };
+  // Only the fixed, licensed publisher adapter supplies this metadata.
+  attribution?: SourceAttribution;
 }
 
 // Caller-owned so one exhausted monthly quota can short-circuit later queries

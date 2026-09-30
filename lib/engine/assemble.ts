@@ -487,6 +487,7 @@ export async function generateIssue(
         body: it.body,
         primaryRef: it.primaryRef,
         supplementaryRefs: it.supplementaryRefs,
+        attribution: it.attribution,
       })),
     })),
   };

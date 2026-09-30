@@ -3,6 +3,7 @@ import { ScrollFadeIn } from "./ScrollFadeIn";
 import { topicEmoji, topicAnchor, TOPIC_BY_ID } from "@/lib/topics";
 import { Wordmark } from "./Wordmark";
 import { SEND_HOUR_UTC, SEND_MINUTE_UTC } from "@/lib/cadence";
+import { sourceAttributionCredit } from "@/lib/source-attribution";
 
 // alpha-drift-r14-12 (review 2026-08-06): the only disclaimer anywhere in
 // the app was generic legal boilerplate on /terms -- a subscriber reading
@@ -219,8 +220,17 @@ export function Digest({ issue, localTimezone = false }: DigestProps) {
 
 function Item({ item }: { item: DigestItem }) {
   const kindLabel = KIND_LABEL[item.kind];
+  const credit = sourceAttributionCredit(item.primaryRef?.url, item.attribution);
+  if (item.attribution !== undefined && !credit) return null;
   return (
     <div>
+      {credit && (
+        <p className="alpha-ui text-sm mb-3 leading-relaxed break-words" style={{ color: "var(--ink-soft)" }}>
+          By {credit.author}. <a href={credit.articleUrl} target="_blank" rel="noopener noreferrer" className="underline">Global Voices, {credit.date}</a>.
+          {" "}<a href={credit.licenseUrl} target="_blank" rel="noopener noreferrer" className="underline">{credit.licenseLabel}</a>.
+          {" "}{credit.changes}
+        </p>
+      )}
       {kindLabel && (
         // alpha-drift-r25-04 (2026-08-14): --accent-ink fails WCAG AA 4.5:1
         // against --paper in most themes (2.88:1 default); this label is

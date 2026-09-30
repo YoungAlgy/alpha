@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { validatedSourceAttribution } from "@/lib/source-attribution";
 import { SUBSCRIBER_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
 import crypto from "crypto";
 import { supabaseServiceClient } from "@/lib/supabase/server";
@@ -209,6 +210,7 @@ function isValidPersistedItem(value: unknown): boolean {
     supplementaryRefs?: unknown;
     source?: unknown;
     sourceUrl?: unknown;
+    attribution?: unknown;
   };
   return (
     typeof item.kind === "string" &&
@@ -220,7 +222,9 @@ function isValidPersistedItem(value: unknown): boolean {
       (Array.isArray(item.supplementaryRefs) &&
         item.supplementaryRefs.every(isValidPersistedReference))) &&
     (item.source === undefined || typeof item.source === "string") &&
-    (item.sourceUrl === undefined || typeof item.sourceUrl === "string")
+    (item.sourceUrl === undefined || typeof item.sourceUrl === "string") &&
+    (item.attribution === undefined || !!validatedSourceAttribution(
+      (item.primaryRef as { url?: unknown } | undefined)?.url, item.attribution))
   );
 }
 
