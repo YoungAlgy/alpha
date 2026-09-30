@@ -168,4 +168,28 @@ result = await run({ changes: { ALPHA_NO_KEY_SOURCES: "1", ALPHA_PUBLISHER_FEED_
 assert.ok(result.logs.includes("OK: current-source discovery tiers configured: public-feed, publisher-feed, gdelt."));
 result = await run({ changes: { ALPHA_GDELT_FALLBACK: "0", ALPHA_NO_KEY_SOURCES: "0", ALPHA_PUBLIC_FEED_FALLBACK: "0" } });
 assert.equal(result.outputs.fresh_source_ready, "false");
+result = await run({ changes: { ALPHA_OPEN_NEWS_FALLBACK: "1" } });
+assert.equal(result.outputs.fresh_source_ready, "true");
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: open-news-feed."));
+assert.equal(result.outputs.selected_provider, "resend");
+assert.deepEqual(result.calls, { resend: 0, brevo: 0, oldDomains: 1 });
+result = await run({ changes: {
+  ALPHA_NO_KEY_SOURCES: "1", ALPHA_PUBLISHER_FEED_FALLBACK: "1",
+  ALPHA_OPEN_NEWS_FALLBACK: "1", ALPHA_GDELT_FALLBACK: "1",
+} });
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: public-feed, publisher-feed, open-news-feed, gdelt."));
+for (const disabled of [undefined, "0", "false"]) {
+  result = await run({ changes: { ALPHA_OPEN_NEWS_FALLBACK: disabled } });
+  assert.equal(result.outputs.fresh_source_ready, "false");
+  assert.ok(!result.logs.some((line) => line.includes("open-news-feed")));
+}
+for (const enabled of ["true", "yes"]) {
+  result = await run({ changes: { ALPHA_OPEN_NEWS_FALLBACK: enabled } });
+  assert.equal(result.outputs.fresh_source_ready, "true");
+  assert.ok(result.logs.includes("OK: current-source discovery tiers configured: open-news-feed."));
+}
+result = await run({ changes: { ALPHA_OPEN_NEWS_FALLBACK: "1", ALPHA_NO_MODEL_MODE: "0" } });
+assert.equal(result.exit, 1);
+assert.equal(result.outputs.fresh_source_ready, "false");
+assert.ok(!result.logs.some((line) => line.includes("open-news-feed")));
 console.log("PASS full preflight sender selection, no-key discovery and output routing fixtures");
