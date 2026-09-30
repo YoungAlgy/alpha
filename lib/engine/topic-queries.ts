@@ -1,4 +1,59 @@
-import type { TopicId } from "@/lib/types";
+import type { FixedTopicId, TopicId } from "@/lib/types";
+import { customTopicText, isCustomTopic } from "@/lib/topics";
+import { stripPromptFenceChars } from "@/lib/prompt-fence";
+
+// One conservative phrase per topic for the optional public discovery tier.
+// Display labels and the three rich keyed-search queries are not reliable
+// exact phrases. This keeps public fallback to one request per topic.
+const PUBLIC_TOPIC_PHRASES: Record<FixedTopicId, string> = {
+  "healthcare-recruiting": "healthcare staffing",
+  "sales-persuasion": "sales strategy",
+  "founder-operator": "entrepreneurship",
+  "marketing-growth": "marketing",
+  "personal-finance": "personal finance",
+  "real-estate": "real estate",
+  "macro-markets": "economy",
+  "longevity-wellness": "longevity",
+  "nutrition-food": "nutrition",
+  "mental-health": "mental health",
+  "womens-health": "women's health",
+  "books-worth-your-time": "book review",
+  "psychology-behavior": "psychology",
+  parenting: "parenting",
+  "inspiring-people": "social entrepreneur",
+  "movies-tv": "film review",
+  music: "music",
+  "music-edm": "electronic music",
+  "music-hiphop": "hip hop",
+  "music-indie": "indie music",
+  "music-country": "country music",
+  "style-fashion": "fashion",
+  "sports-betting": "sports betting",
+  "trading-cards": "trading cards",
+  "ai-news": "artificial intelligence",
+  "web3-updates": "blockchain",
+  zodiac: "astrology",
+  "fl-gardening": "Florida gardening",
+  "gardening-plants": "gardening",
+  "sustainable-living": "sustainable living",
+  "startups-vc": "venture capital",
+  "faith-meaning": "religion",
+  "faith-christianity": "Christianity",
+  "faith-islam": "Islam",
+  "faith-judaism": "Judaism",
+  "faith-hinduism": "Hinduism",
+  "faith-buddhism": "Buddhism",
+  "faith-spiritual": "spirituality",
+};
+
+export function publicTopicPhrase(topicId: string): string | undefined {
+  if (isCustomTopic(topicId)) return stripPromptFenceChars(customTopicText(topicId));
+  const zodiac = topicId.match(/^zodiac-(aries|taurus|gemini|cancer|leo|virgo|libra|scorpio|sagittarius|capricorn|aquarius|pisces)$/);
+  if (zodiac) return `${zodiac[1]} horoscope`;
+  return Object.hasOwn(PUBLIC_TOPIC_PHRASES, topicId)
+    ? PUBLIC_TOPIC_PHRASES[topicId as FixedTopicId]
+    : undefined;
+}
 
 // Per-topic Brave Search queries. We run 3 per topic and Claude synthesizes
 // from the joined results. Two design principles tuned 2026-05-14:

@@ -23,3 +23,12 @@ export function noModelModeEnabled(): boolean {
   const raw = process.env.ALPHA_NO_MODEL_MODE?.trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes";
 }
+
+/** Source discovery without any keyed search or grounded-model request.
+ * Pair with no-model mode to keep the full content pipeline off metered APIs.
+ * Credentials being present cannot override this explicit mode.
+ */
+export function noKeySourcesEnabled(): boolean {
+  const raw = process.env.ALPHA_NO_KEY_SOURCES?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}

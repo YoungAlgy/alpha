@@ -148,4 +148,24 @@ for (const sender of ['Alpha <daily@other.invalid>', 'Alpha\r\n <daily@everyday.
   assert.equal(result.readinessReads.length, 0);
   assert.equal(result.logs.some((line) => line.includes(sender)), false);
 }
-console.log("PASS full preflight sender selection and output routing fixtures");
+result = await run({ changes: {
+  ALPHA_NO_KEY_SOURCES: "1", ALPHA_PUBLIC_FEED_FALLBACK: "0", ALPHA_GDELT_FALLBACK: "1",
+  BRAVE_SEARCH_API_KEY: "offline-brave", YOU_API_KEY: "offline-you", GEMINI_API_KEY: "offline-gemini",
+} });
+assert.equal(result.exit, null);
+assert.equal(result.outputs.fresh_source_ready, "true");
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: public-feed, gdelt."));
+assert.equal(result.outputs.selected_provider, "resend");
+result = await run({ changes: { ALPHA_NO_KEY_SOURCES: "true", ALPHA_PUBLIC_FEED_FALLBACK: "0" } });
+assert.equal(result.outputs.fresh_source_ready, "true");
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: public-feed."));
+result = await run({ changes: { ALPHA_GDELT_FALLBACK: "1", ALPHA_PUBLIC_FEED_FALLBACK: "0" } });
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: gdelt."));
+result = await run({ changes: { ALPHA_PUBLISHER_FEED_FALLBACK: "1", ALPHA_PUBLIC_FEED_FALLBACK: "0" } });
+assert.equal(result.outputs.fresh_source_ready, "true");
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: publisher-feed."));
+result = await run({ changes: { ALPHA_NO_KEY_SOURCES: "1", ALPHA_PUBLISHER_FEED_FALLBACK: "1", ALPHA_GDELT_FALLBACK: "1" } });
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: public-feed, publisher-feed, gdelt."));
+result = await run({ changes: { ALPHA_GDELT_FALLBACK: "0", ALPHA_NO_KEY_SOURCES: "0", ALPHA_PUBLIC_FEED_FALLBACK: "0" } });
+assert.equal(result.outputs.fresh_source_ready, "false");
+console.log("PASS full preflight sender selection, no-key discovery and output routing fixtures");

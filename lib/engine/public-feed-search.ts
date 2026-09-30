@@ -1,6 +1,11 @@
 import type { BraveResult, BraveSearchOptions } from "@/lib/brave";
 import { cleanField } from "./text-clean";
 import { decodeTextEntities } from "@/lib/text-entities";
+import { noKeySourcesEnabled } from "./provider-policy";
+import { readPublicSourceText } from "./public-source-response";
+import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
+import { createPublicSourceCache } from "./public-source-cache";
+import { reservePublicSourceRequest } from "./public-source-budget";
 
 /**
  * Optional no-key search fallback. It uses the public Google News RSS search
@@ -13,6 +18,7 @@ const ENDPOINT = "https://news.google.com/rss/search";
 const MAX_RESULTS = 10;
 
 export function publicFeedFallbackEnabled(): boolean {
+  if (noKeySourcesEnabled()) return true;
   const raw = process.env.ALPHA_PUBLIC_FEED_FALLBACK?.trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes";
 }
@@ -25,7 +31,7 @@ function tagValue(block: string, tag: string): string {
 }
 
 /** Pure XML parsing helper so the fallback can be checked without a network. */
-export function parsePublicFeedXml(xml: string): BraveResult[] {
+export function parsePublicFeedXml(xml: string, maxResults = MAX_RESULTS): BraveResult[] {
   const items: BraveResult[] = [];
   const itemRe = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
   for (const match of xml.matchAll(itemRe)) {
@@ -41,7 +47,7 @@ export function parsePublicFeedXml(xml: string): BraveResult[] {
       description,
       age: published || undefined,
     });
-    if (items.length >= MAX_RESULTS) break;
+    if (items.length >= Math.min(100, Math.max(1, maxResults))) break;
   }
   return items;
 }
@@ -55,20 +61,39 @@ function freshnessSuffix(freshness?: BraveSearchOptions["freshness"]): string {
   return range ? ` after:${range[1]} before:${range[2]}` : "";
 }
 
-export async function publicFeedSearch(
+export function createPublicFeedSearch(now: () => number = Date.now) {
+  const cached = createPublicSourceCache(now);
+  return async function publicFeedSearch(
   query: string,
   opts: BraveSearchOptions = {}
 ): Promise<BraveResult[]> {
+  if (!publicSourceWindow(opts.freshness, now())) return [];
   const params = new URLSearchParams({
     q: `${query}${freshnessSuffix(opts.freshness)}`,
     hl: "en-US",
     gl: "US",
     ceid: "US:en",
   });
+  const results = await cached("google-rss", params.toString(), async () => {
+  await reservePublicSourceRequest("google-rss");
+  const signal = AbortSignal.timeout(5000);
   const res = await fetch(`${ENDPOINT}?${params}`, {
     headers: { Accept: "application/rss+xml, application/xml, text/xml" },
-    signal: AbortSignal.timeout(5000),
+    signal,
+    redirect: "error",
+    credentials: "omit",
+    cache: "no-store",
   });
-  if (!res.ok) throw new Error(`Public RSS search ${res.status}`);
-  return parsePublicFeedXml(await res.text());
+  if (!res.ok) {
+    void res.body?.cancel().catch(() => {});
+    throw new Error(`Public RSS search ${res.status}`);
+  }
+  const xml = await readPublicSourceText(res, signal);
+  if (!/<rss\b/i.test(xml) || !/<channel\b/i.test(xml) || !/<\/rss\s*>/i.test(xml)) throw new Error("Public RSS invalid feed");
+  return parsePublicFeedXml(xml, 100);
+  });
+  return freshPublicResults(results, opts.freshness, now()).slice(0, MAX_RESULTS);
+  };
 }
+
+export const publicFeedSearch = createPublicFeedSearch();

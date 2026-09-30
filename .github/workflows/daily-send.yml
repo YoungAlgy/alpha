@@ -240,6 +240,10 @@ jobs:
           ALPHA_NO_MODEL_MODE: '1'
           ALPHA_ALLOW_PAID_AI: '0'
           ALPHA_PUBLIC_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK }}
+          ALPHA_NO_KEY_SOURCES: ${{ vars.SEND_ALPHA_NO_KEY_SOURCES }}
+          ALPHA_GDELT_FALLBACK: ${{ vars.SEND_ALPHA_GDELT_FALLBACK }}
+          ALPHA_PUBLISHER_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLISHER_FEED_FALLBACK }}
+          ALPHA_DURABLE_SOURCE_BUDGET: '1'
         # Deliberately runs BEFORE `npm ci` -- no dependencies needed (just
         # Node's built-in fetch). The default Resend check stays capped at
         # 15 seconds. A future source-enabled Brevo selection checks its
@@ -309,6 +313,10 @@ jobs:
           # format the current resolved sources locally.
           ALPHA_NO_MODEL_MODE: '1'
           ALPHA_PUBLIC_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLIC_FEED_FALLBACK }}
+          ALPHA_NO_KEY_SOURCES: ${{ vars.SEND_ALPHA_NO_KEY_SOURCES }}
+          ALPHA_GDELT_FALLBACK: ${{ vars.SEND_ALPHA_GDELT_FALLBACK }}
+          ALPHA_PUBLISHER_FEED_FALLBACK: ${{ vars.SEND_ALPHA_PUBLISHER_FEED_FALLBACK }}
+          ALPHA_DURABLE_SOURCE_BUDGET: '1'
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SEND_SUPABASE_SECRET_KEY }}

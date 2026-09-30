@@ -138,7 +138,10 @@ if (
 }
 
 const strictNoModel = enabled("ALPHA_NO_MODEL_MODE");
-const publicFeedEnabled = enabled("ALPHA_PUBLIC_FEED_FALLBACK");
+const noKeySources = enabled("ALPHA_NO_KEY_SOURCES");
+const publicFeedEnabled = noKeySources || enabled("ALPHA_PUBLIC_FEED_FALLBACK");
+const gdeltEnabled = enabled("ALPHA_GDELT_FALLBACK");
+const publisherFeedEnabled = enabled("ALPHA_PUBLISHER_FEED_FALLBACK");
 if (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0") {
   console.error("::error::Manual-first delivery requires no-model mode and paid AI disabled.");
   deliveryReady = false;
@@ -153,12 +156,17 @@ if (!strictNoModel && configuredGenerators.length === 0) {
 if (strictNoModel) {
   console.log("OK: strict no-model mode is enabled; local source formatting will be used.");
 }
+if (noKeySources) {
+  console.log("OK: no-key source mode is enabled; keyed search providers will be skipped.");
+}
 
 const freshSourceTiers = [
-  configured("BRAVE_SEARCH_API_KEY") ? "brave" : null,
-  !strictNoModel && configured("GEMINI_API_KEY") ? "gemini-grounded" : null,
-  configured("YOU_API_KEY") ? "you" : null,
+  !noKeySources && configured("BRAVE_SEARCH_API_KEY") ? "brave" : null,
+  !noKeySources && !strictNoModel && configured("GEMINI_API_KEY") ? "gemini-grounded" : null,
+  !noKeySources && configured("YOU_API_KEY") ? "you" : null,
   publicFeedEnabled ? "public-feed" : null,
+  publisherFeedEnabled ? "publisher-feed" : null,
+  gdeltEnabled ? "gdelt" : null,
 ].filter(Boolean);
 const freshSourceReady = freshSourceTiers.length > 0;
 if (!freshSourceReady) {

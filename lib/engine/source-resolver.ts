@@ -2,7 +2,7 @@ import { braveConfigured, braveSearch, type BraveQuotaState, type BraveResult, t
 import { youConfigured, youSearch } from "@/lib/you-search";
 import { rankAndDedup } from "./source-rank";
 import { fetchArticleText, deepReadEnabled } from "./fetch-content";
-import { TOPIC_QUERIES, zodiacQueries } from "./topic-queries";
+import { TOPIC_QUERIES, zodiacQueries, publicTopicPhrase } from "./topic-queries";
 import { normalizeUrl } from "./url-guard";
 import { geminiConfigured } from "./gemini-client";
 import { resolveTopicSignalViaGemini } from "./gemini-search";
@@ -10,7 +10,9 @@ import { isCustomTopic, customTopicText, isZodiacTopicId } from "@/lib/topics";
 import { stripPromptFenceChars } from "@/lib/prompt-fence";
 import { cleanField } from "./text-clean";
 import { publicFeedFallbackEnabled, publicFeedSearch } from "./public-feed-search";
-import { noModelModeEnabled } from "./provider-policy";
+import { noModelModeEnabled, noKeySourcesEnabled } from "./provider-policy";
+import { gdeltFallbackEnabled, gdeltSearch } from "./gdelt-search";
+import { publisherFeedFallbackEnabled, publisherFeedSearch } from "./publisher-feed-search";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
 
@@ -48,7 +50,7 @@ async function tryFallback(
   try {
     return await fn();
   } catch (e) {
-    console.warn(`[source-resolver] ${label} failed for ${topicId}:`, e);
+    console.warn(`[source-resolver] ${label} failed for ${isCustomTopic(topicId) ? "custom topic" : topicId}; result unavailable`);
     return undefined;
   }
 }
@@ -122,6 +124,39 @@ export async function resolveTopicSignal(
       : TOPIC_QUERIES[topicId as FixedTopicId];
 
   if (queries && queries.length > 0) {
+    const tryPublicSources = async (): Promise<TopicSignal | undefined> => {
+      if (publicFeedFallbackEnabled()) {
+        const viaFeed = await tryFallback(topicId, "public RSS search", () =>
+          fetchLiveSignal(topicId, queries, weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, publicFeedSearch, "Public RSS Search", false)
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaFeed) return viaFeed;
+      }
+      if (publisherFeedFallbackEnabled()) {
+        const viaPublisher = await tryFallback(topicId, "publisher feeds", () =>
+          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, publisherFeedSearch, "Direct Publisher RSS", false)
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaPublisher) return viaPublisher;
+      }
+      const phrase = publicTopicPhrase(topicId);
+      if (gdeltFallbackEnabled() && phrase) {
+        const viaGdelt = await tryFallback(topicId, "GDELT public discovery", () =>
+          fetchLiveSignal(topicId, [phrase], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, gdeltSearch, "GDELT Public Discovery", false)
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaGdelt) return viaGdelt;
+      }
+      return undefined;
+    };
+
+    // An early return prevents any configured key from reopening metered
+    // search. No-key source mode is independent of the writer-model policy.
+    if (noKeySourcesEnabled()) return tryPublicSources();
+
     // Track whether THIS topic's OWN queries got rate-limited, via a
     // per-call callback (lib/brave.ts's onRateLimited) rather than the
     // module-level braveRateLimitedCount(). Multiple topics run concurrently
@@ -152,7 +187,7 @@ export async function resolveTopicSignal(
           fallbackReason = "unavailable";
         }
       } catch (e) {
-        console.warn(`[source-resolver] Brave failed for ${topicId}:`, e);
+        console.warn(`[source-resolver] Brave failed for ${isCustomTopic(topicId) ? "custom topic" : topicId}; result unavailable`);
         shouldTryFallback = true;
         fallbackReason = "unavailable";
       }
@@ -168,7 +203,7 @@ export async function resolveTopicSignal(
     // still falls through to a fresher backup topic in select-sections.ts.
     if (shouldTryFallback) {
       if (geminiConfigured() && !noModelModeEnabled()) {
-        console.warn(`[source-resolver] Brave ${fallbackReason} for ${topicId}, trying Gemini grounded search`);
+        console.warn(`[source-resolver] Brave ${fallbackReason} for ${isCustomTopic(topicId) ? "custom topic" : topicId}, trying Gemini grounded search`);
         const grounded = await tryFallback(topicId, "Gemini grounded search", () =>
           resolveTopicSignalViaGemini(topicId, weekOf, queries.join("; "), opts?.excludeUrls)
         );
@@ -187,7 +222,7 @@ export async function resolveTopicSignal(
       // deadline, so snippet-only headlines (same as the "MORE THIS WEEK"
       // breadth list elsewhere) trade a bit of prose depth for guaranteed speed.
       if (youConfigured()) {
-        console.warn(`[source-resolver] Brave ${fallbackReason} for ${topicId}, trying You.com search`);
+        console.warn(`[source-resolver] Brave ${fallbackReason} for ${isCustomTopic(topicId) ? "custom topic" : topicId}, trying You.com search`);
         const viaYou = await tryFallback(topicId, "You.com search", () =>
           fetchLiveSignal(
             topicId,
@@ -203,23 +238,7 @@ export async function resolveTopicSignal(
         );
         if (viaYou) return viaYou;
       }
-      if (publicFeedFallbackEnabled()) {
-        console.warn(`[source-resolver] configured search tiers unavailable for ${topicId}, trying public RSS search`);
-        const viaPublicFeed = await tryFallback(topicId, "public RSS search", () =>
-          fetchLiveSignal(
-            topicId,
-            queries,
-            weekOf,
-            opts?.freshness,
-            opts?.excludeUrls,
-            undefined,
-            publicFeedSearch,
-            "Public RSS Search",
-            false
-          ).then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
-        );
-        if (viaPublicFeed) return viaPublicFeed;
-      }
+      return tryPublicSources();
     }
   }
   // liveOnly: caller wants to know if this topic has FRESH signal this period
@@ -275,7 +294,7 @@ async function fetchLiveSignal(
       } catch (e) {
         failedQueries += 1;
         console.warn(
-          `[source-resolver] ${providerLabel} query failed (${topicId}): "${q}": ${e instanceof Error ? e.message : e}`
+          `[source-resolver] ${providerLabel} query failed (${isCustomTopic(topicId) ? "custom topic" : topicId}); result unavailable`
         );
         return [];
       }
@@ -303,11 +322,11 @@ async function fetchLiveSignal(
   if (ranked.length === 0) {
     if (failedQueries > 0) {
       console.warn(
-        `[source-resolver] ${providerLabel} returned no usable result after ${failedQueries} of ${queries.length} queries failed (${topicId})`
+        `[source-resolver] ${providerLabel} returned no usable result after ${failedQueries} of ${queries.length} queries failed (${isCustomTopic(topicId) ? "custom topic" : topicId})`
       );
       return { state: "unavailable" };
     }
-    console.warn(`[source-resolver] live signal for ${topicId} had 0 results`);
+    console.warn(`[source-resolver] live signal for ${isCustomTopic(topicId) ? "custom topic" : topicId} had 0 results`);
     return { state: "healthy-empty" };
   }
   // Deep-read TRUSTED sources only — reading an unknown/neutral domain risks
@@ -351,7 +370,9 @@ async function fetchLiveSignal(
   const deepBlocks = deep.map((s, i) => {
     const host = s.host || s.meta_url?.hostname || "";
     const age = s.age ? ` · ${s.age}` : "";
-    const body = contents[i] || `(full text unavailable — snippet: ${cleanField(s.description)})`;
+    const body = contents[i]
+      ? `ARTICLE TEXT:\n${contents[i]}`
+      : `HEADLINE AND SOURCE SNIPPET ONLY:\n${cleanField(s.description) || "No source snippet supplied. Use only the headline and link."}`;
     return `[${i + 1}] ${cleanField(s.title)}\n    ${host}${age}\n    SOURCE: ${s.url}\n\n${body}`;
   });
   const moreBlocks = more.map((s) => {
@@ -364,15 +385,15 @@ async function fetchLiveSignal(
   const parts: string[] = [];
   if (deepBlocks.length > 0) {
     parts.push(
-      `=== TOP SOURCES (full text — read these and surface the real insight) ===\n\n${deepBlocks.join("\n\n----------\n\n")}`
+      `=== TOP SOURCES (${readCount > 0 ? "article text where labeled, otherwise headlines and snippets" : "headlines and snippets only"}) ===\n\n${deepBlocks.join("\n\n----------\n\n")}`
     );
   }
   parts.push(
     `=== ${deepBlocks.length > 0 ? "MORE THIS WEEK" : "THIS WEEK"} (headlines + links) ===\n\n${moreBlocks.join("\n\n") || "(none)"}`
   );
   const header =
-    deep.length > 0
-      ? `Recent signal for ${subject} (as of ${weekOf}), gathered live and READ IN FULL where possible (${readCount}/${deep.length} trusted sources fetched). You have the ACTUAL article text for the top sources below — read it and surface the real insight, do not just paraphrase a headline.`
+    readCount > 0
+      ? `Recent signal for ${subject} (as of ${weekOf}), gathered live from ${providerLabel} (${readCount}/${deep.length} trusted sources fetched). Only blocks labeled ARTICLE TEXT contain fetched article text. All other blocks contain headlines and source snippets. Do not infer missing article details.`
       : `Recent signal for ${subject} (as of ${weekOf}), gathered live from ${providerLabel}. Headlines and snippets only this period.`;
   const context = `${header}\n\n${parts.join("\n\n")}\n\nAll URLs labeled SOURCE or listed above are real and citable. Do NOT invent URLs.`;
 
@@ -392,7 +413,7 @@ async function fetchLiveSignal(
   // No real URLs this period means no usable live signal. Keep it as a healthy
   // empty result so the selector can move to another fresh topic.
   if (citableUrls.size === 0) {
-    console.warn(`[source-resolver] live signal for ${topicId} had 0 URLs`);
+    console.warn(`[source-resolver] live signal for ${isCustomTopic(topicId) ? "custom topic" : topicId} had 0 URLs`);
     return { state: "healthy-empty" };
   }
 

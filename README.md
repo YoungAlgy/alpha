@@ -1,6 +1,6 @@
 # Alpha
 
-An invite-only personal daily newsletter. Approved readers pick 5 topics from a curated menu. Alpha builds each letter from current real sources, and every cited link must come from that run's source resolution. A local deterministic formatter can finish a source-grounded issue with no writer-model call. Each send only looks at what is new since the last one (`lib/cadence.ts`).
+An invite-only personal daily newsletter. Approved readers pick 5 topics from a curated menu. Alpha builds each letter from current real sources, and every cited link must come from validated source resolution for that issue date, including a saved section from an earlier run. A local deterministic formatter can finish a source-grounded issue with no writer-model call. Each send only looks at what is new since the last one (`lib/cadence.ts`).
 
 ## Current access mode
 
@@ -82,6 +82,59 @@ Search has an optional no-key last resort through `ALPHA_PUBLIC_FEED_FALLBACK`.
 When explicitly enabled, it uses a bounded public RSS search after the keyed
 search tiers fail. It is a fallback only and does not promise unlimited feed
 capacity.
+
+For source discovery without keyed API calls, set `ALPHA_NO_KEY_SOURCES=1`.
+This skips Brave, Gemini grounded search and You.com even if their keys are
+configured, and enables Google News RSS regardless of the older feed flag.
+Pair it with `ALPHA_NO_MODEL_MODE=1` and `ALPHA_ALLOW_PAID_AI=0` for content
+generation without metered search or writer calls. This does not remove email,
+database or hosting capacity limits. No-key mode is opt-in, not active merely
+because the code is installed.
+
+`ALPHA_PUBLISHER_FEED_FALLBACK=1` adds fixed first-party NIST and FDA MedWatch
+feeds after Google RSS has no usable signal. They receive no topic or profile
+data. Topic matching stays local and conservative. These feeds cover selected
+technology, construction, environment and health/safety topics only. There is
+no claim that they cover music, every custom topic or every day. Only dated
+HTTPS links on the expected publisher host are accepted. Legacy HTTP article
+links from FDA's HTTPS feed are upgraded only on the verified `www.fda.gov`
+host; no HTTP request is made. Source titles and
+attribution are retained; article bodies, images and feed descriptions are not
+republished. A failed feed cannot discard a result already obtained elsewhere.
+
+`ALPHA_GDELT_FALLBACK=1` adds an independent public discovery tier after RSS
+and the enabled publisher feeds have no usable sources. It makes one topic-phrase query, never reads full article
+bodies, and uses dated headline/link metadata. Source timestamps are discovery
+metadata, not independently verified publication times. Raw results are shared
+briefly before per-reader repeat filtering. Requests, response size, queue wait
+and failure cooldown are bounded. GDELT remains best-effort and can rate limit
+or be unavailable. Sparse fallback results produce source-linked reading items.
+They are not invented summaries. Without safe sources the existing bounded
+backup behavior remains in place.
+
+Google and publisher feed clients locally reject missing, future or out-of-window
+dates. They share raw successful metadata in-process for five minutes (valid
+empty feeds for one minute), with request coalescing and failure cooldowns up
+to fifteen minutes. Reader exclusions still apply after raw-cache retrieval.
+The existing Supabase `topic_blurbs` cache already preserves finished sections
+across runs. Raw-feed caches and failure-triggered cooldowns remain process-local.
+
+The scheduled runtime pins `ALPHA_DURABLE_SOURCE_BUDGET=1`. The existing private
+Supabase rate-limit RPC then caps all runs together at 60 Google, 12 publisher
+and 12 GDELT requests per fixed fifteen-minute provider window. Reservations
+use fixed provider identities, no query or reader data. A missing/exhausted/
+unavailable budget blocks that source request. These are ceilings, not provider
+quota guarantees or a persisted failure circuit. The caller stops waiting at
+three seconds; the shared client's database request can continue up to ten
+seconds and consume a slot without causing a later source fetch. No new schema
+or secret is needed. A database outage still blocks daily delivery itself.
+
+The daily workflow passes `SEND_ALPHA_NO_KEY_SOURCES`,
+`SEND_ALPHA_PUBLISHER_FEED_FALLBACK` and `SEND_ALPHA_GDELT_FALLBACK` into both
+preflight and runtime.
+Enabling new sources or switching a live run to no-key mode requires a reviewed
+release and separate owner approval. A release must verify public-source
+availability and acceptable topic coverage before dropping existing source tiers.
 
 Lives at `alpha.everyday.report` (its own domain, app at the root — no basePath). `everyday.report` redirects there. The old home, `youngalgy.com/alpha/*`, 308-redirects page paths here, but `/alpha/api/*` is 301-redirected, not proxied — the youngalgy.com Vercel project this used to proxy to is gone. That breaks one-click unsubscribe (GET/POST, List-Unsubscribe-Post) for any letter sent before the 2026-07-03 domain move; see next.config.ts for detail. Old magic-link/email-change callbacks are NOT proxied — they survive only because browsers follow the 308 to `/auth/callback` AND `https://youngalgy.com/alpha/auth/callback**` stays in the Supabase redirect allowlist. Never remove that allowlist entry.
 
@@ -230,6 +283,10 @@ ALPHA_DISABLE_DEEPREAD=        # set to "1" to kill deep-read and fall back to s
 ALPHA_ALLOW_PAID_AI=           # set to "1" only in a reviewed runtime that may call Anthropic or DeepSeek (optional, off by default)
 ALPHA_NO_MODEL_MODE=           # set to "1" to skip every writer-model call and format safe sources locally (optional, off by default)
 ALPHA_PUBLIC_FEED_FALLBACK=    # set to "1" to allow the bounded no-key Google News RSS search fallback (optional, off by default)
+ALPHA_NO_KEY_SOURCES=         # set to "1" to skip all keyed source search and enable Google RSS (optional, off by default)
+ALPHA_GDELT_FALLBACK=         # set to "1" for bounded public GDELT discovery after RSS (optional, off by default)
+ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA topic-matched feeds (optional, off by default)
+ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release
 
 # Optional per-tier model overrides. Cloudflare and GitHub daily-send use separate runtime copies:

@@ -172,6 +172,15 @@ export default function PrivacyPage() {
           about you does. The one exception is the Zodiac topic, whose
           query is built from the sun sign your birthday puts you in (never
           the date itself).
+          When enabled, Google News RSS and GDELT provide public-source backups.
+          They receive a topic search, including the text of a custom topic or
+          a zodiac sign when selected. We do not attach your account identity
+          or other profile fields. In no-key source mode, Alpha skips Brave,
+          Gemini grounded search, and You.com and uses the public-source path.
+          An optional direct-feed backup reads public NIST and FDA MedWatch
+          feeds. These fixed feed requests contain no account identity,
+          profile fields or topic text. Alpha matches relevant topics locally
+          and stores only selected source metadata with its saved letters.
         </li>
         <li>
           <strong>Resend</strong> delivers letters and account emails.
