@@ -92,7 +92,9 @@ export function createPublicFeedSearch(now: () => number = Date.now) {
   if (!/<rss\b/i.test(xml) || !/<channel\b/i.test(xml) || !/<\/rss\s*>/i.test(xml)) throw new Error("Public RSS invalid feed");
   return parsePublicFeedXml(xml, 100);
   });
-  return freshPublicResults(results, opts.freshness, now()).slice(0, MAX_RESULTS);
+  // Keep the bounded raw pool until the resolver removes already-cited links.
+  // Cutting to ten here can hide an unseen eleventh item behind prior reads.
+  return freshPublicResults(results, opts.freshness, now());
   };
 }
 

@@ -83,6 +83,11 @@ When explicitly enabled, it uses a bounded public RSS search after the keyed
 search tiers fail. It is a fallback only and does not promise unlimited feed
 capacity.
 
+A malformed Brave response opens the existing fallback path. Valid rows survive
+alongside malformed rows, but an incomplete response cannot prove a topic is
+quiet if its remaining links are already used. Documented empty responses still
+keep the topic quiet.
+
 For source discovery without keyed API calls, set `ALPHA_NO_KEY_SOURCES=1`.
 This skips Brave, Gemini grounded search and You.com even if their keys are
 configured, and enables Google News RSS regardless of the older feed flag.
@@ -116,6 +121,9 @@ Google and publisher feed clients locally reject missing, future or out-of-windo
 dates. They share raw successful metadata in-process for five minutes (valid
 empty feeds for one minute), with request coalescing and failure cooldowns up
 to fifteen minutes. Reader exclusions still apply after raw-cache retrieval.
+The bounded 100-entry feed pool reaches the ranker before reader exclusions and
+final host limits. A reader's previously cited first ten links cannot hide an
+unseen eleventh feed item or remove that item for another reader.
 The existing Supabase `topic_blurbs` cache already preserves finished sections
 across runs. Raw-feed caches and failure-triggered cooldowns remain process-local.
 

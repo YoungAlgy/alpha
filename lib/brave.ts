@@ -96,11 +96,49 @@ export interface BraveSearchOptions {
   // own closure instead. A request-local monthly-quota skip also invokes the
   // callback, without incrementing the real provider-response counter.
   onRateLimited?: () => void;
+  // Marks a response that contains invalid rows alongside usable ones. Keep
+  // useful results, but their later exclusion cannot prove the topic is quiet.
+  onIncompleteResults?: () => void;
   quotaState?: BraveQuotaState;
 }
 
 export function braveConfigured(): boolean {
   return !!process.env.BRAVE_SEARCH_API_KEY;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function readSearchResults(data: unknown, onIncompleteResults?: () => void): BraveResult[] {
+  // Brave documents nullable web results. An absent web block can be a valid
+  // quiet response, but an error envelope or malformed block is unavailable.
+  if (!isRecord(data) || (data.error != null) ||
+      (data.type !== undefined && data.type !== "search")) {
+    throw new Error("Brave Search invalid response");
+  }
+  if (data.web == null) return [];
+  if (!isRecord(data.web) || !Array.isArray(data.web.results)) {
+    throw new Error("Brave Search invalid web results");
+  }
+  const results = data.web.results.flatMap((item: unknown): BraveResult[] => {
+    if (!isRecord(item) || typeof item.title !== "string" || !item.title.trim() ||
+        typeof item.url !== "string" || !item.url.trim() ||
+        (item.description != null && typeof item.description !== "string")) return [];
+    return [{
+      title: item.title,
+      url: item.url,
+      description: typeof item.description === "string" ? item.description : "",
+      ...(typeof item.age === "string" ? { age: item.age } : {}),
+      ...(isRecord(item.meta_url) && typeof item.meta_url.hostname === "string"
+        ? { meta_url: { hostname: item.meta_url.hostname } } : {}),
+    }];
+  });
+  if (data.web.results.length > 0 && results.length === 0) {
+    throw new Error("Brave Search invalid result items");
+  }
+  if (results.length < data.web.results.length) onIncompleteResults?.();
+  return results;
 }
 
 export async function braveSearch(
@@ -150,8 +188,7 @@ export async function braveSearch(
       throw new Error(`Brave Search ${res.status}: ${text.slice(0, 200)}`);
     }
 
-    const data = (await res.json()) as { web?: { results?: BraveResult[] } };
-    return data.web?.results ?? [];
+    return readSearchResults(await res.json(), opts.onIncompleteResults);
   } finally {
     clearTimeout(timer);
   }

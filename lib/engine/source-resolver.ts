@@ -288,8 +288,12 @@ async function fetchLiveSignal(
   const perQuery = await Promise.all(
     queries.map(async (q) => {
       try {
-        const results = await search(q, { count: PER_QUERY_COUNT, freshness, onRateLimited });
+        let incomplete = false;
+        const results = await search(q, { count: PER_QUERY_COUNT, freshness, onRateLimited,
+          onIncompleteResults: () => { incomplete = true; },
+        });
         successfulQueries += 1;
+        if (incomplete) failedQueries += 1;
         return results;
       } catch (e) {
         failedQueries += 1;
@@ -322,7 +326,7 @@ async function fetchLiveSignal(
   if (ranked.length === 0) {
     if (failedQueries > 0) {
       console.warn(
-        `[source-resolver] ${providerLabel} returned no usable result after ${failedQueries} of ${queries.length} queries failed (${isCustomTopic(topicId) ? "custom topic" : topicId})`
+        `[source-resolver] ${providerLabel} returned no usable result after ${failedQueries} of ${queries.length} queries were incomplete or failed (${isCustomTopic(topicId) ? "custom topic" : topicId})`
       );
       return { state: "unavailable" };
     }

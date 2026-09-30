@@ -62,7 +62,8 @@ export function createPublisherFeedSearch(deps: { fetcher?: typeof fetch; now?: 
     });
     return freshPublicResults(raw, opts.freshness, now())
       .filter((item) => selection.matches.test(item.title))
-      .slice(0, 10)
+      // Reader exclusions and the final host cap belong in the shared ranker.
+      // The raw feed already has a hard 100-entry ceiling.
       .map((item) => ({ ...item, title: `${feed.label}: ${item.title}`, description: `${feed.kind}. Source date: ${new Date(Date.parse(item.age!)).toISOString().slice(0, 10)}.` }));
   };
 }

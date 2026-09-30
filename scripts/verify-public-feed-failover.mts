@@ -162,6 +162,56 @@ try {
   assert.equal(await resolveTopicSignal("ai-news", currentDate(), { liveOnly: true }), undefined);
   assert.deepEqual(counts(), [3, 0, 0]);
 
+  // The web block is nullable in Brave's contract. Preserve a true quiet topic.
+  for (const empty of [{ type: "search" }, { type: "search", web: null }]) {
+    setScenario(true, (url) => {
+      if (url.hostname === "api.search.brave.com") return json(empty);
+      throw new Error("nullable empty Brave must leave this topic quiet");
+    });
+    assert.equal(await resolveTopicSignal("ai-news", currentDate(), { liveOnly: true }), undefined);
+    assert.deepEqual(counts(), [3, 0, 0]);
+  }
+
+  for (const malformed of [
+    { type: "ErrorResponse", error: { code: "INTERNAL", detail: "withheld fixture text" } },
+    { error: { code: "INTERNAL" } },
+    { web: { results: null } },
+    { web: { results: [null, { title: 42, url: "https://example.invalid/test" }] } },
+    [], "invalid response envelope",
+  ]) {
+    setScenario(true, (url) => {
+      if (url.hostname === "api.search.brave.com") return json(malformed);
+      if (url.hostname === "ydc-index.io") return new Response("offline outage", { status: 503 });
+      return new Response(rssXml());
+    });
+    assert.ok(await resolveTopicSignal("ai-news", currentDate(), { liveOnly: true }),
+      "an invalid success response must open the working public fallback");
+    assert.deepEqual(counts(), [3, 3, 3]);
+  }
+
+  setScenario(true, (url) => {
+    if (url.hostname !== "api.search.brave.com") throw new Error("usable partial results must survive");
+    return json({ web: { results: [null, {
+      title: "Offline research without a snippet", url: "https://apnews.com/article/offline-null-snippet",
+      description: null,
+    }] } });
+  });
+  const noSnippet = await resolveTopicSignal("ai-news", currentDate(), { liveOnly: true });
+  assert.ok(noSnippet?.citableUrls?.has(normalizeUrl("https://apnews.com/article/offline-null-snippet")!));
+  assert.deepEqual(counts(), [3, 0, 0], "valid entries survive malformed siblings and nullable snippets");
+
+  setScenario(true, (url) => {
+    if (url.hostname === "api.search.brave.com") return json({ web: { results: [null, {
+      title: "Previously cited research", url: "https://apnews.com/article/offline-prior-read", description: "",
+    }] } });
+    if (url.hostname === "ydc-index.io") return new Response("offline outage", { status: 503 });
+    return new Response(rssXml());
+  });
+  assert.ok(await resolveTopicSignal("ai-news", currentDate(), { liveOnly: true,
+    excludeUrls: new Set([normalizeUrl("https://apnews.com/article/offline-prior-read")!]),
+  }), "malformed siblings plus prior reads must remain unavailable and open fallback");
+  assert.deepEqual(counts(), [3, 3, 3]);
+
   setScenario(true, (url) => {
     if (url.hostname === "api.search.brave.com") return new Response("offline monthly cap", { status: 402 });
     if (url.hostname === "ydc-index.io") return json({ results: { web: [{

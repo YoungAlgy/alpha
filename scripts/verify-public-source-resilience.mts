@@ -94,6 +94,34 @@ try {
   assert.ok(health.every((x) => x.title.startsWith("FDA MedWatch: ") && !x.description.includes("republish")));
   assert.equal((await publisher("parenting", { freshness: "pw" })).length, 1);
   assert.equal(publisherCalls, 1, "one raw feed reused across local topic matching");
+
+  // Prior reads can occupy the first ten entries. Keep unseen later candidates
+  // available without another fetch, while retaining the 100-entry parse bound.
+  const pool = Array.from({ length: 105 }, (_, index) => ({ ...source,
+    title: `Medical safety notice ${index}`, url: `https://www.fda.gov/pool-${index}`,
+  }));
+  const priorReads = new Set(pool.slice(0, 10).map((item) => normalizeUrl(item.url)!));
+  let poolFetches = 0;
+  globalThis.fetch = (async () => { poolFetches++; return new Response(feed(pool)); }) as typeof fetch;
+  const googlePool = createPublicFeedSearch(() => now);
+  let publisherPoolFetches = 0;
+  const publisherPool = createPublisherFeedSearch({ now: () => now, reserve: async () => {},
+    fetcher: async () => { publisherPoolFetches++; return new Response(feed(pool)); },
+  });
+  for (const [label, search] of [
+    ["Google", () => googlePool("generic pool", { freshness: "pw" })],
+    ["Publisher", () => publisherPool("longevity-wellness", { freshness: "pw" })],
+  ] as const) {
+    const candidates = await search();
+    assert.equal(candidates.length, 100, `${label}: raw pool stays bounded at 100`);
+    assert.deepEqual(rankAndDedup(candidates, 2, priorReads).map((item) => item.url),
+      [pool[10].url, pool[11].url], `${label}: unseen eleventh entry survives prior reads`);
+    assert.deepEqual(rankAndDedup(await search(), 2, new Set()).map((item) => item.url),
+      [pool[0].url, pool[1].url], `${label}: another reader gets an unmodified shared pool`);
+  }
+  assert.equal(poolFetches, 1, "Google raw cache avoids a second source request");
+  assert.equal(publisherPoolFetches, 1, "publisher raw cache avoids a second source request");
+
   const exhausted = createPublisherFeedSearch({ reserve: async () => { throw new Error("budget exhausted"); }, fetcher: async () => { throw new Error("unexpected fetch"); } });
   await assert.rejects(exhausted("longevity-wellness"), /budget exhausted/);
   await assert.rejects(exhausted("parenting"), /cooling down/);
