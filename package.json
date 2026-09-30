@@ -41,7 +41,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
-    "js-yaml": "^5.3.0",
+    "js-yaml": "5.4.1",
     "patch-package": "^8.0.1",
     "sharp": "0.35.4",
     "tailwindcss": "^4",
@@ -50,6 +50,9 @@
     "wrangler": "4.131.0"
   },
   "overrides": {
+    "miniflare@5.20260910.0-alpha": {
+      "undici": "7.29.1"
+    },
     "@eslint/eslintrc": {
       "js-yaml": "4.3.2"
     },
