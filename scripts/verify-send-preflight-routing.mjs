@@ -192,4 +192,25 @@ result = await run({ changes: { ALPHA_OPEN_NEWS_FALLBACK: "1", ALPHA_NO_MODEL_MO
 assert.equal(result.exit, 1);
 assert.equal(result.outputs.fresh_source_ready, "false");
 assert.ok(!result.logs.some((line) => line.includes("open-news-feed")));
+for (const disabled of [undefined, "0", "false"]) {
+  result = await run({ changes: { ALPHA_RESEARCH_METADATA_FALLBACK: disabled } });
+  assert.equal(result.outputs.fresh_source_ready, "false");
+  assert.ok(!result.logs.some((line) => line.includes("research-metadata")));
+}
+for (const enabled of ["1", "true", "yes"]) {
+  result = await run({ changes: { ALPHA_RESEARCH_METADATA_FALLBACK: enabled } });
+  assert.equal(result.outputs.fresh_source_ready, "true");
+  assert.ok(result.logs.includes("OK: current-source discovery tiers configured: research-metadata."));
+  assert.equal(result.outputs.selected_provider, "resend");
+  assert.deepEqual(result.calls, { resend: 0, brevo: 0, oldDomains: 1 });
+}
+result = await run({ changes: { ALPHA_RESEARCH_METADATA_FALLBACK: "1", ALPHA_NO_MODEL_MODE: "0" } });
+assert.equal(result.exit, 1);
+assert.equal(result.outputs.fresh_source_ready, "false");
+assert.ok(!result.logs.some((line) => line.includes("research-metadata")));
+result = await run({ changes: {
+  ALPHA_NO_KEY_SOURCES: "1", ALPHA_PUBLISHER_FEED_FALLBACK: "1",
+  ALPHA_OPEN_NEWS_FALLBACK: "1", ALPHA_RESEARCH_METADATA_FALLBACK: "1", ALPHA_GDELT_FALLBACK: "1",
+} });
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: public-feed, publisher-feed, open-news-feed, research-metadata, gdelt."));
 console.log("PASS full preflight sender selection, no-key discovery and output routing fixtures");

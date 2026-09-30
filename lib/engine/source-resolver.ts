@@ -14,6 +14,7 @@ import { noModelModeEnabled, noKeySourcesEnabled } from "./provider-policy";
 import { gdeltFallbackEnabled, gdeltSearch } from "./gdelt-search";
 import { publisherFeedFallbackEnabled, publisherFeedSearch } from "./publisher-feed-search";
 import { openNewsFeedFallbackEnabled, openNewsFeedSearch } from "./open-news-feed-search";
+import { researchMetadataFallbackEnabled, researchMetadataSearch } from "./research-metadata-search";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
@@ -150,6 +151,14 @@ export async function resolveTopicSignal(
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaOpenNews) return viaOpenNews;
+      }
+      if (researchMetadataFallbackEnabled()) {
+        const viaResearch = await tryFallback(topicId, "open research metadata", () =>
+          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, researchMetadataSearch, "Crossref Research Metadata", false)
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaResearch) return viaResearch;
       }
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {

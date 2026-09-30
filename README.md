@@ -122,6 +122,24 @@ and repeated-link checks. Licensed feed signals always use the local formatter.
 This is a limited backup with sparse music coverage, not all-topic daily search.
 It is off by default, including in strict no-key mode.
 
+`ALPHA_RESEARCH_METADATA_FALLBACK=1` adds a narrow Crossref nutrition-research
+backup after the feeds. It requires no-model mode and stays off by default,
+including in strict no-key mode. Only the fixed word `nutrition` and date bounds
+reach the public metadata API. No topic text, profile, account, key or contact
+address is sent. Crossref's [metadata reuse policy](https://www.crossref.org/services/metadata-retrieval/)
+allows free reuse. Alpha accepts only journal metadata with a precise online
+publication date, a direct HTTPS publisher link and an already active CC BY or
+CC BY-SA version-of-record license. Existing denied-host, date, repeated-link,
+ranking and citation checks still apply. Paper bodies, abstracts and images are
+not read or republished. Items are labeled research citations with the supplied
+date. License metadata does not prove the linked full text is currently reachable.
+This covers `nutrition-food` only. Other topics make no Crossref request.
+One request runs at a time, with at least one second between completion and the
+next start. The queue holds at most four calls and expires after fifteen seconds.
+Each network response has a five-second deadline and 256 KiB ceiling. Failure
+blocks queued requests and starts the existing bounded cooldown. No automatic
+retry, keyed search or model call is added by this tier.
+
 `ALPHA_GDELT_FALLBACK=1` adds an independent public discovery tier after RSS
 and the enabled publisher feeds have no usable sources. It makes one topic-phrase query, never reads full article
 bodies, and uses dated headline/link metadata. Source timestamps are discovery
@@ -145,7 +163,10 @@ across runs. Raw-feed caches and failure-triggered cooldowns remain process-loca
 The scheduled runtime pins `ALPHA_DURABLE_SOURCE_BUDGET=1`. The existing private
 Supabase rate-limit RPC then caps all runs together at 60 Google, 12 publisher
 and 12 GDELT requests per fixed fifteen-minute provider window. Global Voices
-shares the existing 12-request publisher ceiling. Its two fixed endpoints
+shares the existing 12-request publisher ceiling, as does Crossref when enabled.
+Crossref's serial lane and failure cooldown are process-local. Separate runs
+share the same fixed publisher reservation ceiling, not a global Crossref lease.
+Global Voices' two fixed endpoints
 share one process-local outage cooldown. Reservations use fixed provider
 identities, no query or reader data. A missing/exhausted/
 unavailable budget blocks that source request. These are ceilings, not provider
@@ -155,7 +176,8 @@ seconds and consume a slot without causing a later source fetch. No new schema
 or secret is needed. A database outage still blocks daily delivery itself.
 
 The daily workflow passes `SEND_ALPHA_NO_KEY_SOURCES`,
-`SEND_ALPHA_PUBLISHER_FEED_FALLBACK`, `SEND_ALPHA_OPEN_NEWS_FALLBACK` and
+`SEND_ALPHA_PUBLISHER_FEED_FALLBACK`, `SEND_ALPHA_OPEN_NEWS_FALLBACK`,
+`SEND_ALPHA_RESEARCH_METADATA_FALLBACK` and
 `SEND_ALPHA_GDELT_FALLBACK` into both
 preflight and runtime.
 Enabling new sources or switching a live run to no-key mode requires a reviewed
@@ -313,6 +335,7 @@ ALPHA_NO_KEY_SOURCES=         # set to "1" to skip all keyed source search and e
 ALPHA_GDELT_FALLBACK=         # set to "1" for bounded public GDELT discovery after RSS (optional, off by default)
 ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA topic-matched feeds (optional, off by default)
 ALPHA_OPEN_NEWS_FALLBACK=     # set to "1" for licensed Global Voices metadata in no-model mode (optional, off by default)
+ALPHA_RESEARCH_METADATA_FALLBACK= # set to "1" for open-license nutrition research metadata in no-model mode (optional, off by default)
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release
 

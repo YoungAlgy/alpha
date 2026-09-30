@@ -181,6 +181,11 @@ export default function PrivacyPage() {
           feeds. These fixed feed requests contain no account identity,
           profile fields or topic text. Alpha matches relevant topics locally
           and stores only selected source metadata with its saved letters.
+          An optional Crossref backup requests the fixed word &quot;nutrition&quot;
+          and date bounds from its public research metadata API. No account,
+          profile or custom topic is sent. Alpha keeps selected open-license
+          paper titles, publisher links and publication dates. It does not
+          retrieve paper bodies, abstracts or images from this backup.
         </li>
         <li>
           <strong>Resend</strong> delivers letters and account emails.

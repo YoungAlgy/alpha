@@ -143,6 +143,7 @@ const publicFeedEnabled = noKeySources || enabled("ALPHA_PUBLIC_FEED_FALLBACK");
 const gdeltEnabled = enabled("ALPHA_GDELT_FALLBACK");
 const publisherFeedEnabled = enabled("ALPHA_PUBLISHER_FEED_FALLBACK");
 const openNewsFeedEnabled = strictNoModel && enabled("ALPHA_OPEN_NEWS_FALLBACK");
+const researchMetadataEnabled = strictNoModel && enabled("ALPHA_RESEARCH_METADATA_FALLBACK");
 if (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0") {
   console.error("::error::Manual-first delivery requires no-model mode and paid AI disabled.");
   deliveryReady = false;
@@ -168,6 +169,7 @@ const freshSourceTiers = [
   publicFeedEnabled ? "public-feed" : null,
   publisherFeedEnabled ? "publisher-feed" : null,
   openNewsFeedEnabled ? "open-news-feed" : null,
+  researchMetadataEnabled ? "research-metadata" : null,
   gdeltEnabled ? "gdelt" : null,
 ].filter(Boolean);
 const freshSourceReady = freshSourceTiers.length > 0;
