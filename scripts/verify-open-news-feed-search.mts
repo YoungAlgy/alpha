@@ -95,11 +95,18 @@ async function run(): Promise<void> {
   check("freshness is applied after cached metadata is read", (await musicSearch("music", { freshness: "pd" })).length === 6);
   check("fresh RSS dates cannot revive stale paths or body-supplied authors", !music.some((item) => item.title.includes("old music") || item.title.includes("refreshed feed date") || item.title.includes("without a writer") || item.title.includes("Fake cdata item")));
   check("description content cannot spoof genre categories", !country.some((item) => item.title.includes("Election policy debate")));
+  const customCountry = await musicSearch("custom:  COUNTRY   MUSIC ", { freshness: "pw" });
+  const customIndie = await musicSearch("custom:Indie Music", { freshness: "pw" });
+  check("exact normalized custom country music phrase uses the existing country genre filter", customCountry.length === 1 && customCountry[0]?.title.includes("Country Music"));
+  check("exact normalized custom indie music phrase uses the existing indie genre filter", customIndie.length === 1 && customIndie[0]?.title.includes("Underground"));
+  check("custom genre aliases retain story credit, date, and metadata-only descriptions", [ ...customCountry, ...customIndie ].every((item) => item.attribution?.publisher === "global-voices" && item.attribution.publishedAt === "2026-09-29T14:12:10.000Z" && !item.description.includes("SECRET") && !item.description.includes("script")));
+  check("custom aliases cannot bypass control-character or length validation", (await musicSearch("custom:country\tmusic")).length === 0 && (await musicSearch(`custom:country${" ".repeat(101)}music`)).length === 0);
   check("same-feed topics share one fetch and one reservation", musicFetches === 1 && reserves === 1);
 
   const generalXml = rss(
     xmlItem({ title: "Taylor Swift tours and local fans", categories: ["Culture"] }),
     xmlItem({ title: "Swift programming languages in schools", categories: ["Education"] }),
+    xmlItem({ title: "Indie music history in Accra", categories: ["Culture"] }),
     xmlItem({ title: "Artificial intelligence governance in Africa", categories: ["Technology"] }),
     xmlItem({ title: "Election policy debate", description: "<dc:creator>Fake Body Writer</dc:creator><category>Country Music</category>", contentEncoded: "<![CDATA[</item><item><title>Fake item in article body</title><dc:creator>Fake Writer</dc:creator><category>Country Music</category></item>]]>" }),
   );
@@ -115,11 +122,14 @@ async function run(): Promise<void> {
   });
   const swift = await generalSearch("custom:Taylor Swift", { freshness: "pw" });
   const ai = await generalSearch("ai-news", { freshness: "pw" });
+  const broadIndie = await generalSearch("custom:indie music history", { freshness: "pw" });
   check("custom phrase matches are performed locally against title and category", swift.length === 1 && swift[0]?.title.includes("Taylor Swift"));
   check("fixed public topic phrases use the general feed and local phrase matching", ai.length === 1 && ai[0]?.title.includes("Artificial intelligence"));
+  check("broader custom music phrases keep general-feed phrase matching", broadIndie.length === 1 && broadIndie[0]?.title.includes("Indie music history"));
   check("custom topic text is never added to the fixed request URL", generalFetches === 1);
   const beforeNoisy = generalFetches;
   check("noisy/missing custom phrase returns empty without fetching", (await generalSearch("custom:the and latest news")).length === 0 && generalFetches === beforeNoisy);
+  check("ambiguous one-word country and indie customs make no request", (await generalSearch("custom:country")).length === 0 && (await generalSearch("custom:indie")).length === 0 && generalFetches === beforeNoisy);
   check("unknown topic returns empty without fetching", (await generalSearch("unknown-topic")).length === 0 && generalFetches === beforeNoisy);
   swift[0]!.attribution!.author = "Changed by caller";
   check("returned credit objects cannot mutate another reader's raw cache", (await generalSearch("custom:Taylor Swift", { freshness: "pw" }))[0]?.attribution?.author === "Jane Reporter");

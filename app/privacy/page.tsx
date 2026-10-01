@@ -177,7 +177,7 @@ export default function PrivacyPage() {
           a zodiac sign when selected. We do not attach your account identity
           or other profile fields. In no-key source mode, Alpha skips Brave,
           Gemini grounded search, and You.com and uses the public-source path.
-          An optional direct-feed backup reads public NIST and FDA MedWatch
+          An optional direct-feed backup reads public NIST, FDA MedWatch and Federal Reserve Board
           feeds. These fixed feed requests contain no account identity,
           profile fields or topic text. Alpha matches relevant topics locally
           and stores only selected source metadata with its saved letters.

@@ -96,16 +96,25 @@ generation without metered search or writer calls. This does not remove email,
 database or hosting capacity limits. No-key mode is opt-in, not active merely
 because the code is installed.
 
-`ALPHA_PUBLISHER_FEED_FALLBACK=1` adds fixed first-party NIST and FDA MedWatch
+`ALPHA_PUBLISHER_FEED_FALLBACK=1` adds fixed first-party NIST, FDA MedWatch and Federal Reserve Board
 feeds after Google RSS has no usable signal. They receive no topic or profile
 data. Topic matching stays local and conservative. These feeds cover selected
-technology, construction, environment and health/safety topics only. There is
+technology, construction, environment, health/safety and macroeconomics topics only. There is
 no claim that they cover music, every custom topic or every day. Only dated
 HTTPS links on the expected publisher host are accepted. Legacy HTTP article
 links from FDA's HTTPS feed are upgraded only on the verified `www.fda.gov`
 host; no HTTP request is made. Source titles and
 attribution are retained; article bodies, images and feed descriptions are not
 republished. A failed feed cannot discard a result already obtained elsewhere.
+The Board's speeches/testimony feed covers `macro-markets` only, with explicit
+economic-policy title matches and first-party document paths. Its
+[RSS directory](https://www.federalreserve.gov/feeds/feeds.htm) documents the feed.
+The Board's [reuse policy](https://www.federalreserve.gov/disclaimer.htm) allows
+redistribution of Board information unless otherwise indicated and asks for
+source credit. Only attributed headlines, dates and links are used. This tier
+does not fetch third-party material, statistical APIs, images or policy models.
+Each publisher keeps its own process-local failure cooldown and raw cache,
+while sharing the existing durable publisher request ceiling.
 
 `ALPHA_OPEN_NEWS_FALLBACK=1` adds licensed Global Voices music and general-news
 feeds after Google and the mapped first-party feeds. It also requires no-model
@@ -120,6 +129,9 @@ reuse basis. Each item and its email preview keep author/original-story credit,
 license and formatting notice. License links are separate from story citations
 and repeated-link checks. Licensed feed signals always use the local formatter.
 This is a limited backup with sparse music coverage, not all-topic daily search.
+Exact custom phrases `country music` and `indie music` use the existing genre
+filters on the fixed music feed. Other custom phrases keep general-feed local
+matching. Saved topics are unchanged, and bare `country` or `indie` is ambiguous.
 It is off by default, including in strict no-key mode.
 
 `ALPHA_RESEARCH_METADATA_FALLBACK=1` adds a narrow Crossref nutrition-research
@@ -333,7 +345,7 @@ ALPHA_NO_MODEL_MODE=           # set to "1" to skip every writer-model call and 
 ALPHA_PUBLIC_FEED_FALLBACK=    # set to "1" to allow the bounded no-key Google News RSS search fallback (optional, off by default)
 ALPHA_NO_KEY_SOURCES=         # set to "1" to skip all keyed source search and enable Google RSS (optional, off by default)
 ALPHA_GDELT_FALLBACK=         # set to "1" for bounded public GDELT discovery after RSS (optional, off by default)
-ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA topic-matched feeds (optional, off by default)
+ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA/Federal Reserve topic-matched feeds (optional, off by default)
 ALPHA_OPEN_NEWS_FALLBACK=     # set to "1" for licensed Global Voices metadata in no-model mode (optional, off by default)
 ALPHA_RESEARCH_METADATA_FALLBACK= # set to "1" for open-license nutrition research metadata in no-model mode (optional, off by default)
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC

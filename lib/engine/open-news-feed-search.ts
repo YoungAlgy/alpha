@@ -230,6 +230,13 @@ function selectTopic(topicId: string): TopicSelection | undefined {
 
   const phrase = publicTopicPhrase(topicId);
   if (!phrase || phrase.length > 100 || /[\u0000-\u001f\u007f]/.test(phrase)) return;
+  if (isCustomTopic(topicId)) {
+    const normalizedCustomText = phrase.trim().toLowerCase().replace(/\s+/g, " ");
+    if (normalizedCustomText === "country music" || normalizedCustomText === "indie music") {
+      return { feed: "music", mode: "genre", genre: normalizedCustomText === "country music" ? "country" : "indie" };
+    }
+  }
+
   const tokens = meaningfulTokens(phrase);
   if (tokens.length === 0 || tokens.length > 6 || (isCustomTopic(topicId) && tokens.length < 2)) return;
   return { feed: "general", mode: "phrase", tokens };

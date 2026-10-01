@@ -10,6 +10,7 @@ import { reservePublicSourceRequest } from "./public-source-budget";
 const FEEDS = {
   nist: { url: "https://www.nist.gov/news-events/news/rss.xml", host: "www.nist.gov", label: "NIST", kind: "Research and standards update" },
   fda: { url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/medwatch/rss.xml", host: "www.fda.gov", label: "FDA MedWatch", kind: "Product safety notice" },
+  fed: { url: "https://www.federalreserve.gov/feeds/speeches_and_testimony.xml", host: "www.federalreserve.gov", label: "Federal Reserve Board", kind: "Economic policy speech or testimony" },
 } as const;
 type Feed = keyof typeof FEEDS;
 const TOPICS: Partial<Record<string, { feed: Feed; matches: RegExp }>> = {
@@ -22,6 +23,7 @@ const TOPICS: Partial<Record<string, { feed: Feed; matches: RegExp }>> = {
   "mental-health": { feed: "fda", matches: /\b(?:mental|psychiatric|depression|antidepressant|anxiety|ADHD)\b/i },
   "womens-health": { feed: "fda", matches: /\b(?:women|pregnancy|pregnant|breast|contracept|menopause|uterine)\b/i },
   parenting: { feed: "fda", matches: /\b(?:infant|child|children|pediatric|baby|babies)\b/i },
+  "macro-markets": { feed: "fed", matches: /\b(?:econom(?:y|ic)|inflation|monetary policy|interest rates?|labor market|financial stability)\b/i },
 };
 
 export function publisherFeedFallbackEnabled(): boolean {
@@ -56,6 +58,9 @@ export function createPublisherFeedSearch(deps: { fetcher?: typeof fetch; now?: 
           // this fixed first-party host gets upgraded; no HTTP request is made.
           if (selection.feed === "fda" && url.protocol === "http:") url.protocol = "https:";
           if (url.protocol !== "https:") return [];
+          // Only the first-party documents advertised by the Board's feed.
+          // No third-party material, portal, asset or statistical API is used.
+          if (selection.feed === "fed" && !/^\/newsevents\/(?:speech|testimony)\/[^/]+\.htm$/.test(url.pathname)) return [];
           return [{ ...item, url: url.href, description: "" }];
         } catch { return []; }
       });
