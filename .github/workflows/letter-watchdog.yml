@@ -19,6 +19,8 @@ name: Daily letter watchdog
 #
 # Runs at 20:37 UTC, after the final 18:47 recovery slot plus its 90-minute
 # job budget and 20 minutes of headroom. Scheduling can still be delayed.
+# An execution before today's 20:37 slot reports timing uncertainty. It cannot
+# establish the original cron's date or use a newer letter to cover an older day.
 #
 # Reviewed and hardened 2026-08-05 (same day) after an adversarial
 # multi-agent pass found real gaps in the first version:
@@ -92,6 +94,7 @@ jobs:
           RESEND_API_KEY: ${{ secrets.WATCHDOG_RESEND_API_KEY }}
           OPS_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
           GH_TOKEN: ${{ github.token }}
+          WATCHDOG_CRON: ${{ github.event.schedule }}
         run: |
           set -uo pipefail
           # Deliberately NOT `set -e`: curl/jq failures are handled
@@ -216,7 +219,22 @@ jobs:
           # Same UTC day as the daily-send precheck. A rolling window could
           # count yesterday's delayed letter while today's letter is missing.
           # Historical backfills remain disabled by the release policy.
-          CUTOFF=$(date -u +%Y-%m-%dT00:00:00Z)
+          # A scheduled check arriving after midnight must not blame a letter
+          # that is not due yet or silently count newer delivery for yesterday.
+          TIMING_SEARCH_PHRASE="Daily letter watchdog timing unverified"
+          CUTOFF=$(node scripts/alpha-watchdog-coverage-window.mjs)
+          WINDOW_CHECK_EXIT=$?
+          if [ "${WINDOW_CHECK_EXIT}" -ne 0 ]; then
+            echo "ALERT: the watchdog execution is outside a verified current-day coverage window."
+            ALERT_BODY="The watchdog could not establish a due current-day coverage window. A delayed scheduled execution before 20:37 UTC cannot identify its original issue date. Delivery coverage was not queried and existing delivery alerts were not resolved. This is timing uncertainty, not proof of a missed letter. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            send_resend_alert "[alpha] Watchdog timing unverified" "${ALERT_BODY}"
+            open_or_update_issue "${TIMING_SEARCH_PHRASE}" "⚠️ ${TIMING_SEARCH_PHRASE}" "${ALERT_BODY}"
+            exit 1
+          fi
+          # A manual coverage check cannot prove the scheduler recovered.
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+            close_issue_if_open "${TIMING_SEARCH_PHRASE}" "Resolved: this scheduled execution reached the current day's due coverage window. Coverage still requires the check below. This does not establish the original date of an older delayed execution or recover historical missed letters."
+          fi
 
           # Real counts, not a limit=1 existence check -- a limit=1 check
           # can't tell "everyone got their letter" from "one subscriber got

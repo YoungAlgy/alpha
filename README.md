@@ -170,7 +170,8 @@ The bounded 100-entry feed pool reaches the ranker before reader exclusions and
 final host limits. A reader's previously cited first ten links cannot hide an
 unseen eleventh feed item or remove that item for another reader.
 The existing Supabase `topic_blurbs` cache already preserves finished sections
-across runs. Raw-feed caches and failure-triggered cooldowns remain process-local.
+across runs. Raw-feed caches remain process-local. Base failure cooldowns are
+process-local too. The separate circuit below persists outage memory when enabled.
 
 The opt-in `ALPHA_DURABLE_SOURCE_COOLDOWN=1` adds private cross-run outage memory
 after `20261001000000_public_source_circuit.sql` is reviewed and applied.
@@ -185,17 +186,22 @@ decays after24 hours without a new failure or live probe. Budget and database
 errors do not become provider failures. Real validated metadata survives a
 failed optional completion write, but durable recovery remains unconfirmed.
 Raw caches remain local, freshness/repeated-link checks stay downstream, and
-the shared request ceilings are unchanged. See
+the shared request ceilings are unchanged. The approved October 1 release
+`8d9b09db` installed the migration and enabled only its scheduled cooldown flag
+at 15:44 UTC. An ordinary delivery run later logged that enabled flag. Actual
+source outage/recovery has not yet been observed. See
 [`docs/public-source-circuit.md`](docs/public-source-circuit.md).
 
 The scheduled runtime pins `ALPHA_DURABLE_SOURCE_BUDGET=1`. The existing private
 Supabase rate-limit RPC then caps all runs together at 60 Google, 12 publisher
 and 12 GDELT requests per fixed fifteen-minute provider window. Global Voices
 shares the existing 12-request publisher ceiling, as does Crossref when enabled.
-Crossref's serial lane and failure cooldown are process-local. Separate runs
-share the same fixed publisher reservation ceiling, not a global Crossref lease.
+Crossref's serial lane and base failure cooldown are process-local. Separate runs
+share the same fixed publisher reservation ceiling. When enabled, the separate
+circuit also shares outage state and one recovery lease, not normal serial spacing.
 Global Voices' two fixed endpoints
-share one process-local outage cooldown. Reservations use fixed provider
+share one process-local outage cooldown and one optional durable circuit identity.
+Reservations use fixed provider
 identities, no query or reader data. A missing/exhausted/
 unavailable budget blocks that source request. These are ceilings, not provider
 quota guarantees or a persisted failure circuit. The caller stops waiting at
@@ -208,10 +214,11 @@ The daily workflow passes `SEND_ALPHA_NO_KEY_SOURCES`,
 `SEND_ALPHA_RESEARCH_METADATA_FALLBACK` and
 `SEND_ALPHA_GDELT_FALLBACK` into both
 preflight and runtime.
-`SEND_ALPHA_DURABLE_SOURCE_COOLDOWN` separately forwards the off-default circuit
-flag. Atomic migration with ACL/ledger verification, exact release and
-owner-approved activation are required before
-using it live. Missing or unreadable admission state blocks a new source request.
+`SEND_ALPHA_DURABLE_SOURCE_COOLDOWN` separately forwards the opt-in circuit flag.
+Its atomic migration, ACL/ledger verification, exact release and owner-approved
+activation completed October 1, 2026. The scheduled setting enables it while
+the code default remains off. Missing or unreadable admission state blocks a
+new source request.
 Enabling new sources or switching a live run to no-key mode requires a reviewed
 release and separate owner approval. A release must verify public-source
 availability and acceptable topic coverage before dropping existing source tiers.

@@ -52,8 +52,11 @@ const watchdogSteps = watchdog.jobs?.["check-delivery"]?.steps ?? [];
 const watchdogCheck = watchdogSteps.find((step) => step.run?.includes("COUNTS=$(RESPONSE="));
 assert.ok(watchdogCheck?.run, "watchdog coverage check exists");
 const cutoff = "CUTOFF=$(date -u +%Y-%m-%dT00:00:00Z)";
+assert.equal(precheck.run.split(cutoff).length - 1, 1, "send: exact UTC midnight cutoff");
+assert.ok(watchdogCheck.run.includes("CUTOFF=$(node scripts/alpha-watchdog-coverage-window.mjs)"),
+  "watchdog classifies a due current-day window before choosing UTC midnight");
+assert.ok(!watchdogCheck.run.includes(cutoff), "watchdog does not blindly check a not-yet-due day");
 for (const [name, script] of [["send", precheck.run], ["watchdog", watchdogCheck.run]] as const) {
-  assert.equal(script.split(cutoff).length - 1, 1, `${name}: exact UTC midnight cutoff`);
   assert.match(script, /watchdog_delivery_check/);
   assert.match(script, /-d "\{\\"cutoff\\": \\"\$\{CUTOFF\}\\"\}"/);
 }

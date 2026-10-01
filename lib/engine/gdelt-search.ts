@@ -3,6 +3,7 @@ import { parsePublicFeedXml } from "./public-feed-search";
 import { readPublicSourceText } from "./public-source-response";
 import { reservePublicSourceRequest } from "./public-source-budget";
 import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
+import { isPublicSourceControlError, PublicSourceControlError } from "./public-source-error-policy";
 
 // The public DOC API is a best-effort source after Google News RSS. It has no
 // account key, but still needs a small request budget and an outage cooldown.
@@ -128,7 +129,7 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
     }
     const pending = inFlight.get(key);
     if (pending) return stillFresh(await pending);
-    if (now() < cooldownUntil) throw new Error("GDELT public search is cooling down");
+    if (now() < cooldownUntil) throw new PublicSourceControlError("GDELT public search is cooling down");
 
     const work = (async (): Promise<BraveResult[]> => {
       // Reserve one slot synchronously before awaiting. Concurrent topics share
@@ -136,11 +137,11 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
       const queuedAt = now();
       const slotAt = Math.max(queuedAt, nextRequestAt);
       if (slotAt - queuedAt > MAX_QUEUE_WAIT_MS) {
-        throw new Error("GDELT public search queue is full");
+        throw new PublicSourceControlError("GDELT public search queue is full");
       }
       nextRequestAt = slotAt + REQUEST_SPACING_MS;
       if (slotAt > queuedAt) await sleep(slotAt - queuedAt);
-      if (now() < cooldownUntil) throw new Error("GDELT public search is cooling down");
+      if (now() < cooldownUntil) throw new PublicSourceControlError("GDELT public search is cooling down");
 
       const params = new URLSearchParams({
         query: `"${phrase}" sourcelang:english`,
@@ -182,7 +183,9 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
         return results;
         });
       } catch (error) {
-        cooldownUntil = Math.max(cooldownUntil, now() + FAILURE_COOLDOWN_MS);
+        if (!isPublicSourceControlError(error)) {
+          cooldownUntil = Math.max(cooldownUntil, now() + FAILURE_COOLDOWN_MS);
+        }
         throw error;
       } finally {
         if (timer !== undefined) clearTimeout(timer);

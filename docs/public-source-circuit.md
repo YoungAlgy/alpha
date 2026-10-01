@@ -1,6 +1,6 @@
 # ADR: Durable public-source outage memory
 
-Status: Proposed locally. Migration, release and activation are not approved.
+Status: Accepted, released and activated October 1, 2026 at 15:44 UTC.
 Date: October 1, 2026
 
 ## Context
@@ -63,14 +63,23 @@ the request. No provider response/error body is stored or logged by this layer.
 Focused tests cover adapter denial before budget/fetch, independent providers,
 cache-first behavior, expiry/backoff, concurrent generation fencing, neutral
 quota errors, RPC timeout/malformed response, unconfirmed completion and privacy.
-The SQL is tested in a new disposable local PostgreSQL cluster, including role
-privileges and two-session probe admission. No managed database is used.
+The SQL was tested in a new disposable local PostgreSQL cluster, including role
+privileges and two-session probe admission. Those tests used no managed database.
 
-Live rollout is separate: verify current catalog and migration ledger, apply
-schema/ACLs/ledger recording in one guarded transaction, release the exact
-candidate, then explicitly activate the one scheduled flag. It must not silently
-enable strict no-key mode, GDELT, new sources, letters, or change enrollment.
-Until activation, runtime behavior stays as shipped at `05f979ef`.
+The approved live rollout completed with exact release
+`8d9b09db328068f71a362c7e0982017f0c07bf01`. Managed catalog and ledger checks
+confirmed the atomic schema/ACL/ledger update, seven fixed rows and the two RPCs.
+Only `SEND_ALPHA_DURABLE_SOURCE_COOLDOWN=1` was activated. Defaults remain off
+in code. Strict no-key mode, GDELT, source order, schedules, delivery enrollment
+and the no-model/paid-AI-off rules were unchanged. This approval is complete.
+
+The ordinary October 1 delivery run later logged the enabled runtime flag.
+That proves the flag reached execution, not that a source failed or a durable
+recovery probe completed. Actual source failover remains unproven. A later local
+postrelease repair separates admission/budget/queue rejections from process-local
+provider failure cooldowns. It also corrects watchdog timing classification.
+Those local changes require a new release approval and are not part of the
+already shipped release named above.
 
 ## Consequences and limits
 

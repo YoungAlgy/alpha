@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { createResearchMetadataSearch, parseResearchMetadata } from "../lib/engine/research-metadata-search.ts";
 import { MAX_PUBLIC_SOURCE_BYTES } from "../lib/engine/public-source-response.ts";
+import { PublicSourceBudgetError } from "../lib/engine/public-source-budget.ts";
 
 let assertions = 0;
 const check = (actual: unknown, expected: unknown, label: string) => {
@@ -294,13 +295,19 @@ try {
     check(responseCalls, 1, `${label} causes no immediate retry`);
   }
   let budgetFetches = 0;
+  let budgetReservations = 0;
   const exhausted = createResearchMetadataSearch({ now: () => baseNow,
-    reserve: async () => { throw new Error("offline budget exhausted"); },
+    reserve: async () => {
+      budgetReservations++;
+      if (budgetReservations === 1) throw new PublicSourceBudgetError("exhausted", "publisher-rss");
+    },
     fetcher: async () => { budgetFetches++; return jsonResponse(); },
   });
   await rejects(exhausted("nutrition-food"), /budget exhausted/, "denied reservation fails closed");
   check(budgetFetches, 0, "budget denial causes no metadata fetch");
-  await rejects(exhausted("nutrition-food", { freshness: "pd" }), /cooling down/, "budget denial activates cooldown");
+  check((await exhausted("nutrition-food", { freshness: "pd" })).length, 1, "budget denial leaves source cooldown neutral");
+  check(budgetReservations, 2, "next cache key receives a fresh budget reservation");
+  check(budgetFetches, 1, "source fetch resumes after neutral budget denial");
 
   // Replace only signal creation for deterministic timeout coverage. Production
   // requests must still ask for 5,000 ms, and their real abort listener cancels

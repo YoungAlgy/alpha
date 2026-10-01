@@ -6,6 +6,7 @@ import { freshPublicResults, publicSourceWindow } from "./public-source-freshnes
 import { readPublicSourceText } from "./public-source-response";
 import { reservePublicSourceRequest } from "./public-source-budget";
 import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
+import { isPublicSourceControlError, PublicSourceControlError } from "./public-source-error-policy";
 import { noModelModeEnabled } from "./provider-policy";
 
 // Crossref metadata is openly reusable. Keep this narrow until other topic
@@ -105,24 +106,27 @@ export function createResearchMetadataSearch(deps: {
   let blockedUntil = 0;
 
   async function serial(work: () => Promise<BraveResult[]>): Promise<BraveResult[]> {
-    if (queued >= 4) throw new Error("Research metadata queue full");
+    if (queued >= 4) throw new PublicSourceControlError("Research metadata queue full");
     const queuedAt = now();
     queued++;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => { cancelled = true; reject(new Error("Research metadata queue timed out")); }, MAX_QUEUE_WAIT_MS);
+      timer = setTimeout(() => { cancelled = true; reject(new PublicSourceControlError("Research metadata queue timed out")); }, MAX_QUEUE_WAIT_MS);
     });
     const task = tail.catch(() => {}).then(async () => {
-      if (cancelled || now() - queuedAt >= MAX_QUEUE_WAIT_MS) throw new Error("Research metadata queue timed out");
-      if (now() < blockedUntil) throw new Error("Research metadata cooling down");
+      if (cancelled || now() - queuedAt >= MAX_QUEUE_WAIT_MS) throw new PublicSourceControlError("Research metadata queue timed out");
+      if (now() < blockedUntil) throw new PublicSourceControlError("Research metadata cooling down");
       const delay = Math.max(0, nextAt - now());
       if (delay) await sleep(delay);
-      if (cancelled || now() - queuedAt >= MAX_QUEUE_WAIT_MS) throw new Error("Research metadata queue timed out");
-      if (now() < blockedUntil) throw new Error("Research metadata cooling down");
+      if (cancelled || now() - queuedAt >= MAX_QUEUE_WAIT_MS) throw new PublicSourceControlError("Research metadata queue timed out");
+      if (now() < blockedUntil) throw new PublicSourceControlError("Research metadata cooling down");
       clearTimeout(timer);
       try { return await work(); }
-      catch (error) { blockedUntil = Math.max(blockedUntil, now() + 60_000); throw error; }
+      catch (error) {
+        if (!isPublicSourceControlError(error)) blockedUntil = Math.max(blockedUntil, now() + 60_000);
+        throw error;
+      }
       finally { nextAt = now() + SPACING_MS; }
     }).finally(() => { queued--; });
     // A timed-out queued caller cannot release the serial lane early or fetch later.
