@@ -75,11 +75,14 @@ and the no-model/paid-AI-off rules were unchanged. This approval is complete.
 
 The ordinary October 1 delivery run later logged the enabled runtime flag.
 That proves the flag reached execution, not that a source failed or a durable
-recovery probe completed. Actual source failover remains unproven. A later local
-postrelease repair separates admission/budget/queue rejections from process-local
-provider failure cooldowns. It also corrects watchdog timing classification.
-Those local changes require a new release approval and are not part of the
-already shipped release named above.
+recovery probe completed. Actual source failover remains unproven. The separately
+approved postrelease repair shipped as
+`02ccaff18cd6c95ac73fb79f2a8c1e1c7d953942` later on October 1. It separates
+admission/budget/queue rejections from process-local provider failure cooldowns
+and adds a watchdog timing guard. Exact focused checks, build, push CI and
+non-sending live release checks passed. No migration, source activation or
+schedule change was part of that later release. Its ordinary watchdog outcome
+and a natural source failure/recovery remain unobserved in the recorded evidence.
 
 ## Consequences and limits
 

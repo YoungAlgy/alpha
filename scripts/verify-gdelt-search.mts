@@ -1,5 +1,143 @@
 // Offline checks for the optional no-key GDELT source. No real provider call.
 import assert from "node:assert/strict";
+import { createGdeltSearch, gdeltFallbackEnabled, type GdeltSearchDependencies } from "../lib/engine/gdelt-search.ts";
+import { createPublicSourceCircuit, type PublicSourceAttempt } from "../lib/engine/public-source-circuit.ts";
+import { PublicSourceControlError } from "../lib/engine/public-source-error-policy.ts";
+
+const offlineAttempt: PublicSourceAttempt = async (_provider, reserve, work) => {
+  await reserve();
+  return work();
+};
+const offlineSearch = (deps: GdeltSearchDependencies) => createGdeltSearch({
+  attempt: offlineAttempt, reserve: async () => {}, ...deps,
+});
+
+async function verifyDispatchBounds() {
+  const base = Date.UTC(2026, 8, 29, 12);
+  const emptyFeed = () => new Response("<rss><channel></channel></rss>");
+  const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+  const failures: string[] = [];
+  const check = async (name: string, work: () => Promise<void>) => {
+    try { await work(); }
+    catch (error) { failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`); }
+  };
+
+  await check("elapsed queue deadline", async () => {
+    let now = base, fetches = 0;
+    const search = offlineSearch({ now: () => now, sleep: async () => { now += 16_000; },
+      fetcher: async () => { fetches++; return emptyFeed(); } });
+    await search("first offline topic");
+    await assert.rejects(search("late offline topic"), error => error instanceof PublicSourceControlError && /timed out/.test(error.message));
+    assert.equal(fetches, 1, "late waking cannot dispatch a provider request");
+    now += 60_000;
+    assert.deepEqual(await search("after expiry offline topic"), [], "queue expiry leaves no outage cooldown");
+  });
+
+  for (const delayKind of ["admission", "budget", "callback"] as const) await check(`${delayKind} delay spacing`, async () => {
+    let now = base, admissions = 0, reservations = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const starts: number[] = [];
+    const search = offlineSearch({ now: () => now, sleep: async ms => { now += ms; },
+      attempt: async (_provider, reserve, work) => {
+        const first = ++admissions === 1;
+        if (first && delayKind === "admission") await gate;
+        await reserve();
+        if (first && delayKind === "callback") await gate;
+        return work();
+      },
+      reserve: async () => { if (++reservations === 1 && delayKind === "budget") await gate; },
+      fetcher: async () => { starts.push(now - base); return emptyFeed(); },
+    });
+    const first = search("slow controls offline topic");
+    await search("fast controls offline topic");
+    now = base + 6000;
+    release();
+    await first;
+    assert.equal(starts.length, 2);
+    assert.ok(starts[1] - starts[0] >= 5000, `actual outbound starts ${JSON.stringify(starts)} violate five-second spacing`);
+  });
+
+  await check("simultaneous delayed sleepers", async () => {
+    let now = base;
+    const starts: number[] = [];
+    const sleepers: Array<{ ms: number; release: () => void }> = [];
+    const search = offlineSearch({ now: () => now,
+      sleep: ms => new Promise<void>(resolve => { sleepers.push({ ms, release: resolve }); }),
+      fetcher: async () => { starts.push(now - base); return emptyFeed(); },
+    });
+    await search("warm offline topic");
+    const one = search("one sleeping offline topic"), two = search("two sleeping offline topic");
+    await flush();
+    assert.equal(sleepers.length, 2);
+    now += 10_000;
+    for (const sleeper of sleepers.splice(0)) sleeper.release();
+    await flush();
+    for (const sleeper of sleepers.splice(0)) { now += sleeper.ms; sleeper.release(); }
+    const outcomes = await Promise.allSettled([one, two]);
+    assert.equal(starts.length, 2, `waking sleepers started together at ${JSON.stringify(starts)}`);
+    assert.deepEqual(outcomes.map(outcome => outcome.status), ["fulfilled", "rejected"], "the next dispatch would miss its deadline");
+    const rejection = outcomes[1];
+    assert.ok(rejection.status === "rejected" && rejection.reason instanceof PublicSourceControlError);
+  });
+
+  await check("bounded pending controls and same-key coalescing", async () => {
+    let now = base, attempts = 0, fetches = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const sleepers: Array<() => void> = [];
+    const search = offlineSearch({ now: () => now, sleep: () => new Promise<void>(resolve => { sleepers.push(resolve); }),
+      attempt: async (_provider, reserve, work) => { attempts++; await gate; await reserve(); return work(); },
+      fetcher: async () => { fetches++; return emptyFeed(); },
+    });
+    const pending = Array.from({ length: 4 }, (_, index) => search(`pending offline topic ${index}`));
+    const duplicate = search("pending offline topic 0");
+    const settled = Promise.allSettled([...pending, duplicate]);
+    await flush();
+    await assert.rejects(search("capacity offline topic"), /queue is full/);
+    release();
+    for (let round = 0; round < 5; round++) {
+      await flush();
+      now += 5000;
+      for (const sleeper of sleepers.splice(0)) sleeper();
+    }
+    await settled;
+    assert.equal(attempts, 4, "same-key coalescing consumes no additional admission");
+    assert.ok(fetches <= 4);
+    now += 60_000;
+    assert.deepEqual(await search("after capacity offline topic"), []);
+  });
+
+  for (const delayKind of ["sleep", "admission", "budget", "callback"] as const) await check(`neutral probe expiry during ${delayKind}`, async () => {
+    let now = base, fetches = 0, reservations = 0, begins = 0;
+    const outcomes: unknown[] = [];
+    const circuit = createPublicSourceCircuit({ enabled: () => true, warn: () => {},
+      loadClient: async () => ({ rpc: async (name: string, args: Record<string, unknown>) => {
+        if (name === "begin_alpha_public_source") {
+          if (++begins === 2 && delayKind === "admission") now += 16_000;
+          return { data: [{ admitted: true, generation: "00000000-0000-4000-8000-000000000001",
+            probe_token: "00000000-0000-4000-8000-000000000002", retry_after_sec: 0 }], error: null };
+        }
+        outcomes.push(args.p_outcome);
+        return { data: true, error: null };
+      } }) as never,
+    });
+    const search = offlineSearch({ now: () => now,
+      attempt: (provider, reserve, work) => circuit(provider, reserve, async () => {
+        if (begins === 2 && delayKind === "callback") now += 16_000;
+        return work();
+      }),
+      reserve: async () => { if (++reservations === 2 && delayKind === "budget") now += 16_000; },
+      sleep: async ms => { now += delayKind === "sleep" ? 16_000 : ms; },
+      fetcher: async () => { fetches++; return emptyFeed(); },
+    });
+    await search("probe warm offline topic");
+    await assert.rejects(search("probe expired offline topic"), error => error instanceof PublicSourceControlError && /timed out/.test(error.message));
+    assert.equal(fetches, 1);
+    assert.deepEqual(outcomes, ["success", "neutral"], "queue expiry releases probe without an upstream failure");
+  });
+  assert.deepEqual(failures, [], "GDELT dispatch bounds failures");
+}
 
 const originalFetch = globalThis.fetch;
 const originalFlag = process.env.ALPHA_GDELT_FALLBACK;
@@ -21,7 +159,7 @@ const rss = (...items: string[]) => new Response(`<rss><channel>${items.join("")
 const current = "Tue, 29 Sep 2026 10:00:00 GMT";
 
 try {
-  const { createGdeltSearch, gdeltFallbackEnabled } = await import("../lib/engine/gdelt-search.ts");
+  await verifyDispatchBounds();
   delete process.env.ALPHA_GDELT_FALLBACK;
   assert.equal(gdeltFallbackEnabled(), false, "GDELT is off unless explicitly enabled");
   process.env.ALPHA_GDELT_FALLBACK = "yes";
@@ -47,7 +185,7 @@ try {
       item("Bad credentials", "https://user:pass@example.org/news/creds", current)
     );
   };
-  const search = createGdeltSearch({
+  const search = offlineSearch({
     fetcher,
     now: () => time,
     sleep: async (ms) => { time += ms; },
@@ -94,7 +232,7 @@ try {
   let markFetchStarted!: () => void;
   const fetchStarted = new Promise<void>((resolve) => { markFetchStarted = resolve; });
   let inFlightCalls = 0;
-  const pendingSearch = createGdeltSearch({
+  const pendingSearch = offlineSearch({
     fetcher: async () => {
       inFlightCalls++;
       markFetchStarted();
@@ -113,7 +251,7 @@ try {
   let failureCalls = 0;
   let failureTime = fixedNow;
   let failedBodyCancelled = false;
-  const failureSearch = createGdeltSearch({
+  const failureSearch = offlineSearch({
     fetcher: async () => {
       failureCalls++;
       return failureCalls === 1 ? new Response(new ReadableStream<Uint8Array>({
@@ -138,7 +276,7 @@ try {
   let markQueuedStarted!: () => void;
   const queuedStarted = new Promise<void>((resolve) => { markQueuedStarted = resolve; });
   const queuedSleeps: Array<() => void> = [];
-  const queuedSearch = createGdeltSearch({
+  const queuedSearch = offlineSearch({
     fetcher: async () => {
       queuedFetches++;
       markQueuedStarted();
@@ -163,20 +301,20 @@ try {
     ["rejected", "rejected", "rejected", "rejected", "rejected"]);
   assert.equal(queuedFetches, 1, "already queued requests honor the failure cooldown");
 
-  const invalidSearch = createGdeltSearch({
+  const invalidSearch = offlineSearch({
     fetcher: async () => new Response("<html>provider error</html>", { status: 200 }),
     now: () => fixedNow,
   });
   await assert.rejects(invalidSearch("invalid feed"), /invalid RSS/);
   await assert.rejects(invalidSearch("another topic"), /cooling down/);
-  const truncatedSearch = createGdeltSearch({
+  const truncatedSearch = offlineSearch({
     fetcher: async () => new Response(`<rss><channel>${item("Current source", "https://example.org/news/one", current)}`),
     now: () => fixedNow,
   });
   await assert.rejects(truncatedSearch("truncated feed"), /invalid RSS/);
 
   let oversizedCalls = 0;
-  const oversizedSearch = createGdeltSearch({
+  const oversizedSearch = offlineSearch({
     fetcher: async () => {
       oversizedCalls++;
       return new Response("x".repeat(256 * 1024 + 1), { status: 200 });

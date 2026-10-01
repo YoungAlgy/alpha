@@ -13,6 +13,7 @@ const CACHE_SIZE = 64;
 const CACHE_TTL_MS = 5 * 60_000;
 const REQUEST_SPACING_MS = 5_000;
 const MAX_QUEUE_WAIT_MS = 15_000;
+const MAX_PENDING_REQUESTS = 4;
 const FAILURE_COOLDOWN_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 
@@ -130,18 +131,14 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
     const pending = inFlight.get(key);
     if (pending) return stillFresh(await pending);
     if (now() < cooldownUntil) throw new PublicSourceControlError("GDELT public search is cooling down");
+    if (inFlight.size >= MAX_PENDING_REQUESTS) throw new PublicSourceControlError("GDELT public search queue is full");
 
     const work = (async (): Promise<BraveResult[]> => {
-      // Reserve one slot synchronously before awaiting. Concurrent topics share
-      // the 5s spacing and callers beyond 15s fail instead of growing a queue.
       const queuedAt = now();
-      const slotAt = Math.max(queuedAt, nextRequestAt);
-      if (slotAt - queuedAt > MAX_QUEUE_WAIT_MS) {
-        throw new PublicSourceControlError("GDELT public search queue is full");
-      }
-      nextRequestAt = slotAt + REQUEST_SPACING_MS;
-      if (slotAt > queuedAt) await sleep(slotAt - queuedAt);
-      if (now() < cooldownUntil) throw new PublicSourceControlError("GDELT public search is cooling down");
+      const checkWaiting = () => {
+        if (now() - queuedAt >= MAX_QUEUE_WAIT_MS) throw new PublicSourceControlError("GDELT public search queue timed out");
+        if (now() < cooldownUntil) throw new PublicSourceControlError("GDELT public search is cooling down");
+      };
 
       const params = new URLSearchParams({
         query: `"${phrase}" sourcelang:english`,
@@ -154,8 +151,21 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
       const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        return await attempt("gdelt", () => reserve("gdelt"), async () => {
+        return await attempt("gdelt", async () => {
+          // Admission and budget latency count toward the queue deadline.
+          checkWaiting();
+          await reserve("gdelt");
+        }, async () => {
+          // Keep the final claim and fetch invocation in the same synchronous
+          // turn. A delayed reserve-to-work callback must recheck all guards.
+          while (true) {
+            checkWaiting();
+            const delay = nextRequestAt - now();
+            if (delay <= 0) break;
+            await sleep(Math.min(delay, MAX_QUEUE_WAIT_MS - (now() - queuedAt)));
+          }
         timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        nextRequestAt = now() + REQUEST_SPACING_MS;
         const response = await fetcher(`${ENDPOINT}?${params}`, {
           headers: { Accept: "application/rss+xml, application/xml, text/xml" },
           cache: "no-store",

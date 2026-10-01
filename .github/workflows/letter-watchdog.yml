@@ -118,23 +118,64 @@ jobs:
           # comment's stated intent true -- omitting -e is not the same as
           # disabling it once the parent shell already turned it on.
           set +e
+          ISSUE_CHANNEL_FAILED=0
+
+          lookup_open_issue() {
+            local search_phrase="$1" expected_title="$2" issue_json open_issue lookup_exit
+            issue_json=$(gh issue list --repo "${GITHUB_REPOSITORY}" \
+              --search "\"${search_phrase}\" in:title" --state open --limit 100 \
+              --json number,title)
+            lookup_exit=$?
+            if [ "${lookup_exit}" -ne 0 ]; then
+              echo "ERROR: GitHub Issue lookup failed." >&2
+              return 1
+            fi
+            open_issue=$(printf '%s' "${issue_json}" | \
+              node scripts/alpha-watchdog-issue-selection.mjs "${expected_title}")
+            lookup_exit=$?
+            if [ "${lookup_exit}" -ne 0 ]; then
+              echo "ERROR: GitHub Issue lookup response was unsafe." >&2
+              return 1
+            fi
+            printf '%s' "${open_issue}"
+          }
 
           close_issue_if_open() {
-            local search_phrase="$1" resolution_note="$2" open_issue
-            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
+            local search_phrase="$1" expected_title="$2" resolution_note="$3" open_issue lookup_exit
+            open_issue=$(lookup_open_issue "${search_phrase}" "${expected_title}")
+            lookup_exit=$?
+            if [ "${lookup_exit}" -ne 0 ]; then
+              return 1
+            fi
             if [ -n "${open_issue}" ]; then
-              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${resolution_note}"
-              gh issue close "${open_issue}" --repo "${GITHUB_REPOSITORY}"
+              if ! gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${resolution_note}"; then
+                echo "ERROR: GitHub Issue resolution comment failed." >&2
+                return 1
+              fi
+              if ! gh issue close "${open_issue}" --repo "${GITHUB_REPOSITORY}"; then
+                echo "ERROR: GitHub Issue close failed." >&2
+                return 1
+              fi
             fi
           }
 
           open_or_update_issue() {
-            local search_phrase="$1" issue_title="$2" body="$3" open_issue
-            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
+            local search_phrase="$1" issue_title="$2" body="$3" open_issue lookup_exit
+            open_issue=$(lookup_open_issue "${search_phrase}" "${issue_title}")
+            lookup_exit=$?
+            if [ "${lookup_exit}" -ne 0 ]; then
+              return 1
+            fi
             if [ -n "${open_issue}" ]; then
-              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+              if ! gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${body}"; then
+                echo "ERROR: GitHub Issue update failed." >&2
+                return 1
+              fi
             else
-              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${issue_title}" --body "${body}"
+              if ! gh issue create --repo "${GITHUB_REPOSITORY}" --title "${issue_title}" --body "${body}"; then
+                echo "ERROR: GitHub Issue create failed." >&2
+                return 1
+              fi
             fi
           }
 
@@ -183,6 +224,10 @@ jobs:
           # health, unrecognized policy, or mode disagreement still alerts.
           RELEASE_SEARCH_PHRASE="Daily letter release state unverified"
           RELEASE_ISSUE_TITLE="⚠️ ${RELEASE_SEARCH_PHRASE}"
+          SEARCH_PHRASE="Daily letter send may be broken"
+          ISSUE_TITLE="🚨 ${SEARCH_PHRASE}"
+          PARTIAL_SEARCH_PHRASE="Daily letter send may be incomplete"
+          PARTIAL_ISSUE_TITLE="⚠️ ${PARTIAL_SEARCH_PHRASE}"
           HEALTH_FILE="${RUNNER_TEMP}/alpha-watchdog-health.json"
           HEALTH_HTTP_STATUS=$(curl -sS --max-time 15 --connect-timeout 5 --max-filesize 8192 \
             -o "${HEALTH_FILE}" -w '%{http_code}' \
@@ -205,14 +250,18 @@ jobs:
             echo "ALERT: the expected subscriber-delivery state could not be verified (${MODE_CHECK_REASON})."
             ALERT_BODY="The watchdog could not verify agreement between the checked-out delivery policy and live Alpha health. Both must report open to check coverage. Skipping coverage for a pause also requires an exact release match. Health HTTP status: ${HEALTH_HTTP_STATUS:-unavailable}. No delivery skip was accepted. Check the release SHA, live health, and source policy. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             send_resend_alert "[alpha] Delivery release state unverified" "${ALERT_BODY}"
-            open_or_update_issue "${RELEASE_SEARCH_PHRASE}" "${RELEASE_ISSUE_TITLE}" "${ALERT_BODY}"
+            open_or_update_issue "${RELEASE_SEARCH_PHRASE}" "${RELEASE_ISSUE_TITLE}" "${ALERT_BODY}" || ISSUE_CHANNEL_FAILED=1
             exit 1
           fi
-          close_issue_if_open "${RELEASE_SEARCH_PHRASE}" "Resolved: live health and the checked-out delivery policy agree on ${MODE} as of $(date -u +%Y-%m-%dT%H:%M:%SZ). Open delivery still requires coverage checks. A paused skip requires an exact release match. This does not prove delivery."
+          close_issue_if_open "${RELEASE_SEARCH_PHRASE}" "${RELEASE_ISSUE_TITLE}" "Resolved: live health and the checked-out delivery policy agree on ${MODE} as of $(date -u +%Y-%m-%dT%H:%M:%SZ). Open delivery still requires coverage checks. A paused skip requires an exact release match. This does not prove delivery." || ISSUE_CHANNEL_FAILED=1
           if [ "${MODE}" = "paused" ]; then
             echo "OK: subscriber letters are intentionally paused in the exact live release. Delivery coverage is not expected."
-            close_issue_if_open "Daily letter send may be broken" "Closed because the exact live release intentionally pauses subscriber letters. This does not prove historical missed deliveries were recovered."
-            close_issue_if_open "Daily letter send may be incomplete" "Closed because the exact live release intentionally pauses subscriber letters. This does not prove historical missed deliveries were recovered."
+            close_issue_if_open "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "Closed because the exact live release intentionally pauses subscriber letters. This does not prove historical missed deliveries were recovered." || ISSUE_CHANNEL_FAILED=1
+            close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "${PARTIAL_ISSUE_TITLE}" "Closed because the exact live release intentionally pauses subscriber letters. This does not prove historical missed deliveries were recovered." || ISSUE_CHANNEL_FAILED=1
+            if [ "${ISSUE_CHANNEL_FAILED}" -ne 0 ]; then
+              echo "ERROR: delivery state was verified, but GitHub Issue resolution failed."
+              exit 1
+            fi
             exit 0
           fi
 
@@ -222,18 +271,19 @@ jobs:
           # A scheduled check arriving after midnight must not blame a letter
           # that is not due yet or silently count newer delivery for yesterday.
           TIMING_SEARCH_PHRASE="Daily letter watchdog timing unverified"
+          TIMING_ISSUE_TITLE="⚠️ ${TIMING_SEARCH_PHRASE}"
           CUTOFF=$(node scripts/alpha-watchdog-coverage-window.mjs)
           WINDOW_CHECK_EXIT=$?
           if [ "${WINDOW_CHECK_EXIT}" -ne 0 ]; then
             echo "ALERT: the watchdog execution is outside a verified current-day coverage window."
             ALERT_BODY="The watchdog could not establish a due current-day coverage window. A delayed scheduled execution before 20:37 UTC cannot identify its original issue date. Delivery coverage was not queried and existing delivery alerts were not resolved. This is timing uncertainty, not proof of a missed letter. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             send_resend_alert "[alpha] Watchdog timing unverified" "${ALERT_BODY}"
-            open_or_update_issue "${TIMING_SEARCH_PHRASE}" "⚠️ ${TIMING_SEARCH_PHRASE}" "${ALERT_BODY}"
+            open_or_update_issue "${TIMING_SEARCH_PHRASE}" "${TIMING_ISSUE_TITLE}" "${ALERT_BODY}" || ISSUE_CHANNEL_FAILED=1
             exit 1
           fi
           # A manual coverage check cannot prove the scheduler recovered.
           if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
-            close_issue_if_open "${TIMING_SEARCH_PHRASE}" "Resolved: this scheduled execution reached the current day's due coverage window. Coverage still requires the check below. This does not establish the original date of an older delayed execution or recover historical missed letters."
+            close_issue_if_open "${TIMING_SEARCH_PHRASE}" "${TIMING_ISSUE_TITLE}" "Resolved: this scheduled execution reached the current day's due coverage window. Coverage still requires the check below. This does not establish the original date of an older delayed execution or recover historical missed letters." || ISSUE_CHANNEL_FAILED=1
           fi
 
           # Real counts, not a limit=1 existence check -- a limit=1 check
@@ -322,16 +372,11 @@ jobs:
             DELIVERED_COUNT=$(( ACTIVE_COUNT - UNCOVERED_COUNT ))
           fi
 
-          SEARCH_PHRASE="Daily letter send may be broken"
-          ISSUE_TITLE="🚨 ${SEARCH_PHRASE}"
-          PARTIAL_SEARCH_PHRASE="Daily letter send may be incomplete"
-          PARTIAL_ISSUE_TITLE="⚠️ ${PARTIAL_SEARCH_PHRASE}"
-
           if [ "${DELIVERED_COUNT}" -lt 0 ]; then
             echo "ALERT: could not verify delivery (Supabase unreachable or returned something unparseable) -- treating as a failed check, not a silent pass."
             ALERT_BODY="The daily digest watchdog could not verify delivery: the Supabase query itself failed or returned an unparseable/non-array response (curl exit ${CURL_EXIT}) as of $(date -u +%Y-%m-%dT%H:%M:%SZ). This could mean Supabase is down, credentials rotated, or something else -- but it could also mean the send is broken and this check just can't see it either way. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             send_resend_alert "[alpha] Watchdog could not verify today's delivery" "${ALERT_BODY}"
-            open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+            open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}" || ISSUE_CHANNEL_FAILED=1
             exit 1
           fi
 
@@ -340,27 +385,31 @@ jobs:
               echo "ALERT: ${UNCOVERED_COUNT}/${ACTIVE_COUNT} active subscribers are uncovered since ${CUTOFF}, with no covered deliveries -- the daily send may be broken."
               ALERT_BODY="The daily digest watchdog found ${UNCOVERED_COUNT} uncovered subscribers out of ${ACTIVE_COUNT} active subscribers, with no covered deliveries since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The app may be up and healthy while the actual send is broken -- this is exactly the failure mode from the 2026-08-05 outage (cron trigger silently unwired after a host migration). Check: did GitHub Actions' daily-send.yml run on schedule, are the SEND_* secrets it uses still present, and did that run actually complete (the Cloudflare Cron Trigger is deliberately disarmed as of 2026-08-05, so it's not the thing to check anymore). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
               send_resend_alert "[alpha] No letters delivered today UTC" "${ALERT_BODY}"
-              open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+              open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}" || ISSUE_CHANNEL_FAILED=1
             else
               echo "ALERT: ${UNCOVERED_COUNT}/${ACTIVE_COUNT} active subscribers are still uncovered since ${CUTOFF} -- possible partial/crashed send."
               ALERT_BODY="The daily digest watchdog found ${UNCOVERED_COUNT} uncovered subscribers out of ${ACTIVE_COUNT} active subscribers since ${CUTOFF}. ${DELIVERED_COUNT} were covered (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Some letters clearly went out, but every uncovered subscriber is a missed delivery. This can indicate a crashed or interrupted send, which alpha's own internal ops-alert also would not catch if the process died before the full per-subscriber loop finished. Check GitHub Actions' daily-send.yml run history for the last invocation. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
               send_resend_alert "[alpha] Incomplete letter send (${DELIVERED_COUNT}/${ACTIVE_COUNT} covered)" "${ALERT_BODY}"
-              open_or_update_issue "${PARTIAL_SEARCH_PHRASE}" "${PARTIAL_ISSUE_TITLE}" "${ALERT_BODY}"
+              open_or_update_issue "${PARTIAL_SEARCH_PHRASE}" "${PARTIAL_ISSUE_TITLE}" "${ALERT_BODY}" || ISSUE_CHANNEL_FAILED=1
             fi
             exit 1
           fi
 
           if [ "${UNCOVERED_COUNT}" -eq 0 ]; then
             echo "OK: 0/${ACTIVE_COUNT} active subscribers uncovered since ${CUTOFF} (${DELIVERED_COUNT} covered)."
-            close_issue_if_open "${SEARCH_PHRASE}" "Resolved: zero active subscribers are uncovered since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
-            close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "Resolved: zero active subscribers are uncovered since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+            close_issue_if_open "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "Resolved: zero active subscribers are uncovered since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically." || ISSUE_CHANNEL_FAILED=1
+            close_issue_if_open "${PARTIAL_SEARCH_PHRASE}" "${PARTIAL_ISSUE_TITLE}" "Resolved: zero active subscribers are uncovered since ${CUTOFF} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically." || ISSUE_CHANNEL_FAILED=1
+            if [ "${ISSUE_CHANNEL_FAILED}" -ne 0 ]; then
+              echo "ERROR: delivery coverage passed, but GitHub Issue resolution failed."
+              exit 1
+            fi
             exit 0
           fi
 
           echo "ALERT: delivery counts fell outside the expected integer shape."
           ALERT_BODY="The daily digest watchdog received unexpected delivery counts (active=${ACTIVE_COUNT}, uncovered=${UNCOVERED_COUNT}) as of $(date -u +%Y-%m-%dT%H:%M:%SZ). Treating this as an unverifiable delivery state. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           send_resend_alert "[alpha] Watchdog received invalid delivery counts" "${ALERT_BODY}"
-          open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+          open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}" || ISSUE_CHANNEL_FAILED=1
           exit 1
 
   check-resilience-secrets:
@@ -416,28 +465,92 @@ jobs:
           # before open_or_update_issue() ever ran. See the check-delivery
           # job's comment for the live incident that found this.
           set +e
+          ISSUE_CHANNEL_FAILED=0
 
-          # Same three helpers as the delivery-check job -- duplicated
-          # rather than shared because GitHub Actions has no lightweight
-          # way to share a bash function across jobs without a separate
-          # composite action, and this is the only other place that needs
-          # them.
+          # Deliberately inline the same bounded number/title selector used by
+          # check-delivery. This job has no checkout by design, so it must keep
+          # working when repository contents are unavailable.
+          lookup_open_issue() {
+            local search_phrase="$1" expected_title="$2" issue_json open_issue lookup_exit
+            issue_json=$(gh issue list --repo "${GITHUB_REPOSITORY}" \
+              --search "\"${search_phrase}\" in:title" --state open --limit 100 \
+              --json number,title)
+            lookup_exit=$?
+            if [ "${lookup_exit}" -ne 0 ]; then
+              echo "ERROR: GitHub Issue lookup failed." >&2
+              return 1
+            fi
+            open_issue=$(printf '%s' "${issue_json}" | EXPECTED_ISSUE_TITLE="${expected_title}" node -e '
+              const fs = require("node:fs");
+              const raw = fs.readFileSync(0, "utf8");
+              const expected = process.env.EXPECTED_ISSUE_TITLE;
+              const reject = () => {
+                console.error("Watchdog issue lookup response rejected.");
+                process.exit(2);
+              };
+              if (typeof expected !== "string" || expected.length < 1 || expected.length > 256 ||
+                  /[\u0000-\u001f\u007f]/u.test(expected) || Buffer.byteLength(raw, "utf8") > 65536) reject();
+              try {
+                const issues = JSON.parse(raw);
+                if (!Array.isArray(issues) || issues.length >= 100) throw new Error("shape");
+                for (const issue of issues) {
+                  if (!issue || typeof issue !== "object" || Array.isArray(issue) ||
+                      Object.keys(issue).sort().join(",") !== "number,title" ||
+                      !Number.isSafeInteger(issue.number) || issue.number < 1 ||
+                      typeof issue.title !== "string" || issue.title.length > 256 ||
+                      /[\u0000-\u001f\u007f]/u.test(issue.title)) throw new Error("shape");
+                }
+                const matches = issues.filter(issue => issue.title === expected);
+                if (matches.length > 1) throw new Error("ambiguous");
+                if (matches.length === 1) process.stdout.write(String(matches[0].number));
+              } catch {
+                reject();
+              }
+            ')
+            lookup_exit=$?
+            if [ "${lookup_exit}" -ne 0 ]; then
+              echo "ERROR: GitHub Issue lookup response was unsafe." >&2
+              return 1
+            fi
+            printf '%s' "${open_issue}"
+          }
+
           close_issue_if_open() {
-            local search_phrase="$1" resolution_note="$2" open_issue
-            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
+            local search_phrase="$1" expected_title="$2" resolution_note="$3" open_issue lookup_exit
+            open_issue=$(lookup_open_issue "${search_phrase}" "${expected_title}")
+            lookup_exit=$?
+            if [ "${lookup_exit}" -ne 0 ]; then
+              return 1
+            fi
             if [ -n "${open_issue}" ]; then
-              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${resolution_note}"
-              gh issue close "${open_issue}" --repo "${GITHUB_REPOSITORY}"
+              if ! gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${resolution_note}"; then
+                echo "ERROR: GitHub Issue resolution comment failed." >&2
+                return 1
+              fi
+              if ! gh issue close "${open_issue}" --repo "${GITHUB_REPOSITORY}"; then
+                echo "ERROR: GitHub Issue close failed." >&2
+                return 1
+              fi
             fi
           }
 
           open_or_update_issue() {
-            local search_phrase="$1" issue_title="$2" body="$3" open_issue
-            open_issue=$(gh issue list --repo "${GITHUB_REPOSITORY}" --search "\"${search_phrase}\" in:title" --state open --json number --jq '.[0].number // empty')
+            local search_phrase="$1" issue_title="$2" body="$3" open_issue lookup_exit
+            open_issue=$(lookup_open_issue "${search_phrase}" "${issue_title}")
+            lookup_exit=$?
+            if [ "${lookup_exit}" -ne 0 ]; then
+              return 1
+            fi
             if [ -n "${open_issue}" ]; then
-              gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+              if ! gh issue comment "${open_issue}" --repo "${GITHUB_REPOSITORY}" --body "${body}"; then
+                echo "ERROR: GitHub Issue update failed." >&2
+                return 1
+              fi
             else
-              gh issue create --repo "${GITHUB_REPOSITORY}" --title "${issue_title}" --body "${body}"
+              if ! gh issue create --repo "${GITHUB_REPOSITORY}" --title "${issue_title}" --body "${body}"; then
+                echo "ERROR: GitHub Issue create failed." >&2
+                return 1
+              fi
             fi
           }
 
@@ -512,7 +625,11 @@ jobs:
 
           if [ -z "${HARD_MISSING}" ] && [ -z "${SOFT_MISSING}" ]; then
             echo "OK: all fixed hard SEND_* secrets present, ${GENERATOR_CONFIGURED} generators configured, and every resilience-tier secret present."
-            close_issue_if_open "${SEARCH_PHRASE}" "Resolved: all SEND_* secrets present (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically."
+            close_issue_if_open "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "Resolved: all SEND_* secrets present (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Closing automatically." || ISSUE_CHANNEL_FAILED=1
+            if [ "${ISSUE_CHANNEL_FAILED}" -ne 0 ]; then
+              echo "ERROR: secret health passed, but GitHub Issue resolution failed."
+              exit 1
+            fi
             exit 0
           fi
 
@@ -520,14 +637,14 @@ jobs:
             echo "ALERT: hard send configuration missing: ${HARD_MISSING} -- the daily send cannot work at all."
             ALERT_BODY="This GitHub Actions send configuration is missing, and daily-send.yml's own pre-flight (scripts/verify-send-preflight.mjs) will fail the next scheduled run because of it: ${HARD_MISSING}. Fix: repo Settings -> Secrets and variables -> Actions, add the missing fixed SEND_* secret(s) (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             send_resend_alert "[alpha] HARD send configuration missing: ${HARD_MISSING}" "${ALERT_BODY}"
-            open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+            open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}" || ISSUE_CHANNEL_FAILED=1
             exit 1
           fi
 
           echo "ALERT: resilience-tier secret(s) missing: ${SOFT_MISSING}"
           ALERT_BODY="These resilience-tier GitHub Actions secrets are missing: ${SOFT_MISSING} (checked $(date -u +%Y-%m-%dT%H:%M:%SZ)). The primary send can still succeed through remaining providers, an already usable persisted issue, or a bounded prior-issue backup, so nothing else here would catch this reduced resilience -- this is exactly the second half of the 2026-08-05 outage. Fix: repo Settings -> Secrets and variables -> Actions, add the missing SEND_* secret(s). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           send_resend_alert "[alpha] Resilience-tier send secret(s) missing: ${SOFT_MISSING}" "${ALERT_BODY}"
-          open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}"
+          open_or_update_issue "${SEARCH_PHRASE}" "${ISSUE_TITLE}" "${ALERT_BODY}" || ISSUE_CHANNEL_FAILED=1
           exit 1
 
   heartbeat:

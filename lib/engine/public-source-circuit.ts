@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { PublicSourceControlError } from "./public-source-control-error";
 
 // Outage identities describe fixed upstreams, never a query or reader. They
 // deliberately differ from the shared publisher request-budget identity.
@@ -109,7 +110,13 @@ export function createPublicSourceCircuit(deps: {
     let result: T;
     try { result = await work(); }
     catch (error) {
-      await complete(provider, admission, "failure");
+      // A final dispatch gate can expire after reservation but before fetch.
+      // Release only an owned probe. Preserve the preceding outage history.
+      if (error instanceof PublicSourceControlError) {
+        if (admission.probeToken !== null) await complete(provider, admission, "neutral");
+      } else {
+        await complete(provider, admission, "failure");
+      }
       throw error;
     }
     // Healthy successes never write or clear a concurrent failure. Only the

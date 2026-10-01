@@ -99,14 +99,18 @@ try {
   // GDELT queue-full and local-cooling controls do not extend backoff.
   let gdeltNow = baseNow;
   let gdeltAttempts = 0;
+  let releaseGdelt!: () => void;
+  const gdeltGate = new Promise<void>((resolve) => { releaseGdelt = resolve; });
   const queuedGdelt = createGdeltSearch({
     now: () => gdeltNow,
-    sleep: async () => {},
-    attempt: async () => { gdeltAttempts++; return []; },
+    sleep: async (ms) => { gdeltNow += ms; },
+    attempt: async () => { gdeltAttempts++; await gdeltGate; return []; },
   });
-  for (let index = 0; index < 4; index++) await queuedGdelt(`queued topic ${index}`);
+  const gdeltPending = Array.from({ length: 4 }, (_, index) => queuedGdelt(`queued topic ${index}`));
+  await new Promise((resolve) => setImmediate(resolve));
   await assert.rejects(queuedGdelt("queue overflow topic"), /queue is full/);
-  gdeltNow += 20_000;
+  releaseGdelt();
+  await Promise.all(gdeltPending);
   assert.deepEqual(await queuedGdelt("after queue topic"), []);
   assert.equal(gdeltAttempts, 5, "GDELT queue overflow left no source cooldown");
 

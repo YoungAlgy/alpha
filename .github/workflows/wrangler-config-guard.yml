@@ -268,6 +268,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify watchdog workflow contracts offline
+        run: |
+          node scripts/verify-watchdog-paused-mode.mjs
+          node scripts/verify-watchdog-coverage-window.mjs
+          node scripts/verify-watchdog-issue-channel.mjs
+          ./node_modules/.bin/tsx scripts/verify-schedule-reliability.mts
+
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .next/cache

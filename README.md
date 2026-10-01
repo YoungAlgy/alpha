@@ -173,8 +173,9 @@ The existing Supabase `topic_blurbs` cache already preserves finished sections
 across runs. Raw-feed caches remain process-local. Base failure cooldowns are
 process-local too. The separate circuit below persists outage memory when enabled.
 
-The opt-in `ALPHA_DURABLE_SOURCE_COOLDOWN=1` adds private cross-run outage memory
-after `20261001000000_public_source_circuit.sql` is reviewed and applied.
+The opt-in `ALPHA_DURABLE_SOURCE_COOLDOWN=1` adds private cross-run outage memory.
+It requires the reviewed `20261001000000_public_source_circuit.sql` migration,
+which was applied during the approved October 1 rollout.
 It is off by default. Exactly seven fixed provider identities are stored, with
 no query, topic, link, reader, credential or response data. Admission runs only
 on a raw-cache miss and before the existing budget reservation. A source fetch
@@ -189,7 +190,9 @@ Raw caches remain local, freshness/repeated-link checks stay downstream, and
 the shared request ceilings are unchanged. The approved October 1 release
 `8d9b09db` installed the migration and enabled only its scheduled cooldown flag
 at 15:44 UTC. An ordinary delivery run later logged that enabled flag. Actual
-source outage/recovery has not yet been observed. See
+source outage/recovery has not yet been observed. A separately approved release,
+`02ccaff18cd6c95ac73fb79f2a8c1e1c7d953942`, later shipped the shared neutral-error
+policy and watchdog timing guard with no new migration or activation. See
 [`docs/public-source-circuit.md`](docs/public-source-circuit.md).
 
 The scheduled runtime pins `ALPHA_DURABLE_SOURCE_BUDGET=1`. The existing private
@@ -215,9 +218,8 @@ The daily workflow passes `SEND_ALPHA_NO_KEY_SOURCES`,
 `SEND_ALPHA_GDELT_FALLBACK` into both
 preflight and runtime.
 `SEND_ALPHA_DURABLE_SOURCE_COOLDOWN` separately forwards the opt-in circuit flag.
-Its atomic migration, ACL/ledger verification, exact release and owner-approved
-activation completed October 1, 2026. The scheduled setting enables it while
-the code default remains off. Missing or unreadable admission state blocks a
+The scheduled setting enables it while the code default remains off.
+Missing or unreadable admission state blocks a
 new source request.
 Enabling new sources or switching a live run to no-key mode requires a reviewed
 release and separate owner approval. A release must verify public-source
@@ -433,6 +435,11 @@ opens a GitHub Issue on failure. Its 20:37 UTC check follows the final retry's
 delivery cannot satisfy today's check. It shares GitHub with the sender and is
 not an independent safeguard against a GitHub-wide outage.
 
+A scheduled watchdog executing before its current UTC day's 20:37 target reports
+timing unverified before querying coverage. A due scheduled check retains the
+current-day cutoff. Manual checks do not resolve the scheduler timing alert.
+The original issue date of an arbitrarily delayed cron event remains unknown.
+
 The watchdog checks coverage when its source policy and healthy live website
 both report delivery open. Their valid release SHAs may differ after a
 sender-only update. Skipping coverage for a pause still requires both policies
@@ -452,7 +459,9 @@ The youngalgy.com portfolio repo (`YoungAlgy/youngalgy`) 308-redirects `youngalg
 - **Billing**: new payments and paid plan changes are closed in source. Retained billing code exists for historical settlement and cleanup, not signup.
 - **Email**. Resend remains primary. Letters send as `"alpha." <alpha@everyday.report>`; Supabase sign-in emails (custom SMTP through Resend) send as `"alpha." <noreply@everyday.report>`. The approved Brevo backup uses the separate `backup.alpha.everyday.report` domain for letters only. It does not replace sign-in SMTP.
 - **Transport capacity**. Scheduled daily preflight checks Resend sender verification and both usage windows against the known active-reader count. Quota exhaustion or a transient read-only provider outage may select Brevo after its Alpha account, free-plan credits, sender and domain checks pass. Bad credentials, unknown reader counts and malformed responses stop visibly. Selection happens before new attempts. Existing attempts keep their recorded provider, including after an uncertain send, so a provider error cannot cause a cross-provider duplicate. Manual runs keep their existing provider behavior. Both free allowances remain finite and quota reads do not reserve capacity. This does not promise unlimited free delivery or recovery from every outage.
-- **Supabase** — free tier in "Algy" org. Daily traffic prevents the 7-day idle pause.
+- **Supabase**. Managed database and auth. The current account plan is not
+  established by source code or release health checks. Database availability
+  remains required for protected delivery and durable source admission.
 
 ## Decision records
 
