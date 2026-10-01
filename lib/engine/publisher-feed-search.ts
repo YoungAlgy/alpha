@@ -4,6 +4,7 @@ import { readPublicSourceText } from "./public-source-response";
 import { createPublicSourceCache } from "./public-source-cache";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
 import { reservePublicSourceRequest } from "./public-source-budget";
+import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
 
 // Fixed first-party endpoints. No subscriber topic, profile, identity or search
 // expression leaves the app. Match topic suitability locally on source titles.
@@ -30,17 +31,20 @@ export function publisherFeedFallbackEnabled(): boolean {
   return /^(1|true|yes)$/i.test(process.env.ALPHA_PUBLISHER_FEED_FALLBACK?.trim() ?? "");
 }
 
-export function createPublisherFeedSearch(deps: { fetcher?: typeof fetch; now?: () => number; reserve?: typeof reservePublicSourceRequest } = {}) {
+export function createPublisherFeedSearch(deps: { fetcher?: typeof fetch; now?: () => number; reserve?: typeof reservePublicSourceRequest; attempt?: PublicSourceAttempt } = {}) {
   const fetcher = deps.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   const now = deps.now ?? Date.now;
   const reserve = deps.reserve ?? reservePublicSourceRequest;
+  const attempt = deps.attempt ?? runPublicSourceAttempt;
   const cached = createPublicSourceCache(now);
   return async (topicId: string, opts: BraveSearchOptions = {}): Promise<BraveResult[]> => {
     const selection = Object.hasOwn(TOPICS, topicId) ? TOPICS[topicId] : undefined;
     if (!selection || !publicSourceWindow(opts.freshness, now())) return [];
     const feed = FEEDS[selection.feed];
-    const raw = await cached(`publisher-${selection.feed}`, "feed-v1", async () => {
-      await reserve("publisher-rss");
+    const circuit = selection.feed === "nist" ? "publisher-nist"
+      : selection.feed === "fda" ? "publisher-fda-medwatch" : "publisher-fed-speeches";
+    const raw = await cached(`publisher-${selection.feed}`, "feed-v1", () => attempt(circuit,
+      () => reserve("publisher-rss"), async () => {
       const signal = AbortSignal.timeout(5000);
       const response = await fetcher(feed.url, { signal, redirect: "error", credentials: "omit", cache: "no-store", headers: { Accept: "application/rss+xml, application/xml, text/xml" } });
       if (!response.ok) {
@@ -64,7 +68,7 @@ export function createPublisherFeedSearch(deps: { fetcher?: typeof fetch; now?: 
           return [{ ...item, url: url.href, description: "" }];
         } catch { return []; }
       });
-    });
+    }));
     return freshPublicResults(raw, opts.freshness, now())
       .filter((item) => selection.matches.test(item.title))
       // Reader exclusions and the final host cap belong in the shared ranker.

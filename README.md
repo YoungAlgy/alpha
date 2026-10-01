@@ -172,6 +172,22 @@ unseen eleventh feed item or remove that item for another reader.
 The existing Supabase `topic_blurbs` cache already preserves finished sections
 across runs. Raw-feed caches and failure-triggered cooldowns remain process-local.
 
+The opt-in `ALPHA_DURABLE_SOURCE_COOLDOWN=1` adds private cross-run outage memory
+after `20261001000000_public_source_circuit.sql` is reviewed and applied.
+It is off by default. Exactly seven fixed provider identities are stored, with
+no query, topic, link, reader, credential or response data. Admission runs only
+on a raw-cache miss and before the existing budget reservation. A source fetch
+failure starts a fifteen-minute cooldown. Failed recovery probes increase it
+to 30,60,120 and at most240 minutes. Healthy calls stay concurrent;
+an expired failed circuit admits only one thirty-second recovery probe. Database
+generation and lease checks reject late/duplicate completions. Failure history
+decays after24 hours without a new failure or live probe. Budget and database
+errors do not become provider failures. Real validated metadata survives a
+failed optional completion write, but durable recovery remains unconfirmed.
+Raw caches remain local, freshness/repeated-link checks stay downstream, and
+the shared request ceilings are unchanged. See
+[`docs/public-source-circuit.md`](docs/public-source-circuit.md).
+
 The scheduled runtime pins `ALPHA_DURABLE_SOURCE_BUDGET=1`. The existing private
 Supabase rate-limit RPC then caps all runs together at 60 Google, 12 publisher
 and 12 GDELT requests per fixed fifteen-minute provider window. Global Voices
@@ -192,6 +208,10 @@ The daily workflow passes `SEND_ALPHA_NO_KEY_SOURCES`,
 `SEND_ALPHA_RESEARCH_METADATA_FALLBACK` and
 `SEND_ALPHA_GDELT_FALLBACK` into both
 preflight and runtime.
+`SEND_ALPHA_DURABLE_SOURCE_COOLDOWN` separately forwards the off-default circuit
+flag. Atomic migration with ACL/ledger verification, exact release and
+owner-approved activation are required before
+using it live. Missing or unreadable admission state blocks a new source request.
 Enabling new sources or switching a live run to no-key mode requires a reviewed
 release and separate owner approval. A release must verify public-source
 availability and acceptable topic coverage before dropping existing source tiers.
@@ -349,6 +369,7 @@ ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA/Federal Reserve t
 ALPHA_OPEN_NEWS_FALLBACK=     # set to "1" for licensed Global Voices metadata in no-model mode (optional, off by default)
 ALPHA_RESEARCH_METADATA_FALLBACK= # set to "1" for open-license nutrition research metadata in no-model mode (optional, off by default)
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
+ALPHA_DURABLE_SOURCE_COOLDOWN= # opt-in private provider circuit, requires reviewed migration before activation
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release
 
 # Optional per-tier model overrides. Cloudflare and GitHub daily-send use separate runtime copies:

@@ -5,6 +5,7 @@ import { createPublicSourceCache } from "./public-source-cache";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
 import { readPublicSourceText } from "./public-source-response";
 import { reservePublicSourceRequest } from "./public-source-budget";
+import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
 import { noModelModeEnabled } from "./provider-policy";
 
 // Crossref metadata is openly reusable. Keep this narrow until other topic
@@ -90,11 +91,13 @@ export function createResearchMetadataSearch(deps: {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   reserve?: typeof reservePublicSourceRequest;
+  attempt?: PublicSourceAttempt;
 } = {}) {
   const fetcher = deps.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
   const reserve = deps.reserve ?? reservePublicSourceRequest;
+  const attempt = deps.attempt ?? runPublicSourceAttempt;
   const cached = createPublicSourceCache(now);
   let tail: Promise<unknown> = Promise.resolve();
   let queued = 0;
@@ -133,9 +136,9 @@ export function createResearchMetadataSearch(deps: {
     if (topicId !== "nutrition-food" || !window) return [];
     const start = new Date(window.start).toISOString().slice(0, 10);
     const end = new Date(window.end).toISOString().slice(0, 10);
-    const raw = await cached("crossref-research", `${start}|${end}`, () => serial(async () => {
-      // Reuse the durable publisher ceiling. This is not a Crossref entitlement.
-      await reserve("publisher-rss");
+    const raw = await cached("crossref-research", `${start}|${end}`, () => serial(() => attempt("crossref-research",
+      // Reuse the durable publisher ceiling, with independent outage state.
+      () => reserve("publisher-rss"), async () => {
       const signal = AbortSignal.timeout(5000);
       const params = new URLSearchParams({ query: QUERY, rows: String(MAX_RECORDS),
         sort: "published-online", order: "desc", select: SELECT,
@@ -155,7 +158,7 @@ export function createResearchMetadataSearch(deps: {
       }
       const text = await readPublicSourceText(response, signal);
       return parseResearchMetadata(JSON.parse(text), now());
-    }));
+    })));
     return freshPublicResults(raw, opts.freshness, now());
   };
 }

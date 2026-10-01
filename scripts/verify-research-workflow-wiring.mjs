@@ -17,6 +17,10 @@ for (const job of Object.values(after.jobs)) {
     assert.equal(step.env.ALPHA_ALLOW_PAID_AI, "0");
     assert.equal(step.env.ALPHA_DURABLE_SOURCE_BUDGET, "1");
     delete step.env.ALPHA_RESEARCH_METADATA_FALLBACK;
+    // The separately reviewed circuit is also opt-in. Its own focused check
+    // proves both forwarding sites and every unchanged workflow control.
+    assert.equal(step.env.ALPHA_DURABLE_SOURCE_COOLDOWN, "${{ vars.SEND_ALPHA_DURABLE_SOURCE_COOLDOWN }}");
+    delete step.env.ALPHA_DURABLE_SOURCE_COOLDOWN;
     forwarded++;
   }
 }

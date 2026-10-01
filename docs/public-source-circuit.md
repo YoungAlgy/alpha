@@ -1,0 +1,81 @@
+# ADR: Durable public-source outage memory
+
+Status: Proposed locally. Migration, release and activation are not approved.
+Date: October 1, 2026
+
+## Context
+
+Raw caches and failure cooldowns expire within one process. The shared request
+ceiling persists, but cannot represent an outage. Scheduled recovery slots are
+80 and 270 minutes after the primary, longer than the old 15-minute cooldown.
+Alpha must preserve useful validated work and never store reader/query data in
+operational provider state. No paid dependency or additional service is needed.
+
+## Decision
+
+Use seven fixed private Supabase circuit rows and two service-role-only RPCs.
+`ALPHA_DURABLE_SOURCE_COOLDOWN` is off by default. The migration must be reviewed
+and applied before activation. Its scheduled variable is
+`SEND_ALPHA_DURABLE_SOURCE_COOLDOWN`. Existing request ceilings stay separate.
+
+An uncached request first receives database admission, then reserves the
+existing budget, then fetches/parses under the existing deadline/body ceiling.
+Healthy requests remain concurrent. Actual fetch/parse failures open a
+15-minute cooldown. Failed recovery probes increase it to 30, 60, 120 and at
+most 240 minutes. Counts survive expired cooldowns and separate processes.
+After expiry, exactly one caller gets a 30-second recovery lease. A dead caller
+cannot leave a permanent lock. Success changes the generation and clears only
+its owned live lease. Failure also changes the generation, so delayed/duplicate
+completions cannot overwrite a newer failure or recovery. After 24 hours with
+no new failure and no live probe, old history decays to a new healthy generation.
+
+Quota, admission/database and local queue errors are not source failures.
+Budget failure releases only the owned probe, without clearing outage history.
+RPC calls have a three-second caller deadline. A request may finish at the
+shared transport's later deadline, but cannot cause a source fetch after its
+caller timed out. A late begin may occupy one lease for at most 30 seconds.
+
+Valid local raw cache hits happen before admission and survive an outage.
+Freshness and reader link exclusions remain downstream. No durable raw cache
+is added. The existing finished-section cache already persists useful sections.
+Fixed providers have isolated outage state, except the two Global Voices feeds
+share one circuit. Publisher feeds and Crossref retain their shared request cap.
+
+A failed optional completion write does not invalidate actual validated source
+metadata. Return that useful work with a fixed-provider warning. This proves
+retrieval only, and does not claim durable recovery. Future uncached requests
+still require admission and budget. An unavailable/malformed admission denies
+the request. No provider response/error body is stored or logged by this layer.
+
+## Options considered
+
+- Reuse rate-limit buckets: rejected. Consuming quota cannot safely check or
+  clear outage state, and window resets are unrelated to recovery ownership.
+- GitHub cache: rejected. Short-lived raw metadata is already stale by recovery
+  time, cache writes are not atomic leases, and custom query keys add privacy risk.
+- Persistent cooldown without a probe lease: smaller, but permits simultaneous
+  cross-run recovery and requires never clearing state or accepting stale races.
+- Dedicated fixed circuit: selected. Tiny bounded state, no new service cost,
+  generation-fenced recovery, and no changes to account/letter/provider attempts.
+
+## Verification and rollout
+
+Focused tests cover adapter denial before budget/fetch, independent providers,
+cache-first behavior, expiry/backoff, concurrent generation fencing, neutral
+quota errors, RPC timeout/malformed response, unconfirmed completion and privacy.
+The SQL is tested in a new disposable local PostgreSQL cluster, including role
+privileges and two-session probe admission. No managed database is used.
+
+Live rollout is separate: verify current catalog and migration ledger, apply
+schema/ACLs/ledger recording in one guarded transaction, release the exact
+candidate, then explicitly activate the one scheduled flag. It must not silently
+enable strict no-key mode, GDELT, new sources, letters, or change enrollment.
+Until activation, runtime behavior stays as shipped at `05f979ef`.
+
+## Consequences and limits
+
+Supabase remains a dependency. A database outage can prevent new source requests
+when this opt-in is active. Existing valid cache/sections remain usable. Cooldowns
+reduce needless attempts but cannot supply missing current coverage or guarantee
+unlimited free capacity. Keyed sources, delivery providers and schedules are not
+changed. Music/custom coverage remains limited. No always-on promise is made.

@@ -2,6 +2,7 @@ import type { BraveResult, BraveSearchOptions } from "@/lib/brave";
 import { parsePublicFeedXml } from "./public-feed-search";
 import { readPublicSourceText } from "./public-source-response";
 import { reservePublicSourceRequest } from "./public-source-budget";
+import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
 
 // The public DOC API is a best-effort source after Google News RSS. It has no
 // account key, but still needs a small request budget and an outage cooldown.
@@ -88,6 +89,8 @@ export interface GdeltSearchDependencies {
   fetcher?: typeof fetch;
   now?: Clock;
   sleep?: Sleep;
+  reserve?: typeof reservePublicSourceRequest;
+  attempt?: PublicSourceAttempt;
 }
 
 /** A process-local client; export the factory so every network edge is testable offline. */
@@ -95,6 +98,8 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
   const fetcher: typeof fetch = deps.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const reserve = deps.reserve ?? reservePublicSourceRequest;
+  const attempt = deps.attempt ?? runPublicSourceAttempt;
   const cache = new Map<string, { expiresAt: number; results: BraveResult[] }>();
   const inFlight = new Map<string, Promise<BraveResult[]>>();
   let nextRequestAt = 0;
@@ -148,7 +153,7 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
       const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await reservePublicSourceRequest("gdelt");
+        return await attempt("gdelt", () => reserve("gdelt"), async () => {
         timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
         const response = await fetcher(`${ENDPOINT}?${params}`, {
           headers: { Accept: "application/rss+xml, application/xml, text/xml" },
@@ -175,6 +180,7 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
         cache.set(key, { expiresAt: now() + CACHE_TTL_MS, results });
         while (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
         return results;
+        });
       } catch (error) {
         cooldownUntil = Math.max(cooldownUntil, now() + FAILURE_COOLDOWN_MS);
         throw error;

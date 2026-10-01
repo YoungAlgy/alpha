@@ -6,6 +6,7 @@ import { readPublicSourceText } from "./public-source-response";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
 import { createPublicSourceCache } from "./public-source-cache";
 import { reservePublicSourceRequest } from "./public-source-budget";
+import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
 
 /**
  * Optional no-key search fallback. It uses the public Google News RSS search
@@ -61,40 +62,42 @@ function freshnessSuffix(freshness?: BraveSearchOptions["freshness"]): string {
   return range ? ` after:${range[1]} before:${range[2]}` : "";
 }
 
-export function createPublicFeedSearch(now: () => number = Date.now) {
+export function createPublicFeedSearch(now: () => number = Date.now, deps: {
+  attempt?: PublicSourceAttempt;
+  reserve?: typeof reservePublicSourceRequest;
+  fetcher?: typeof fetch;
+} = {}) {
   const cached = createPublicSourceCache(now);
+  const attempt = deps.attempt ?? runPublicSourceAttempt;
+  const reserve = deps.reserve ?? reservePublicSourceRequest;
+  const fetcher = deps.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   return async function publicFeedSearch(
-  query: string,
-  opts: BraveSearchOptions = {}
-): Promise<BraveResult[]> {
-  if (!publicSourceWindow(opts.freshness, now())) return [];
-  const params = new URLSearchParams({
-    q: `${query}${freshnessSuffix(opts.freshness)}`,
-    hl: "en-US",
-    gl: "US",
-    ceid: "US:en",
-  });
-  const results = await cached("google-rss", params.toString(), async () => {
-  await reservePublicSourceRequest("google-rss");
-  const signal = AbortSignal.timeout(5000);
-  const res = await fetch(`${ENDPOINT}?${params}`, {
-    headers: { Accept: "application/rss+xml, application/xml, text/xml" },
-    signal,
-    redirect: "error",
-    credentials: "omit",
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    void res.body?.cancel().catch(() => {});
-    throw new Error(`Public RSS search ${res.status}`);
-  }
-  const xml = await readPublicSourceText(res, signal);
-  if (!/<rss\b/i.test(xml) || !/<channel\b/i.test(xml) || !/<\/rss\s*>/i.test(xml)) throw new Error("Public RSS invalid feed");
-  return parsePublicFeedXml(xml, 100);
-  });
-  // Keep the bounded raw pool until the resolver removes already-cited links.
-  // Cutting to ten here can hide an unseen eleventh item behind prior reads.
-  return freshPublicResults(results, opts.freshness, now());
+    query: string,
+    opts: BraveSearchOptions = {}
+  ): Promise<BraveResult[]> {
+    if (!publicSourceWindow(opts.freshness, now())) return [];
+    const params = new URLSearchParams({
+      q: `${query}${freshnessSuffix(opts.freshness)}`,
+      hl: "en-US", gl: "US", ceid: "US:en",
+    });
+    const results = await cached("google-rss", params.toString(), () => attempt("google-rss",
+      () => reserve("google-rss"), async () => {
+        const signal = AbortSignal.timeout(5000);
+        const res = await fetcher(`${ENDPOINT}?${params}`, {
+          headers: { Accept: "application/rss+xml, application/xml, text/xml" },
+          signal, redirect: "error", credentials: "omit", cache: "no-store",
+        });
+        if (!res.ok) {
+          void res.body?.cancel().catch(() => {});
+          throw new Error(`Public RSS search ${res.status}`);
+        }
+        const xml = await readPublicSourceText(res, signal);
+        if (!/<rss\b/i.test(xml) || !/<channel\b/i.test(xml) || !/<\/rss\s*>/i.test(xml)) throw new Error("Public RSS invalid feed");
+        return parsePublicFeedXml(xml, 100);
+      }));
+    // Keep the bounded raw pool until the resolver removes already-cited links.
+    // Cutting to ten here can hide an unseen eleventh item behind prior reads.
+    return freshPublicResults(results, opts.freshness, now());
   };
 }
 

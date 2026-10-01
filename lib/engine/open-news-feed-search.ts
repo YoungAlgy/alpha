@@ -9,6 +9,7 @@ import { readPublicSourceText } from "./public-source-response";
 import { createPublicSourceCache } from "./public-source-cache";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
 import { reservePublicSourceRequest } from "./public-source-budget";
+import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
 
 const FEEDS = {
   music: "https://globalvoices.org/-/topics/music/feed/",
@@ -279,18 +280,20 @@ export function createOpenNewsFeedSearch(deps: {
   fetcher?: typeof fetch;
   now?: () => number;
   reserve?: typeof reservePublicSourceRequest;
+  attempt?: PublicSourceAttempt;
 } = {}) {
   const fetcher = deps.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   const now = deps.now ?? Date.now;
   const reserve = deps.reserve ?? reservePublicSourceRequest;
+  const attempt = deps.attempt ?? runPublicSourceAttempt;
   const cached = createPublicSourceCache(now);
 
   return async function openNewsFeedSearch(topicId: string, opts: BraveSearchOptions = {}): Promise<BraveResult[]> {
     const selection = selectTopic(topicId);
     if (!selection || !openNewsFeedFallbackEnabled() || !publicSourceWindow(opts.freshness, now())) return [];
 
-    const raw = await cached("open-news", `${selection.feed}-v1`, async () => {
-      await reserve("publisher-rss");
+    const raw = await cached("open-news", `${selection.feed}-v1`, () => attempt("global-voices-rss",
+      () => reserve("publisher-rss"), async () => {
       const signal = AbortSignal.timeout(5000);
       const response = await fetcher(FEEDS[selection.feed], {
         signal,
@@ -304,7 +307,7 @@ export function createOpenNewsFeedSearch(deps: {
         throw new Error(`Global Voices RSS ${response.status}`);
       }
       return parseGlobalVoicesXml(await readPublicSourceText(response, signal));
-    });
+    }));
 
     const window = publicSourceWindow(opts.freshness, now());
     if (!window) return [];
