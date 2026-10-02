@@ -5,7 +5,7 @@ import { PublicSourceControlError } from "./public-source-control-error";
 // deliberately differ from the shared publisher request-budget identity.
 export const PUBLIC_SOURCE_CIRCUIT_PROVIDERS = [
   "google-rss", "publisher-nist", "publisher-fda-medwatch",
-  "publisher-fed-speeches", "global-voices-rss", "crossref-research", "gdelt",
+  "publisher-fed-speeches", "global-voices-rss", "crossref-research", "gdelt", "plos-research",
 ] as const;
 export type PublicSourceCircuitProvider = typeof PUBLIC_SOURCE_CIRCUIT_PROVIDERS[number];
 type RpcClient = Pick<SupabaseClient, "rpc">;

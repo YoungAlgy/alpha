@@ -15,6 +15,7 @@ import { gdeltFallbackEnabled, gdeltSearch } from "./gdelt-search";
 import { publisherFeedFallbackEnabled, publisherFeedSearch } from "./publisher-feed-search";
 import { openNewsFeedFallbackEnabled, openNewsFeedSearch } from "./open-news-feed-search";
 import { researchMetadataFallbackEnabled, researchMetadataSearch } from "./research-metadata-search";
+import { plosMetadataFallbackEnabled, plosMetadataSearch } from "./plos-metadata-search";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
@@ -159,6 +160,14 @@ export async function resolveTopicSignal(
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaResearch) return viaResearch;
+      }
+      if (plosMetadataFallbackEnabled()) {
+        const viaPlos = await tryFallback(topicId, "PLOS research metadata", () =>
+          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, plosMetadataSearch, "PLOS Research Metadata", false)
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaPlos) return viaPlos;
       }
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {

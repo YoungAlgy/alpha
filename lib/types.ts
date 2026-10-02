@@ -90,7 +90,7 @@ export interface Reference {
 
 // A recognized source identity, never a publisher-supplied license URL.
 export interface SourceAttribution {
-  publisher: "global-voices";
+  publisher: "global-voices" | "plos";
   author: string;
   publishedAt: string;
 }

@@ -21,6 +21,8 @@ for (const job of Object.values(after.jobs)) {
     // proves both forwarding sites and every unchanged workflow control.
     assert.equal(step.env.ALPHA_DURABLE_SOURCE_COOLDOWN, "${{ vars.SEND_ALPHA_DURABLE_SOURCE_COOLDOWN }}");
     delete step.env.ALPHA_DURABLE_SOURCE_COOLDOWN;
+    assert.equal(step.env.ALPHA_PLOS_METADATA_FALLBACK, "${{ vars.SEND_ALPHA_PLOS_METADATA_FALLBACK }}");
+    delete step.env.ALPHA_PLOS_METADATA_FALLBACK;
     forwarded++;
   }
 }

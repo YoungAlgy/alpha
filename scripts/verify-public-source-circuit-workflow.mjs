@@ -15,6 +15,8 @@ for (const job of Object.values(after.jobs)) {
     assert.equal(step.env.ALPHA_NO_MODEL_MODE, "1");
     assert.equal(step.env.ALPHA_ALLOW_PAID_AI, "0");
     delete step.env.ALPHA_DURABLE_SOURCE_COOLDOWN;
+    assert.equal(step.env.ALPHA_PLOS_METADATA_FALLBACK, "${{ vars.SEND_ALPHA_PLOS_METADATA_FALLBACK }}");
+    delete step.env.ALPHA_PLOS_METADATA_FALLBACK;
     forwarded++;
   }
 }

@@ -159,6 +159,32 @@ Each network response has a five-second deadline and 256 KiB ceiling. Failure
 blocks queued requests and starts the existing bounded cooldown. No automatic
 retry, keyed search or model call is added by this tier.
 
+Local candidate: `ALPHA_PLOS_METADATA_FALLBACK=1` adds original PLOS research
+metadata after Crossref. It is off by default and requires no-model mode plus
+both durable source budget and cooldown flags. One fixed combined query covers
+nutrition, mental health and artificial intelligence. No custom topic, reader,
+profile, abstract or article body is sent or requested. The raw metadata pool
+is shared locally across these topics before relevance, freshness and prior-link
+filtering. Article DOI/path validation and author credit are mandatory.
+The app and email keep the PLOS source, author, date, CC BY 4.0 link and changes
+note. Invalid or missing licensing/credit metadata is rejected. The version for
+a generic Creative Commons Attribution marker relies on PLOS's current policy
+for recent publications. Explicit older or restrictive grants are rejected.
+The shared newest-twenty-record pool may leave one topic quiet. This is a narrow
+research backup and does not replace general news coverage.
+
+PLOS uses an independent two-request fixed fifteen-minute database budget.
+Adjacent windows can admit four calls in one minute, below the published
+[PLOS limits](https://api.plos.org/solr/faq/). Every response retains the
+five-second and 256 KiB bounds. Its outage identity is `plos-research`.
+The additive migration `20261002000000_plos_public_source_circuit.sql` must be
+reviewed and applied in one approved transaction before activating
+`SEND_ALPHA_PLOS_METADATA_FALLBACK`. It extends the provider constraint and adds
+one row. Existing outage state, functions, privileges and request caps stay
+unchanged. No live migration, release or activation is implied by this note.
+Current selection evidence and rejected sources are in
+[docs/public-source-gaps.md](docs/public-source-gaps.md).
+
 `ALPHA_GDELT_FALLBACK=1` adds an independent public discovery tier after RSS
 and the enabled publisher feeds have no usable sources. It makes one topic-phrase query, never reads full article
 bodies, and uses dated headline/link metadata. Source timestamps are discovery
@@ -384,6 +410,7 @@ ALPHA_GDELT_FALLBACK=         # set to "1" for bounded public GDELT discovery af
 ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA/Federal Reserve topic-matched feeds (optional, off by default)
 ALPHA_OPEN_NEWS_FALLBACK=     # set to "1" for licensed Global Voices metadata in no-model mode (optional, off by default)
 ALPHA_RESEARCH_METADATA_FALLBACK= # set to "1" for open-license nutrition research metadata in no-model mode (optional, off by default)
+ALPHA_PLOS_METADATA_FALLBACK= # local candidate, requires no-model plus durable budget/cooldown and approved circuit migration (off by default)
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 ALPHA_DURABLE_SOURCE_COOLDOWN= # opt-in private provider circuit, requires reviewed migration before activation
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release

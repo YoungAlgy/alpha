@@ -95,6 +95,13 @@ try {
   mockTime += 15 * 60_000;
   await second("google-rss");
   assert.equal(rpcCalls, 64, "a new fixed window admits a request from another client instance");
+  await first("plos-research");
+  await second("plos-research");
+  await assert.rejects(first("plos-research"), (error: unknown) =>
+    error instanceof PublicSourceBudgetError && error.code === "exhausted" && error.provider === "plos-research"
+  );
+  assert.equal(scopes.get("public_source:plos_research")?.size, 1);
+  assert.equal(rpcCalls, 67, "PLOS shares its two-slot ceiling across independent instances");
 
   const unavailable = createPublicSourceBudget({
     enabled: () => true,

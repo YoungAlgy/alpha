@@ -723,7 +723,7 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
   const creditsHtml = sourceCredits.map(({ url, attribution }) => {
     const credit = sourceAttributionCredit(url, attribution);
     if (!credit) throw new Error("Invalid licensed source attribution");
-    return `<p style="font-size:13px;line-height:1.5;margin:0 0 12px;overflow-wrap:anywhere;word-break:break-word;">By ${escapeHtml(credit.author)}. <a href="${escapeAttr(credit.articleUrl)}">Global Voices, ${escapeHtml(credit.date)}</a>. <a href="${escapeAttr(credit.licenseUrl)}">${credit.licenseLabel}</a>. ${credit.changes}</p>`;
+    return `<p style="font-size:13px;line-height:1.5;margin:0 0 12px;overflow-wrap:anywhere;word-break:break-word;">By ${escapeHtml(credit.author)}. <a href="${escapeAttr(credit.articleUrl)}">${escapeHtml(credit.publisherLabel)}, ${escapeHtml(credit.date)}</a>. <a href="${escapeAttr(credit.licenseUrl)}">${credit.licenseLabel}</a>. ${credit.changes}</p>`;
   }).join("");
   // CTA prefers the tokenized /letter URL — it opens the letter directly with
   // no session, on any device (the view-in-browser pattern). Falls back to
@@ -873,7 +873,7 @@ export function renderText({ firstName, teaser, sectionList, inboxUrl, letterUrl
   const creditsText = sourceCredits.map(({ url, attribution }) => {
     const credit = sourceAttributionCredit(url, attribution);
     if (!credit) throw new Error("Invalid licensed source attribution");
-    return `By ${credit.author}. Global Voices, ${credit.date}: ${credit.articleUrl}\n${credit.licenseLabel}: ${credit.licenseUrl}. ${credit.changes}\n\n`;
+    return `By ${credit.author}. ${credit.publisherLabel}, ${credit.date}: ${credit.articleUrl}\n${credit.licenseLabel}: ${credit.licenseUrl}. ${credit.changes}\n\n`;
   }).join("");
   const unsubLine = unsubscribeUrl ? `\n\nUnsubscribe: ${unsubscribeUrl}` : "";
   return `${weekOf}

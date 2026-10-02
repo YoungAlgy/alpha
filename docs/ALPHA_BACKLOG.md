@@ -1,7 +1,7 @@
 # Alpha remaining work
 
 Reconciled October 2, 2026. Source base:
-`6f6e8c12f6895666c12239cc8537e4f39b899af0`.
+`1eb3a14be5b68b18933bfc19cf1c77f8a04d63a5`. Website runtime remains `6f6e8c12`.
 This is a dated decision record. New local and authorized live evidence takes
 priority. Historical release approvals are completed and cannot be reused.
 
@@ -44,14 +44,15 @@ Effort is relative, not an elapsed-time promise.
 
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
-| Remove keyed search from normal scheduled content | Owner decision and coverage validation required. Last verified settings leave `SEND_ALPHA_NO_KEY_SOURCES` unset, so Brave and You.com remain eligible. Validate a bounded generic-topic public-source sample before proposing only that variable as `1`. It changes the next scheduled source path. No manual letter or website deployment is needed for that setting alone. | 5 / 4 / 2 | 36 |
-| Retain the completed local safety/tests/docs cleanup remotely | The blocked legacy live-write test and its offline regression, stronger GDELT queue fixture and corrected release guidance remain uncommitted in both owned checkouts. A separately approved six-file maintenance commit/push can retain them. No runtime deployment is needed. GDELT remains disabled. | 3 / 4 / 1 | 35 |
+| Remove keyed search from normal scheduled content | Completed October 2 at 05:47 UTC after the approved bounded generic sample. `SEND_ALPHA_NO_KEY_SOURCES=1` was read back. This is activation proof. It is not natural failover or ordinary postactivation delivery proof. | Completed | Completed |
+| Retain the completed local safety/tests/docs cleanup remotely | Completed maintenance commit/push `1eb3a14b` and exact passing CI `36969801114`. No website deployment. The native mirror deliberately preserves the six owned changes on its earlier base. GDELT remains disabled. | Completed | Completed |
 | Establish useful scheduled watchdog coverage | Verification remains open. New run `36944331854` on `6f6e8c12` started October 2 at 00:06:48 UTC. It correctly stopped with `scheduled_window_not_due` before coverage. An early run cannot identify its original cron date. Assess the next requested normal outcome once. Do not shift the cutoff, dispatch a competing check or reopen scheduler history without new evidence. | 4 / 4 / 2 | 32 |
 | Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | NIST/FDA/Fed mappings cover selected topics. Global Voices music/custom/general matches are sparse. Crossref covers nutrition only. Google remains the broad public discovery tier. Further sources need distinct useful coverage, acceptable reuse terms and a bounded generic probe approval. Provider count alone is not progress. | 4 / 3 / 4 | 14 |
+| Improve independent topic coverage where evidence supports it | October 2 local PLOS candidate adds research metadata for nutrition, mental health and AI with separate persistent limits and source credit. Its exact adapter proved one current mental-health citation and two ranked AI citations, with zero nutrition retained. Eighteen focused checks, app typecheck, actual disposable database tests and independent review passed. The exact candidate production build passed at 13:18 UTC, including the generated-worker typecheck. An approved release rebuilds with its committed identity. Global Voices compact byline is unproven, NSF was quiet for mapped topics and USDA RSS was stale. See `public-source-gaps.md`. Google remains the broad public discovery tier. | 4 / 3 / 4 | 14 |
 
-The coverage item needs research before it has an implementation scope. The
-evidence item needs an observed event. Neither is a currently confirmed bug.
+The PLOS coverage candidate now has a bounded local implementation. Remaining
+broad-topic coverage needs evidence-backed research. The outcome-evidence item
+needs an observed event. Neither is a currently confirmed runtime bug.
 No live configuration change or external probe is authorized by this document.
 
 ## Local safety cleanup completed in this pass
@@ -66,10 +67,9 @@ non-secret configuration markers and attempted override arguments, while
 denying all sockets/fetches and environment-file reads. This is a tooling safety
 fix. No reader record was touched.
 
-The remaining maintenance commit scope therefore includes that two-file guard,
-the previously improved GDELT fixture and these README/backlog/historical-note
-corrections. No application route or workflow behavior changed. Commit/push
-remains a separate approval. A website deployment is unnecessary for this scope.
+That six-file maintenance scope was committed and pushed as `1eb3a14b` with
+passing exact CI. No runtime deployment was required. The new PLOS source
+candidate is separate and uncommitted. It needs its own release approval.
 
 ## Latest normal outcome evidence
 

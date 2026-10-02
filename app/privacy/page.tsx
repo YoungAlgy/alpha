@@ -186,6 +186,12 @@ export default function PrivacyPage() {
           profile or custom topic is sent. Alpha keeps selected open-license
           paper titles, publisher links and publication dates. It does not
           retrieve paper bodies, abstracts or images from this backup.
+          An optional PLOS research backup requests a fixed public query for
+          nutrition, mental health and artificial intelligence with date
+          bounds. No account, profile or custom topic is sent. Alpha matches
+          these topics locally and keeps selected paper titles, author credit,
+          publisher links and publication dates. It requests no paper bodies,
+          abstracts or images.
         </li>
         <li>
           <strong>Resend</strong> delivers letters and account emails.

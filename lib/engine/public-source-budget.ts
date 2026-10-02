@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { consumeDistributedRateLimit } from "@/lib/distributed-rate-limit";
 
-export type PublicSourceProvider = "google-rss" | "publisher-rss" | "gdelt";
+export type PublicSourceProvider = "google-rss" | "publisher-rss" | "gdelt" | "plos-research";
 export type PublicSourceBudgetErrorCode = "unavailable" | "exhausted";
 
 type RpcClient = Pick<SupabaseClient, "rpc">;
@@ -18,6 +18,9 @@ const PROVIDER_LIMITS: Record<PublicSourceProvider, number> = {
   "google-rss": 60,
   "publisher-rss": 12,
   gdelt: 12,
+  // At most four requests around a fixed-window boundary. Below PLOS's
+  // 10/minute, 300/hour, 7200/day and five-connection published limits.
+  "plos-research": 2,
 };
 
 export class PublicSourceBudgetError extends Error {
