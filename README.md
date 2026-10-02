@@ -2,6 +2,11 @@
 
 An invite-only personal daily newsletter. Approved readers pick 5 topics from a curated menu. Alpha builds each letter from current real sources, and every cited link must come from validated source resolution for that issue date, including a saved section from an earlier run. A local deterministic formatter can finish a source-grounded issue with no writer-model call. Each send only looks at what is new since the last one (`lib/cadence.ts`).
 
+For remaining work and dated release evidence, start with
+[`docs/ALPHA_BACKLOG.md`](docs/ALPHA_BACKLOG.md). The older
+[`docs/PENDING_RELEASE.md`](docs/PENDING_RELEASE.md) describes a completed
+pre-launch hold. It does not describe the current delivery policy.
+
 ## Current access mode
 
 Alpha is free and invite-only. New people complete onboarding and request
@@ -23,7 +28,9 @@ mode in source. Old `ALPHA_ACCESS_MODE` and `NEXT_PUBLIC_ALPHA_ACCESS_MODE`
 values cannot reopen paid checkout, paid quantity changes, or the billing
 portal. Cancellation and historical payment settlement stay available.
 
-The initial rollout is a three-person private circle. Every approved reader
+The initial rollout was a three-person private circle. Current recipients are
+resolved from protected access, enrollment and suppression records at execution.
+The launch group is not a hard-coded recipient list. Every approved reader
 gets free access. Additional readers need Alex's approval. There are no paid
 tiers or paid topic upgrades in the product experience. Prioritize dependable
 operation for this small group over work aimed at hundreds or thousands of
@@ -251,9 +258,9 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 - **Admin Accounts panel** at `/settings/accounts` — gated to `youngalgy@gmail.com` via server-side session check. List, approve invite access, preserve permanent invite access for a Stripe-linked reader, revoke invite or free access, view delivery-review state, and delete. Invite actions do not change Stripe billing.
 - **In-app changelog** at `/settings/changelog` — hand-curated entries in `app/settings/changelog/page.tsx`. Server-rendered, `noindex` meta, private behind `/settings` (already in `robots.ts` disallow).
 - **Delivery reliability** (started 2026-08-05 and extended through Round 80) —
-  - **Stuck-claim reclaim** — `runPersistAndSend` stamps `delivered_at` as an atomic claim *before* calling Resend; if the process dies in between (a killed runner, an OOM), the row is left claimed with no email ever sent. The cron's GET handler reclaims any row matching "claimed, no proof of send, older than a 10-minute safety margin" back into the undelivered pool at the top of every run.
-  - **`resend_message_id` proof-of-send** — only ever set after a *confirmed* successful Resend call, so `delivered_at` alone can no longer be read as "done" anywhere in the system (the reclaim step above, `watchdog_delivery_check()`, and the retry pre-check all require it).
-  - **`watchdog_delivery_check()` per-subscriber coverage** — a security-definer RPC, callable with the anon key, that both `letter-watchdog.yml`'s alert check and `daily-send.yml`'s retry pre-check call. Returns `uncovered_count`: the number of currently active subscribers with no proven-delivered issue since a cutoff — a genuine per-subscriber existence check, not an aggregate-count comparison (which can coincidentally net out even when one specific subscriber has nothing, e.g. an unsubscribe and a signup in the same window).
+  - **Stuck-claim reclaim**. `runPersistAndSend` stamps `delivered_at` as an atomic claim before calling the selected provider. A killed runner can leave a claim without recorded provider acceptance. That does not prove no send happened. The cron reclaims stale unproved claims after its safety margin, while the durable attempt ledger retains provider ownership and retry protection for uncertain outcomes.
+  - **Provider acceptance record**. A stored `resend_message_id` or `brevo_message_id` records a successful provider acceptance. `delivered_at` alone is only a claim. Acceptance does not prove a provider delivery event or inbox receipt.
+  - **`watchdog_delivery_check()` per-reader acceptance coverage**. The security-definer RPC returns aggregate `uncovered_count` for current delivery-eligible readers without a covered issue since its cutoff. Current coverage requires either provider's message ID. A historical exception retains pre-proof sends before August 5, 2026 at 19:10 UTC. Both the watchdog and scheduled recovery precheck use the RPC. Reading access alone is insufficient. Coverage is checked per reader, so matching aggregate totals cannot hide a missing reader. A zero-uncovered result still does not establish inbox receipt.
   - **`prior_issue_counts()`** — one grouped RPC for every subscriber's lifetime "Issue N" count, replacing N per-subscriber count queries.
   - **Resend retry-with-backoff** (`retryResendCall` in `lib/email.ts`) — up to 3 attempts with backoff on transient errors (`rate_limit_exceeded`, `internal_server_error`, `application_error`, `concurrent_idempotent_requests`); permanent errors (bad API key, invalid recipient, quota exceeded) fail fast with no retry.
   - **Bounded fair delivery cursor**. Each route call inspects at most 250 readers with a one-row lookahead. One workflow drains at most 16 pages or 55 minutes, records inspected position with a compare-and-swap cursor, and leaves retry-required readers visible. The next same-day slot resumes beyond the bound and later wraps to uncovered readers. A retry outcome, undrained tail, or cursor conflict keeps the job red.

@@ -1,4 +1,17 @@
-# Free invite release, deployment held
+# Historical free-invite release hold
+
+Status: superseded. This is the pre-launch review record, retained for its
+original gates. Its source-paused policy and missing-build statements below
+describe that earlier candidate, not the current checkout or production.
+
+Daily subscriber delivery is enabled in the current source policy. The latest
+recorded release is `6f6e8c12f6895666c12239cc8537e4f39b899af0`, verified
+October 1, 2026 at 23:40 UTC. A later local production build passed October 2
+at 02:39 UTC. Those are dated receipts, not permission for another deployment.
+Start with [the current backlog](ALPHA_BACKLOG.md) for remaining work. Do not
+reapply the historical migration packages merely to clear this old hold.
+
+## Original hold, historical only
 
 This branch contains the prepared free invite-only, access-only release.
 Publishing its source does not deploy it or apply its database migrations.

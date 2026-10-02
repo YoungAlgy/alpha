@@ -1,4 +1,11 @@
-// Verifies watchdog_delivery_check() correctly requires proof of send for
+// RETIRED: the historical live-write verifier below is blocked. Its borrowed
+// subscriber and synthetic issue must never be used in a real Alpha database.
+// Use verify-schedule-reliability.mts for offline workflow coverage. Exact SQL
+// behavior belongs in a reviewed disposable PostgreSQL fixture.
+// The old body is retained only as historical source for existing read-only
+// Round findings checks. It is not an approved executable test.
+//
+// Historically verified watchdog_delivery_check() requires proof of send for
 // anything after the 2026-08-05T19:10:00Z grandfather cutoff (see
 // lib/delivery-proof.ts), while still correctly treating real pre-fix
 // deliveries from before that time as covered (they predate
@@ -22,8 +29,13 @@
 // real active subscriber and confirms the function correctly flags them
 // uncovered while their only recent issue lacks proof of send, and correctly
 // clears once proof exists.
-// Run: npx tsx scripts/verify-watchdog-proof-of-send.mts
+// Historical command, now blocked: npx tsx scripts/verify-watchdog-proof-of-send.mts
 import { loadEnvLocal } from "./_load-env.mts";
+
+console.error("RETIRED: legacy live-write watchdog verifier is blocked before environment loading. Use offline coverage checks or a reviewed disposable database fixture.");
+process.exit(1);
+
+// Historical implementation only. Do not remove the guard to run it live.
 loadEnvLocal();
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

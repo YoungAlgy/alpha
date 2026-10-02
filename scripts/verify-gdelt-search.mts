@@ -82,13 +82,15 @@ async function verifyDispatchBounds() {
   });
 
   await check("bounded pending controls and same-key coalescing", async () => {
-    let now = base, attempts = 0, fetches = 0;
+    let now = base, attempts = 0, fetches = 0, reservations = 0;
+    const starts: number[] = [];
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
     const sleepers: Array<() => void> = [];
     const search = offlineSearch({ now: () => now, sleep: () => new Promise<void>(resolve => { sleepers.push(resolve); }),
       attempt: async (_provider, reserve, work) => { attempts++; await gate; await reserve(); return work(); },
-      fetcher: async () => { fetches++; return emptyFeed(); },
+      reserve: async () => { reservations++; },
+      fetcher: async () => { fetches++; starts.push(now - base); return emptyFeed(); },
     });
     const pending = Array.from({ length: 4 }, (_, index) => search(`pending offline topic ${index}`));
     const duplicate = search("pending offline topic 0");
@@ -101,9 +103,14 @@ async function verifyDispatchBounds() {
       now += 5000;
       for (const sleeper of sleepers.splice(0)) sleeper();
     }
-    await settled;
+    const outcomes = await settled;
     assert.equal(attempts, 4, "same-key coalescing consumes no additional admission");
-    assert.ok(fetches <= 4);
+    assert.equal(reservations, 4, "same-key coalescing and rejected overflow consume no additional budget");
+    assert.equal(fetches, 3, "the fourth distinct request reaches the exclusive fifteen-second queue deadline");
+    assert.deepEqual(starts, [0, 5000, 10000], "a healthy burst keeps exact dispatch spacing");
+    assert.deepEqual(outcomes.map(outcome => outcome.status), ["fulfilled", "fulfilled", "fulfilled", "rejected", "fulfilled"]);
+    const expired = outcomes[3];
+    assert.ok(expired.status === "rejected" && expired.reason instanceof PublicSourceControlError && /timed out/.test(expired.reason.message));
     now += 60_000;
     assert.deepEqual(await search("after capacity offline topic"), []);
   });
