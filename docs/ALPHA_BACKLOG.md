@@ -1,8 +1,10 @@
 # Alpha remaining work
 
-Reconciled October 2, 2026 after the approved PLOS release and 20:19 UTC normal
-delivery check. Released source and recorded website runtime:
-`207a4fae833b5c08c6675a90fa65a55ad84a53fb`.
+Reconciled October 2, 2026 after the approved PLOS release, 20:19 UTC normal
+delivery check and 21:55 UTC reporting cleanup push. Current workflow source:
+`81d25bc73377af6672b71e1c7cf1c318c87cc595`. Last recorded website runtime:
+`207a4fae833b5c08c6675a90fa65a55ad84a53fb`. The reporting-only push required
+no website deployment.
 This is a dated decision record. New local and authorized live evidence takes
 priority. Historical release approvals are completed and cannot be reused.
 
@@ -124,8 +126,8 @@ or inbox arrival. No polling or background monitoring was started.
 
 ## Local reporting and privacy cleanup, October 2 at 21:28 UTC
 
-This follow-up is owned local work and has not been pushed or released. The
-preflight now reports PLOS under its exact four gates, describes the local
+This follow-up was separately approved and pushed as `81d25bc` after the local
+review. The preflight reports PLOS under its exact four gates, describes the local
 no-model writer correctly and omits warnings for intentionally skipped API
 tiers. Public page summaries use a bounded fixed allowlist, so unexpected
 private response fields cannot enter the Actions log. Raw page validation,
@@ -146,8 +148,11 @@ assertions were not rewritten or bypassed. That test debt is recorded separately
 from the passing current focused checks and is not a confirmed delivery failure.
 No historical regression result is claimed green by this pass.
 
-An approved push would install this workflow/reporting cleanup for future jobs.
-It requires no website deployment or migration. No such approval is inferred.
+Push-triggered CI run `37069512363` completed successfully at 21:55:13 UTC.
+Production build, offline watchdog contracts, scheduler/worker guard and
+dependency audit passed. The normal hook and exact remote master readback also
+passed. No website deployment, migration or send was performed. That approval
+is complete and does not authorize another release.
 
 ## Dependencies and explicit limits
 
@@ -182,11 +187,13 @@ outside the public repository. The authoritative resume checkpoint is
 - `backlog-reconciliation-20261002.md`
 - `plos-release-checkpoint-20261002.md`
 - `plos-normal-delivery-check-20261002-2019.json`
+- `reporting-cleanup-push-20261002.json`
 
 Use current source, exact release receipts and fresh authorized evidence.
-Preserve unrelated work and the owned native mirror. Both checkouts were clean
-after the approved PLOS release. Subsequent local review changes remain owned
-and unreleased until separately approved. No commit/push/deploy, send,
+Preserve unrelated work and the owned native mirror. After the reporting push,
+the active Windows checkout was clean at `81d25bc`; the native mirror remained
+clean and unchanged at `207a4fae`. Further local work stays unreleased until
+separately approved. No commit/push/deploy, send,
 retry/backfill, source probe, audience/enrollment, account/billing/secrets or
 remote-setting change follows from this backlog. Keep Alpha separate from the
 owner's other products.
