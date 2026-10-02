@@ -144,6 +144,10 @@ const gdeltEnabled = enabled("ALPHA_GDELT_FALLBACK");
 const publisherFeedEnabled = enabled("ALPHA_PUBLISHER_FEED_FALLBACK");
 const openNewsFeedEnabled = strictNoModel && enabled("ALPHA_OPEN_NEWS_FALLBACK");
 const researchMetadataEnabled = strictNoModel && enabled("ALPHA_RESEARCH_METADATA_FALLBACK");
+// Match the adapter's four gates. This reports configuration only, not a
+// successful PLOS fetch, durable admission or actual fallback selection.
+const plosMetadataEnabled = strictNoModel && enabled("ALPHA_PLOS_METADATA_FALLBACK") &&
+  enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
 if (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0") {
   console.error("::error::Manual-first delivery requires no-model mode and paid AI disabled.");
   deliveryReady = false;
@@ -170,6 +174,7 @@ const freshSourceTiers = [
   publisherFeedEnabled ? "publisher-feed" : null,
   openNewsFeedEnabled ? "open-news-feed" : null,
   researchMetadataEnabled ? "research-metadata" : null,
+  plosMetadataEnabled ? "plos-research" : null,
   gdeltEnabled ? "gdelt" : null,
 ].filter(Boolean);
 const freshSourceReady = freshSourceTiers.length > 0;
@@ -182,6 +187,8 @@ if (!freshSourceReady) {
 }
 
 for (const name of SOFT_RESILIENCE_TIER) {
+  if (strictNoModel && GENERATOR_KEYS.includes(name)) continue;
+  if (noKeySources && (name === "BRAVE_SEARCH_API_KEY" || name === "YOU_API_KEY")) continue;
   if (!configured(name)) {
     console.warn(`::warning::${name} is not set -- that resilience-tier fallback is inert (degrades quality/robustness, doesn't block the send).`);
   }
@@ -199,11 +206,10 @@ if (baseFailures > 0 || !deliveryReady) {
 
 await setWorkflowOutput("fresh_source_ready", String(freshSourceReady));
 
-console.log(
-  `OK: all ${SEND_BASE_REQUIRED.length} base delivery secrets present and ` +
+const writerStatus = strictNoModel ? "local no-model writer enabled" :
   `${configuredGenerators.length} content generator(s) configured` +
-  `${configuredGenerators.length > 0 ? ` (${configuredGenerators.join(", ")})` : " (backup-only mode)"}.`
-);
+  `${configuredGenerators.length > 0 ? ` (${configuredGenerators.join(", ")})` : " (backup-only mode)"}`;
+console.log(`OK: all ${SEND_BASE_REQUIRED.length} base delivery secrets present and ${writerStatus}.`);
 
 // Live Resend check -- confirms the key is valid AND the from-domain is
 // actually verified under this account, the EXACT two-bug combination that

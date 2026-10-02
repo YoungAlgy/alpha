@@ -1,7 +1,8 @@
 # Alpha remaining work
 
-Reconciled October 2, 2026. Source base:
-`1eb3a14be5b68b18933bfc19cf1c77f8a04d63a5`. Website runtime remains `6f6e8c12`.
+Reconciled October 2, 2026 after the approved PLOS release and 20:19 UTC normal
+delivery check. Released source and recorded website runtime:
+`207a4fae833b5c08c6675a90fa65a55ad84a53fb`.
 This is a dated decision record. New local and authorized live evidence takes
 priority. Historical release approvals are completed and cannot be reused.
 
@@ -15,7 +16,8 @@ allowlist. Access approval and letter enrollment remain separate.
 
 The October 1 source-dispatch and watchdog Issue-channel patch shipped as
 `6f6e8c12`. Its exact build, CI and twelve non-sending live checks passed.
-The October 2 local production build also passed. Do not repeat those completed
+The October 2 exact PLOS release build, CI and twelve non-sending live checks
+also passed. Do not repeat those completed
 gates or reopen historical Round-script debt merely to close this backlog.
 
 ## Completed work
@@ -25,7 +27,9 @@ gates or reopen historical Round-script debt merely to close this backlog.
 - Scheduled writing is no-model with paid AI off. Valid source material can
   be formatted locally without a writer API call.
 - Public backups are installed: Google News RSS, mapped NIST/FDA/Federal Reserve
-  feeds, Global Voices and narrow licensed Crossref nutrition metadata.
+  feeds, Global Voices, narrow licensed Crossref nutrition metadata and PLOS
+  research metadata for nutrition, mental health and AI. PLOS is released and
+  its scheduled opt-in is enabled. Each tier's coverage limits still apply.
 - Shared request ceilings and separate persistent provider cooldowns are
   activated. Outage history and one owned recovery probe survive separate runs.
   Raw caches remain process-local. Finished sections remain durable.
@@ -44,16 +48,16 @@ Effort is relative, not an elapsed-time promise.
 
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
-| Remove keyed search from normal scheduled content | Completed October 2 at 05:47 UTC after the approved bounded generic sample. `SEND_ALPHA_NO_KEY_SOURCES=1` was read back. This is activation proof. It is not natural failover or ordinary postactivation delivery proof. | Completed | Completed |
-| Retain the completed local safety/tests/docs cleanup remotely | Completed maintenance commit/push `1eb3a14b` and exact passing CI `36969801114`. No website deployment. The native mirror deliberately preserves the six owned changes on its earlier base. GDELT remains disabled. | Completed | Completed |
 | Establish useful scheduled watchdog coverage | Verification remains open. New run `36944331854` on `6f6e8c12` started October 2 at 00:06:48 UTC. It correctly stopped with `scheduled_window_not_due` before coverage. An early run cannot identify its original cron date. Assess the next requested normal outcome once. Do not shift the cutoff, dispatch a competing check or reopen scheduler history without new evidence. | 4 / 4 / 2 | 32 |
 | Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | October 2 local PLOS candidate adds research metadata for nutrition, mental health and AI with separate persistent limits and source credit. Its exact adapter proved one current mental-health citation and two ranked AI citations, with zero nutrition retained. Eighteen focused checks, app typecheck, actual disposable database tests and independent review passed. The exact candidate production build passed at 13:18 UTC, including the generated-worker typecheck. An approved release rebuilds with its committed identity. Global Voices compact byline is unproven, NSF was quiet for mapped topics and USDA RSS was stale. See `public-source-gaps.md`. Google remains the broad public discovery tier. | 4 / 3 / 4 | 14 |
+| Improve independent topic coverage where evidence supports it | PLOS is released and activated in `207a4fae`. Its adapter proved a current mental-health citation and two ranked AI citations, with zero nutrition retained. Focused checks, disposable database tests, exact app/worker build and CI passed. The first ordinary enabled run had three Resend acceptances and zero paid calls, but natural PLOS use remains unproven. Broad news/music coverage remains limited. Global Voices compact byline is unproven, NSF was quiet for mapped topics and USDA RSS was stale. See `public-source-gaps.md`. Further source research is optional future work, with no confirmed runtime patch pending. | 4 / 3 / 4 | 14 |
 
-The PLOS coverage candidate now has a bounded local implementation. Remaining
-broad-topic coverage needs evidence-backed research. The outcome-evidence item
+Keyed search was removed from normal scheduled content by the approved October 2
+05:47 UTC activation. The `1eb3a14b` maintenance cleanup was retained in the exact
+PLOS release. Both completed items have been removed from the remaining table.
+Broad-topic coverage would need more evidence-backed research. Outcome proof
 needs an observed event. Neither is a currently confirmed runtime bug.
-No live configuration change or external probe is authorized by this document.
+No further live configuration change or external probe is authorized here.
 
 ## Local safety cleanup completed in this pass
 
@@ -68,10 +72,33 @@ denying all sockets/fetches and environment-file reads. This is a tooling safety
 fix. No reader record was touched.
 
 That six-file maintenance scope was committed and pushed as `1eb3a14b` with
-passing exact CI. No runtime deployment was required. The new PLOS source
-candidate is separate and uncommitted. It needs its own release approval.
+passing exact CI. No runtime deployment was required for that maintenance step.
+The subsequent PLOS source release completed under separate approval as
+`207a4fae`, with its exact build, deployment, migration and activation recorded.
 
-## Latest normal outcome evidence
+## Latest normal outcome evidence, October 2 at 20:19 UTC
+
+One requested bounded check found scheduled run `37053631148` on `207a4fae`
+started at 19:21:55 UTC and completed successfully at 19:23:14 UTC. Its protected
+precheck found three delivery-eligible readers. One HTTP 200 page recorded three
+Resend acceptances, zero failures, deferrals, retry-required or final uncovered
+readers, and zero backup content letters. Resend sender and both usage windows
+had capacity, so Brevo fallback was unnecessary. No-model/no-key/PLOS and durable
+budget/cooldown flags reached preflight/runtime. Paid calls were zero.
+
+Later scheduled recovery `37058464041` started 20:06:41 UTC and its job completed
+20:06:49 UTC. Its protected check found three eligible and zero uncovered.
+Provider selection, build and sending skipped. No competing recovery send or
+unsafe provider switch was observed. Exact transport retry counts, provider
+delivery confirmation, inbox receipt and natural PLOS use remain unverified.
+No cron-expression identity or scheduler delay cause is inferred.
+
+The 20:37 UTC watchdog remains unchecked in this recorded pass. Sender targets
+remain 14:17/15:37/18:47 UTC, with watchdog at 20:37 UTC. Tampa daylight-saving
+targets are 10:17 AM, 11:37 AM, 2:47 PM and 4:37 PM. They do not promise actual
+starts or inbox arrival. No polling or background monitoring was started.
+
+## Earlier normal evidence, October 2 at 04:53 UTC
 
 Bounded GitHub metadata checked October 2 at 04:51 UTC. Only the two newly
 visible completed jobs were projected at 04:53 UTC. No raw logs, addresses,
@@ -94,6 +121,33 @@ The next unchanged targets on October 2 are 14:17 UTC primary, 15:37 and
 18:47 UTC recovery, and 20:37 UTC watchdog. Tampa daylight-saving targets are
 10:17 AM, 11:37 AM, 2:47 PM and 4:37 PM. Targets do not promise actual starts
 or inbox arrival. No polling or background monitoring was started.
+
+## Local reporting and privacy cleanup, October 2 at 21:28 UTC
+
+This follow-up is owned local work and has not been pushed or released. The
+preflight now reports PLOS under its exact four gates, describes the local
+no-model writer correctly and omits warnings for intentionally skipped API
+tiers. Public page summaries use a bounded fixed allowlist, so unexpected
+private response fields cannot enter the Actions log. Raw page validation,
+provider routing, recipient checks and schedules are unchanged.
+
+Twelve current focused offline checks passed. They include the real preflight
+body with injected provider fixtures, stdin privacy limits, exact workflow scope,
+YAML/Bash syntax, provider ownership and source failure/budget/cooldown behavior.
+No application TypeScript or Next runtime code changed, so the completed exact
+release builds and typechecks were not repeated. The owned native mirror stayed
+clean and unchanged at the released commit.
+
+The older `verify-send-watchdog-resilience.mjs` check has 29 stale contract
+assertions that were reproduced against unchanged `207a4fae` source. It still
+expects the retired maintenance preflight and old workflow step layout. Only its
+summary-print assertion was aligned with this privacy cleanup. Its other old
+assertions were not rewritten or bypassed. That test debt is recorded separately
+from the passing current focused checks and is not a confirmed delivery failure.
+No historical regression result is claimed green by this pass.
+
+An approved push would install this workflow/reporting cleanup for future jobs.
+It requires no website deployment or migration. No such approval is inferred.
 
 ## Dependencies and explicit limits
 
@@ -126,9 +180,13 @@ outside the public repository. The authoritative resume checkpoint is
 - `postrelease-review-6f6e8c12.md`
 - `build-only-6f6e8c12-checkpoint-20261002.md`
 - `backlog-reconciliation-20261002.md`
+- `plos-release-checkpoint-20261002.md`
+- `plos-normal-delivery-check-20261002-2019.json`
 
 Use current source, exact release receipts and fresh authorized evidence.
-Preserve the dirty test and both owned checkouts. No commit/push/deploy, send,
+Preserve unrelated work and the owned native mirror. Both checkouts were clean
+after the approved PLOS release. Subsequent local review changes remain owned
+and unreleased until separately approved. No commit/push/deploy, send,
 retry/backfill, source probe, audience/enrollment, account/billing/secrets or
 remote-setting change follows from this backlog. Keep Alpha separate from the
 owner's other products.

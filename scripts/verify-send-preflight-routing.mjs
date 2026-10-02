@@ -213,4 +213,53 @@ result = await run({ changes: {
   ALPHA_OPEN_NEWS_FALLBACK: "1", ALPHA_RESEARCH_METADATA_FALLBACK: "1", ALPHA_GDELT_FALLBACK: "1",
 } });
 assert.ok(result.logs.includes("OK: current-source discovery tiers configured: public-feed, publisher-feed, open-news-feed, research-metadata, gdelt."));
-console.log("PASS full preflight sender selection, no-key discovery and output routing fixtures");
+// PLOS reporting must use the same four gates as the source adapter. These
+// checks run the preflight body with fixtures, never the live preflight entry.
+const plosFlags = {
+  ALPHA_PLOS_METADATA_FALLBACK: "1",
+  ALPHA_DURABLE_SOURCE_BUDGET: "1",
+  ALPHA_DURABLE_SOURCE_COOLDOWN: "1",
+};
+for (const enabled of ["1", "true", "yes", " YES "]) {
+  result = await run({ changes: { ...plosFlags, ALPHA_PLOS_METADATA_FALLBACK: enabled } });
+  assert.equal(result.exit, null);
+  assert.equal(result.outputs.fresh_source_ready, "true");
+  assert.ok(result.logs.includes("OK: current-source discovery tiers configured: plos-research."));
+  assert.equal(result.outputs.selected_provider, "resend");
+  assert.deepEqual(result.calls, { resend: 0, brevo: 0, oldDomains: 1 });
+}
+for (const flag of Object.keys(plosFlags)) {
+  for (const disabled of [undefined, "0", "false", "invalid"]) {
+    result = await run({ changes: { ...plosFlags, [flag]: disabled } });
+    assert.equal(result.outputs.fresh_source_ready, "false");
+    assert.ok(!result.logs.some((line) => line.includes("plos-research")));
+  }
+}
+result = await run({ changes: { ...plosFlags, ALPHA_NO_MODEL_MODE: "0" } });
+assert.equal(result.exit, 1);
+assert.equal(result.outputs.fresh_source_ready, "false");
+assert.ok(!result.logs.some((line) => line.includes("plos-research")));
+result = await run({ changes: {
+  ...plosFlags, ALPHA_NO_KEY_SOURCES: "1", ALPHA_PUBLISHER_FEED_FALLBACK: "1",
+  ALPHA_OPEN_NEWS_FALLBACK: "1", ALPHA_RESEARCH_METADATA_FALLBACK: "1", ALPHA_GDELT_FALLBACK: "1",
+} });
+assert.ok(result.logs.includes("OK: current-source discovery tiers configured: public-feed, publisher-feed, open-news-feed, research-metadata, plos-research, gdelt."));
+assert.ok(result.logs.some((line) => line.includes("local no-model writer enabled")));
+assert.ok(!result.logs.some((line) => line.includes("backup-only mode")));
+for (const skippedKey of ["ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "DEEPSEEK_API_KEY", "BRAVE_SEARCH_API_KEY", "YOU_API_KEY"]) {
+  assert.ok(!result.logs.some((line) => line.startsWith(`::warning::${skippedKey} is not set`)));
+}
+assert.ok(result.logs.some((line) => line.startsWith("::warning::ALPHA_OPS_ALERT_WEBHOOK_URL is not set")));
+result = await run();
+assert.ok(result.logs.some((line) => line.startsWith("::warning::BRAVE_SEARCH_API_KEY is not set")));
+assert.ok(result.logs.some((line) => line.startsWith("::warning::YOU_API_KEY is not set")));
+assert.ok(!result.logs.some((line) => line.startsWith("::warning::GEMINI_API_KEY is not set")));
+assert.ok(result.logs.some((line) => line.includes("Only an already persisted issue or the bounded prior-issue backup")));
+// Invalid paid/model policy still blocks before every provider check.
+for (const changes of [{ ALPHA_ALLOW_PAID_AI: "1" }, { ALPHA_NO_MODEL_MODE: "0" }]) {
+  result = await run({ changes: { ...plosFlags, ...changes } });
+  assert.equal(result.exit, 1);
+  assert.equal(result.outputs.selected_provider, undefined);
+  assert.deepEqual(result.calls, { resend: 0, brevo: 0, oldDomains: 0 });
+}
+console.log("PASS full preflight sender selection, no-key/PLOS discovery and accurate no-model reporting fixtures");

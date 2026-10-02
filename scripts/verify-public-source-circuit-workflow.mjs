@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { load } from "js-yaml";
+import { restoreReviewedSummaryLogging } from "./verify-send-summary-workflow.mjs";
 const path = ".github/workflows/daily-send.yml";
 const before = load(execFileSync("git", ["show", `05f979ef4100b98b840aa514ceff55225d1a4c66:${path}`], { encoding: "utf8" }));
 const after = load(readFileSync(path, "utf8"));
@@ -21,5 +22,6 @@ for (const job of Object.values(after.jobs)) {
   }
 }
 assert.equal(forwarded, 2, "only preflight and runtime receive the off-default flag");
-assert.deepEqual(after, before, "all schedules, concurrency, delivery and executable steps unchanged");
+assert.deepEqual(restoreReviewedSummaryLogging(before, after), before,
+  "schedules, concurrency, delivery and executable steps unchanged except reviewed summary logging");
 console.log("PASS source circuit workflow: two opt-in entries, no scheduling or send changes");

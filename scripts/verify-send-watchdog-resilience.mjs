@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const preflight = readFileSync(new URL("./verify-send-preflight.mjs", import.meta.url), "utf8");
 const daily = readFileSync(new URL("../.github/workflows/daily-send.yml", import.meta.url), "utf8");
+const summaryLogger = readFileSync(new URL("./print-send-summary.mjs", import.meta.url), "utf8");
 const watchdog = readFileSync(new URL("../.github/workflows/letter-watchdog.yml", import.meta.url), "utf8");
 const reconciliation = readFileSync(
   new URL("../.github/workflows/stripe-reconcile.yml", import.meta.url),
@@ -269,9 +270,9 @@ check(
     !daily.includes("two independent 5-minute maintenance lanes")
 );
 check(
-  "daily workflow redacts subscriber arrays before printing the send response",
-  daily.includes("'backupSharedSentEmails','backupFreshSentEmails','backupStaleSentEmails','skippedBlankSubscribers','deferred','failures'") &&
-    daily.includes("[response body redacted: invalid JSON]") &&
+  "daily workflow prints only the bounded allowlisted send summary",
+  daily.includes('printf \'%s\' "${RESPONSE}" | node scripts/print-send-summary.mjs') &&
+    summaryLogger.includes("[send summary redacted:") &&
     !daily.includes("catch(e){console.log(d)}")
 );
 check(

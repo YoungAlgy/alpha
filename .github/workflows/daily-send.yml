@@ -662,7 +662,7 @@ jobs:
               PAGE_HTTP_STATUS=$(echo "${RAW}" | tail -n 1)
               RESPONSE=$(echo "${RAW}" | sed '$d')
               echo "Delivery page ${NEXT_PAGE_NUMBER} response (curl exit ${PAGE_CURL_EXIT}, HTTP ${PAGE_HTTP_STATUS}):"
-              echo "${RESPONSE}" | node -e "let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{try{const s=JSON.parse(d); for(const k of ['backupSharedSentEmails','backupFreshSentEmails','backupStaleSentEmails','skippedBlankSubscribers','deferred','failures']){if(k in s)s[k]=Array.isArray(s[k])?s[k].length:0} for(const k of ['deliveryCursor','deliveryCursorNext','deliveryPageLastUserId']){if(s[k])s[k]='[redacted]'} console.log(JSON.stringify(s,null,2))}catch(e){console.log('[response body redacted: invalid JSON]')}})"
+              printf '%s' "${RESPONSE}" | node scripts/print-send-summary.mjs
 
               if [ "${PAGE_CURL_EXIT}" -ne 0 ]; then
                 DELIVERY_CURL_FAILED=1

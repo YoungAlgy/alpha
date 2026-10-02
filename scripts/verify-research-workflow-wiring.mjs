@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { load } from "js-yaml";
+import { restoreReviewedSummaryLogging } from "./verify-send-summary-workflow.mjs";
 const path = ".github/workflows/daily-send.yml";
 // Keep the reviewed pre-feature reference after this candidate is committed.
 const base = "e4374fe229cff6914883f359bb9d3bf895b4b740";
@@ -27,5 +28,6 @@ for (const job of Object.values(after.jobs)) {
   }
 }
 assert.equal(forwarded, 2, "preflight and runtime each receive the opt-in variable");
-assert.deepEqual(after, before, "every other workflow control and schedule is unchanged");
+assert.deepEqual(restoreReviewedSummaryLogging(before, after), before,
+  "workflow controls and schedules unchanged except reviewed summary logging");
 console.log("PASS research workflow wiring, two opt-in entries and unchanged executable controls");

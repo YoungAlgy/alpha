@@ -13,9 +13,11 @@ operational provider state. No paid dependency or additional service is needed.
 
 ## Decision
 
-Use seven fixed private Supabase circuit rows and two service-role-only RPCs.
-`ALPHA_DURABLE_SOURCE_COOLDOWN` is off by default. The migration must be reviewed
-and applied before activation. Its scheduled variable is
+The original October 1 rollout used seven fixed private Supabase circuit rows
+and two service-role-only RPCs. The approved October 2 PLOS migration brought
+the current set to eight fixed rows without changing those RPCs or privileges.
+`ALPHA_DURABLE_SOURCE_COOLDOWN` is off by default. The migration was reviewed
+and applied before the approved activation. Its scheduled variable is
 `SEND_ALPHA_DURABLE_SOURCE_COOLDOWN`. Existing request ceilings stay separate.
 
 An uncached request first receives database admission, then reserves the
@@ -83,6 +85,16 @@ and adds a watchdog timing guard. Exact focused checks, build, push CI and
 non-sending live release checks passed. No migration, source activation or
 schedule change was part of that later release. Its ordinary watchdog outcome
 and a natural source failure/recovery remain unobserved in the recorded evidence.
+
+## October 2 extension
+
+Release `207a4fae` added the independent `plos-research` circuit identity and
+the additive `20261002000000_plos_public_source_circuit.sql` migration. The
+atomic release preserved the seven existing provider states and the protected
+RPC contracts. PLOS uses its own two-request fixed fifteen-minute budget.
+The PLOS scheduled flag was enabled only after the exact approved deployment.
+The ordinary October 2 run reached the enabled source flags with zero paid
+calls. It does not establish a natural PLOS outage, recovery or content selection.
 
 ## Consequences and limits
 

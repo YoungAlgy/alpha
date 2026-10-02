@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { load } from "js-yaml";
+import { restoreReviewedSummaryLogging } from "./verify-send-summary-workflow.mjs";
 const path = ".github/workflows/daily-send.yml";
 const before = load(execFileSync("git", ["show", `1eb3a14be5b68b18933bfc19cf1c77f8a04d63a5:${path}`], { encoding: "utf8" }));
 const after = load(readFileSync(path, "utf8"));
@@ -20,5 +21,6 @@ for (const job of Object.values(after.jobs)) {
   }
 }
 assert.equal(forwarded, 2);
-assert.deepEqual(after, before, "schedules, sender controls, permissions and all executable steps unchanged");
+assert.deepEqual(restoreReviewedSummaryLogging(before, after), before,
+  "schedules, sender controls, permissions and executable steps unchanged except reviewed summary logging");
 console.log("PASS PLOS workflow: two off-default forwarding entries, no send or schedule changes");

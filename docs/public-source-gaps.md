@@ -1,8 +1,11 @@
 # Public source coverage, October 2, 2026
 
-Status: PLOS is a local candidate. No release or live setting change in this pass.
-The no-key source activation completed earlier at 05:47 UTC. Its approval is
+Status: PLOS was released as `207a4fae` and its scheduled opt-in was activated
+October 2 at 14:00 UTC. The additive migration and exact release checks passed.
+The no-key source activation completed earlier at 05:47 UTC. Both approvals are
 closed. Scheduled writing remains no-model with paid AI off.
+This update uses recorded release and normal-run evidence. No new live check
+or setting change was made for this documentation cleanup.
 
 ## Selected backup
 
@@ -10,7 +13,7 @@ PLOS is the original publisher of open research, independent of Google and
 Crossref's metadata service. Its [search API FAQ](https://api.plos.org/solr/faq/)
 permits metadata use with source credit and publishes limits of 10 calls per
 minute, 300 per hour, 7,200 per day, five simultaneous connections and 100 rows
-per response. Alpha's candidate uses at most 20 rows and a shared cross-run cap
+per response. Alpha's adapter uses at most 20 rows and a shared cross-run cap
 of two requests per fixed fifteen-minute window. At a boundary that can admit
 four requests in one minute. It is still below the published limits.
 
@@ -31,7 +34,7 @@ No author names, titles, article URLs or private reader inputs were saved.
 
 [PLOS's current license policy](https://journals.plos.org/plosone/s/licenses-and-copyright)
 provides CC BY 4.0 reuse with original-source and author credit, subject to
-exceptions. The candidate checks the supplied copyright statement and keeps
+exceptions. The adapter checks the supplied copyright statement and keeps
 credit separate from story citation and repeat-link sets. It excludes unknown
 licenses, incomplete authors, mismatched DOI/journal paths and malformed dates.
 Research reading items do not claim paper findings or medical advice. A generic
@@ -44,8 +47,9 @@ documented policy assumption, not a version proved by that marker alone.
 
 Google News RSS remains first for broad discovery. Mapped NIST/FDA/Federal
 Reserve feeds follow. Global Voices remains a limited licensed-feed tier.
-Crossref serves narrow nutrition metadata. The off-default PLOS candidate
-follows it for the three fixed topics. GDELT stays off and unproven.
+Crossref serves narrow nutrition metadata. PLOS follows it for the three fixed
+topics, with its scheduled opt-in enabled and code default off. GDELT stays off
+and unproven.
 
 An unavailable or quiet optional tier lets the resolver continue. Each source
 keeps its deadline, response bound, relevance and freshness checks. Prior reader
@@ -74,7 +78,7 @@ It does not prove that no matching paper exists outside that bounded pool.
   and other independently reviewed leads were held. No provider was added
   merely for count. The dated research record keeps their specific limits.
 
-## Limits and next gate
+## Limits and recorded release outcome
 
 PLOS improves selected research coverage. It does not supply broad general news,
 music, every custom topic or a guaranteed fresh result each day. Google remains
@@ -95,7 +99,16 @@ OpenNext and generated-worker typecheck. This closes the earlier Windows check's
 missing generated-worker condition. Its baseline release stamp is local proof.
 An approved release must rebuild with its actual committed release identity.
 
-After the passing exact candidate build, separate approval is required for one
-atomic additive migration, exact release and
-`SEND_ALPHA_PLOS_METADATA_FALLBACK=1`. Nothing here authorizes a send, retry,
-audience change, account or secret change.
+That separate approval was completed. The guarded additive migration, exact
+release build, CI, deployment and twelve non-sending live checks passed. Only
+`SEND_ALPHA_PLOS_METADATA_FALLBACK=1` was activated.
+
+The October 2 normal run started at 19:21:55 UTC and completed at 19:23:14 UTC.
+Protected eligibility found three readers. Resend accepted all three letters,
+with zero failures, retry-required or final uncovered readers and zero paid
+calls. Later recovery found zero uncovered and skipped sending. The enabled
+PLOS flag reached execution. The safe summaries do not establish that PLOS
+supplied content, that Brevo failover occurred, provider-confirmed delivery or
+inbox receipt. The 20:37 UTC watchdog outcome was not checked in that pass.
+Full receipts are in the owner's Desktop Files release checkpoint.
+Nothing here authorizes another send, retry, live change or release.
