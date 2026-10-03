@@ -340,5 +340,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: npm audit (fail on high/critical)
-        run: npm audit --audit-level=high
+      - name: Verify dependency audit exception policy offline
+        run: node scripts/verify-dependency-audit-policy.mjs
+
+      # One temporary advisory-specific exception requires the current depth
+      # patch. All other high/critical findings and unreadable reports fail.
+      - name: npm audit (verified depth mitigation, otherwise fail on high/critical)
+        run: node scripts/verify-dependency-audit.mjs

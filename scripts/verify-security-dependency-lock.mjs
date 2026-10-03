@@ -56,7 +56,8 @@ assert.equal(manifest.overrides?.["@eslint/eslintrc"]?.["js-yaml"], "4.3.2");
 assert.equal(manifest.overrides?.qs, "6.16.0");
 // Patch the affected transport without changing the reviewed Wrangler/workerd pair.
 assert.equal(manifest.overrides?.["miniflare@5.20260910.0-alpha"]?.undici, "7.29.1");
-assert.equal(manifest.scripts.postinstall, "patch-package", "existing tokenizer compatibility patch must remain");
+assert.equal(manifest.scripts.postinstall, "patch-package --error-on-fail && node scripts/verify-braces-depth-guard.mjs", "tokenizer and braces patches must apply with a fail-closed depth check");
+assert.equal(manifest.scripts.prebuild, "node scripts/verify-braces-depth-guard.mjs", "build must reject an unpatched braces install");
 if (process.argv.includes("--installed")) {
   assert.equal(readJson("node_modules/gpt-tokenizer/package.json").exports["./esm/*"].require, "./esm/*.js");
 }
