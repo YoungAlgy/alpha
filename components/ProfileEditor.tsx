@@ -39,6 +39,7 @@ export function ProfileEditor() {
   const [saved, setSaved] = useState<Form>(EMPTY);
   const [loaded, setLoaded] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [accountId, setAccountId] = useState<string | null>(null);
   // The reader's saved topics, only so we can warn when they have the Zodiac
   // topic but no birthday (that section gets skipped without one). Mirrors the
   // onboarding "you" step's gate, which the settings editor otherwise lacks.
@@ -71,8 +72,9 @@ export function ProfileEditor() {
     (async () => {
       try {
         const sb = supabaseClient();
-        const { data: { user } } = await sb.auth.getUser();
+        const { data: { user }, error: authError } = await sb.auth.getUser();
         if (cancelled) return;
+        if (authError) throw authError;
         if (!user) {
           setLoaded(true);
           return;
@@ -84,11 +86,12 @@ export function ProfileEditor() {
           .eq("id", user.id)
           .maybeSingle();
         if (cancelled) return;
-        if (rowErr) {
+        if (rowErr || !row) {
           // Logged AND blocks Save (see hydrateFailed's own comment) --
           // supabase-js resolves rather than throws on a query error, so the
           // catch below was structurally blind to this exact failure mode.
-          console.warn("[ProfileEditor] signed-in hydrate row fetch failed:", rowErr.message);
+          // An RLS-hidden or missing row is not an empty saved profile.
+          console.warn("[ProfileEditor] saved profile unavailable");
           setHydrateFailed(true);
           return;
         }
@@ -104,8 +107,13 @@ export function ProfileEditor() {
         };
         setSaved(next);
         setForm(next);
+        setAccountId(user.id);
       } catch {
-        // ignore — the form stays empty and Save will surface a real error
+        // An empty form after a failed read must never clear saved details.
+        if (!cancelled) {
+          console.warn("[ProfileEditor] signed-in hydrate failed");
+          setHydrateFailed(true);
+        }
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -166,7 +174,7 @@ export function ProfileEditor() {
   // silently coerced the bad value to null server-side -- the Zodiac
   // section would then quietly stop working with zero indication why.
   const birthdayValid = form.birthday.length === 0 || parseBirthday(form.birthday) !== null;
-  const canSave = dirty && requiredFilled && birthdayValid && !busy && !hydrateFailed;
+  const canSave = dirty && requiredFilled && birthdayValid && !busy && !hydrateFailed && !!accountId;
 
   async function save() {
     if (!canSave || saveInFlight.current) return;
@@ -177,7 +185,7 @@ export function ProfileEditor() {
       const res = await fetch("/api/account/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, expectedAccountId: accountId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
@@ -210,7 +218,7 @@ export function ProfileEditor() {
         funBlurb: savedForm.funBlurb || undefined,
         birthday: savedForm.birthday || undefined,
         gender: savedForm.gender || undefined,
-      });
+      }, { sync: false });
       setMsg({ kind: "ok", text: "Saved. Your next letter uses these." });
     } catch (e) {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "Couldn't save. Try again." });

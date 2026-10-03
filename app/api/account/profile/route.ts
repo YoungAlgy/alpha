@@ -108,6 +108,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
   }
 
+  // Bind the form to the account whose details it loaded. Another tab can
+  // change the active sign-in while this form remains open.
+  if (typeof body.expectedAccountId !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.expectedAccountId)) {
+    return NextResponse.json(
+      { error: "Reload the page before saving your details." },
+      { status: 400 }
+    );
+  }
+  if (body.expectedAccountId !== user.id) {
+    return NextResponse.json(
+      { error: "Your signed-in account changed. Reload the page before saving your details." },
+      { status: 409 }
+    );
+  }
+
   const firstName = cleanRequired(body.firstName, LIMITS.first_name);
   if ("error" in firstName) {
     return NextResponse.json(

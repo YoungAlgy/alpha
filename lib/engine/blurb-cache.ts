@@ -4,16 +4,42 @@
 // to O(topics × periods) regardless of subscriber count.
 
 import { supabaseServiceClient } from "@/lib/supabase/server";
+import { validatedSourceAttribution } from "@/lib/source-attribution";
+import { normalizeUrl } from "./url-guard";
 import type { TopicBlurb } from "./types";
 import type { TopicId } from "@/lib/types";
 
 const TABLE = "topic_blurbs";
 
-interface DbBlurb {
-  topic_id: TopicId;
-  week_of: string;
-  intro: string;
-  items: TopicBlurb["items"];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPeriod(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(date) && new Date(date).toISOString().slice(0, 10) === value;
+}
+
+const ITEM_KINDS = new Set(["read", "watch", "listen", "try", "post", "book", "event", "note"]);
+
+function isReference(value: unknown): boolean {
+  return isRecord(value) && typeof value.label === "string" && value.label.trim().length > 0
+    && typeof value.url === "string" && !!normalizeUrl(value.url)
+    && (value.note === undefined || value.note === null || typeof value.note === "string");
+}
+
+function isCachedItem(value: unknown): value is TopicBlurb["items"][number] {
+  if (!isRecord(value) || typeof value.kind !== "string" || !ITEM_KINDS.has(value.kind)
+      || typeof value.headline !== "string" || !value.headline.trim()
+      || typeof value.body !== "string" || !value.body.trim()) return false;
+  if (value.primaryRef !== undefined && !isReference(value.primaryRef)) return false;
+  if (value.supplementaryRefs !== undefined && (!Array.isArray(value.supplementaryRefs)
+      || !value.supplementaryRefs.every(isReference))) return false;
+  return value.attribution === undefined || !!validatedSourceAttribution(
+    isRecord(value.primaryRef) ? value.primaryRef.url : undefined,
+    value.attribution
+  );
 }
 
 export function blurbCacheEnabled(): boolean {
@@ -46,23 +72,22 @@ export async function getCachedBlurbs(
       console.warn(`[blurb-cache] batch read failed for ${weekOf}:`, error.message);
       return result;
     }
-    for (const row of (data ?? []) as DbBlurb[]) {
-      // items is JSONB with no runtime shape guarantee — every WRITE path
-      // (setCachedBlurb) only ever stores a real array, so this is corruption
-      // detection (a manual edit, a future schema/write-path change), not a
-      // case that's ever hit today. Array.isArray, not just a cast: a
-      // null/malformed items here would otherwise throw inside genLive's
-      // `cached.items.length` (assemble.ts) with no logging anywhere in that
-      // chain (select-sections.ts's per-topic catch swallows it silently).
-      if (!Array.isArray(row.items)) {
-        console.warn(`[blurb-cache] malformed items for ${row.topic_id} ${row.week_of} — treating as empty`);
-      }
-      result.set(row.topic_id, {
-        topicId: row.topic_id,
+    const requestedTopics = new Set<string>(topicIds);
+    for (const row of Array.isArray(data) ? data : []) {
+      // Saved JSONB is an input boundary. Skip bad rows/items locally so a
+      // malformed cache entry cannot discard another topic's finished work.
+      if (!isRecord(row) || typeof row.topic_id !== "string" || !requestedTopics.has(row.topic_id)
+          || !isPeriod(row.week_of) || row.week_of !== weekOf
+          || typeof row.intro !== "string" || !Array.isArray(row.items)) continue;
+      const items = row.items.filter(isCachedItem);
+      if (items.length === 0) continue;
+      const topicId = row.topic_id as TopicId;
+      result.set(topicId, {
+        topicId,
         topicLabel: "", // filled by caller from TOPIC_BY_ID
         weekOf: row.week_of,
         intro: row.intro,
-        items: Array.isArray(row.items) ? row.items : [],
+        items,
       });
     }
     return result;
@@ -88,7 +113,7 @@ export async function getRecentlyCitedUrls(
     const sb = await supabaseServiceClient();
     const { data, error } = await sb
       .from(TABLE)
-      .select("topic_id, items")
+      .select("topic_id, week_of, items")
       .gte("week_of", sinceIso)
       .lt("week_of", beforePeriodIso)
       .in("topic_id", topicIds);
@@ -96,16 +121,24 @@ export async function getRecentlyCitedUrls(
       console.warn(`[blurb-cache] cited-urls read failed:`, error.message);
       return result;
     }
-    for (const row of (data ?? []) as Pick<DbBlurb, "topic_id" | "items">[]) {
-      let set = result.get(row.topic_id);
+    const requestedTopics = new Set<string>(topicIds);
+    for (const row of Array.isArray(data) ? data : []) {
+      if (!isRecord(row) || typeof row.topic_id !== "string" || !requestedTopics.has(row.topic_id)
+          || !isPeriod(row.week_of) || row.week_of < sinceIso || row.week_of >= beforePeriodIso
+          || !Array.isArray(row.items)) continue;
+      const topicId = row.topic_id as TopicId;
+      let set = result.get(topicId);
       if (!set) {
         set = new Set<string>();
-        result.set(row.topic_id, set);
+        result.set(topicId, set);
       }
-      for (const item of row.items ?? []) {
-        if (item.primaryRef?.url) set.add(item.primaryRef.url);
-        for (const ref of item.supplementaryRefs ?? []) {
-          if (ref.url) set.add(ref.url);
+      for (const item of row.items) {
+        if (!isRecord(item)) continue;
+        if (isRecord(item.primaryRef) && typeof item.primaryRef.url === "string" && item.primaryRef.url) {
+          set.add(item.primaryRef.url);
+        }
+        for (const ref of Array.isArray(item.supplementaryRefs) ? item.supplementaryRefs : []) {
+          if (isRecord(ref) && typeof ref.url === "string" && ref.url) set.add(ref.url);
         }
       }
     }
