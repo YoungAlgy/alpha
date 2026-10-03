@@ -72,7 +72,9 @@ async function invoke(options: {
     exports, process, URL, Date, console: quiet,
     require: (name: string) => name === "crypto" ? nativeRequire(name) : mocks[name] ?? {},
   }, { timeout: 1000 });
-  const request = { url: options.path ?? url, headers: { get: () => "Bearer fixture-secret" } };
+  const request = { url: options.path ?? url, headers: {
+    get: (name: string) => name === "authorization" ? "Bearer fixture-secret" : null,
+  } };
   const response = await (exports.GET as (req: unknown) => Promise<{ status: number; body: unknown }>)(request);
   return { response, calls };
 }

@@ -1,6 +1,6 @@
 import type { BraveResult, BraveSearchOptions } from "@/lib/brave";
 import { cleanField } from "./text-clean";
-import { decodeTextEntities } from "@/lib/text-entities";
+import { directChildValues, rssItemBlocks } from "./rss-xml";
 import { noKeySourcesEnabled } from "./provider-policy";
 import { readPublicSourceText } from "./public-source-response";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
@@ -24,24 +24,18 @@ export function publicFeedFallbackEnabled(): boolean {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
-function tagValue(block: string, tag: string): string {
-  const match = block.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return match?.[1]
-    ? decodeTextEntities(match[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1")).trim()
-    : "";
-}
-
 /** Pure XML parsing helper so the fallback can be checked without a network. */
 export function parsePublicFeedXml(xml: string, maxResults = MAX_RESULTS): BraveResult[] {
   const items: BraveResult[] = [];
-  const itemRe = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
-  for (const match of xml.matchAll(itemRe)) {
-    const block = match[1] ?? "";
-    const url = tagValue(block, "link");
-    const title = cleanField(tagValue(block, "title"));
-    const description = cleanField(tagValue(block, "description"));
+  // The response reader bounds bytes. Retain raw blocks until valid results
+  // reach the existing cap, so rejected items cannot hide later usable links.
+  for (const block of rssItemBlocks(xml, Number.MAX_SAFE_INTEGER, "Public RSS")) {
+    const value = (tag: string) => directChildValues(block, tag, true, "Public RSS")[0] ?? "";
+    const url = value("link");
+    const title = cleanField(value("title"));
+    const description = cleanField(value("description"));
     if (!/^https?:\/\//i.test(url) || !title) continue;
-    const published = tagValue(block, "pubDate");
+    const published = value("pubdate");
     items.push({
       title,
       url,

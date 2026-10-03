@@ -135,7 +135,9 @@ const PERSIST_AND_SEND_DEADLINE_MS = 45_000;
 // that value was a Vercel platform directive). Reserve enough of it to (a)
 // let the LAST subscriber we DO start exhaust primary generation, the fast
 // generation fallback, and persistence/delivery before we'd hit the wall,
-// then leave real margin for the summary + ops-alert email. Past this point,
+// then leave real margin for cursor persistence, the summary and ops alert.
+// Each workflow page supplies its actual curl budget, which can be shorter
+// than maxDuration near the end of the drain. Past this point,
 // remaining subscribers are
 // DEFERRED (recorded, not attempted) rather than risking a hard kill
 // mid-loop, which would silently truncate the send before the ops alert can
@@ -146,6 +148,10 @@ const CRON_SAFETY_MARGIN_MS =
   PER_USER_DEADLINE_MS +
   FAST_FALLBACK_DEADLINE_MS +
   PERSIST_AND_SEND_DEADLINE_MS +
+  10_000 + // shared-cache read
+  50_000 + // five bounded prior-issue reads
+  10_000 + // cursor compare-and-swap
+  60_000 + // independent ops webhook plus bounded email fallback
   30_000;
 const CRON_TIME_BUDGET_MS = maxDuration * 1000 - CRON_SAFETY_MARGIN_MS;
 
@@ -305,6 +311,9 @@ type DeliveryCursorState =
 //      the response summary and runtime logs (daily-send.yml separately fails
 //      the job if that summary shows any subscriber left uncovered).
 export async function GET(req: Request) {
+  // Setup queries consume the caller's budget too. Never reset this clock
+  // after fetching the page or it can admit work past a shorter curl deadline.
+  const startedAt = Date.now();
   const expected = process.env.CRON_SECRET?.trim();
   const auth = req.headers.get("authorization");
   if (!expected || !bearerMatches(auth, expected)) {
@@ -318,6 +327,19 @@ export async function GET(req: Request) {
       { headers: { "Cache-Control": "no-store" } }
     );
   }
+
+  const pageBudgetRaw = req.headers.get("x-alpha-page-budget-seconds");
+  const pageBudgetSeconds = pageBudgetRaw === null ? maxDuration : Number(pageBudgetRaw);
+  if (pageBudgetRaw !== null && (
+    !/^[1-9]\d{2,3}$/.test(pageBudgetRaw) ||
+    pageBudgetSeconds < 300 || pageBudgetSeconds > maxDuration
+  )) {
+    return NextResponse.json({ error: "Invalid delivery page budget." }, { status: 400 });
+  }
+  const cronTimeBudgetMs = Math.min(
+    CRON_TIME_BUDGET_MS,
+    pageBudgetSeconds * 1000 - CRON_SAFETY_MARGIN_MS
+  );
 
   const url = new URL(req.url);
   const canaryRequest = parseBrevoCanaryRequest(
@@ -629,7 +651,6 @@ export async function GET(req: Request) {
           })
           .then((r) => r)
       : null;
-  const startedAt = Date.now();
   // Snapshot the monotonic counter now; THIS run's 429 count is the delta at
   // the end minus this baseline. Diffing (not resetting) is what makes this
   // safe under concurrent per-topic calls sharing the counter within one
@@ -697,6 +718,10 @@ export async function GET(req: Request) {
   // Tracking the row itself keeps cursor advancement tied to real coverage
   // without exposing the retrying readers in logs or the JSON response.
   const deliveryRetryRequiredUserIds = new Set<string>();
+  // Settlement and its coverage counter change in one synchronous turn.
+  // A deadline catch can run later, so remember settlement until the final
+  // snapshot rather than trusting callback ordering to clear every retry.
+  const deliverySettledUserIds = new Set<string>();
   // Set once PAID_CALL_CEILING trips, so the ops alert below can distinguish
   // paid-tier degradation from a scale-driven time-budget deferral.
   let paidCallCeilingHit = false;
@@ -1080,7 +1105,7 @@ export async function GET(req: Request) {
     // CRON_TIME_BUDGET_MS). Checked here (after the cheap skip-checks above)
     // so a subscriber who didn't actually need work isn't misreported as
     // deferred.
-    if (Date.now() - startedAt > CRON_TIME_BUDGET_MS) {
+    if (Date.now() - startedAt >= cronTimeBudgetMs) {
       deferred.push(currentDeliveryEmail);
       deliveryRetryRequiredUserIds.add(row.id);
       console.warn("[cron/weekly-send] DEFERRED (time budget exhausted)");
@@ -1098,6 +1123,12 @@ export async function GET(req: Request) {
       topics: pool,
       theme: coerceThemeId(row.theme) ?? "forest",
       email: currentDeliveryEmail,
+    };
+
+    const markDeliverySettled = (): DeliveryAttemptOutcome => {
+      deliverySettledUserIds.add(row.id);
+      deliveryRetryRequiredUserIds.delete(row.id);
+      return "settled";
     };
 
     // Persist + send ONE issue for this subscriber, bounded by
@@ -1237,15 +1268,15 @@ export async function GET(req: Request) {
       } else if (freshUser.delivery_enrolled !== true) {
         unenrolledMidRunSkips++;
         console.log("[cron/weekly-send] skipped (delivery enrollment ended mid-run)");
-        return "settled";
+        return markDeliverySettled();
       } else if (freshUser.unsubscribed_at) {
         unsubscribedMidRunSkips++;
         console.log("[cron/weekly-send] skipped (unsubscribed mid-run)");
-        return "settled";
+        return markDeliverySettled();
       } else if (BREVO_DELIVERY_SCHEMA_ENABLED && freshUser.brevo_unsubscribed_at) {
         unsubscribedMidRunSkips++;
         console.log("[cron/weekly-send] skipped (provider unsubscribe mid-run)");
-        return "settled";
+        return markDeliverySettled();
       } else if (
         !hasReaderAccess(
           freshUser.subscribed_at,
@@ -1255,17 +1286,17 @@ export async function GET(req: Request) {
       ) {
         cancelledMidRunSkips++;
         console.log("[cron/weekly-send] skipped (access ended mid-run)");
-        return "settled";
+        return markDeliverySettled();
       } else if (freshUser.bounced_at || freshUser.complained_at) {
         suppressedMidRunSkips++;
         console.log("[cron/weekly-send] skipped (bounced/complained mid-run)");
-        return "settled";
+        return markDeliverySettled();
       } else if (freshUser.suppression_cleanup_pending_at) {
         suppressedMidRunSkips++;
         console.log(
           "[cron/weekly-send] skipped (provider suppression cleanup pending)"
         );
-        return "settled";
+        return markDeliverySettled();
       } else if (typeof freshUser.email !== "string" || !freshUser.email.trim()) {
         eligibilityRecheckFailures++;
         console.warn("[cron/weekly-send] delivery address re-check returned no address");
@@ -1295,7 +1326,7 @@ export async function GET(req: Request) {
         if ((claimRows?.length ?? 0) === 0) {
           skippedAlreadyDelivered++;
           console.log("[cron/weekly-send] skipped (claimed by a concurrent run)");
-          return "settled";
+          return markDeliverySettled();
         }
       } else {
         // force=1 bypasses the ordinary delivered_at claim. The page-level
@@ -1370,10 +1401,13 @@ export async function GET(req: Request) {
         throw sendErr;
       }
       if (!providerSent) {
+        // The guarded transport returned stored provider-acceptance evidence.
+        // No new send happened, but this reader is already covered.
+        skippedAlreadyDelivered++;
         console.log(
           "[cron/weekly-send] skipped provider call (delivery lane already finalized)"
         );
-        return "settled";
+        return markDeliverySettled();
       }
 
       // Count + log only on an ACTUAL send, after the transport configuration
@@ -1403,24 +1437,8 @@ export async function GET(req: Request) {
           `[cron/weekly-send] sent (${issue.sections.length} section(s))`
         );
       }
-      return "settled";
+      return markDeliverySettled();
     }
-
-    // withDeadline stops waiting but does not cancel the provider/Supabase
-    // tail. If a timed-out attempt settles before this route builds its
-    // summary, reconcile the row-level retry set with that final outcome so
-    // response coverage cannot disagree with counters the same tail updated.
-    const trackDeliveryOutcome = (
-      attempt: Promise<DeliveryAttemptOutcome>
-    ): Promise<DeliveryAttemptOutcome> =>
-      attempt.then((outcome) => {
-        if (outcome === "settled") {
-          deliveryRetryRequiredUserIds.delete(row.id);
-        } else {
-          deliveryRetryRequiredUserIds.add(row.id);
-        }
-        return outcome;
-      });
 
     // RETRY-SAFETY: if a PRIOR run already generated and persisted this
     // subscriber's issue but never successfully delivered it (a same-day
@@ -1507,9 +1525,7 @@ export async function GET(req: Request) {
       // them as failed) — accepted: the actual delivered_at claim and the
       // actual email are correct either way, this only risks a cosmetic
       // inaccuracy in one day's summary, not a duplicate or a silent miss.
-      const persistAndSend = trackDeliveryOutcome(
-        runPersistAndSend(issue, "live")
-      );
+      const persistAndSend = runPersistAndSend(issue, "live");
       after(persistAndSend.catch(() => undefined));
       const deliveryOutcome = await withDeadline(
         persistAndSend,
@@ -1719,9 +1735,7 @@ export async function GET(req: Request) {
 
       if (backupIssue && backupKind) {
         try {
-          const backupSend = trackDeliveryOutcome(
-            runPersistAndSend(backupIssue, backupKind)
-          );
+          const backupSend = runPersistAndSend(backupIssue, backupKind);
           after(backupSend.catch(() => undefined));
           const backupOutcome = await withDeadline(
             backupSend,
@@ -1743,32 +1757,6 @@ export async function GET(req: Request) {
     }
   }
 
-  const cappedBackupSharedSentEmails = capList(backupSharedSentEmails);
-  const cappedBackupFreshSentEmails = capList(backupFreshSentEmails);
-  const cappedBackupStaleSentEmails = capList(backupStaleSentEmails);
-  const cappedSkippedBlankSubscribers = capList(skippedBlankSubscribers);
-  const cappedDeferred = capList(deferred);
-  const cappedFailures = failures.slice(0, EMAIL_LIST_CAP);
-
-  const elapsedMs = Date.now() - startedAt;
-  const braveRateLimited = braveRateLimitedCount() - braveBaseline;
-  const youRateLimited = youRateLimitedCount() - youBaseline;
-  const geminiRateLimited = geminiRateLimitedCount() - geminiBaseline;
-  const groqRateLimited = groqRateLimitedCount() - groqBaseline;
-  const deepseekRateLimited = deepseekRateLimitedCount() - deepseekBaseline;
-  // Logged every run (not just when the ceiling trips) specifically so a
-  // real day's totals can calibrate PAID_CALL_CEILING's first-pass estimate
-  // — see that constant's comment.
-  const paidCallCounterDelta = paidCallsSinceBaseline(
-    paidCallBaseline,
-    currentPaidCallSnapshot()
-  );
-  const paidCallBudget = dailyPaidCallBudget.snapshot();
-  // The durable guard is invocation-scoped and therefore remains exact even
-  // if two requests share one warm process and its legacy module counters.
-  const paidCallsThisRun = paidCallBudget.used;
-  const deliveryRetryRequiredTotal = deliveryRetryRequiredUserIds.size;
-  const deliveryPageComplete = deliveryRetryRequiredTotal === 0;
   const deliveryPageLastUserId = rows.length > 0 ? rows[rows.length - 1].id : null;
   let deliveryCursorNext = deliveryCursor;
   let deliveryCursorAdvanceFailed = false;
@@ -1801,12 +1789,38 @@ export async function GET(req: Request) {
       deliveryCursorState = "advance_failed";
     } else {
       deliveryCursorNext = deliveryPageLastUserId;
-      deliveryCursorState = deliveryPageComplete
-        ? "advanced"
-        : "advanced_with_retry";
+      deliveryCursorState = "advanced";
     }
   }
 
+  // No await separates outcome reconciliation, counts and response creation.
+  // A detached tail may settle during the cursor RPC, or before a timeout
+  // catch adds its retry. Capture one coherent point-in-time page result.
+  for (const id of deliverySettledUserIds) deliveryRetryRequiredUserIds.delete(id);
+  const deliveryRetryRequiredTotal = deliveryRetryRequiredUserIds.size;
+  const deliveryPageComplete = deliveryRetryRequiredTotal === 0;
+  if (deliveryCursorState === "advanced" && !deliveryPageComplete) {
+    deliveryCursorState = "advanced_with_retry";
+  }
+  const cappedBackupSharedSentEmails = capList(backupSharedSentEmails);
+  const cappedBackupFreshSentEmails = capList(backupFreshSentEmails);
+  const cappedBackupStaleSentEmails = capList(backupStaleSentEmails);
+  const cappedSkippedBlankSubscribers = capList(skippedBlankSubscribers);
+  const cappedDeferred = capList(deferred);
+  const cappedFailures = failures.slice(0, EMAIL_LIST_CAP);
+  const elapsedMs = Date.now() - startedAt;
+  const braveRateLimited = braveRateLimitedCount() - braveBaseline;
+  const youRateLimited = youRateLimitedCount() - youBaseline;
+  const geminiRateLimited = geminiRateLimitedCount() - geminiBaseline;
+  const groqRateLimited = groqRateLimitedCount() - groqBaseline;
+  const deepseekRateLimited = deepseekRateLimitedCount() - deepseekBaseline;
+  const paidCallCounterDelta = paidCallsSinceBaseline(
+    paidCallBaseline,
+    currentPaidCallSnapshot()
+  );
+  const paidCallBudget = dailyPaidCallBudget.snapshot();
+  // Invocation-scoped counts remain exact even in a shared warm process.
+  const paidCallsThisRun = paidCallBudget.used;
   const deliveryPageBlocked =
     !deliveryPageComplete || deliveryCursorAdvanceFailed;
   const summary = {

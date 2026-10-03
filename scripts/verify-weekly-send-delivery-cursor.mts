@@ -330,9 +330,9 @@ check(
   "normal pages record fair scan progress while keeping retry work explicit",
   route.includes('"advanced_with_retry"') &&
     !route.includes('"retained_blocked"') &&
-    route.indexOf("const deliveryRetryRequiredTotal") <
+    route.indexOf("const deliveryRetryRequiredTotal") >
       route.indexOf('"advance_weekly_send_cursor"') &&
-    /deliveryCursorState = deliveryPageComplete\s*\? "advanced"\s*: "advanced_with_retry"/.test(
+    /if \(deliveryCursorState === "advanced" && !deliveryPageComplete\) \{\s*deliveryCursorState = "advanced_with_retry";/.test(
       route
     )
 );

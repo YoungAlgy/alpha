@@ -1,7 +1,6 @@
 import type { BraveResult, BraveSearchOptions } from "@/lib/brave";
 import { validatedGlobalVoicesAttribution } from "@/lib/source-attribution";
-import { decodeTextEntities } from "@/lib/text-entities";
-import { cleanField } from "./text-clean";
+import { directChildValues, rssItemBlocks } from "./rss-xml";
 import { isCustomTopic } from "@/lib/topics";
 import { noModelModeEnabled } from "./provider-policy";
 import { publicTopicPhrase } from "./topic-queries";
@@ -15,7 +14,6 @@ const FEEDS = {
   music: "https://globalvoices.org/-/topics/music/feed/",
   general: "https://globalvoices.org/feed/",
 } as const;
-const MAX_ITEMS = 100;
 const ACCEPT = "application/rss+xml, application/xml, text/xml";
 
 const CUSTOM_STOP_WORDS = new Set([
@@ -26,158 +24,9 @@ const CUSTOM_STOP_WORDS = new Set([
 type FeedKind = keyof typeof FEEDS;
 type FeedItem = BraveResult & { categories: string[] };
 
-type XmlToken = {
-  start: number;
-  end: number;
-  name?: string;
-  closing?: boolean;
-  selfClosing?: boolean;
-};
-
-// Small tokenizer, not a general XML implementation. It treats CDATA,
-// comments, processing instructions, and declarations as opaque so markup
-// inside article bodies cannot create fake RSS items or metadata children.
-function nextXmlToken(xml: string, from: number): XmlToken | undefined {
-  const start = xml.indexOf("<", from);
-  if (start < 0) return;
-  if (xml.startsWith("<![CDATA[", start)) {
-    const close = xml.indexOf("]]>", start + 9);
-    return close < 0 ? undefined : { start, end: close + 3 };
-  }
-  if (xml.startsWith("<!--", start)) {
-    const close = xml.indexOf("-->", start + 4);
-    return close < 0 ? undefined : { start, end: close + 3 };
-  }
-  if (xml.startsWith("<?", start)) {
-    const close = xml.indexOf("?>", start + 2);
-    return close < 0 ? undefined : { start, end: close + 2 };
-  }
-  if (xml.startsWith("<!", start)) {
-    const close = xml.indexOf(">", start + 2);
-    return close < 0 ? undefined : { start, end: close + 1 };
-  }
-
-  let quote = "";
-  let end = start + 1;
-  for (; end < xml.length; end++) {
-    const char = xml[end]!;
-    if (quote) {
-      if (char === quote) quote = "";
-    } else if (char === "\"" || char === "'") {
-      quote = char;
-    } else if (char === ">") {
-      break;
-    }
-  }
-  if (end >= xml.length || quote) return;
-  const raw = xml.slice(start, end + 1);
-  const parsed = raw.match(/^<\s*(\/?)\s*([A-Za-z_][\w:.-]*)/);
-  if (!parsed) return { start, end: end + 1 };
-  return {
-    start,
-    end: end + 1,
-    name: parsed[2]!.toLowerCase(),
-    closing: parsed[1] === "/",
-    selfClosing: /\/\s*>$/.test(raw),
-  };
-}
-
-function rssItemBlocks(xml: string): string[] {
-  const stack: string[] = [];
-  const blocks: string[] = [];
-  let itemStart: number | undefined;
-  let rssRootCount = 0;
-  let channelCount = 0;
-  let rssClosed = false;
-  let offset = 0;
-  while (offset < xml.length) {
-    const token = nextXmlToken(xml, offset);
-    if (!token) {
-      if (xml.slice(offset).trim()) throw new Error("Global Voices RSS invalid feed");
-      break;
-    }
-    if (stack.length === 0 && xml.slice(offset, token.start).trim()) {
-      throw new Error("Global Voices RSS invalid feed");
-    }
-    if (xml.startsWith("<!", token.start) &&
-        !xml.startsWith("<!--", token.start) && !xml.startsWith("<![CDATA[", token.start)) {
-      throw new Error("Global Voices RSS unsupported declaration");
-    }
-    offset = token.end;
-    if (!token.name) {
-      if (stack.length === 0 && !xml.startsWith("<!--", token.start) && !xml.startsWith("<?", token.start)) {
-        throw new Error("Global Voices RSS invalid feed");
-      }
-      continue;
-    }
-
-    const name = token.name;
-    if (token.closing) {
-      if (stack.at(-1) !== name) throw new Error("Global Voices RSS invalid feed");
-      if (name === "rss" && stack.length === 1) rssClosed = true;
-      if (name === "item" && itemStart !== undefined && stack.length === 3) {
-        if (blocks.length < MAX_ITEMS) blocks.push(xml.slice(itemStart, token.end));
-        itemStart = undefined;
-      }
-      stack.pop();
-      continue;
-    }
-
-    if (stack.length === 0) {
-      if (name !== "rss" || rssRootCount !== 0 || rssClosed) throw new Error("Global Voices RSS invalid feed");
-      rssRootCount++;
-    }
-    if (name === "channel" && stack.length === 1 && stack[0] === "rss") {
-      channelCount++;
-      if (channelCount > 1) throw new Error("Global Voices RSS invalid feed");
-    }
-    if (name === "item" && stack.length === 2 && stack[0] === "rss" && stack[1] === "channel") {
-      itemStart = token.start;
-    }
-    if (!token.selfClosing) stack.push(name);
-    else if (name === "rss" || (name === "channel" && stack.length === 1)) {
-      throw new Error("Global Voices RSS invalid feed");
-    }
-  }
-  if (rssRootCount !== 1 || channelCount !== 1 || !rssClosed || stack.length !== 0 || itemStart !== undefined) {
-    throw new Error("Global Voices RSS invalid feed");
-  }
-  return blocks;
-}
-
-function directChildValues(block: string, wantedTag: string): string[] {
-  const stack: { name: string; valueStart: number }[] = [];
-  const values: string[] = [];
-  let offset = 0;
-  while (offset < block.length) {
-    const token = nextXmlToken(block, offset);
-    if (!token) throw new Error("Global Voices RSS invalid item");
-    offset = token.end;
-    if (!token.name) continue;
-    if (token.closing) {
-      const open = stack.pop();
-      if (!open || open.name !== token.name) throw new Error("Global Voices RSS invalid item");
-      if (open.name === wantedTag && stack.length === 1 && stack[0]?.name === "item") {
-        const raw = block.slice(open.valueStart, token.start).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1");
-        // cleanField removes bare URLs. Preserve only the link field as a URL.
-        const clean = wantedTag === "link" ? decodeTextEntities(raw).trim() : cleanField(raw);
-        if (clean) values.push(clean);
-      }
-      continue;
-    }
-    if (token.name === wantedTag && stack.length === 1 && stack[0]?.name === "item" && !token.selfClosing) {
-      stack.push({ name: token.name, valueStart: token.end });
-    } else if (!token.selfClosing) {
-      stack.push({ name: token.name, valueStart: token.end });
-    }
-  }
-  if (stack.length !== 0) throw new Error("Global Voices RSS invalid item");
-  return values;
-}
-
 function parseGlobalVoicesXml(xml: string): FeedItem[] {
   const items: FeedItem[] = [];
-  for (const block of rssItemBlocks(xml)) {
+  for (const block of rssItemBlocks(xml, 100, "Global Voices RSS")) {
     const title = directChildValues(block, "title")[0] ?? "";
     const rawUrl = directChildValues(block, "link")[0] ?? "";
     const publishedAt = directChildValues(block, "pubdate")[0] ?? "";

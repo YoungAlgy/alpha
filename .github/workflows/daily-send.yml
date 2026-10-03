@@ -657,7 +657,7 @@ jobs:
               echo "Calling bounded delivery page ${NEXT_PAGE_NUMBER}/${MAX_DELIVERY_PAGES} (${DELIVERY_MODE} mode) ..."
               # -w appends the HTTP status as the last line. The raw response
               # stays private to the runner because it can contain emails.
-              RAW=$(curl -sS --max-time "${PAGE_CURL_TIMEOUT}" -H "Authorization: Bearer ${CRON_SECRET}" -w '\n%{http_code}' "${PAGE_URL}")
+              RAW=$(curl -sS --max-time "${PAGE_CURL_TIMEOUT}" -H "Authorization: Bearer ${CRON_SECRET}" -H "X-Alpha-Page-Budget-Seconds: ${PAGE_CURL_TIMEOUT}" -w '\n%{http_code}' "${PAGE_URL}")
               PAGE_CURL_EXIT=$?
               PAGE_HTTP_STATUS=$(echo "${RAW}" | tail -n 1)
               RESPONSE=$(echo "${RAW}" | sed '$d')

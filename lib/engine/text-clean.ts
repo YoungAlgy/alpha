@@ -11,7 +11,27 @@ import { stripPromptFenceChars } from "@/lib/prompt-fence";
 import { decodeTextEntities } from "@/lib/text-entities";
 
 function stripTags(s: string): string {
-  return s.replace(/<[^>]+>/g, "").trim();
+  // Preserve the original first-open-to-next-close behavior without an
+  // unanchored regex rescanning a long malformed public field at every '<'.
+  const parts: string[] = [];
+  let cursor = 0;
+  while (cursor < s.length) {
+    const start = s.indexOf("<", cursor);
+    if (start === -1) {
+      parts.push(s.slice(cursor));
+      break;
+    }
+    parts.push(s.slice(cursor, start));
+    const end = s.indexOf(">", start + 1);
+    if (end === -1) {
+      parts.push(s.slice(start));
+      break;
+    }
+    // The old expression required at least one character inside a tag.
+    if (end === start + 1) parts.push("<>");
+    cursor = end + 1;
+  }
+  return parts.join("").trim();
 }
 
 // alpha-drift-r21-04 (found+fixed 2026-08-14, self-audit): stripTags above
