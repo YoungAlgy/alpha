@@ -24,6 +24,7 @@ const savedModel = process.env.ALPHA_NO_MODEL_MODE;
 const oldFetch = globalThis.fetch, oldWarn = console.warn;
 const events: string[] = [];
 let sourceRequests = 0, forbidden = 0;
+let plosUnavailable = false;
 const now = Date.now(), published = new Date(now - 60_000).toISOString();
 const issueDate = published.slice(0, 10);
 const item = (id: string, title: string) => ({ id: `10.1371/journal.pone.${id}`, title_display: title,
@@ -59,7 +60,9 @@ try {
         "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedSearch: fail("publisher") },
         "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedSearch: fail("global-voices") },
         "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataSearch: fail("crossref") },
-        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataSearch: plos },
+        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true,
+          plosMetadataSearch: (...args: Parameters<typeof plos>) => plosUnavailable
+            ? fail("plos")() : plos(...args) },
         "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbiddenCall },
         "@/lib/source-attribution": attribution,
       };
@@ -116,6 +119,21 @@ try {
   for (const url of [signal.sources![0].url + "&id=10.1371/journal.pone.0123456", signal.sources![0].url.replace("plosone", "mentalhealth"), signal.sources![0].url + "#fake", signal.sources![0].url.replace("journals.plos.org", "journals.plos.org.evil.test")]) {
     assert.equal(attribution.validatedSourceAttribution(url, credits[0].attribution), undefined);
   }
+  // All five enabled tiers unavailable must remain a visible absence of
+  // source signal. It cannot reopen keyed search, paid writers or body reads.
+  plosUnavailable = true;
+  const failedStart = events.length;
+  const requestsBeforeFailure = sourceRequests;
+  assert.equal(await module.resolveTopicSignal("ai-news", issueDate, { freshness: "pd" }), undefined);
+  const failedTiers = events.slice(failedStart);
+  for (const name of ["google", "publisher", "global-voices", "crossref", "plos"]) {
+    assert.ok(failedTiers.includes(name), "each enabled tier is reached in the bounded all-down fixture");
+  }
+  assert.ok(failedTiers.indexOf("publisher") > failedTiers.lastIndexOf("google"));
+  assert.ok(failedTiers.indexOf("global-voices") > failedTiers.indexOf("publisher"));
+  assert.ok(failedTiers.indexOf("crossref") > failedTiers.indexOf("global-voices"));
+  assert.ok(failedTiers.indexOf("plos") > failedTiers.indexOf("crossref"));
+  assert.equal(sourceRequests, requestsBeforeFailure, "injected failure cannot perform an extra source request");
   assert.equal(forbidden, 0);
   console.log("PASS PLOS resolver failover, no paid/model/body calls, repeat exclusion, stored credit and web/email rendering (offline)");
 } finally {

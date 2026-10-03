@@ -6,6 +6,7 @@
 import { supabaseServiceClient } from "@/lib/supabase/server";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import { normalizeUrl } from "./url-guard";
+import { readIssueCitationHistory } from "./issue-citation-history";
 import type { TopicBlurb } from "./types";
 import type { TopicId } from "@/lib/types";
 
@@ -34,6 +35,8 @@ function isCachedItem(value: unknown): value is TopicBlurb["items"][number] {
       || typeof value.headline !== "string" || !value.headline.trim()
       || typeof value.body !== "string" || !value.body.trim()) return false;
   if (value.primaryRef !== undefined && !isReference(value.primaryRef)) return false;
+  if (value.source !== undefined && typeof value.source !== "string") return false;
+  if (value.sourceUrl !== undefined && (typeof value.sourceUrl !== "string" || !normalizeUrl(value.sourceUrl))) return false;
   if (value.supplementaryRefs !== undefined && (!Array.isArray(value.supplementaryRefs)
       || !value.supplementaryRefs.every(isReference))) return false;
   return value.attribution === undefined || !!validatedSourceAttribution(
@@ -97,18 +100,35 @@ export async function getCachedBlurbs(
   }
 }
 
-// URLs cited in each topic's recent blurbs, ONE batched query for a whole
-// pool. Feeds the resolver's exclusion set so the same article is never
-// covered twice within the lookback window — the cross-send repeat guard
-// (a subscriber was seeing the same articles in back-to-back letters; at
-// daily cadence the Brave freshness window alone is too leaky to rely on).
-export async function getRecentlyCitedUrls(
+export interface CitationHistory {
+  state: "available" | "disabled" | "unavailable";
+  urlsByTopic: Map<TopicId, Set<string>>;
+  unavailableTopicIds: Set<TopicId>;
+}
+
+// A successful empty history is different from an unreadable history. Keep
+// known citations from partial rows, but do not reopen fresh sourcing for a
+// topic whose saved history could not be checked. Current-period finished
+// sections can still be served independently of this prior-period read.
+export async function getCitationHistory(
   topicIds: TopicId[],
   sinceIso: string,
   beforePeriodIso: string
-): Promise<Map<TopicId, Set<string>>> {
+): Promise<CitationHistory> {
   const result = new Map<TopicId, Set<string>>();
-  if (!blurbCacheEnabled() || topicIds.length === 0) return result;
+  const unavailableTopicIds = new Set<TopicId>();
+  const history = (state: CitationHistory["state"]): CitationHistory => ({
+    state, urlsByTopic: result, unavailableTopicIds,
+  });
+  const unavailable = (): CitationHistory => {
+    topicIds.forEach((id) => unavailableTopicIds.add(id));
+    return history("unavailable");
+  };
+  if (!blurbCacheEnabled()) return history("disabled");
+  if (topicIds.length === 0) return history("available");
+  if (!isPeriod(sinceIso) || !isPeriod(beforePeriodIso) || sinceIso >= beforePeriodIso) {
+    return unavailable();
+  }
   try {
     const sb = await supabaseServiceClient();
     const { data, error } = await sb
@@ -119,34 +139,88 @@ export async function getRecentlyCitedUrls(
       .in("topic_id", topicIds);
     if (error) {
       console.warn("[blurb-cache] cited-urls read failed");
-      return result;
+      return unavailable();
+    }
+    if (!Array.isArray(data)) {
+      console.warn("[blurb-cache] cited-urls response malformed");
+      return unavailable();
     }
     const requestedTopics = new Set<string>(topicIds);
-    for (const row of Array.isArray(data) ? data : []) {
-      if (!isRecord(row) || typeof row.topic_id !== "string" || !requestedTopics.has(row.topic_id)
-          || !isPeriod(row.week_of) || row.week_of < sinceIso || row.week_of >= beforePeriodIso
-          || !Array.isArray(row.items)) continue;
+    let unboundRow = false;
+    for (const row of data) {
+      if (!isRecord(row) || typeof row.topic_id !== "string") {
+        unboundRow = true;
+        continue;
+      }
+      if (!requestedTopics.has(row.topic_id)) continue;
       const topicId = row.topic_id as TopicId;
+      if (!isPeriod(row.week_of)) {
+        unavailableTopicIds.add(topicId);
+        continue;
+      }
+      if (row.week_of < sinceIso || row.week_of >= beforePeriodIso) continue;
+      if (!Array.isArray(row.items)) {
+        unavailableTopicIds.add(topicId);
+        continue;
+      }
       let set = result.get(topicId);
       if (!set) {
         set = new Set<string>();
         result.set(topicId, set);
       }
-      for (const item of row.items) {
-        if (!isRecord(item)) continue;
-        if (isRecord(item.primaryRef) && typeof item.primaryRef.url === "string" && item.primaryRef.url) {
-          set.add(item.primaryRef.url);
+      const collect = (ref: unknown): void => {
+        if (!isRecord(ref) || typeof ref.url !== "string" || !normalizeUrl(ref.url)) {
+          unavailableTopicIds.add(topicId);
+          return;
         }
-        for (const ref of Array.isArray(item.supplementaryRefs) ? item.supplementaryRefs : []) {
-          if (isRecord(ref) && typeof ref.url === "string" && ref.url) set.add(ref.url);
+        set.add(ref.url);
+      };
+      for (const item of row.items) {
+        if (!isRecord(item)) {
+          unavailableTopicIds.add(topicId);
+          continue;
+        }
+        if (!isCachedItem(item)) unavailableTopicIds.add(topicId);
+        if (item.primaryRef !== undefined) collect(item.primaryRef);
+        if (item.sourceUrl !== undefined) collect({ url: item.sourceUrl });
+        if (item.supplementaryRefs !== undefined) {
+          if (!Array.isArray(item.supplementaryRefs)) unavailableTopicIds.add(topicId);
+          else item.supplementaryRefs.forEach(collect);
         }
       }
     }
-    return result;
+    if (unboundRow) {
+      console.warn("[blurb-cache] cited-urls response has unbound rows");
+      return unavailable();
+    }
+    // Optional persisted-issue history closes a lost cache-write gap. Saved
+    // pending issues count too because provider acceptance can be uncertain.
+    // This is off until its service-only aggregate is separately installed.
+    // Neither source can erase uncertainty reported by the other source.
+    const issueHistory = await readIssueCitationHistory(sb, topicIds, sinceIso, beforePeriodIso);
+    for (const [topicId, urls] of issueHistory.urlsByTopic) {
+      let set = result.get(topicId);
+      if (!set) { set = new Set<string>(); result.set(topicId, set); }
+      urls.forEach((url) => set.add(url));
+    }
+    issueHistory.unavailableTopicIds.forEach((id) => unavailableTopicIds.add(id));
+    if (issueHistory.state === "unavailable") return unavailable();
+    if (unavailableTopicIds.size > 0) console.warn("[blurb-cache] cited-urls contains incomplete topic history");
+    return history("available");
   } catch {
     console.warn("[blurb-cache] cited-urls read exception");
-    return result;
+    return unavailable();
   }
+}
+
+// Compatibility for optional-cache callers. Production generation uses the
+// strict result above so unknown history cannot be treated as an empty set.
+export async function getRecentlyCitedUrls(
+  topicIds: TopicId[],
+  sinceIso: string,
+  beforePeriodIso: string
+): Promise<Map<TopicId, Set<string>>> {
+  return (await getCitationHistory(topicIds, sinceIso, beforePeriodIso)).urlsByTopic;
 }
 
 export async function setCachedBlurb(blurb: TopicBlurb): Promise<void> {

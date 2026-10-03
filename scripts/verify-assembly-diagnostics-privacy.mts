@@ -78,6 +78,7 @@ type Scenario = {
   drafts?: Map<TopicId, TopicBlurb | Error>;
   cached?: Map<TopicId, TopicBlurb>;
   recent?: Map<TopicId, Set<string>>;
+  historyUnavailable?: boolean;
   editorFails?: boolean;
   expireFirstTopic?: boolean;
 };
@@ -131,7 +132,13 @@ function harness(options: Scenario) {
     } },
     "./blurb-cache": {
       getCachedBlurbs: async () => options.cached ?? new Map(),
+      // Keep the legacy shape for the pinned pre-change --baseline source.
       getRecentlyCitedUrls: async () => options.recent ?? new Map(),
+      getCitationHistory: async () => ({
+        state: options.historyUnavailable ? "unavailable" : "available",
+        urlsByTopic: options.recent ?? new Map(),
+        unavailableTopicIds: new Set(options.historyUnavailable ? options.topics : []),
+      }),
       setCachedBlurb: async (blurb: TopicBlurb) => { writes.push(blurb); },
     },
     "@/lib/issue-visibility": visibility, "./url-guard": guard,
@@ -235,6 +242,22 @@ await check("model failure preserves custom source and normalized prior-link exc
   assert.deepEqual(h.searches, [{ id: fallback, excludes: ["example.test/previous-source"] }]);
   assert.equal(h.writes[0].topicId, fallback);
   assert.ok(h.warnings.some(args => String(args[0]).includes("model generation failed, using deterministic source fallback")));
+  privateDiagnostics(h);
+});
+
+await check("unavailable citation history preserves cached partial content and logs only generic counts", async () => {
+  if (baseline) return; // The pinned source predates the strict history API.
+  const h = harness({ topics: [fallback, ordinary], size: 2, historyUnavailable: true,
+    recent: new Map([[fallback, new Set([fixtureUrl("prior-source")])]]),
+    cached: new Map([[ordinary, fixtureBlurb(ordinary)]]) });
+  const issue = await h.generate();
+  assert.deepEqual([...issue.sections].map(section => section.topicId), [ordinary]);
+  assert.equal(issue.sections[0].items[0].primaryRef?.url, fixtureUrl("current-source"));
+  assert.equal(h.searches.length, 0);
+  assert.ok(h.warnings.some(args => args.length === 1 &&
+    args[0] === `[assemble] ${period}: held 1 topic(s) because citation history is unavailable`));
+  assert.ok(h.warnings.every(args => !String(args[0]).includes("quiet topic(s)")),
+    "unavailable history must not be reported as a quiet news day");
   privateDiagnostics(h);
 });
 

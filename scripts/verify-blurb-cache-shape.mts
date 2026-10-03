@@ -61,6 +61,7 @@ function harness(options: { data?: unknown; error?: { message: string }; reject?
     require(name: string) {
       if (name === "@/lib/source-attribution") return { validatedSourceAttribution };
       if (name === "./url-guard") return { normalizeUrl };
+      if (name === "./issue-citation-history") return { readIssueCitationHistory: async () => ({ state: "disabled", urlsByTopic: new Map(), unavailableTopicIds: new Set() }) };
       if (name === "@/lib/supabase/server") return { supabaseServiceClient: async () => {
         loads++;
         if (options.loadFails) throw new Error(options.failureText ?? "generic fixture client failure");

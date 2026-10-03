@@ -1,7 +1,7 @@
 import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
 import { resolveTopicSignal } from "./source-resolver";
-import { getCachedBlurbs, getRecentlyCitedUrls, setCachedBlurb } from "./blurb-cache";
+import { getCachedBlurbs, getCitationHistory, setCachedBlurb } from "./blurb-cache";
 import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import { normalizeUrl } from "./url-guard";
 import { selectLetterSections } from "./select-sections";
@@ -151,13 +151,13 @@ export async function generateIssue(
   const sinceIso = new Date(
     Date.parse(`${weekOf}T12:00:00Z`) - CITED_LOOKBACK_DAYS * 86400000
   ).toISOString().slice(0, 10);
-  const [cachedBlurbs, citedRaw] = await Promise.all([
+  const [cachedBlurbs, citationHistory] = await Promise.all([
     getCachedBlurbs(genPool as TopicId[], weekOf),
-    getRecentlyCitedUrls(genPool as TopicId[], sinceIso, weekOf),
+    getCitationHistory(genPool as TopicId[], sinceIso, weekOf),
   ]);
   // Normalize once to the url-guard identity the resolver compares against.
   const citedByTopic = new Map<string, Set<string>>();
-  for (const [tid, urls] of citedRaw) {
+  for (const [tid, urls] of citationHistory.urlsByTopic) {
     const set = new Set<string>();
     for (const u of urls) {
       const n = normalizeUrl(u);
@@ -165,6 +165,7 @@ export async function generateIssue(
     }
     if (set.size > 0) citedByTopic.set(tid, set);
   }
+  const blockedByHistory = new Set<string>();
 
   // Generate a topic's section from FRESH live signal. Returns null WITHOUT a
   // model call when the topic has nothing new this period, so the selector can
@@ -180,6 +181,10 @@ export async function generateIssue(
     // backfill instead.
     if (cached && cached.items.length > 0 && issueIsReaderVisible({ sections: [cached] })) {
       return { ...cached, topicLabel: topicLabel(id) };
+    }
+    if (citationHistory.state === "unavailable" || citationHistory.unavailableTopicIds.has(id)) {
+      blockedByHistory.add(id);
+      return null;
     }
     const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
     if (dryCache.has(dryKey)) return null; // searched dry earlier this batch — no re-search
@@ -258,7 +263,7 @@ export async function generateIssue(
           console.warn("[assemble] generated section leaked the source note, using deterministic sources");
           blurb = clean;
         }
-        // AWAITED, not fire-and-forget: this write feeds getRecentlyCitedUrls'
+        // AWAITED, not fire-and-forget: this write feeds getCitationHistory's
         // cross-send repeat guard (a subscriber never seeing the same article
         // twice within 14 days). An unawaited write here can be silently
         // abandoned once the enclosing request finishes and the platform tears
@@ -342,9 +347,13 @@ export async function generateIssue(
   };
   const selection = await selectLetterSections(genPool, size, genLive, null, extractBlurbUrls);
   const blurbs = selection.chosen.map((c) => c.value);
-  if (selection.skippedDry.length > 0) {
+  if (blockedByHistory.size > 0) {
+    console.warn(`[assemble] ${weekOf}: held ${blockedByHistory.size} topic(s) because citation history is unavailable`);
+  }
+  const quietTopics = selection.skippedDry.filter((id) => !blockedByHistory.has(id));
+  if (quietTopics.length > 0) {
     console.warn(
-      `[assemble] ${weekOf}: skipped ${selection.skippedDry.length} quiet topic(s)`
+      `[assemble] ${weekOf}: skipped ${quietTopics.length} quiet topic(s)`
     );
   }
   // alpha-drift-r17-12 (found+fixed 2026-08-07): a topic dropped for citing
@@ -359,6 +368,7 @@ export async function generateIssue(
     );
   }
   if (blurbs.length === 0) {
+    if (blockedByHistory.size > 0) throw new Error("No usable sections while citation history is unavailable");
     throw new Error("All topic sections failed to generate");
   }
   // alpha-drift-r16-13 (found+fixed 2026-08-07): topic_quota is raised
@@ -386,6 +396,9 @@ export async function generateIssue(
     // are perfectly fine. Name the actual observed cause(s) instead of
     // guessing one.
     const causes: string[] = [];
+    if (blockedByHistory.size > 0) {
+      causes.push(`${blockedByHistory.size} topic(s) held because citation history is unavailable`);
+    }
     if (genPool.length < size) {
       causes.push(`genPool has only ${genPool.length} topics -- likely a recent bundle upgrade the reader hasn't re-ranked topics for yet`);
     }
