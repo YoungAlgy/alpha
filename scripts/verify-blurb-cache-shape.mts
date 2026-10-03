@@ -1,7 +1,7 @@
 // Generic saved-JSON fixtures only. The real cache module runs in a VM with
 // an inert Supabase query builder and fixed non-secret configuration markers.
 // No server client, environment-file loader, source, reader or send is imported.
-// --baseline reads only the pinned unedited file with git show and is expected
+// --baseline / --privacy-baseline read pinned unedited files with git show and are expected
 // to fail the same regression assertions that pass against the working file.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -12,11 +12,12 @@ import ts from "typescript";
 import { validatedSourceAttribution } from "../lib/source-attribution.ts";
 import { normalizeUrl } from "../lib/engine/url-guard.ts";
 
-const baseline = process.argv.includes("--baseline");
-assert.ok(process.argv.slice(2).every((arg) => arg === "--baseline"), "unsupported verifier argument");
+const privacyBaseline = process.argv.includes("--privacy-baseline");
+const baseline = process.argv.includes("--baseline") || privacyBaseline;
+assert.ok(process.argv.length <= 3 && process.argv.slice(2).every((arg) => arg === "--baseline" || arg === "--privacy-baseline"), "unsupported verifier argument");
 const root = fileURLToPath(new URL("../", import.meta.url));
 const source = baseline
-  ? execFileSync("git", ["-c", "core.fsmonitor=false", "show", "e58db8d72950a8669c4e731cc139007d567d5506:lib/engine/blurb-cache.ts"], {
+  ? execFileSync("git", ["-c", "core.fsmonitor=false", "show", `${privacyBaseline ? "dcee47dc1c3757e06d892057daf3765558965c9e" : "e58db8d72950a8669c4e731cc139007d567d5506"}:lib/engine/blurb-cache.ts`], {
       cwd: root, encoding: "utf8", maxBuffer: 256 * 1024,
     })
   : readFileSync(new URL("../lib/engine/blurb-cache.ts", import.meta.url), "utf8");
@@ -29,12 +30,12 @@ type CacheModule = {
   getRecentlyCitedUrls(ids: string[], since: string, before: string): Promise<Map<string, Set<string>>>;
   setCachedBlurb(value: unknown): Promise<void>;
 };
-function harness(options: { data?: unknown; error?: { message: string }; reject?: boolean; loadFails?: boolean; enabled?: boolean } = {}) {
+function harness(options: { data?: unknown; error?: { message: string }; reject?: boolean; loadFails?: boolean; enabled?: boolean; failureText?: string } = {}) {
   const calls: Array<{ method: string; args: unknown[] }> = [];
   const warnings: unknown[][] = [];
   let loads = 0;
   const response = () => {
-    if (options.reject) throw new Error("generic fixture request failure");
+    if (options.reject) throw new Error(options.failureText ?? "generic fixture request failure");
     return { data: options.data ?? [], error: options.error ?? null };
   };
   const query = {
@@ -62,7 +63,7 @@ function harness(options: { data?: unknown; error?: { message: string }; reject?
       if (name === "./url-guard") return { normalizeUrl };
       if (name === "@/lib/supabase/server") return { supabaseServiceClient: async () => {
         loads++;
-        if (options.loadFails) throw new Error("generic fixture client failure");
+        if (options.loadFails) throw new Error(options.failureText ?? "generic fixture client failure");
         return { from(table: string) { assert.equal(table, "topic_blurbs"); return query; } };
       } };
       throw new Error(`unexpected VM import: ${name}`);
@@ -225,6 +226,23 @@ await check("ordinary writes keep their payload and conflict policy", async () =
   await cache.setCachedBlurb(blurb);
   const write = calls.find((call) => call.method === "upsert");
   assert.deepEqual(JSON.parse(JSON.stringify(write?.args)), [{ topic_id: topics[0], week_of: period, intro: blurb.intro, items: blurb.items }, { onConflict: "topic_id,week_of" }]);
+});
+await check("cache warnings never disclose custom text or raw failure details", async () => {
+  const customTopic = "custom:generic-private-topic-marker";
+  const failureText = "generic-private-database-detail-marker";
+  for (const options of [{ error: { message: failureText } }, { reject: true, failureText }, { loadFails: true, failureText }]) {
+    const { cache, warnings } = harness(options);
+    assert.equal((await cache.getCachedBlurbs([customTopic], period)).size, 0);
+    assert.equal((await cache.getRecentlyCitedUrls([customTopic], since, period)).size, 0);
+    await cache.setCachedBlurb({ topicId: customTopic, weekOf: period, intro: "Generic intro", items: [item("private-log-fixture")] });
+    assert.equal(warnings.length, 3);
+    for (const warning of warnings) {
+      assert.equal(warning.length, 1, "warnings use only one fixed diagnostic");
+      assert.match(String(warning[0]), /^\[blurb-cache\] (batch read|cited-urls read|write) (failed|exception)$/);
+      assert.equal(JSON.stringify(warning).includes(customTopic), false);
+      assert.equal(JSON.stringify(warning).includes(failureText), false);
+    }
+  }
 });
 await check("disabled cache and empty topic queries do not load a client", async () => {
   const disabled = harness({ enabled: false });

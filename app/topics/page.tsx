@@ -49,6 +49,7 @@ export default function TopicsPage() {
   const { state, update, loaded, storageError } = useOnboarding();
   const [picked, setPicked] = useState<TopicId[]>([]);
   const [signedIn, setSignedIn] = useState(false);
+  const [accountId, setAccountId] = useState<string | null>(null);
   // Quota = how many topics this user is currently paid up for. 5 = base,
   // 10/15/20/25 = +1/+2/+3/+4 add-ons. Unsigned users get the default 5.
   const [target, setTarget] = useState<number>(DEFAULT_TARGET);
@@ -195,12 +196,20 @@ export default function TopicsPage() {
         if (rowErr) throw rowErr;
         if (cancelled) return;
         if (!row) throw new Error("Account changed while loading topics");
+        // The row read may finish after another tab changes the sign-in.
+        // Never adopt the previous account's pool under the new session.
+        const { data: { user }, error: identityError } = await sb.auth.getUser();
+        if (cancelled) return;
+        if (identityError || !user || user.id !== session.user.id) {
+          throw new Error("Account changed while loading topics");
+        }
         // Flip signedIn in the same batch as the row's picked/target values below
         // (not right after getSession) so submit()'s signedIn check never sees a
         // render where signedIn is true but `picked` still holds stale
         // localStorage topics -- that window let a stale POST clobber a newer
         // save from another device.
         setSignedIn(true);
+        setAccountId(user.id);
         setUserBirthday(row?.birthday ?? null);
         // alpha-drift-r55-02: unlike `picked`, `target`/quota is never
         // user-edited state on this page -- no handler here ever calls
@@ -224,14 +233,14 @@ export default function TopicsPage() {
             setPicked(row.topics as TopicId[]);
           }
         }
-      } catch (e) {
+      } catch {
         // Logged, not silent: if this throws, signedIn never flips true, so
         // submit() below takes the UNSIGNED branch on a signed-in user's
         // Continue click -- it skips the POST to /api/account/topics
         // entirely and just updates local onboarding state instead. A
         // recurring failure here would otherwise look like a successful
         // save to the reader while silently writing nothing to the DB.
-        console.warn("[topics] signed-in hydrate failed:", e instanceof Error ? e.message : e);
+        console.warn("[topics] signed-in hydrate failed");
         if (!cancelled) setAccountError(true);
       } finally {
         // Unconditional: reached whether a session existed, the row fetch
@@ -246,6 +255,8 @@ export default function TopicsPage() {
   }, [router, accountAttempt]);
 
   function retryAccountCheck() {
+    setSignedIn(false);
+    setAccountId(null);
     setAccountError(false);
     setTopicsHydrated(false);
     setAccountAttempt((attempt) => attempt + 1);
@@ -403,7 +414,7 @@ export default function TopicsPage() {
     // still at its pre-hydrate default. saveInFlight.current: the
     // synchronous re-entry guard `saving` (React state) can't provide on
     // its own -- see that ref's own comment.
-    if (!ready || saving || !topicsHydrated || accountError || saveInFlight.current) return;
+    if (!ready || saving || !topicsHydrated || accountError || saveInFlight.current || (signedIn && !accountId)) return;
     saveInFlight.current = true;
     setSaveError(null);
     try {
@@ -420,11 +431,15 @@ export default function TopicsPage() {
           const res = await fetch("/api/account/topics", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ topics: picked }),
+            body: JSON.stringify({ topics: picked, expectedAccountId: accountId }),
           });
           if (!res.ok) {
-            const body = await res.json().catch(() => null);
-            throw new Error(body?.error || "save failed");
+            if (cancelledRef.current) return;
+            setSaving(false);
+            setSaveError(res.status === 400 || res.status === 409
+              ? "Reload the page before saving your topics. Your account or saved topics may have changed."
+              : "Couldn't save your topics. Check your connection and try again.");
+            return;
           }
         } catch {
           if (cancelledRef.current) return;

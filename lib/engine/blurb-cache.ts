@@ -69,7 +69,7 @@ export async function getCachedBlurbs(
       .eq("week_of", weekOf)
       .in("topic_id", topicIds);
     if (error) {
-      console.warn(`[blurb-cache] batch read failed for ${weekOf}:`, error.message);
+      console.warn("[blurb-cache] batch read failed");
       return result;
     }
     const requestedTopics = new Set<string>(topicIds);
@@ -91,8 +91,8 @@ export async function getCachedBlurbs(
       });
     }
     return result;
-  } catch (e) {
-    console.warn(`[blurb-cache] batch read exception:`, e);
+  } catch {
+    console.warn("[blurb-cache] batch read exception");
     return result;
   }
 }
@@ -118,7 +118,7 @@ export async function getRecentlyCitedUrls(
       .lt("week_of", beforePeriodIso)
       .in("topic_id", topicIds);
     if (error) {
-      console.warn(`[blurb-cache] cited-urls read failed:`, error.message);
+      console.warn("[blurb-cache] cited-urls read failed");
       return result;
     }
     const requestedTopics = new Set<string>(topicIds);
@@ -143,8 +143,8 @@ export async function getRecentlyCitedUrls(
       }
     }
     return result;
-  } catch (e) {
-    console.warn(`[blurb-cache] cited-urls read exception:`, e);
+  } catch {
+    console.warn("[blurb-cache] cited-urls read exception");
     return result;
   }
 }
@@ -163,9 +163,11 @@ export async function setCachedBlurb(blurb: TopicBlurb): Promise<void> {
       { onConflict: "topic_id,week_of" }
     );
     if (error) {
-      console.warn(`[blurb-cache] write failed for ${blurb.topicId} ${blurb.weekOf}:`, error.message);
+      // Custom topic IDs and database errors can contain reader-supplied text.
+      // Keep optional-cache diagnostics fixed and free of request data.
+      console.warn("[blurb-cache] write failed");
     }
-  } catch (e) {
-    console.warn(`[blurb-cache] write exception:`, e);
+  } catch {
+    console.warn("[blurb-cache] write exception");
   }
 }

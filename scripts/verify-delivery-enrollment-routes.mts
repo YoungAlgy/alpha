@@ -46,11 +46,12 @@ const eligible = {
   email: "reader@fixture.invalid", delivery_enrolled: true,
   subscribed_at: "2026-01-01T00:00:00Z", access_granted_at: "2026-01-01T00:00:00Z",
   cancelled_at: null, unsubscribed_at: null, bounced_at: null, complained_at: null,
-  suppression_cleanup_pending_at: null,
+  suppression_cleanup_pending_at: null, brevo_unsubscribed_at: null,
 };
-function checkFresh(row: unknown, error: unknown = null) {
+function checkFresh(row: unknown, error: unknown = null, brevoSchemaEnabled = true) {
   return run(freshGate, {
     freshUser: row, freshUserErr: error, hasReaderAccess,
+    BREVO_DELIVERY_SCHEMA_ENABLED: brevoSchemaEnabled,
     eligibilityRecheckFailures: 0, unenrolledMidRunSkips: 0,
     unsubscribedMidRunSkips: 0, cancelledMidRunSkips: 0, suppressedMidRunSkips: 0,
     console: { warn() {}, log() {} },
@@ -62,9 +63,10 @@ for (const flag of [false, undefined, null, "true", 1]) {
 }
 assert.equal(checkFresh(null), "retry-required");
 assert.equal(checkFresh(eligible, { message: "fixture unavailable" }), "retry-required");
-for (const key of ["unsubscribed_at", "bounced_at", "complained_at", "suppression_cleanup_pending_at"]) {
+for (const key of ["unsubscribed_at", "brevo_unsubscribed_at", "bounced_at", "complained_at", "suppression_cleanup_pending_at"]) {
   assert.equal(checkFresh({ ...eligible, [key]: "2026-01-02T00:00:00Z" }), "settled");
 }
+assert.equal(checkFresh({ ...eligible, brevo_unsubscribed_at: "2026-01-02T00:00:00Z" }, null, false), "allowed");
 assert.equal(checkFresh({ ...eligible, subscribed_at: null }), "settled");
 assert.equal(checkFresh({ ...eligible, email: null }), "retry-required");
 

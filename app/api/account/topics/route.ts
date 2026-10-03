@@ -43,9 +43,9 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { topics?: unknown };
+  let body: { topics?: unknown; expectedAccountId?: unknown };
   try {
-    body = (await req.json()) as { topics?: unknown };
+    body = (await req.json()) as { topics?: unknown; expectedAccountId?: unknown };
   } catch {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
   }
@@ -55,6 +55,22 @@ export async function POST(req: Request) {
   // property off `null` instead of this route's own clean 400.
   if (typeof body !== "object" || body === null) {
     return NextResponse.json({ error: "Bad request." }, { status: 400 });
+  }
+
+  // Bind the saved pool to the account whose editor loaded it. Another tab
+  // can replace the sign-in while this form remains open.
+  if (typeof body.expectedAccountId !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.expectedAccountId)) {
+    return NextResponse.json(
+      { error: "Reload the page before saving your topics." },
+      { status: 400 }
+    );
+  }
+  if (body.expectedAccountId !== user.id) {
+    return NextResponse.json(
+      { error: "Your signed-in account changed. Reload the page before saving your topics." },
+      { status: 409 }
+    );
   }
 
   // Cheap, DB-free shape check first (array, length ceiling, empty floor,
@@ -82,10 +98,13 @@ export async function POST(req: Request) {
     .eq("id", user.id)
     .maybeSingle();
   if (readErr) {
-    console.error("[account/topics] quota lookup failed:", readErr.message);
+    console.error("[account/topics] quota lookup failed");
     return NextResponse.json({ error: "Couldn't save. Try again." }, { status: 500 });
   }
-  const cap = poolCap(clampQuota(row?.topic_quota ?? 5));
+  if (!row) {
+    return NextResponse.json({ error: "Reload the page before saving your topics." }, { status: 409 });
+  }
+  const cap = poolCap(clampQuota(row.topic_quota ?? 5));
 
   const result = validateTopicsAgainstCap(shape.topics, cap);
   if (!result.ok) {
@@ -93,10 +112,13 @@ export async function POST(req: Request) {
   }
   const { topics } = result;
 
-  const { error } = await svc.from("users").update({ topics }).eq("id", user.id);
+  const { data: updated, error } = await svc.from("users").update({ topics }).eq("id", user.id).select("id").maybeSingle();
   if (error) {
-    console.error("[account/topics] update failed:", error.message);
+    console.error("[account/topics] update failed");
     return NextResponse.json({ error: "Couldn't save. Try again." }, { status: 500 });
+  }
+  if (!updated) {
+    return NextResponse.json({ error: "Reload the page before saving your topics." }, { status: 409 });
   }
 
   return NextResponse.json({ ok: true, topics });

@@ -153,7 +153,7 @@ function component(options: {
   return { settle, edit, save, render, mirrors, syncs, requests };
 }
 
-function route(options: { source?: string; accountId?: string | null; writeError?: unknown } = {}) {
+function route(options: { source?: string; accountId?: string | null; writeError?: unknown; missingSavedRow?: boolean } = {}) {
   const writes: Array<{ fields: Record<string, unknown>; id: string }> = [];
   let serviceCalls = 0;
   const exports: { POST?: (request: Request) => Promise<{ status: number; body: Record<string, unknown> }> } = {};
@@ -167,10 +167,17 @@ function route(options: { source?: string; accountId?: string | null; writeError
           serviceCalls++;
           return { from(table: string) {
             assert.equal(table, "users");
-            return { update(fields: Record<string, unknown>) { return { async eq(column: string, id: string) {
+            return { update(fields: Record<string, unknown>) { return { eq(column: string, id: string) {
               assert.equal(column, "id");
               writes.push({ fields: copy(fields), id });
-              return { error: options.writeError ?? null };
+              const result = { data: options.missingSavedRow ? null : { id }, error: options.writeError ?? null };
+              return {
+                select(columns: string) {
+                  assert.equal(columns, "id", "update only returns its row ID");
+                  return { async maybeSingle() { return result; } };
+                },
+                then(done: (value: unknown) => unknown) { return Promise.resolve(result).then(done); },
+              };
             } }; } };
           } };
         },
@@ -265,6 +272,29 @@ assert.deepEqual(api.writes, [{ id: ACCOUNT_A, fields: {
 const signedOutApi = route({ accountId: null });
 assert.equal((await signedOutApi.post(body)).status, 401);
 assert.equal(signedOutApi.serviceCalls, 0);
+
+const missingApi = route({ missingSavedRow: true });
+const missing = await missingApi.post(body);
+assert.equal(missing.status, 409, "zero-row update cannot report saved");
+assert.match(String(missing.body.error), /Reload the page/);
+assert.equal(missingApi.writes.length, 1, "one update request only, no extra query");
+const missingApp = component({ fetch: async (payload) => missingApi.post(payload) });
+tree = await missingApp.settle();
+tree = missingApp.edit(tree, "First name", "Changed Reader");
+tree = await missingApp.save(tree);
+assert.equal(missingApp.mirrors.length, 0);
+assert.equal(missingApp.syncs.length, 0);
+assert.doesNotMatch(text(tree), /Saved\. Your next letter/);
+const failedApi = route({ writeError: { message: "generic fixture failure" } });
+assert.equal((await failedApi.post(body)).status, 500);
+
+// The existing request remains successful when no row matched if its
+// persistence readback is removed. Keep this regression entirely in memory.
+const noReadbackSource = routeSource
+  .replace('.select("id").maybeSingle()', "")
+  .replace("  if (!saved) {", "  if (false && !saved) {");
+assert.notEqual(noReadbackSource, routeSource);
+assert.equal((await route({ source: noReadbackSource, missingSavedRow: true }).post(body)).status, 200);
 
 // Reproduce each prior defect by mutating source strings in this process only.
 const duplicateSource = componentSource.replace("}, { sync: false });", "});");

@@ -149,10 +149,18 @@ export async function POST(req: Request) {
   };
 
   const svc = await supabaseServiceClient();
-  const { error } = await svc.from("users").update(updates).eq("id", user.id);
+  // A successful request can match no row if the account was removed after
+  // auth. Require one returned ID before reporting a persisted save.
+  const { data: saved, error } = await svc.from("users").update(updates).eq("id", user.id).select("id").maybeSingle();
   if (error) {
-    console.error("[account/profile] update failed:", error.message);
+    console.error("[account/profile] update failed");
     return NextResponse.json({ error: "Couldn't save. Try again." }, { status: 500 });
+  }
+  if (!saved) {
+    return NextResponse.json(
+      { error: "Your account changed. Reload the page before saving your details." },
+      { status: 409 }
+    );
   }
 
   return NextResponse.json({ ok: true, profile: updates });
