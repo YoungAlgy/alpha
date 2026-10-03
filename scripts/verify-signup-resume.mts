@@ -453,6 +453,7 @@ function inboxRuntime(row: InboxRow, authUser: { id: string } | null = { id: "si
 } = {}) {
   const calls: string[] = [];
   const routes: string[] = [];
+  const resetOptions: Array<{ clearRememberedEmail?: boolean }> = [];
   const session = { user: { id: "signed-in-user-id" } };
   let sessionRead = 0;
   let rowRead = 0;
@@ -494,12 +495,14 @@ function inboxRuntime(row: InboxRow, authUser: { id: string } | null = { id: "si
     "@/lib/reader-profile-state": { hasUsableReaderProfile },
     "@/lib/issue-visibility": { issueIsReaderVisible },
     "@/lib/latest-visible-issue": { latestVisibleIssue },
-    "@/lib/onboarding-state": { useOnboarding: () => ({ state: {}, loaded: true, reset: () => { calls.push("reset"); return options.resetResult ?? true; } }) },
+    "@/lib/onboarding-state": { useOnboarding: () => ({ state: {}, loaded: true, reset: (config: { clearRememberedEmail?: boolean } = {}) => {
+      calls.push("reset"); resetOptions.push(config); return options.resetResult ?? true;
+    } }) },
     "@/lib/cadence": { currentPeriodIso: () => date, nextSendIso: () => future, SEND_HOUR_UTC: 14 },
     "@/lib/audio": { fanfare: dummy },
     "@/lib/copy": { SHARE_LEAD: "" },
   }, options.allowEmptyStorage, routes);
-  return { ...app, calls, routes, get stateWrites() { return app.stateWrites; } };
+  return { ...app, calls, routes, resetOptions, get stateWrites() { return app.stateWrites; } };
 }
 for (const [label, row, expected] of [
   ["saved pending inbox", { access_requested_at: date }, /Your request is saved/],
@@ -602,6 +605,191 @@ signOutAgain.props.onClick();
 await signOutRetry.settle();
 equal(signOutRetry.calls.filter((call) => call === "signOut").length, 2, "sign-out retry calls provider again");
 equal(signOutRetry.calls.filter((call) => call === "reset").length, 1, "successful sign-out clears saved answers once");
+equal(signOutRetry.resetOptions[0]?.clearRememberedEmail, true, "explicit sign-out clears remembered identity");
 equal(signOutRetry.routes[0], "/welcome", "successful sign-out leaves inbox");
+
+// A sibling sign-out also clears an already-open sign-in form. Pending local
+// completions cannot restore its old prefill or navigate after that cleanup.
+function signinRuntime(options: {
+  remembered?: boolean;
+  send?: () => Promise<{ error: unknown }>;
+  verify?: () => Promise<{ error: unknown }>;
+  session?: () => Promise<{ data: { session: unknown }; error: unknown }>;
+  account?: () => Promise<{ state: string; email: string | null }>;
+} = {}) {
+  const saved = new Map(options.remembered === false ? [] : [["alpha-signin-email", "fixture@example.test"]]);
+  const local = {
+    getItem: (key: string) => saved.get(key) ?? null,
+    setItem: (key: string, value: string) => { saved.set(key, value); },
+    removeItem: (key: string) => { saved.delete(key); },
+  };
+  const listeners = new Set<(event: Record<string, unknown>) => void>();
+  const routes: string[] = [];
+  const draftWrites: unknown[] = [];
+  const auth = {
+    signInWithOtp: options.send ?? (async () => ({ error: null })),
+    verifyOtp: options.verify ?? (async () => ({ error: null })),
+    getSession: options.session ?? (async () => ({ data: { session: null }, error: null })),
+  };
+  const app = pageRuntime("app/signin/page.tsx", {
+    "next/link": { default: "Link" },
+    "next/navigation": { useRouter: () => ({ push: (path: string) => routes.push(path), replace: (path: string) => routes.push(path) }) },
+    "@/components/Footer": { Footer: dummy },
+    "@/components/Wordmark": { Wordmark: dummy },
+    "@/lib/supabase/client": { supabaseConfigured: () => true, supabaseClient: () => ({ auth }) },
+    "@/lib/audio": { confirm: dummy },
+    "@/lib/validate-email": { isValidEmail: (value: string) => value.includes("@") },
+    "@/lib/gotrue-errors": { isAuthRateLimitError: () => false, isInvalidOrExpiredOtpError: () => false },
+    "@/lib/onboarding-account": { readOnboardingAccount: options.account ?? (async () => ({ state: "incomplete", email: "fixture@example.test" })) },
+    "@/lib/onboarding-state": {
+      useOnboarding: () => ({ state: {}, emailDraft: undefined, update: (patch: unknown) => draftWrites.push(patch) }),
+      SIGNIN_RESET_KEY: "alpha-signin-reset-at",
+      readSignInResetAt: () => Number(saved.get("alpha-signin-reset-at") ?? 0),
+    },
+    "@/lib/signup-progress": { signInDestination },
+  }, false, undefined, {
+    localStorage: local, clearTimeout,
+    setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms === 80 ? 0 : ms),
+    window: {
+      localStorage: local,
+      sessionStorage: { getItem: () => null, removeItem: dummy },
+      location: { hash: "", pathname: "/signin" }, history: { replaceState: dummy },
+      addEventListener: (type: string, listener: (event: Record<string, unknown>) => void) => { if (type === "storage") listeners.add(listener); },
+      removeEventListener: (type: string, listener: (event: Record<string, unknown>) => void) => { if (type === "storage") listeners.delete(listener); },
+    },
+  });
+  function clear(kind: "removed" | "empty" | "all" = "removed", newerValue?: string, notify = true, markIdentity = true) {
+    const hadIdentity = saved.has("alpha-signin-email");
+    let resetAt = 0;
+    if (kind !== "all" && markIdentity) {
+      resetAt = Number(saved.get("alpha-signin-reset-at") ?? 0) + 1;
+      saved.set("alpha-signin-reset-at", String(resetAt));
+    }
+    if (kind === "all") saved.clear();
+    else if (kind === "empty") saved.set("alpha-signin-email", "");
+    else saved.delete("alpha-signin-email");
+    if (newerValue) saved.set("alpha-signin-email", newerValue);
+    const deliver = () => {
+      if (resetAt) for (const listener of listeners) listener({
+        storageArea: local, key: "alpha-signin-reset-at", newValue: String(resetAt),
+      });
+      if (hadIdentity || kind !== "removed") for (const listener of listeners) listener({
+        storageArea: local, key: kind === "all" ? null : "alpha-signin-email", newValue: kind === "empty" ? "" : null,
+      });
+    };
+    if (notify) deliver();
+    return deliver;
+  }
+  return { ...app, routes, draftWrites, saved, clear };
+}
+const emailValue = (tree: Element) => findElement(tree, (element) => element.type === "input" && element.props.type === "email")?.props.value;
+const submitForm = (tree: Element) => findElement(tree, (element) => element.type === "form")!.props.onSubmit({ preventDefault() {} }) as Promise<void>;
+
+for (const kind of ["removed", "empty", "all"] as const) {
+  const app = signinRuntime();
+  let tree = await app.settle();
+  equal(emailValue(tree), "fixture@example.test", "remembered prefill is available before cleanup");
+  await submitForm(tree);
+  tree = await app.settle();
+  equal(!!findElement(tree, (element) => element.type === "input" && element.props.autoComplete === "one-time-code"), true, "normal code step still works");
+  app.clear(kind);
+  tree = await app.settle();
+  equal(emailValue(tree), "", "sibling cleanup clears the visible identity and code step");
+  equal(treeText(tree).includes("fixture@example.test"), false, "old identity is absent from the cleared form");
+  app.unmount();
+}
+{
+  const send = deferred<{ error: unknown }>();
+  const app = signinRuntime({ send: () => send.promise });
+  let tree = await app.settle();
+  const pending = submitForm(tree);
+  app.clear();
+  send.resolve({ error: null });
+  await pending;
+  tree = await app.settle();
+  equal(emailValue(tree), "", "late code response cannot repopulate the cleared form");
+  equal(app.saved.has("alpha-signin-email"), false, "late code response cannot restore the cleared storage identity");
+  const input = findElement(tree, (element) => element.type === "input" && element.props.type === "email")!;
+  input.props.onChange({ target: { value: "new-fixture@example.test" } });
+  tree = await app.settle();
+  await submitForm(tree);
+  tree = await app.settle();
+  equal(!!findElement(tree, (element) => element.type === "input" && element.props.autoComplete === "one-time-code"), true, "a new explicit sign-in still works after cleanup");
+  app.unmount();
+}
+{
+  const verify = deferred<{ error: unknown }>();
+  const app = signinRuntime({ verify: () => verify.promise });
+  let tree = await app.settle();
+  await submitForm(tree);
+  tree = await app.settle();
+  findElement(tree, (element) => element.type === "input" && element.props.autoComplete === "one-time-code")!.props.onChange({ target: { value: "123456" } });
+  tree = await app.settle();
+  const pending = submitForm(tree);
+  app.clear();
+  verify.resolve({ error: null });
+  await pending;
+  tree = await app.settle();
+  equal(app.routes.length, 0, "late verification cannot navigate after sibling cleanup");
+  equal(app.draftWrites.length, 0, "late verification cannot restore the cleared draft");
+  equal(emailValue(tree), "", "late verification leaves the cleared form empty");
+  app.unmount();
+}
+{
+  const session = deferred<{ data: { session: unknown }; error: unknown }>();
+  const app = signinRuntime({ session: () => session.promise });
+  await app.settle();
+  app.clear();
+  session.resolve({ data: { session: {} }, error: null });
+  await app.settle();
+  equal(app.routes.length, 0, "late session check cannot navigate after sibling cleanup");
+  equal(app.draftWrites.length, 0, "late session check cannot restore the cleared draft");
+  app.unmount();
+}
+{
+  const app = signinRuntime();
+  let tree = await app.settle();
+  app.clear("removed", "newer-fixture@example.test", true, false);
+  tree = await app.settle();
+  equal(emailValue(tree), "fixture@example.test", "stale removal event does not erase a later saved identity");
+  app.unmount();
+}
+for (const remembered of [false, true]) {
+  const send = deferred<{ error: unknown }>();
+  const app = signinRuntime({ remembered, send: () => send.promise });
+  let tree = await app.settle();
+  if (!remembered) {
+    findElement(tree, (element) => element.type === "input" && element.props.type === "email")!.props.onChange({ target: { value: "fixture@example.test" } });
+    tree = await app.settle();
+  }
+  const pending = submitForm(tree);
+  // Publish cleanup while its event remains queued. A different identity can
+  // then be saved without allowing the old pending response to overwrite it.
+  const deliver = app.clear("removed", "newer-fixture@example.test", false);
+  send.resolve({ error: null });
+  await pending;
+  equal(app.saved.get("alpha-signin-email"), "newer-fixture@example.test", "durable cleanup fences a pending send before event delivery");
+  deliver();
+  tree = await app.settle();
+  equal(emailValue(tree), "", "identity marker clears an old pending form even when its email key was absent");
+  equal(app.saved.get("alpha-signin-email"), "newer-fixture@example.test", "queued cleanup preserves a newer stored identity");
+  app.unmount();
+}
+{
+  const send = deferred<{ error: unknown }>();
+  const app = signinRuntime({ send: () => send.promise });
+  let tree = await app.settle();
+  const deliver = app.clear("removed", undefined, false);
+  findElement(tree, (element) => element.type === "input" && element.props.type === "email")!.props.onChange({ target: { value: "new-fixture@example.test" } });
+  tree = await app.settle();
+  const pending = submitForm(tree); // explicitly begun after the cleanup marker
+  deliver();
+  send.resolve({ error: null });
+  await pending;
+  tree = await app.settle();
+  equal(app.saved.get("alpha-signin-email"), "new-fixture@example.test", "an older queued marker preserves a new explicit sign-in");
+  equal(!!findElement(tree, (element) => element.type === "input" && element.props.autoComplete === "one-time-code"), true, "new work started after cleanup reaches the normal code step");
+  app.unmount();
+}
 
 console.log(`Signup resume offline: ${checks} assertions passed.`);

@@ -7,6 +7,7 @@ import { syncUserProfile } from "./user-sync";
 const STORAGE_KEY = "alpha-onboarding";
 const RESET_CHANNEL = "alpha-onboarding-reset";
 const RESET_KEY = "alpha-onboarding-reset-at";
+export const SIGNIN_RESET_KEY = "alpha-signin-reset-at";
 
 export interface OnboardingState {
   firstName?: string;
@@ -72,13 +73,17 @@ function readStore(store: "localStorage" | "sessionStorage"): { draft?: Onboardi
   }
 }
 
-function readResetAt(): number {
+function readResetAt(key = RESET_KEY): number {
   try {
-    const value = Number(window.localStorage.getItem(RESET_KEY));
+    const value = Number(window.localStorage.getItem(key));
     return Number.isSafeInteger(value) && value > 0 ? value : 0;
   } catch {
     return 0;
   }
+}
+
+export function readSignInResetAt(): number {
+  return readResetAt(SIGNIN_RESET_KEY);
 }
 
 function readRaw(): { draft: OnboardingState; storageError: boolean } {
@@ -149,8 +154,8 @@ function write(s: OnboardingState): boolean {
   }
 }
 
-function clearStoredDraft(publishReset = true): { cleared: boolean; resetAt: number } {
-  const resetAt = Math.max(Date.now(), readResetAt() + 1, (readRaw().draft.draftSavedAt ?? 0) + 1);
+function clearStoredDraft(publishReset = true, clearRememberedEmail = false): { cleared: boolean; resetAt: number } {
+  const resetAt = Math.max(Date.now(), readResetAt() + 1, readSignInResetAt() + 1, (readRaw().draft.draftSavedAt ?? 0) + 1);
   if (typeof window === "undefined") {
     memoryDraft = undefined;
     memoryKind = undefined;
@@ -164,6 +169,18 @@ function clearStoredDraft(publishReset = true): { cleared: boolean; resetAt: num
     } catch {
       // A denied removal may still permit overwriting the private draft.
       try { window[store].setItem(STORAGE_KEY, empty); } catch { failed = true; }
+    }
+  }
+  // Explicit sign-out and account deletion clear the separate sign-in prefill.
+  // Draft-only completion keeps it. A denied removal may still allow erasure.
+  if (clearRememberedEmail) {
+    // Removing an absent email emits no storage event. This generation also
+    // fences pending completions before a sibling receives the queued event.
+    try { window.localStorage.setItem(SIGNIN_RESET_KEY, String(resetAt)); } catch { failed = true; }
+    try {
+      window.localStorage.removeItem("alpha-signin-email");
+    } catch {
+      try { window.localStorage.setItem("alpha-signin-email", ""); } catch { failed = true; }
     }
   }
   if (publishReset) {
@@ -262,8 +279,8 @@ export function useOnboarding() {
     return saved;
   }, []);
 
-  const reset = useCallback((): boolean => {
-    const { cleared, resetAt } = clearStoredDraft();
+  const reset = useCallback((options: { clearRememberedEmail?: boolean } = {}): boolean => {
+    const { cleared, resetAt } = clearStoredDraft(true, options.clearRememberedEmail === true);
     try {
       const channel = new BroadcastChannel(RESET_CHANNEL);
       channel.postMessage({ type: "reset", resetAt });

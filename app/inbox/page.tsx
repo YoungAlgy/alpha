@@ -293,7 +293,7 @@ export default function InboxPage() {
     // Wipe onboarding answers (name, email, birthday, etc.) so the next
     // person on this device — shared/library/kiosk computer — doesn't get
     // them pre-filled or see this reader's email dropped into /signin.
-    if (!reset()) {
+    if (!reset({ clearRememberedEmail: true })) {
       setClearError("This browser wouldn't clear your saved answers. Try again, or clear Alpha's site data in your browser before sharing this device.");
       return;
     }

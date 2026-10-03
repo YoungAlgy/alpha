@@ -1202,7 +1202,8 @@ export async function GET(req: Request) {
       // seeing the user as undelivered and both sending a duplicate. This
       // UPDATE ... WHERE delivered_at IS NULL is an atomic compare-and-swap:
       // Postgres row-locks the issue so exactly ONE concurrent invocation
-      // flips the stamp and proceeds; the loser updates 0 rows and skips. We
+      // flips the stamp and proceeds. The loser updates 0 rows and leaves the
+      // outcome unresolved until a later check can prove acceptance. We
       // stamp BEFORE the send (was: best-effort stamp after) and roll back on
       // send failure — trading the old "stamp-fail/crash -> DUPLICATE" for a
       // far rarer "hard crash between claim and send -> missed once". A missed
@@ -1324,9 +1325,11 @@ export async function GET(req: Request) {
           throw new Error(`delivered_at claim failed: ${claimErr.message}`);
         }
         if ((claimRows?.length ?? 0) === 0) {
-          skippedAlreadyDelivered++;
-          console.log("[cron/weekly-send] skipped (claimed by a concurrent run)");
-          return markDeliverySettled();
+          // A held claim can belong to an in-flight send or a crashed process.
+          // It is not provider acceptance proof, including when reclaim failed.
+          // Keep the claim untouched and expose this reader as unresolved.
+          console.log("[cron/weekly-send] deferred (claim held without acceptance proof)");
+          return "retry-required";
         }
       } else {
         // force=1 bypasses the ordinary delivered_at claim. The page-level

@@ -1035,7 +1035,7 @@ export default function SettingsPage() {
                 // Same device wipe as the inbox's sign-out: saved answers and
                 // the cached first letter go too, so the next person on this
                 // browser starts clean.
-                if (!reset()) {
+                if (!reset({ clearRememberedEmail: true })) {
                   setSignOutError("This browser wouldn't clear your saved answers. Try again, or clear Alpha's site data in your browser before sharing this device.");
                   setSigningOut(false);
                   return;
@@ -1086,7 +1086,7 @@ export default function SettingsPage() {
                     setDeleteError(`Couldn't delete your account. ${result.error ? `${result.error} ` : ""}Please try again. Your data on this device has not been cleared.`);
                     return;
                   }
-                  const draftCleared = reset();
+                  const draftCleared = reset({ clearRememberedEmail: true });
                   let deviceCleared = draftCleared;
                   for (const key of ["alpha-first-issue", "alpha-theme"]) {
                     try {

@@ -10,7 +10,7 @@ import { confirm as audioConfirm } from "@/lib/audio";
 import { isValidEmail } from "@/lib/validate-email";
 import { isAuthRateLimitError, isInvalidOrExpiredOtpError } from "@/lib/gotrue-errors";
 import { readOnboardingAccount } from "@/lib/onboarding-account";
-import { useOnboarding } from "@/lib/onboarding-state";
+import { useOnboarding, readSignInResetAt, SIGNIN_RESET_KEY } from "@/lib/onboarding-state";
 import { signInDestination } from "@/lib/signup-progress";
 
 const REMEMBERED_EMAIL_KEY = "alpha-signin-email";
@@ -37,6 +37,7 @@ function takeSignInReturnPath(): string | null {
 }
 
 type Step = "email" | "code";
+type SignInIdentity = { revision: number; resetAt: number };
 
 export default function SigninPage() {
   const router = useRouter();
@@ -64,10 +65,21 @@ export default function SigninPage() {
   // the effect body on mount (not just set on cleanup), matching the
   // already-fixed mountedRef/cancelledRef pattern elsewhere in the app.
   const cancelledRef = useRef(false);
+  const identityRevision = useRef(0);
+  const observedResetAt = useRef(0);
   useEffect(() => {
     cancelledRef.current = false;
     return () => { cancelledRef.current = true; };
   }, []);
+
+  const captureIdentity = useCallback((): SignInIdentity => {
+    const resetAt = readSignInResetAt();
+    observedResetAt.current = Math.max(observedResetAt.current, resetAt);
+    return { revision: identityRevision.current, resetAt };
+  }, []);
+  const identityIsCurrent = useCallback((identity: SignInIdentity): boolean =>
+    !cancelledRef.current && identity.revision === identityRevision.current &&
+      identity.resetAt === readSignInResetAt(), []);
 
   // The saved signup draft, read only to decide where a new account resumes.
   // Refs so the async sign-in handlers below see the hydrated draft.
@@ -78,11 +90,12 @@ export default function SigninPage() {
   }, [draft, emailDraft, updateDraft]);
 
   // Where a verified sign-in goes next. See signInDestination.
-  const destinationAfterSignIn = useCallback(async (): Promise<string> => {
+  const destinationAfterSignIn = useCallback(async (identity: SignInIdentity): Promise<string> => {
     const returnPath = takeSignInReturnPath();
     if (returnPath) return returnPath;
     try {
       const account = await readOnboardingAccount();
+      if (!identityIsCurrent(identity)) return "/inbox";
       const { draft: saved, emailDraft: savedEmail, updateDraft: save } = draftRef.current;
       const destination = signInDestination(account.state, saved);
       // They just proved this address, so the email step comes prefilled.
@@ -92,7 +105,7 @@ export default function SigninPage() {
     } catch {
       return "/inbox";
     }
-  }, []);
+  }, [identityIsCurrent]);
 
   // Tick the resend cooldown down to zero.
   useEffect(() => {
@@ -106,6 +119,27 @@ export default function SigninPage() {
   // previous person on a shared/public computer, and silently dropping
   // their email into this box risks a login code going to the wrong inbox.
   useEffect(() => {
+    observedResetAt.current = readSignInResetAt();
+    const clearFromOtherTab = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage) return;
+      if (event.key === SIGNIN_RESET_KEY) {
+        const resetAt = Number(event.newValue);
+        if (!Number.isSafeInteger(resetAt) || resetAt <= observedResetAt.current) return;
+        observedResetAt.current = resetAt;
+      } else if (event.key !== null) return;
+      // Identity cleanup has its own generation. The paired email removal
+      // event cannot cancel new work explicitly begun after that generation.
+      identityRevision.current++;
+      clearTimeout(stubTimer.current);
+      setEmail("");
+      setCode("");
+      setStep("email");
+      setBusy(false);
+      setErr(null);
+      setCooldown(0);
+      setResent(false);
+    };
+    window.addEventListener("storage", clearFromOtherTab);
     try {
       const remembered = localStorage.getItem(REMEMBERED_EMAIL_KEY);
       // This is a one-time client-only localStorage hydration after mount.
@@ -114,6 +148,7 @@ export default function SigninPage() {
     } catch {
       // ignore
     }
+    return () => window.removeEventListener("storage", clearFromOtherTab);
   }, []);
 
   // If a Supabase session is already active (e.g., implicit-flow magic link
@@ -132,26 +167,27 @@ export default function SigninPage() {
   // this file, it just wasn't wired into this third effect.
   useEffect(() => {
     if (!supabaseConfigured()) return;
+    const identity = captureIdentity();
     (async () => {
       try {
         const sb = supabaseClient();
         // Tiny delay so the client's auto-detectSessionInUrl has a chance to run.
         await new Promise((r) => setTimeout(r, 80));
         const { data: { session } } = await sb.auth.getSession();
-        if (cancelledRef.current) return;
+        if (!identityIsCurrent(identity)) return;
         if (session) {
           if (typeof window !== "undefined" && window.location.hash) {
             window.history.replaceState(null, "", window.location.pathname);
           }
-          const destination = await destinationAfterSignIn();
-          if (cancelledRef.current) return;
+          const destination = await destinationAfterSignIn(identity);
+          if (!identityIsCurrent(identity)) return;
           router.replace(destination as never);
         }
       } catch {
         // ignore — stay on signin form
       }
     })();
-  }, [router, destinationAfterSignIn]);
+  }, [router, destinationAfterSignIn, captureIdentity, identityIsCurrent]);
 
   // Auto-focus the code input when we land on step 2
   //
@@ -188,6 +224,7 @@ export default function SigninPage() {
       setErr("That doesn't look like an email. Check for a typo.");
       return;
     }
+    const identity = captureIdentity();
     setBusy(true);
     setErr(null);
     setResent(false);
@@ -195,6 +232,7 @@ export default function SigninPage() {
     if (!supabaseConfigured()) {
       // V0 stub path
       stubTimer.current = setTimeout(() => {
+        if (!identityIsCurrent(identity)) return;
         audioConfirm();
         setStep("code");
         setCooldown(RESEND_COOLDOWN_S);
@@ -214,7 +252,7 @@ export default function SigninPage() {
       // setResent calls below if the reader has since navigated away (e.g.
       // via the Wordmark or "Start fresh" links) -- a late success here
       // must not silently snap them back to the code step.
-      if (cancelledRef.current) return;
+      if (!identityIsCurrent(identity)) return;
       if (error) throw error;
       try {
         localStorage.setItem(REMEMBERED_EMAIL_KEY, addr);
@@ -230,7 +268,7 @@ export default function SigninPage() {
       // wording -- see lib/gotrue-errors.ts's isAuthRateLimitError comment.
       // Real message kept in the console for debugging.
       console.warn("[signin] sendCode failed:", e instanceof Error ? e.message : e);
-      if (cancelledRef.current) return;
+      if (!identityIsCurrent(identity)) return;
       const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
       setErr(
         isAuthRateLimitError(shape)
@@ -238,7 +276,7 @@ export default function SigninPage() {
           : "Couldn't send the code. Try again?"
       );
     } finally {
-      setBusy(false);
+      if (identityIsCurrent(identity)) setBusy(false);
     }
   }
 
@@ -249,6 +287,7 @@ export default function SigninPage() {
       setErr("Code is 6 digits.");
       return;
     }
+    const identity = captureIdentity();
     setBusy(true);
     setErr(null);
 
@@ -262,18 +301,18 @@ export default function SigninPage() {
       // alpha-drift-r47-03: bail before router.push if the reader has since
       // navigated away -- a late verify success must not forcibly redirect
       // them to /inbox on top of wherever they've since gone.
-      if (cancelledRef.current) return;
+      if (!identityIsCurrent(identity)) return;
       if (error) throw error;
       audioConfirm();
-      const destination = await destinationAfterSignIn();
-      if (cancelledRef.current) return;
+      const destination = await destinationAfterSignIn(identity);
+      if (!identityIsCurrent(identity)) return;
       router.push(destination as never);
     } catch (e) {
       // alpha-drift-r35-02 (2026-08-14): never show GoTrue's raw vendor
       // wording ("Token has expired or is invalid.") -- see
       // lib/gotrue-errors.ts's isInvalidOrExpiredOtpError comment.
       console.warn("[signin] verifyCode failed:", e instanceof Error ? e.message : e);
-      if (cancelledRef.current) return;
+      if (!identityIsCurrent(identity)) return;
       const shape = e && typeof e === "object" ? (e as { status?: unknown; code?: unknown; message?: unknown }) : {};
       setErr(
         isInvalidOrExpiredOtpError(shape)

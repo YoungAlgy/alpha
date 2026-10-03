@@ -325,6 +325,31 @@ assert.equal(page().update({ email: "confirmed@example.test" }), true);
 assert.equal(page().state.email, "confirmed@example.test");
 assert.equal(page().emailDraft, "confirmed@example.test");
 
+// Draft-only cleanup keeps remembered sign-in convenience. Explicit device
+// cleanup must also remove that identity, or fail visibly if storage denies it.
+const rememberedKey = "alpha-signin-email";
+const deviceLocal = storage();
+const deviceApp = runtime(deviceLocal, storage());
+const devicePage = deviceApp.mount();
+deviceLocal.data.set(rememberedKey, "fixture@example.test");
+assert.equal(devicePage().reset(), true);
+assert.equal(deviceLocal.data.has(rememberedKey), true, "draft-only reset preserves sign-in convenience");
+assert.equal(deviceLocal.data.has("alpha-signin-reset-at"), false, "draft-only reset does not invalidate sign-in work");
+assert.equal(devicePage().reset({ clearRememberedEmail: true }), true);
+assert.equal(deviceLocal.data.has(rememberedKey), false, "explicit device reset removes remembered sign-in email");
+const firstIdentityReset = Number(deviceLocal.data.get("alpha-signin-reset-at"));
+assert.equal(Number.isSafeInteger(firstIdentityReset) && firstIdentityReset > 0, true, "explicit cleanup publishes a shared identity generation");
+assert.equal(devicePage().reset({ clearRememberedEmail: true }), true);
+assert.equal(Number(deviceLocal.data.get("alpha-signin-reset-at")) > firstIdentityReset, true, "cleanup of an absent identity still advances the generation");
+deviceLocal.data.set(rememberedKey, "fixture@example.test");
+deviceLocal.faults.remove = true;
+assert.equal(devicePage().reset({ clearRememberedEmail: true }), true);
+assert.equal(deviceLocal.data.get(rememberedKey), "", "denied removal can still erase the remembered identity");
+deviceLocal.data.set(rememberedKey, "fixture@example.test");
+deviceLocal.faults.write = true;
+assert.equal(devicePage().reset({ clearRememberedEmail: true }), false);
+assert.match(devicePage().storageError, /could not be saved/, "denied identity cleanup remains visible");
+
 // Explicit reset removes both stores and the same-module memory draft.
 session.data.set(key, JSON.stringify({ email: "fallback@example.test", draftSavedAt: 1 }));
 assert.equal(page().reset(), true);

@@ -54,6 +54,8 @@ type Options = {
   cursorFails?: boolean;
   override?: boolean;
   persisted?: boolean;
+  lostClaim?: "empty" | "missing";
+  reclaimFails?: boolean;
 };
 type Response = { status: number; body: Record<string, unknown> };
 
@@ -114,9 +116,17 @@ async function invoke(options: Options = {}) {
       if (table === "weekly_send_delivery_cursors") return { data: null, error: null };
       if (table === "users") return { data: single ? freshUser : [reader], error: null };
       if (upserted) return { data: null, error: null };
-      if (patch) return {
-        data: patch.delivered_at ? [{ user_id: readerId }] : [], error: null,
-      };
+      if (patch) {
+        if (patch.delivered_at === null && options.reclaimFails) return {
+          data: null, error: { message: "Controlled reclaim failure" },
+        };
+        return {
+          data: patch.delivered_at
+            ? options.lostClaim === "missing" ? null : options.lostClaim === "empty" ? [] : [{ user_id: readerId }]
+            : [],
+          error: null,
+        };
+      }
       if (selected === "user_id, volume, number, editor_intro, sections") return {
         data: options.persisted === false ? [] : [{
           user_id: readerId, volume: 1, number: 1, editor_intro: issue.editorIntro, sections,
@@ -357,6 +367,26 @@ checks.push(async () => {
     equal(result.response.status, 400, "invalid page budget fails before database work");
     equal(result.clientCalls, 0, "invalid page budget never creates the service client");
     equal(result.providerCalls, 0, "invalid page budget never dispatches");
+  }
+});
+checks.push(async () => {
+  // A claim held by another process is not acceptance proof. This includes a
+  // crashed pre-send claim whose cleanup failed, and a still-running winner.
+  // Neither empty nor missing claim data may credit delivery or bypass the lock.
+  for (const options of [
+    { lostClaim: "empty" as const, reclaimFails: true },
+    { lostClaim: "missing" as const, reclaimFails: true },
+    { lostClaim: "empty" as const, reclaimFails: false },
+  ]) {
+    const result = await invoke({ ...options, persisted: false });
+    equal(result.response.status, 200, "unproved claim returns truthful page metadata");
+    equal(result.providerCalls, 0, "lost claim never calls a provider");
+    equal(result.response.body.sent, 0, "lost claim has no new acceptance");
+    equal(result.response.body.skippedAlreadyDelivered, 0, "unproved claim receives no delivery credit");
+    equal(result.response.body.deliveryRetryRequiredTotal, 1, "unproved claim remains unresolved");
+    equal(result.response.body.deliveryPageComplete, false, "unproved claim keeps coverage incomplete");
+    equal(result.response.body.deliveryCursorState, "advanced_with_retry", "scan progress retains unresolved coverage");
+    equal(parsePage(result.response.body).startsWith("OK|1|"), true, "actual workflow parser retains the unresolved outcome");
   }
 });
 

@@ -135,6 +135,7 @@ async function selfDeleteScenario(kind: SelfDeleteCase) {
   let questions = 0;
   let deletes = 0;
   let resets = 0;
+  let identityCleared = false;
   const context = vm.createContext({
     deleteInFlight,
     hasPaidSub: true,
@@ -143,7 +144,9 @@ async function selfDeleteScenario(kind: SelfDeleteCase) {
     setDeleting: () => undefined,
     confirm: () => { questions++; return answer.promise; },
     deleteUserAccount: () => { deletes++; return deletion.promise; },
-    reset: () => { resets++; return kind !== "reset_blocked"; },
+    reset: (config: { clearRememberedEmail?: boolean } = {}) => {
+      resets++; identityCleared = config.clearRememberedEmail === true; return kind !== "reset_blocked";
+    },
     localStorage: { removeItem: (key: string) => {
       removals.push(key);
       if (kind === "storage_blocked" && key === "alpha-theme") throw new Error("storage blocked");
@@ -163,7 +166,7 @@ async function selfDeleteScenario(kind: SelfDeleteCase) {
     else deletion.resolve(kind === "reject" ? { ok: false, error: "server refused" } : { ok: true });
   }
   await Promise.all([first, second]);
-  return { deleteInFlight, errors, removals, navigation, questions, deletes, resets };
+  return { deleteInFlight, errors, removals, navigation, questions, deletes, resets, identityCleared };
 }
 
 for (const kind of ["cancel", "reject", "throw", "success", "storage_blocked", "reset_blocked"] as const) {
@@ -172,6 +175,8 @@ for (const kind of ["cancel", "reject", "throw", "success", "storage_blocked", "
   check(() => assert.equal(result.deletes, kind === "cancel" ? 0 : 1, `${kind}: delete request count`));
   check(() => assert.equal(result.resets, ["success", "storage_blocked", "reset_blocked"].includes(kind) ? 1 : 0,
     `${kind}: local onboarding reset count`));
+  check(() => assert.equal(result.identityCleared, ["success", "storage_blocked", "reset_blocked"].includes(kind),
+    `${kind}: remembered identity clears only after successful deletion`));
   check(() => assert.equal(result.navigation.length, kind === "success" ? 1 : 0, `${kind}: navigation count`));
   if (["cancel", "reject", "throw"].includes(kind)) {
     check(() => assert.deepEqual(result.removals, [], `${kind}: local data must be preserved`));
