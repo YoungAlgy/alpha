@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { isValidCalendarDateString } from "./demographics";
 
 // Signed "view my letter" tokens for the weekly email CTA — the standard
 // newsletter view-in-browser pattern. The email's "Read the full letter" link
@@ -111,5 +112,18 @@ export function verifyLetterToken(token: string): LetterTokenPayload | null {
 
 export function letterUrl(userId: string, origin: string, weekOf: string): string {
   const token = makeLetterToken(userId, weekOf);
+  return `${origin.replace(/\/$/, "")}/letter?t=${encodeURIComponent(token)}`;
+}
+
+/** Stable CTA for a provider delivery lane. Its expiry belongs to the issue,
+ * not the retry clock, so rebuilding a saved issue preserves the exact payload.
+ * Generic minting and already-sent v1/v2 verification remain unchanged.
+ * Existing attempts keep their stored fingerprints. This never rewrites them. */
+export function deliveryLetterUrl(userId: string, origin: string, weekOf: string): string {
+  if (typeof weekOf !== "string" || !isValidCalendarDateString(weekOf)) {
+    throw new Error("Invalid delivery issue date");
+  }
+  const exp = Date.parse(`${weekOf}T00:00:00Z`) / 1000 + DEFAULT_TTL_DAYS * 86400;
+  const token = `${userId}.${weekOf}.${exp}.${sigV2(userId, weekOf, exp)}`;
   return `${origin.replace(/\/$/, "")}/letter?t=${encodeURIComponent(token)}`;
 }

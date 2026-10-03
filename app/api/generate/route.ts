@@ -24,7 +24,7 @@ import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/serv
 import { hasReaderAccess } from "@/lib/access";
 import { isInviteOnly } from "@/lib/access-mode";
 import { SUBSCRIBER_LETTERS_ENABLED, INTERACTIVE_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
-import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
+import { deliveryLetterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { withDeadline } from "@/lib/with-deadline";
 import { parseBirthday, isValidCalendarDateString } from "@/lib/demographics";
 import { coerceThemeId } from "@/lib/themes";

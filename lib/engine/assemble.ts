@@ -224,13 +224,13 @@ export async function generateIssue(
           // Search already proved that this topic has real, citable material.
           // Preserve that material through a deterministic formatter when all
           // writer tiers are unavailable or the run is in a zero-cost mode.
-          // The original error remains visible in the warning. If the signal
-          // cannot be parsed into safe source items, rethrow so the existing
-          // backup and hard-failure paths still apply.
+          // Keep diagnostics free of reader topic text and provider errors.
+          // If the signal cannot be parsed into safe source items, rethrow
+          // so the existing backup and hard-failure paths still apply.
           const deterministic = buildDeterministicBlurb(signal);
           if (!deterministic) throw generationError;
           console.warn(
-            `[assemble] ${id} ${weekOf}: model generation failed, using deterministic source fallback: ${generationError instanceof Error ? generationError.message : generationError}`
+            "[assemble] model generation failed, using deterministic source fallback"
           );
           blurb = deterministic;
         }
@@ -255,7 +255,7 @@ export async function generateIssue(
         if (!issueIsReaderVisible({ sections: [blurb] })) {
           const clean = buildDeterministicBlurb(signal);
           if (!clean || clean.items.length === 0 || !issueIsReaderVisible({ sections: [clean] })) return null;
-          console.warn(`[assemble] ${id} ${weekOf}: generated section leaked the source note, using deterministic sources`);
+          console.warn("[assemble] generated section leaked the source note, using deterministic sources");
           blurb = clean;
         }
         // AWAITED, not fire-and-forget: this write feeds getRecentlyCitedUrls'
@@ -312,7 +312,7 @@ export async function generateIssue(
       );
       inFlight.set(dryKey, raw);
     }
-    return withDeadline(raw, TOPIC_GEN_DEADLINE_MS, `topic-blurb ${id}`);
+    return withDeadline(raw, TOPIC_GEN_DEADLINE_MS, "topic-blurb");
   }
 
   // Pick the letter's sections from the ranked pool: top fresh topics first,
@@ -344,7 +344,7 @@ export async function generateIssue(
   const blurbs = selection.chosen.map((c) => c.value);
   if (selection.skippedDry.length > 0) {
     console.warn(
-      `[assemble] ${weekOf}: skipped ${selection.skippedDry.length} quiet topic(s): ${selection.skippedDry.join(", ")}`
+      `[assemble] ${weekOf}: skipped ${selection.skippedDry.length} quiet topic(s)`
     );
   }
   // alpha-drift-r17-12 (found+fixed 2026-08-07): a topic dropped for citing
@@ -355,7 +355,7 @@ export async function generateIssue(
   // when the actual cause is a same-day story overlap between two topics.
   if (selection.dedupedByUrl.length > 0) {
     console.warn(
-      `[assemble] ${weekOf}: deduped ${selection.dedupedByUrl.length} topic(s) citing a URL already used elsewhere in this same letter: ${selection.dedupedByUrl.join(", ")}`
+      `[assemble] ${weekOf}: deduped ${selection.dedupedByUrl.length} topic(s) citing a URL already used elsewhere in this same letter`
     );
   }
   if (blurbs.length === 0) {
@@ -458,8 +458,8 @@ export async function generateIssue(
       TOPIC_GEN_DEADLINE_MS,
       "editor-note"
     );
-  } catch (e) {
-    console.warn(`[assemble] editor note failed, using fallback intro: ${e instanceof Error ? e.message : e}`);
+  } catch {
+    console.warn("[assemble] editor note failed, using fallback intro");
     const labels = blurbs.map((b) => b.topicLabel.toLowerCase());
     const list =
       labels.length > 1

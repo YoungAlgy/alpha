@@ -13,7 +13,7 @@ import {
 import { BREVO_CANARY_DELIVERY_ENABLED, BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
 import { parseBrevoCanaryRequest } from "@/lib/brevo-canary-policy";
 import { subscriberEmailConfigured, sendPreparedSubscriberLetter } from "@/lib/subscriber-email-delivery";
-import { letterUrl as buildLetterUrl } from "@/lib/letter-token";
+import { deliveryLetterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
 import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import { latestVisibleIssue } from "@/lib/latest-visible-issue";
