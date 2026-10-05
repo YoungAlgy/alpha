@@ -257,6 +257,25 @@ try {
   assert.equal(counts()[1], 1, "one GDELT attempt, with no automatic retry");
   assert.equal(unexpectedFetches, 0, "all-source outage cannot reopen metered providers");
 
+  // An impossible February day used to roll into March and falsely stop the
+  // source chain. Move beyond all previous cache/cooldown windows and keep the
+  // issue date aligned with this isolated calendar fixture.
+  controlledNow = Date.UTC(2027, 2, 2, 12);
+  setScenario({
+    noKey: "1",
+    gdelt: "1",
+    nextHandler: (url) => url.hostname === "news.google.com"
+      ? xmlResponse([{ title: "Malformed artificial intelligence date", url: exampleFixtureUrl,
+          date: "Tue, 30 Feb 2027 12:00:00 GMT" }])
+      : xmlResponse([{ title: "Valid artificial intelligence backup", url: apFixtureUrl }]),
+  });
+  const calendarSignal = await resolveTopicSignal("ai-news", new Date(controlledNow).toISOString().slice(0, 10),
+    { liveOnly: true, freshness: "pd" });
+  assert.ok(calendarSignal?.citableUrls?.has(normalizeUrl(apFixtureUrl)!));
+  assert.ok(!calendarSignal?.citableUrls?.has(normalizeUrl(exampleFixtureUrl)!));
+  assert.equal(counts()[1], 1, "malformed Google dates cannot suppress the next eligible source");
+  assert.equal(unexpectedFetches, 0);
+
   console.log("PASS verify-no-key-sources (offline source policy, Google RSS, optional GDELT, deterministic formatting)");
 } finally {
   globalThis.fetch = originalFetch;

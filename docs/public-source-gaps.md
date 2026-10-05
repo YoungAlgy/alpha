@@ -1,11 +1,14 @@
-# Public source coverage, October 2, 2026
+# Public source coverage, reviewed October 5, 2026
 
 Status: PLOS was released as `207a4fae` and its scheduled opt-in was activated
 October 2 at 14:00 UTC. The additive migration and exact release checks passed.
 The no-key source activation completed earlier at 05:47 UTC. Both approvals are
 closed. Scheduled writing remains no-model with paid AI off.
+The PLOS qualification below is dated October 2. The October 5 local review
+adds the latest held-source decisions and a separate unreleased calendar repair.
+No adapter or live setting was added.
 This update uses recorded release and normal-run evidence. No new live check
-or setting change was made for this documentation cleanup.
+or source probe was made for this documentation cleanup.
 
 ## Selected backup
 
@@ -77,6 +80,43 @@ It does not prove that no matching paper exists outside that bounded pool.
   reuse gates in this pass. The Conversation, BBC/Guardian/DW, WHO, Europe PMC
   and other independently reviewed leads were held. No provider was added
   merely for count. The dated research record keeps their specific limits.
+
+### Additional held leads, October 5
+
+The separate bounded research pass added no working provider. Wikidata's
+generic exact-date album query timed out at five seconds with no status or
+metadata received. No retry occurred. Its CC0 rights do not establish usable
+current coverage, and album release dates cannot stand in for news dates.
+
+Pressenza's About page responded and exposed RSS discovery links. Its exact
+original-content license subtype and a reliable item-level exception boundary
+remain unresolved. Published third-party articles can carry NC/ND terms, so a
+blanket CC BY assumption is unsafe. The feed itself was not probed.
+
+SciDev.Net has credited-reuse guidance, but its documented JavaScript embed
+does not establish a current structured complete-credit route. Its consulted
+home page is not proof of actual feed freshness. No feed probe occurred.
+
+Details and primary references are in the external dated receipt
+`independent-source-decision-20261005.md`. That pass consumed two availability
+requests, bringing the extended ledger to five of twenty-four. Its closed
+probe helper is intentionally blocked from replay. Keep the current chain and
+the response, attribution and prior-link guards. The separate local repair below
+strengthens calendar freshness validation without relaxing the source chain.
+
+## Unreleased local date validation, October 5
+
+An offline review reproduced impossible RSS dates rolling forward through
+`Date.parse`. The local candidate replaces that permissive freshness conversion
+with shared calendar validation and explicit-zone ISO/RSS parsing. This affects
+Google/publisher filtering and both GDELT date gates. Valid dated siblings and
+cached pools survive. Malformed-only Google results leave the resolver free to
+try its next eligible source. No new provider is enabled or claimed proven.
+
+Twelve focused offline checks and the application typecheck passed. Independent
+review found no blocking issue. This fix is uncommitted and unreleased. A fresh
+production build and a separate release decision remain. Full local evidence is
+in `source-review-calendar-fix-20261005.md` outside the repository.
 
 ## Limits and recorded release outcome
 

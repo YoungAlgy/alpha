@@ -1,17 +1,19 @@
 # Alpha remaining work
 
-Reconciled October 2, 2026 after the approved PLOS release, 20:19 UTC normal
-delivery check and 21:55 UTC reporting cleanup push. Current workflow source:
-`81d25bc73377af6672b71e1c7cf1c318c87cc595`. Last recorded website runtime:
-`207a4fae833b5c08c6675a90fa65a55ad84a53fb`. The reporting-only push required
-no website deployment.
+Reconciled locally October 5, 2026 from the October 3 release receipt, the
+October 5 05:34 UTC normal-outcome record and the completed source review.
+Reviewed local source: `583ef26558279b1c5c04d8ce50d907e4783698df`.
+The October 3 receipt last verified that same website release at 17:17:36 UTC.
+No remote or live check was repeated for this documentation cleanup.
 This is a dated decision record. New local and authorized live evidence takes
 priority. Historical release approvals are completed and cannot be reused.
 
 ## Current result
 
-Alpha's free invite-only daily delivery is already released. The bounded
-independent reviews found no new runtime defect requiring another deployment.
+Alpha's free invite-only daily delivery is already released. The October 5
+local review found and repaired one public-feed calendar defect. That small
+candidate is uncommitted and unreleased, with focused checks and typecheck
+passed. Its fresh production build remains a separate approval gate.
 The latest normal delivery evidence covers three delivery-eligible readers.
 Current eligibility is resolved from protected records, never a launch-group
 allowlist. Access approval and letter enrollment remain separate.
@@ -41,7 +43,13 @@ gates or reopen historical Round-script debt merely to close this backlog.
 - Same-day recovery shares the sender's concurrency group and acceptance
   coverage guard. Suppression and current-address checks remain mandatory.
 - Watchdog timing uncertainty and exact bounded Issue selection/error handling
-  shipped. The completed fixes do not establish every live outcome below.
+  shipped. Due scheduled watchdogs for October 3 and 4 later completed with
+  three eligible readers and zero uncovered. This closes the earlier missing
+  normal-coverage evidence. It does not prove future punctual starts or every
+  delivery outcome below.
+- The October 3 citation-history release and service-only RPC installation are
+  complete. Ordinary history-enabled runs are recorded on two issue dates.
+  Aggregate logs do not prove a particular history-RPC call or natural failover.
 
 ## Remaining backlog, in priority order
 
@@ -50,9 +58,8 @@ Effort is relative, not an elapsed-time promise.
 
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
-| Establish useful scheduled watchdog coverage | Verification remains open. New run `36944331854` on `6f6e8c12` started October 2 at 00:06:48 UTC. It correctly stopped with `scheduled_window_not_due` before coverage. An early run cannot identify its original cron date. Assess the next requested normal outcome once. Do not shift the cutoff, dispatch a competing check or reopen scheduler history without new evidence. | 4 / 4 / 2 | 32 |
 | Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | PLOS is released and activated in `207a4fae`. Its adapter proved a current mental-health citation and two ranked AI citations, with zero nutrition retained. Focused checks, disposable database tests, exact app/worker build and CI passed. The first ordinary enabled run had three Resend acceptances and zero paid calls, but natural PLOS use remains unproven. Broad news/music coverage remains limited. Global Voices compact byline is unproven, NSF was quiet for mapped topics and USDA RSS was stale. See `public-source-gaps.md`. Further source research is optional future work, with no confirmed runtime patch pending. | 4 / 3 / 4 | 14 |
+| Improve independent topic coverage where evidence supports it | Existing public-source adapters remain released. Broad news/music coverage is still limited. The October 5 research pass qualified no new adapter: Wikidata timed out once, Pressenza's exact original-item reuse boundary remains unresolved, and SciDev.Net's documented route does not establish current complete-credit coverage. Do not replay held probes or relax source guards to force output. See `public-source-gaps.md` and the named dated receipt below. The separate local calendar repair is described next. | 4 / 3 / 4 | 14 |
 
 Keyed search was removed from normal scheduled content by the approved October 2
 05:47 UTC activation. The `1eb3a14b` maintenance cleanup was retained in the exact
@@ -61,7 +68,28 @@ Broad-topic coverage would need more evidence-backed research. Outcome proof
 needs an observed event. Neither is a currently confirmed runtime bug.
 No further live configuration change or external probe is authorized here.
 
-## Local safety cleanup completed in this pass
+## Unreleased local calendar repair, October 5
+
+Node's permissive `Date.parse` converted an impossible RSS February 30 into
+March 2. The old freshness gate could treat that malformed item as current and
+stop the resolver before an otherwise useful backup. An offline regression
+reproduced the failure before the patch and passes with the repair.
+
+The shared parser now checks the original calendar and a complete explicit-zone
+timestamp before applying the zone. Google/publisher filtering and both GDELT
+date gates use it. Valid RSS/ISO timestamps, zone crossings, valid leap dates,
+good siblings and raw-cache reuse are covered. The existing no-key resolver
+test proves malformed Google dates can fall through to an eligible backup.
+GDELT remains off and live-unproven. No adapter or live flag was added.
+
+Twelve focused offline checks and the non-incremental application typecheck
+passed. Independent follow-up review found no blocking issue. Timeouts, request
+ceilings, cooldowns, credits, repeat-link exclusions and reader access are
+unchanged. No paid/model/source call, send or release occurred. A fresh production
+build was not run because normal environment loading is separately gated.
+Evidence: `source-review-calendar-fix-20261005.md` in the external receipt folder.
+
+## Earlier safety cleanup, released October 2
 
 The obsolete `scripts/verify-watchdog-proof-of-send.mts` entrypoint used to load
 local credentials, borrow an active reader and write/delete a fake issue in the
@@ -78,7 +106,26 @@ passing exact CI. No runtime deployment was required for that maintenance step.
 The subsequent PLOS source release completed under separate approval as
 `207a4fae`, with its exact build, deployment, migration and activation recorded.
 
-## Latest normal outcome evidence, October 2 at 20:19 UTC
+## Latest recorded normal outcomes, checked October 5 at 05:34 UTC
+
+The saved requested check inspected completed October 3/4 runs on `583ef265`.
+Primaries `37142507128` and `37223445816` started at 17:59:07 and 18:11:26 UTC
+on their respective dates. Each reported three eligible readers, three new
+Resend acceptances and zero failures, retries, backup letters or uncovered
+readers. Resend readiness and capacity passed, so Brevo selection was unnecessary.
+All four corresponding recoveries found zero uncovered and skipped sending.
+
+Watchdogs `37161266016` and `37244079305` started at 23:17:00 and 23:31:37 UTC
+on their respective dates. Both completed successfully with three eligible and
+zero uncovered. No timing-uncertainty or Issue-channel error was reported.
+No cause for the difference from configured start times is asserted.
+
+No-model/no-key and durable source controls were enabled. Provider-confirmed
+delivery, inbox receipt, natural provider/source fallback and real safety-event
+processing remain unproven. This is dated saved evidence. No October 5 delivery
+result or fresh provider/database read is claimed by this local review.
+
+## Earlier normal outcome evidence, October 2 at 20:19 UTC
 
 One requested bounded check found scheduled run `37053631148` on `207a4fae`
 started at 19:21:55 UTC and completed successfully at 19:23:14 UTC. Its protected
@@ -188,11 +235,18 @@ outside the public repository. The authoritative resume checkpoint is
 - `plos-release-checkpoint-20261002.md`
 - `plos-normal-delivery-check-20261002-2019.json`
 - `reporting-cleanup-push-20261002.json`
+- `extended-resilience-v1-release-receipt-20261003.md`
+- `post-history-normal-check-20261005.md`
+- `post-history-normal-outcomes-20261005.json`
+- `independent-source-decision-20261005.md`
+- `source-review-calendar-fix-20261005.md`
 
 Use current source, exact release receipts and fresh authorized evidence.
-Preserve unrelated work and the owned native mirror. After the reporting push,
-the active Windows checkout was clean at `81d25bc`; the native mirror remained
-clean and unchanged at `207a4fae`. Further local work stays unreleased until
+Preserve unrelated work and the owned native mirror. The October 3 receipt
+records a clean active Windows checkout at `583ef265` and a separate native
+release checkout, with earlier owned mirrors untouched. The October 5 local
+review confirmed that Windows baseline before the local calendar and documentation changes.
+These edits remain uncommitted. Further local work stays unreleased until
 separately approved. No commit/push/deploy, send,
 retry/backfill, source probe, audience/enrollment, account/billing/secrets or
 remote-setting change follows from this backlog. Keep Alpha separate from the

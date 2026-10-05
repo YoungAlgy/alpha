@@ -4,6 +4,7 @@ import { readPublicSourceText } from "./public-source-response";
 import { reservePublicSourceRequest } from "./public-source-budget";
 import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
 import { isPublicSourceControlError, PublicSourceControlError } from "./public-source-error-policy";
+import { parsePublicSourceTimestamp } from "./public-source-freshness";
 
 // The public DOC API is a best-effort source after Google News RSS. It has no
 // account key, but still needs a small request budget and an outage cooldown.
@@ -114,7 +115,7 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
     const key = `${phrase.toLowerCase()}|${opts.freshness ?? "pw"}`;
     const stillFresh = (results: BraveResult[]): BraveResult[] => results
       .filter((result) => {
-        const published = result.age ? Date.parse(result.age) : NaN;
+        const published = parsePublicSourceTimestamp(result.age);
         return Number.isFinite(published) && published >= window.start &&
           published <= window.end && published <= now();
       })
@@ -183,7 +184,7 @@ export function createGdeltSearch(deps: GdeltSearchDependencies = {}) {
         }
         const results = parsePublicFeedXml(xml)
           .filter((result) => {
-            const published = result.age ? Date.parse(result.age) : NaN;
+            const published = parsePublicSourceTimestamp(result.age);
             return usableArticleUrl(result.url) && Number.isFinite(published) &&
               published >= window.start && published <= window.end && published <= now();
           })
