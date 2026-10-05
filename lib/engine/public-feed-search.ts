@@ -4,7 +4,7 @@ import { directChildValues, rssItemBlocks } from "./rss-xml";
 import { noKeySourcesEnabled } from "./provider-policy";
 import { readPublicSourceText } from "./public-source-response";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
-import { createPublicSourceCache } from "./public-source-cache";
+import { createPublicFeedCache, publicFeedSnapshot } from "./public-feed-cache";
 import { reservePublicSourceRequest } from "./public-source-budget";
 import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
 
@@ -25,7 +25,11 @@ export function publicFeedFallbackEnabled(): boolean {
 }
 
 /** Pure XML parsing helper so the fallback can be checked without a network. */
-export function parsePublicFeedXml(xml: string, maxResults = MAX_RESULTS): BraveResult[] {
+export function parsePublicFeedXml(
+  xml: string,
+  maxResults = MAX_RESULTS,
+  selectItem: (item: BraveResult) => BraveResult | undefined = (item) => item,
+): BraveResult[] {
   const items: BraveResult[] = [];
   // The response reader bounds bytes. Retain raw blocks until valid results
   // reach the existing cap, so rejected items cannot hide later usable links.
@@ -36,12 +40,14 @@ export function parsePublicFeedXml(xml: string, maxResults = MAX_RESULTS): Brave
     const description = cleanField(value("description"));
     if (!/^https?:\/\//i.test(url) || !title) continue;
     const published = value("pubdate");
-    items.push({
+    const item = selectItem({
       title,
       url,
       description,
       age: published || undefined,
     });
+    if (!item) continue;
+    items.push(item);
     if (items.length >= Math.min(100, Math.max(1, maxResults))) break;
   }
   return items;
@@ -61,7 +67,7 @@ export function createPublicFeedSearch(now: () => number = Date.now, deps: {
   reserve?: typeof reservePublicSourceRequest;
   fetcher?: typeof fetch;
 } = {}) {
-  const cached = createPublicSourceCache(now);
+  const cached = createPublicFeedCache(now);
   const attempt = deps.attempt ?? runPublicSourceAttempt;
   const reserve = deps.reserve ?? reservePublicSourceRequest;
   const fetcher = deps.fetcher ?? ((input, init) => globalThis.fetch(input, init));
@@ -74,7 +80,8 @@ export function createPublicFeedSearch(now: () => number = Date.now, deps: {
       q: `${query}${freshnessSuffix(opts.freshness)}`,
       hl: "en-US", gl: "US", ceid: "US:en",
     });
-    const results = await cached("google-rss", params.toString(), () => attempt("google-rss",
+    const selectItem = (item: BraveResult) => freshPublicResults([item], opts.freshness, now())[0];
+    const snapshots = await cached("google-rss", params.toString(), () => attempt("google-rss",
       () => reserve("google-rss"), async () => {
         const signal = AbortSignal.timeout(5000);
         const res = await fetcher(`${ENDPOINT}?${params}`, {
@@ -86,12 +93,11 @@ export function createPublicFeedSearch(now: () => number = Date.now, deps: {
           throw new Error(`Public RSS search ${res.status}`);
         }
         const xml = await readPublicSourceText(res, signal);
-        if (!/<rss\b/i.test(xml) || !/<channel\b/i.test(xml) || !/<\/rss\s*>/i.test(xml)) throw new Error("Public RSS invalid feed");
-        return parsePublicFeedXml(xml, 100);
+        return [publicFeedSnapshot(xml, "Public RSS", parsePublicFeedXml(xml, 1, selectItem).length > 0, "search")];
       }));
     // Keep the bounded raw pool until the resolver removes already-cited links.
     // Cutting to ten here can hide an unseen eleventh item behind prior reads.
-    return freshPublicResults(results, opts.freshness, now());
+    return parsePublicFeedXml(snapshots[0]!.xml, 100, selectItem);
   };
 }
 

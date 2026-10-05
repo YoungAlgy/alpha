@@ -4,11 +4,14 @@ import { isPublicSourceControlError, PublicSourceControlError } from "./public-s
 // A small per-process acceleration cache, never authoritative cross-run state.
 // Only successful, validated raw metadata is cached. Caller applies current
 // date bounds and per-reader exclusions after retrieval. No query is logged.
-export function createPublicSourceCache(now: () => number = Date.now) {
-  const cache = new Map<string, { until: number; items: BraveResult[] }>();
-  const active = new Map<string, Promise<BraveResult[]>>();
+export function createPublicSourceCache<T extends object = BraveResult>(
+  now: () => number = Date.now,
+  ttlMs: (items: T[]) => number = (items) => items.length ? 5 * 60_000 : 60_000,
+) {
+  const cache = new Map<string, { until: number; items: T[] }>();
+  const active = new Map<string, Promise<T[]>>();
   const failures = new Map<string, { until: number; count: number }>();
-  return async (provider: string, key: string, work: () => Promise<BraveResult[]>): Promise<BraveResult[]> => {
+  return async (provider: string, key: string, work: () => Promise<T[]>): Promise<T[]> => {
     const identity = `${provider}|${key}`;
     const cached = cache.get(identity);
     if (cached && cached.until > now()) return cached.items.map((item) => ({ ...item }));
@@ -19,7 +22,7 @@ export function createPublicSourceCache(now: () => number = Date.now) {
     if (active.size >= 8) throw new PublicSourceControlError("Public source request capacity reached");
     // Start in a microtask so inFlight is set before even synchronous failures.
     const task = Promise.resolve().then(work).then((items) => {
-      cache.set(identity, { until: now() + (items.length ? 5 * 60_000 : 60_000), items: items.map((item) => ({ ...item })) });
+      cache.set(identity, { until: now() + ttlMs(items), items: items.map((item) => ({ ...item })) });
       while (cache.size > 64) cache.delete(cache.keys().next().value!);
       // An earlier concurrent success must not erase a later failure cooldown.
       const failure = failures.get(provider);

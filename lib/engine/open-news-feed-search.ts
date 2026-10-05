@@ -5,7 +5,7 @@ import { isCustomTopic } from "@/lib/topics";
 import { noModelModeEnabled } from "./provider-policy";
 import { publicTopicPhrase } from "./topic-queries";
 import { readPublicSourceText } from "./public-source-response";
-import { createPublicSourceCache } from "./public-source-cache";
+import { createPublicFeedCache, publicFeedSnapshot } from "./public-feed-cache";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
 import { reservePublicSourceRequest } from "./public-source-budget";
 import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
@@ -24,9 +24,11 @@ const CUSTOM_STOP_WORDS = new Set([
 type FeedKind = keyof typeof FEEDS;
 type FeedItem = BraveResult & { categories: string[] };
 
-function parseGlobalVoicesXml(xml: string): FeedItem[] {
+function parseGlobalVoicesXml(xml: string, freshness: BraveSearchOptions["freshness"], now: number): FeedItem[] {
   const items: FeedItem[] = [];
-  for (const block of rssItemBlocks(xml, 100, "Global Voices RSS")) {
+  const window = publicSourceWindow(freshness, now);
+  if (!window) return items;
+  for (const block of rssItemBlocks(xml, Number.MAX_SAFE_INTEGER, "Global Voices RSS")) {
     const title = directChildValues(block, "title")[0] ?? "";
     const rawUrl = directChildValues(block, "link")[0] ?? "";
     const publishedAt = directChildValues(block, "pubdate")[0] ?? "";
@@ -35,14 +37,19 @@ function parseGlobalVoicesXml(xml: string): FeedItem[] {
     if (!title || !attribution) continue;
 
     const categories = directChildValues(block, "category").slice(0, 20);
-    items.push({
+    const item = {
       title: `Global Voices: ${title.slice(0, 300)}`,
       url: new URL(rawUrl).href,
       description: `Global Voices story. Source date: ${attribution.publishedAt.slice(0, 10)}.`,
       age: publishedAt,
       attribution,
       categories,
-    });
+    };
+    const pathDate = articlePathDate(item.url);
+    if (!freshPublicResults([item], freshness, now).length || pathDate === undefined ||
+        pathDate < window.start || pathDate > window.end) continue;
+    items.push(item);
+    if (items.length >= 100) break;
   }
   return items;
 }
@@ -135,13 +142,13 @@ export function createOpenNewsFeedSearch(deps: {
   const now = deps.now ?? Date.now;
   const reserve = deps.reserve ?? reservePublicSourceRequest;
   const attempt = deps.attempt ?? runPublicSourceAttempt;
-  const cached = createPublicSourceCache(now);
+  const cached = createPublicFeedCache(now);
 
   return async function openNewsFeedSearch(topicId: string, opts: BraveSearchOptions = {}): Promise<BraveResult[]> {
     const selection = selectTopic(topicId);
     if (!selection || !openNewsFeedFallbackEnabled() || !publicSourceWindow(opts.freshness, now())) return [];
 
-    const raw = await cached("open-news", `${selection.feed}-v1`, () => attempt("global-voices-rss",
+    const snapshots = await cached("open-news", `${selection.feed}-v2`, () => attempt("global-voices-rss",
       () => reserve("publisher-rss"), async () => {
       const signal = AbortSignal.timeout(5000);
       const response = await fetcher(FEEDS[selection.feed], {
@@ -155,21 +162,17 @@ export function createOpenNewsFeedSearch(deps: {
         void response.body?.cancel().catch(() => {});
         throw new Error(`Global Voices RSS ${response.status}`);
       }
-      return parseGlobalVoicesXml(await readPublicSourceText(response, signal));
+      const xml = await readPublicSourceText(response, signal);
+      return [publicFeedSnapshot(xml, "Global Voices RSS", parseGlobalVoicesXml(xml, opts.freshness, now()).length > 0, "licensed")];
     }));
 
-    const window = publicSourceWindow(opts.freshness, now());
-    if (!window) return [];
-    const fresh = (freshPublicResults(raw, opts.freshness, now()) as FeedItem[])
-      .filter((item) => {
-        const pathDate = articlePathDate(item.url);
-        return pathDate !== undefined && pathDate >= window.start && pathDate <= window.end;
-      });
+    const raw = parseGlobalVoicesXml(snapshots[0]!.xml, opts.freshness, now());
+
     const matched = selection.mode === "all"
-      ? fresh
+      ? raw
       : selection.mode === "genre"
-        ? fresh.filter((item) => genreMatches(item, selection.genre!))
-        : fresh.filter((item) => phraseMatches(item, selection.tokens!));
+        ? raw.filter((item) => genreMatches(item, selection.genre!))
+        : raw.filter((item) => phraseMatches(item, selection.tokens!));
     // Keep the raw 100-item metadata pool intact through local filtering. The
     // shared ranker applies prior-link exclusions and the final shortlist cap.
     return matched.flatMap(({ categories: _categories, ...item }) => {

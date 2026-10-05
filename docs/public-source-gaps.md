@@ -118,6 +118,27 @@ review found no blocking issue. This fix is uncommitted and unreleased. A fresh
 production build and a separate release decision remain. Full local evidence is
 in `source-review-calendar-fix-20261005.md` outside the repository.
 
+The calendar candidate above subsequently completed its exact approved release
+as `7c33961f`. See `calendar-release-receipt-20261005.md` for its successful build,
+CI, deployment and non-sending acceptance. The earlier pending status is dated.
+
+## Unreleased usable-feed-pool repair, October 5
+
+A fresh offline pass reproduced rejected feed entries consuming the 100-item
+limit before a usable later entry could be considered. Google, fixed publishers
+and Global Voices now filter feed-specific eligibility before counting results.
+Shared snapshots retain only permitted metadata, with full envelope validation
+and a 256 KiB serialized ceiling. Bodies/media are dropped before caching.
+Fixed feeds still share snapshots across topics and date windows. Each read
+rechecks freshness, including publication times becoming current during cache
+lifetime. Empty/unusable metadata keeps the one-minute cache lifetime.
+
+Ten focused offline checks, typecheck and two final independent reviews passed.
+No source probe or new adapter was added. This candidate has not received a
+production build or release. Source order, credits, request/cooldown controls,
+prior-link filters, no-model policy and the coverage limits below are unchanged.
+Evidence: `source-valid-pool-review-20261005.md` outside the repository.
+
 ## Limits and recorded release outcome
 
 PLOS improves selected research coverage. It does not supply broad general news,

@@ -199,11 +199,18 @@ or be unavailable. Sparse fallback results produce source-linked reading items.
 They are not invented summaries. Without safe sources the existing bounded
 backup behavior remains in place.
 
-Google and publisher feed clients locally reject missing, future or out-of-window
-dates. They share raw successful metadata in-process for five minutes (valid
-empty feeds for one minute), with request coalescing and failure cooldowns up
-to fifteen minutes. Reader exclusions still apply after raw-cache retrieval.
-The bounded 100-entry feed pool reaches the ranker before reader exclusions and
+Google, publisher and licensed feed clients locally reject missing, future or
+out-of-window dates. They share size-bounded metadata-only feed snapshots
+in-process for five minutes, or one minute when no metadata is usable. Bodies
+and media are discarded before publisher/licensed snapshots enter the cache.
+Google retains its existing source snippet. The whole feed envelope is validated
+before caching, and the serialized snapshot is capped at 256 KiB too.
+Current date and source checks run on every read before the 100 usable-item cap.
+Rejected items cannot hide a valid later sibling. Fixed feeds share one snapshot
+across topics and date windows. Publication times can become current while cached.
+Request coalescing and failure cooldowns up to fifteen minutes remain in place.
+Reader exclusions still apply after cache retrieval.
+The bounded 100-entry usable feed pool reaches the ranker before reader exclusions and
 final host limits. A reader's previously cited first ten links cannot hide an
 unseen eleventh feed item or remove that item for another reader.
 The existing Supabase `topic_blurbs` cache already preserves finished sections

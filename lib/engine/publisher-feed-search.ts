@@ -1,7 +1,7 @@
 import type { BraveResult, BraveSearchOptions } from "@/lib/brave";
 import { parsePublicFeedXml } from "./public-feed-search";
 import { readPublicSourceText } from "./public-source-response";
-import { createPublicSourceCache } from "./public-source-cache";
+import { createPublicFeedCache, publicFeedSnapshot } from "./public-feed-cache";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
 import { reservePublicSourceRequest } from "./public-source-budget";
 import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
@@ -36,14 +36,26 @@ export function createPublisherFeedSearch(deps: { fetcher?: typeof fetch; now?: 
   const now = deps.now ?? Date.now;
   const reserve = deps.reserve ?? reservePublicSourceRequest;
   const attempt = deps.attempt ?? runPublicSourceAttempt;
-  const cached = createPublicSourceCache(now);
+  const cached = createPublicFeedCache(now);
   return async (topicId: string, opts: BraveSearchOptions = {}): Promise<BraveResult[]> => {
     const selection = Object.hasOwn(TOPICS, topicId) ? TOPICS[topicId] : undefined;
     if (!selection || !publicSourceWindow(opts.freshness, now())) return [];
     const feed = FEEDS[selection.feed];
     const circuit = selection.feed === "nist" ? "publisher-nist"
       : selection.feed === "fda" ? "publisher-fda-medwatch" : "publisher-fed-speeches";
-    const raw = await cached(`publisher-${selection.feed}`, "feed-v1", () => attempt(circuit,
+    const selectItem = (item: BraveResult): BraveResult | undefined => {
+      try {
+        const url = new URL(item.url);
+        if (url.hostname !== feed.host || url.username || url.password || url.port) return;
+        // Only this verified first-party host gets upgraded. No HTTP fetch occurs.
+        if (selection.feed === "fda" && url.protocol === "http:") url.protocol = "https:";
+        if (url.protocol !== "https:") return;
+        // Board-advertised speeches/testimony only, never assets or statistics.
+        if (selection.feed === "fed" && !/^\/newsevents\/(?:speech|testimony)\/[^/]+\.htm$/.test(url.pathname)) return;
+        return freshPublicResults([{ ...item, url: url.href, description: "" }], opts.freshness, now())[0];
+      } catch { return; }
+    };
+    const snapshots = await cached(`publisher-${selection.feed}`, "feed-v2", () => attempt(circuit,
       () => reserve("publisher-rss"), async () => {
       const signal = AbortSignal.timeout(5000);
       const response = await fetcher(feed.url, { signal, redirect: "error", credentials: "omit", cache: "no-store", headers: { Accept: "application/rss+xml, application/xml, text/xml" } });
@@ -52,24 +64,9 @@ export function createPublisherFeedSearch(deps: { fetcher?: typeof fetch; now?: 
         throw new Error(`Publisher RSS ${response.status}`);
       }
       const xml = await readPublicSourceText(response, signal);
-      if (!/<rss\b/i.test(xml) || !/<channel\b/i.test(xml) || !/<\/rss\s*>/i.test(xml)) throw new Error("Publisher RSS invalid feed");
-      return parsePublicFeedXml(xml, 100).flatMap((item) => {
-        try {
-          const url = new URL(item.url);
-          if (url.hostname !== feed.host || url.username || url.password || url.port) return [];
-          // FDA's HTTPS MedWatch feed publishes legacy HTTP article links.
-          // Its canonical HTTPS article endpoint was verified separately. Only
-          // this fixed first-party host gets upgraded; no HTTP request is made.
-          if (selection.feed === "fda" && url.protocol === "http:") url.protocol = "https:";
-          if (url.protocol !== "https:") return [];
-          // Only the first-party documents advertised by the Board's feed.
-          // No third-party material, portal, asset or statistical API is used.
-          if (selection.feed === "fed" && !/^\/newsevents\/(?:speech|testimony)\/[^/]+\.htm$/.test(url.pathname)) return [];
-          return [{ ...item, url: url.href, description: "" }];
-        } catch { return []; }
-      });
+      return [publicFeedSnapshot(xml, "Publisher RSS", parsePublicFeedXml(xml, 1, selectItem).length > 0, "publisher")];
     }));
-    return freshPublicResults(raw, opts.freshness, now())
+    return parsePublicFeedXml(snapshots[0]!.xml, 100, selectItem)
       .filter((item) => selection.matches.test(item.title))
       // Reader exclusions and the final host cap belong in the shared ranker.
       // The raw feed already has a hard 100-entry ceiling.

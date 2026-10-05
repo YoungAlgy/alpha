@@ -35,7 +35,7 @@ const publicMocks: Record<string, unknown> = {
   "./provider-policy": { noKeySourcesEnabled: () => false },
   "./public-source-response": { readPublicSourceText: denied },
   "./public-source-freshness": { freshPublicResults: denied, publicSourceWindow: denied },
-  "./public-source-cache": { createPublicSourceCache: () => denied },
+  "./public-feed-cache": { createPublicFeedCache: () => denied, publicFeedSnapshot: denied },
   "./public-source-budget": { reservePublicSourceRequest: denied },
   "./public-source-circuit": { runPublicSourceAttempt: denied },
 };

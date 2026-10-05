@@ -1,19 +1,23 @@
 # Alpha remaining work
 
-Reconciled locally October 5, 2026 from the October 3 release receipt, the
-October 5 05:34 UTC normal-outcome record and the completed source review.
-Reviewed local source: `583ef26558279b1c5c04d8ce50d907e4783698df`.
-The October 3 receipt last verified that same website release at 17:17:36 UTC.
-No remote or live check was repeated for this documentation cleanup.
+Reconciled locally October 5, 2026 from the calendar release receipt, the
+October 5 05:34 UTC normal-outcome record and the fresh feed/cache review.
+Reviewed release base: `7c33961f7feb7cb80ff8b3e8320f00e66061f9f2`.
+The calendar receipt last verified that website release at 16:29:34 UTC.
+No remote or live check was repeated for this local review.
 This is a dated decision record. New local and authorized live evidence takes
 priority. Historical release approvals are completed and cannot be reused.
 
 ## Current result
 
 Alpha's free invite-only daily delivery is already released. The October 5
-local review found and repaired one public-feed calendar defect. That small
-candidate is uncommitted and unreleased, with focused checks and typecheck
-passed. Its fresh production build remains a separate approval gate.
+calendar repair completed its separate exact build, push, CI and deployment.
+A further feed-pool repair is local, uncommitted and unreleased. Rejected entries
+could previously fill the 100-item limit and hide a usable later item. The
+candidate retains only permitted metadata in a shared, size-bounded snapshot,
+then filters and caps usable items on every read. Ten focused offline checks,
+typecheck and two final independent reviews passed. Its fresh production build
+and release remain separate approval gates.
 The latest normal delivery evidence covers three delivery-eligible readers.
 Current eligibility is resolved from protected records, never a launch-group
 allowlist. Access approval and letter enrollment remain separate.
@@ -88,6 +92,28 @@ ceilings, cooldowns, credits, repeat-link exclusions and reader access are
 unchanged. No paid/model/source call, send or release occurred. A fresh production
 build was not run because normal environment loading is separately gated.
 Evidence: `source-review-calendar-fix-20261005.md` in the external receipt folder.
+
+That earlier local calendar candidate has since shipped as `7c33961f`.
+The exact build, CI, deploy and twelve non-sending live checks passed under
+separate approval. `calendar-release-receipt-20261005.md` supersedes its earlier
+pending-build status. This does not authorize a release of the new feed-pool fix.
+
+## Local usable-feed-pool repair, October 5
+
+The new offline regression failed on the released base and passes on the local
+candidate. It covers valid item 101 behind bad dates, stale/future metadata,
+wrong hosts or missing credits. It also covers the 100-result limit, fixed-feed
+sharing across date windows, publication-time changes in a warm cache and the
+one-minute empty/unusable TTL. Cached publisher/licensed data omit bodies and
+media. Google retains its existing source snippet. Input and serialized cache
+snapshots are both bounded at 256 KiB. Existing budget/circuit identities,
+request limits, source order, attribution and prior-link guards are unchanged.
+
+Final independent feed and persistence reviews found no supported defect.
+All ten focused offline checks and non-incremental typecheck passed. No
+production build, external request, real generation/send, commit, push or deploy
+occurred. Native owned mirrors were untouched. Full evidence is in
+`source-valid-pool-review-20261005.md` in the external receipt folder.
 
 ## Earlier safety cleanup, released October 2
 
