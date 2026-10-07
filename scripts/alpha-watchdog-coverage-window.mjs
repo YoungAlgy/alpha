@@ -17,15 +17,17 @@ export function decideWatchdogCoverageWindow({ eventName, schedule, now }) {
       return { state: "unknown", reason: "schedule_unrecognized" };
     }
     if (now.getUTCHours() * 60 + now.getUTCMinutes() < 20 * 60 + 37) {
-      // A prior day's cron may have arrived after midnight. The existing RPC
-      // has no upper bound, so yesterday's cutoff could hide a missed day
-      // behind a newer delivery. Flag timing uncertainty without reading it.
-      return { state: "unknown", reason: "scheduled_window_not_due" };
+      // Choose a closed day to inspect, without guessing the cron's original
+      // date. Only the new exact-issue RPC is safe for this target. Scheduler
+      // timing stays unverified even if that closed day's coverage is healthy.
+      const previous = new Date(now.getTime());
+      previous.setUTCDate(previous.getUTCDate() - 1);
+      return { state: "check", issueDate: previous.toISOString().slice(0, 10), basis: "closed_day" };
     }
   }
   return {
     state: "check",
-    cutoff: now.toISOString().slice(0, 10) + "T00:00:00Z",
+    issueDate: now.toISOString().slice(0, 10),
     basis: eventName === "schedule" ? "scheduled" : "manual",
   };
 }
@@ -40,6 +42,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.error("Watchdog timing unverified: " + decision.reason);
     process.exitCode = 2;
   } else {
-    process.stdout.write(decision.cutoff);
+    if (decision.basis === "closed_day") console.error("Watchdog timing unverified: scheduled_window_not_due");
+    process.stdout.write(`${decision.issueDate} ${decision.basis}`);
   }
 }

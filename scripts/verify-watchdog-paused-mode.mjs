@@ -183,7 +183,7 @@ assert.match(workflow, /--max-time 15 --connect-timeout 5 --max-filesize 8192/);
 assert.match(workflow, /node scripts\/alpha-watchdog-delivery-mode\.mjs/);
 assert.match(workflow, /Daily letter release state unverified/);
 assert.match(workflow, /if \[ -n "\$\{MODE_CHECK_REASON\}" \]; then[\s\S]*?exit 1[\s\S]*?if \[ "\$\{MODE\}" = "paused" \]/);
-assert.match(workflow, /if \[ "\$\{MODE\}" = "paused" \]; then[\s\S]*?exit 0[\s\S]*?watchdog_delivery_check/);
+assert.match(workflow, /if \[ "\$\{MODE\}" = "paused" \]; then[\s\S]*?exit 0[\s\S]*?watchdog_issue_delivery_check/);
 assert.match(workflow, /if \[ "\$\{DELIVERED_COUNT\}" -lt 0 \]; then[\s\S]*?open_or_update_issue/);
 assert.match(workflow, /if \[ "\$\{UNCOVERED_COUNT\}" -gt 0 \]; then[\s\S]*?open_or_update_issue/);
 assert.match(workflow, /check-resilience-secrets:/);

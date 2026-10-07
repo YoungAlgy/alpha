@@ -59,6 +59,14 @@ Live deployment and first-batch evidence belong in the dated Desktop Files
 launch checkpoint. Scheduled configuration alone does not prove that a future
 scheduled run started or completed.
 
+The unreleased October 7 local timing candidate defers scheduled runs before
+14:17 UTC, ahead of provider preflight, dependency installation and build. A
+ready run pins its UTC issue date and start time; later pages keep that date
+across midnight while the run is less than 90 minutes old. Manual runs use the
+actual current UTC date and keep legacy Resend selection. This candidate adds
+no permission to resend or reopen an older issue. See
+[`docs/delivery-timing-window.md`](docs/delivery-timing-window.md).
+
 Access approval, signup, paid checkout, and email reconciliation preserve
 provider do-not-email blocks. Manual provider-suppression removal is
 hard-disabled pending late-event ordering and terminal-resolution proof. An
@@ -298,7 +306,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 - **Delivery reliability** (started 2026-08-05 and extended through Round 80) —
   - **Stuck-claim reclaim**. `runPersistAndSend` stamps `delivered_at` as an atomic claim before calling the selected provider. A killed runner can leave a claim without recorded provider acceptance. That does not prove no send happened. The cron reclaims stale unproved claims after its safety margin, while the durable attempt ledger retains provider ownership and retry protection for uncertain outcomes.
   - **Provider acceptance record**. A stored `resend_message_id` or `brevo_message_id` records a successful provider acceptance. `delivered_at` alone is only a claim. Acceptance does not prove a provider delivery event or inbox receipt.
-  - **`watchdog_delivery_check()` per-reader acceptance coverage**. The security-definer RPC returns aggregate `uncovered_count` for current delivery-eligible readers without a covered issue since its cutoff. Current coverage requires either provider's message ID. A historical exception retains pre-proof sends before August 5, 2026 at 19:10 UTC. Both the watchdog and scheduled recovery precheck use the RPC. Reading access alone is insufficient. Coverage is checked per reader, so matching aggregate totals cannot hide a missing reader. A zero-uncovered result still does not establish inbox receipt.
+  - **Local date-scoped issue coverage candidate**. The unreleased additive `watchdog_issue_delivery_check(date)` RPC is designed to check the exact `issues.week_of` date and return that checked date with aggregate uncovered and eligible counts. Coverage requires a nonblank Resend or Brevo message ID and a `delivered_at` claim marker inside that UTC date and no later than now. The marker is not an acceptance timestamp, so this bounded check cannot prove when the provider accepted the message. The candidate watchdog can inspect today or yesterday; its scheduled send precheck uses an immutable pinned issue date. The older cutoff RPC remains unchanged for existing callers. A zero-uncovered result does not establish provider delivery or inbox receipt. The migration has not been installed or released.
   - **`prior_issue_counts()`** — one grouped RPC for every subscriber's lifetime "Issue N" count, replacing N per-subscriber count queries.
   - **Resend retry-with-backoff** (`retryResendCall` in `lib/email.ts`) — up to 3 attempts with backoff on transient errors (`rate_limit_exceeded`, `internal_server_error`, `application_error`, `concurrent_idempotent_requests`); permanent errors (bad API key, invalid recipient, quota exceeded) fail fast with no retry.
   - **Bounded fair delivery cursor**. Each route call inspects at most 250 readers with a one-row lookahead. One workflow drains at most 16 pages or 55 minutes, records inspected position with a compare-and-swap cursor, and leaves retry-required readers visible. The next same-day slot resumes beyond the bound and later wraps to uncovered readers. A retry outcome, undrained tail, or cursor conflict keeps the job red.
@@ -476,15 +484,20 @@ it runs on GitHub Actions instead (`.github/workflows/daily-send.yml`, `next bui
 top-of-hour contention, but GitHub does not guarantee punctual execution),
 starting its own temporary server on the GitHub runner and calling that server's
 `/api/cron/weekly-send` route over localhost. `.github/workflows/letter-watchdog.yml` checks delivery + secrets health daily and
-opens a GitHub Issue on failure. Its 20:37 UTC check follows the final retry's
-90-minute job budget and uses UTC midnight for coverage, so yesterday's late
-delivery cannot satisfy today's check. It shares GitHub with the sender and is
-not an independent safeguard against a GitHub-wide outage.
+opens a GitHub Issue on failure. In the unreleased October 7 candidate, its
+20:37 UTC run checks the exact `week_of` date. A previous day's late delivery
+cannot satisfy today's check. It shares GitHub with the sender and is not an
+independent safeguard against a GitHub-wide outage.
 
-A scheduled watchdog executing before its current UTC day's 20:37 target reports
-timing unverified before querying coverage. A due scheduled check retains the
-current-day cutoff. Manual checks do not resolve the scheduler timing alert.
-The original issue date of an arbitrarily delayed cron event remains unknown.
+In the unreleased candidate, a scheduled watchdog before 20:37 UTC checks the
+most recent closed UTC day and keeps a timing-failure status, even if that
+day's eligible audience has zero uncovered readers. The timing result never
+proves the original cron date or its delay cause. A due scheduled check or
+manual check may close only matching date-scoped notices for the date it
+checked, and only when coverage is complete for a nonempty eligible audience.
+Empty or closed-day checks cannot close those notices. Older undated delivery
+alerts remain untouched in open mode. The explicit paused-mode branch keeps its
+prior closure behavior and disclaimer.
 
 The watchdog checks coverage when its source policy and healthy live website
 both report delivery open. Their valid release SHAs may differ after a

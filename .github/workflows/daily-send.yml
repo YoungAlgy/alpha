@@ -91,7 +91,20 @@ jobs:
       ALPHA_SEND_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'daily' }}
       ALPHA_CANARY_USER_ID: ${{ inputs.canary_user_id }}
     steps:
-      # Skips the expensive checkout/npm ci/build/start below when today's
+      # Local pure clock classification needs source only, no installed packages.
+      # Keep exactly one checkout and defer early scheduled arrivals before any
+      # coverage/provider call, install, build, generation or delivery.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Pin the execution issue date
+        id: window
+        env:
+          ALPHA_DELIVERY_CRON: ${{ github.event.schedule }}
+        run: node scripts/alpha-daily-send-window.mjs >> "$GITHUB_OUTPUT"
+
+      # Skips the expensive npm ci/build/start below when today's
       # send is already fully covered -- mainly matters for the 15:37 and
       # 18:47 UTC offset retries: on the common day the 14:17 primary
       # already delivered to everyone, a retry used to pay for a full
@@ -101,15 +114,14 @@ jobs:
       # alpha_full_app_review_2026-08-05.md in Claude's memory) -- this
       # pipeline's idempotency/timing invariants are carefully reasoned
       # about elsewhere in this file, so this pre-check is written to fail
-      # SAFE: any uncertainty (curl error, malformed response, zero active
-      # subscribers) means "proceed with the full pipeline", never "skip".
-      # Skipping is purely a cost optimization; it must never be able to
-      # cause a missed send.
+      # SAFE: positive current eligibility and zero uncovered permits skip.
+      # Unknown coverage stops visibly before provider work. A zero eligible
+      # audience still enters the guarded route to preserve existing behavior.
       #
       # Bypassed entirely for workflow_dispatch (github.event_name check
       # below) so an operator-triggered run always executes the full path.
       #
-      # Reuses letter-watchdog.yml's watchdog_delivery_check() RPC for send
+      # Reuses letter-watchdog.yml's exact-issue aggregate RPC for send
       # coverage. Nonletter maintenance has its own disabled workflow.
       #
       # 2026-08-05: rewritten from an aggregate-count comparison
@@ -124,14 +136,15 @@ jobs:
       # (20260805150000) for the full scenario.
       - name: Pre-check — skip if today's send is already fully covered
         id: precheck
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' && steps.window.outputs.ready == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
+          ALPHA_DELIVERY_ISSUE_DATE: ${{ steps.window.outputs.issue_date }}
         run: |
           set +e
-          # This step runs before checkout, so keep the exact Alpha project
-          # guard inline. Never send either key to a merely non-empty URL.
+          # Keep the exact Alpha project guard inline. Never send either key
+          # to a merely non-empty URL.
           if ! SUPABASE_URL_TO_CHECK="${SUPABASE_URL}" node -e "
             try {
               const u = new URL(process.env.SUPABASE_URL_TO_CHECK || '');
@@ -143,18 +156,17 @@ jobs:
           "; then
             echo "::error::SEND_SUPABASE_URL does not match Alpha's dedicated project. Value withheld."
             echo "skip=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            exit 1
           fi
-          # Start of today UTC, matching the watchdog. Yesterday's late
-          # delivery must not suppress today's attempt.
-          CUTOFF=$(date -u +%Y-%m-%dT00:00:00Z)
+          # Exact pinned issue coverage. A prior issue accepted after midnight
+          # cannot suppress this issue, and later pages retain the same date.
 
           RESPONSE=$(curl -sS --max-time 15 --connect-timeout 5 -X POST \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"cutoff\": \"${CUTOFF}\"}" \
-            "${SUPABASE_URL}/rest/v1/rpc/watchdog_delivery_check")
+            -d "{\"issue_date\": \"${ALPHA_DELIVERY_ISSUE_DATE}\"}" \
+            "${SUPABASE_URL}/rest/v1/rpc/watchdog_issue_delivery_check")
           CURL_EXIT=$?
           echo "Pre-check RPC curl exit: ${CURL_EXIT}. Response body withheld."
 
@@ -168,6 +180,7 @@ jobs:
               try {
                 const data = JSON.parse(raw);
                 if (Array.isArray(data) && data.length === 1 &&
+                    data[0]?.checked_issue_date === process.env.ALPHA_DELIVERY_ISSUE_DATE &&
                     typeof data[0].uncovered_count === 'number' &&
                     typeof data[0].active_subscriber_count === 'number') {
                   if (Number.isSafeInteger(data[0].uncovered_count) && data[0].uncovered_count >= 0 &&
@@ -187,35 +200,34 @@ jobs:
           fi
           echo "uncovered=${UNCOVERED_COUNT} active=${ACTIVE_COUNT}"
           echo "active_count=${ACTIVE_COUNT}" >> "$GITHUB_OUTPUT"
+          if [ "${ACTIVE_COUNT}" -lt 0 ] || [ "${UNCOVERED_COUNT}" -lt 0 ]; then
+            echo "::error::Exact issue coverage unavailable. No delivery attempt was started."
+            exit 1
+          fi
 
-          # Only skip on confident delivery coverage. Uncertain RPC output and
-          # zero active subscribers proceed through the normal pipeline.
+          # Only skip on confident issue coverage. A zero eligible audience
+          # proceeds through the normal pipeline. Unknown output failed above.
           if [ "${ACTIVE_COUNT}" -gt 0 ] && [ "${UNCOVERED_COUNT}" -eq 0 ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "SKIP: 0/${ACTIVE_COUNT} active subscribers uncovered today -- nothing to retry."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "PROCEED: ${UNCOVERED_COUNT} uncovered of ${ACTIVE_COUNT} active (or uncertain) -- running the full pipeline."
+            echo "PROCEED: ${UNCOVERED_COUNT} uncovered of ${ACTIVE_COUNT} active -- running the guarded pipeline."
           fi
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        if: steps.precheck.outputs.skip != 'true'
-        with:
-          persist-credentials: false
-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        if: steps.precheck.outputs.skip != 'true'
+        if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         with:
           node-version: '22'
           cache: 'npm'
 
       - name: Validate exact send scope before provider access
-        if: steps.precheck.outputs.skip != 'true'
+        if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         run: node scripts/run-brevo-canary.mjs --validate
 
       - name: Pre-flight — required secrets and selected provider deliverability
         id: preflight
-        if: steps.precheck.outputs.skip != 'true'
+        if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         env:
           CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
@@ -266,18 +278,18 @@ jobs:
           fi
 
       - name: Install dependencies
-        if: steps.precheck.outputs.skip != 'true'
+        if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         run: npm ci
 
       - name: Verify build-time env vars before spending time on a build
-        if: steps.precheck.outputs.skip != 'true'
+        if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
         run: node scripts/verify-build-env.mjs
 
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        if: steps.precheck.outputs.skip != 'true'
+        if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         with:
           path: .next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
@@ -285,7 +297,7 @@ jobs:
             ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
 
       - name: Build (plain Next.js -- NOT the Cloudflare/OpenNext bundle, just a runnable server)
-        if: steps.precheck.outputs.skip != 'true'
+        if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SEND_SUPABASE_PUBLISHABLE_KEY }}
@@ -294,8 +306,11 @@ jobs:
         run: npm run build
 
       - name: Start the server and run the real daily send
-        if: steps.precheck.outputs.skip != 'true'
+        if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         env:
+          ALPHA_DELIVERY_ISSUE_DATE: ${{ steps.window.outputs.issue_date }}
+          ALPHA_DELIVERY_RUN_STARTED_AT: ${{ steps.window.outputs.started_at }}
+          ALPHA_DELIVERY_CRON: ${{ github.event.schedule }}
           CRON_SECRET: ${{ secrets.SEND_CRON_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.SEND_ANTHROPIC_API_KEY }}
           BRAVE_SEARCH_API_KEY: ${{ secrets.SEND_BRAVE_SEARCH_API_KEY }}
@@ -685,7 +700,8 @@ jobs:
                     const integer=v=>Number.isInteger(v)&&v>=0;
                     const cursorStates=new Set(['advanced','advanced_with_retry','override_read_only','empty','advance_failed']);
                     const cursorOrNull=v=>v===null||uuid.test(v);
-                    if (!integer(s.subscribers) || !integer(s.sent) ||
+                    if (s.weekOf!==process.env.ALPHA_DELIVERY_ISSUE_DATE ||
+                        !integer(s.subscribers) || !integer(s.sent) ||
                         !integer(s.backupSharedSent) || !integer(s.backupFreshSent) || !integer(s.backupStaleSent) ||
                         !integer(s.skippedAlreadyDelivered) || !integer(s.unsubscribedMidRunSkips) ||
                         !integer(s.cancelledMidRunSkips) || !integer(s.suppressedMidRunSkips) || !integer(s.unenrolledMidRunSkips) ||

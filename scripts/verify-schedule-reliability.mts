@@ -8,7 +8,7 @@ import { load } from "js-yaml";
 type Workflow = {
   on?: { schedule?: { cron?: string }[] };
   concurrency?: { group?: string; "cancel-in-progress"?: boolean };
-  jobs?: Record<string, { "timeout-minutes"?: number; steps?: { name?: string; env?: Record<string, string>; run?: string }[] }>;
+  jobs?: Record<string, { "timeout-minutes"?: number; steps?: { id?: string; name?: string; if?: string; env?: Record<string, string>; run?: string }[] }>;
 };
 
 function loadWorkflow(file: string): Workflow {
@@ -40,7 +40,11 @@ assert.equal(minuteOfDay(watchdogSlots![0]!) - minuteOfDay(sendSlots![2]!), 90 +
 const sendSteps = send.jobs?.send?.steps ?? [];
 const precheck = sendSteps.find((step) => step.name?.startsWith("Pre-check"));
 const preflight = sendSteps.find((step) => step.name?.startsWith("Pre-flight"));
+const issueWindow = sendSteps.find((step) => step.id === "window");
 assert.ok(precheck?.run, "send precheck exists");
+assert.ok(issueWindow?.run?.includes("scripts/alpha-daily-send-window.mjs"), "send pins one issue date before the precheck");
+assert.equal(precheck.env?.ALPHA_DELIVERY_ISSUE_DATE, "${{ steps.window.outputs.issue_date }}");
+assert.match(precheck.if ?? "", /steps\.window\.outputs\.ready == 'true'/);
 assert.equal(preflight?.env?.ALPHA_NO_MODEL_MODE, "1");
 assert.equal(preflight?.env?.ALPHA_ALLOW_PAID_AI, "0");
 const deliveryStep = sendSteps.find((step) => step.run?.includes("MAX_DELIVERY_PAGES=16"));
@@ -51,47 +55,53 @@ assert.equal(deliveryStep.env?.ALPHA_ALLOW_PAID_AI, "0");
 const watchdogSteps = watchdog.jobs?.["check-delivery"]?.steps ?? [];
 const watchdogCheck = watchdogSteps.find((step) => step.run?.includes("COUNTS=$(RESPONSE="));
 assert.ok(watchdogCheck?.run, "watchdog coverage check exists");
-const cutoff = "CUTOFF=$(date -u +%Y-%m-%dT00:00:00Z)";
-assert.equal(precheck.run.split(cutoff).length - 1, 1, "send: exact UTC midnight cutoff");
-assert.ok(watchdogCheck.run.includes("CUTOFF=$(node scripts/alpha-watchdog-coverage-window.mjs)"),
-  "watchdog classifies a due current-day window before choosing UTC midnight");
-assert.ok(!watchdogCheck.run.includes(cutoff), "watchdog does not blindly check a not-yet-due day");
+assert.ok(watchdogCheck.run.includes("WINDOW=$(node scripts/alpha-watchdog-coverage-window.mjs)"),
+  "watchdog selects an exact issue date before querying coverage");
+assert.ok(!precheck.run.includes("CUTOFF=$(date -u") && !watchdogCheck.run.includes("CUTOFF=$(date -u"),
+  "both checks avoid timestamp cutoffs for date-scoped issue coverage");
 for (const [name, script] of [["send", precheck.run], ["watchdog", watchdogCheck.run]] as const) {
-  assert.match(script, /watchdog_delivery_check/);
-  assert.match(script, /-d "\{\\"cutoff\\": \\"\$\{CUTOFF\}\\"\}"/);
+  assert.match(script, /watchdog_issue_delivery_check/);
+  assert.match(script, /-d "\{\\"issue_date\\": \\"\$\{(?:ALPHA_DELIVERY_ISSUE_DATE|ISSUE_DATE)}\\"\}"/);
+  assert.match(script, /checked_issue_date === process\.env\.(?:ALPHA_DELIVERY_ISSUE_DATE|ISSUE_DATE_TO_CHECK)/);
 }
 
 function extractCounts(script: string): string {
-  const match = script.match(/COUNTS=\$\(RESPONSE="\$\{RESPONSE\}" node -e "([\s\S]*?)"\)/);
+  const match = script.match(/COUNTS=\$\(RESPONSE="\$\{RESPONSE\}"(?: ISSUE_DATE_TO_CHECK="\$\{ISSUE_DATE\}")? node -e "([\s\S]*?)"\)/);
   assert.ok(match, "actual inline Node count parser found");
   return match[1]!;
 }
 
-function parseCounts(code: string, raw: string): string {
+function parseCounts(code: string, raw: string, issueDate: string): string {
   let output = "";
   vm.runInNewContext(code, {
-    process: { env: { RESPONSE: raw }, stdout: { write: (part: string) => { output += part; } } },
+    process: { env: {
+      RESPONSE: raw,
+      ALPHA_DELIVERY_ISSUE_DATE: issueDate,
+      ISSUE_DATE_TO_CHECK: issueDate,
+    }, stdout: { write: (part: string) => { output += part; } } },
     console: { log: (...parts: unknown[]) => { output += parts.join(" "); } },
   }, { timeout: 1000 });
   return output;
 }
 
 const cases: [string, string, string][] = [
-  ["valid covered", '[{"uncovered_count":0,"active_subscriber_count":4}]', "0 4"],
-  ["valid uncovered", '[{"uncovered_count":2,"active_subscriber_count":4}]', "2 4"],
-  ["negative", '[{"uncovered_count":-1,"active_subscriber_count":4}]', "-1 -1"],
-  ["fractional", '[{"uncovered_count":0.5,"active_subscriber_count":4}]', "-1 -1"],
-  ["unsafe integer", '[{"uncovered_count":9007199254740992,"active_subscriber_count":9007199254740992}]', "-1 -1"],
+  ["valid covered", '[{"checked_issue_date":"2026-10-01","uncovered_count":0,"active_subscriber_count":4}]', "0 4"],
+  ["valid uncovered", '[{"checked_issue_date":"2026-10-01","uncovered_count":2,"active_subscriber_count":4}]', "2 4"],
+  ["wrong checked date", '[{"checked_issue_date":"2026-09-30","uncovered_count":0,"active_subscriber_count":4}]', "-1 -1"],
+  ["missing checked date", '[{"uncovered_count":0,"active_subscriber_count":4}]', "-1 -1"],
+  ["negative", '[{"checked_issue_date":"2026-10-01","uncovered_count":-1,"active_subscriber_count":4}]', "-1 -1"],
+  ["fractional", '[{"checked_issue_date":"2026-10-01","uncovered_count":0.5,"active_subscriber_count":4}]', "-1 -1"],
+  ["unsafe integer", '[{"checked_issue_date":"2026-10-01","uncovered_count":9007199254740992,"active_subscriber_count":9007199254740992}]', "-1 -1"],
   ["null row", "[null]", "-1 -1"],
   ["empty array", "[]", "-1 -1"],
   ["multiple rows", '[{"uncovered_count":0,"active_subscriber_count":4},{"uncovered_count":0,"active_subscriber_count":4}]', "-1 -1"],
-  ["uncovered above active", '[{"uncovered_count":5,"active_subscriber_count":4}]', "-1 -1"],
+  ["uncovered above active", '[{"checked_issue_date":"2026-10-01","uncovered_count":5,"active_subscriber_count":4}]', "-1 -1"],
   ["malformed JSON", "[{", "-1 -1"],
 ];
 for (const [name, script] of [["send", precheck.run], ["watchdog", watchdogCheck.run]] as const) {
   const code = extractCounts(script);
   for (const [caseName, raw, expected] of cases) {
-    assert.equal(parseCounts(code, raw), expected, `${name}: ${caseName}`);
+    assert.equal(parseCounts(code, raw, "2026-10-01"), expected, `${name}: ${caseName}`);
   }
 }
 

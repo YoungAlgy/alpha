@@ -178,19 +178,21 @@ assert.notEqual(result.status, 0, "paused success cannot go green after Issue cl
 assert.match(result.calls, /issue close 11 /, "paused success reached the failing close command");
 assert.ok(!result.calls.includes("unexpected curl") && !result.calls.includes("unexpected alert"));
 
-const coveredMatch = script.match(/if \[ "\$\{UNCOVERED_COUNT\}" -eq 0 \]; then[\s\S]*?exit 0\nfi/);
+const coveredMatch = script.match(/if \[ "\$\{UNCOVERED_COUNT\}" -eq 0 \]; then[\s\S]*?exit "\$\{TIMING_UNVERIFIED\}"\nfi/);
 assert.ok(coveredMatch, "covered success path found");
 result = shellCase("covered-close-failure", `UNCOVERED_COUNT=0
 ACTIVE_COUNT=1
 DELIVERED_COUNT=1
-CUTOFF="2026-10-01T00:00:00Z"
+ISSUE_DATE="2026-10-01"
+COVERAGE_BASIS="scheduled"
+TIMING_UNVERIFIED=0
 ISSUE_CHANNEL_FAILED=0
-SEARCH_PHRASE="Daily letter send may be broken"
-ISSUE_TITLE="🚨 Daily letter send may be broken"
-PARTIAL_SEARCH_PHRASE="Daily letter send may be incomplete"
-PARTIAL_ISSUE_TITLE="⚠️ Daily letter send may be incomplete"
+SEARCH_PHRASE="Daily letter issue coverage unverified (2026-10-01)"
+ISSUE_TITLE="Daily letter issue coverage unverified (2026-10-01)"
+PARTIAL_SEARCH_PHRASE="Daily letter issue coverage incomplete (2026-10-01)"
+PARTIAL_ISSUE_TITLE="Daily letter issue coverage incomplete (2026-10-01)"
 ${coveredMatch[0]}`, {
-  response: JSON.stringify([{ number: 12, title: "🚨 Daily letter send may be broken" }]), closeExit: "48",
+  response: JSON.stringify([{ number: 12, title: "Daily letter issue coverage unverified (2026-10-01)" }]), closeExit: "48",
 });
 assert.notEqual(result.status, 0, "covered success cannot go green after Issue close failure");
 assert.match(result.calls, /issue close 12 /, "covered success reached the failing close command");

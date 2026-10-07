@@ -15,6 +15,7 @@ import { parseBrevoCanaryRequest } from "@/lib/brevo-canary-policy";
 import { subscriberEmailConfigured, sendPreparedSubscriberLetter } from "@/lib/subscriber-email-delivery";
 import { deliveryLetterUrl as buildLetterUrl } from "@/lib/letter-token";
 import { currentPeriodIso, sinceLastSendWindow, isSendDay } from "@/lib/cadence";
+import { validateDeliveryIssueWindow } from "@/lib/delivery-issue-window.mjs";
 import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import { latestVisibleIssue } from "@/lib/latest-visible-issue";
 import { braveRateLimitedCount, type BraveQuotaState } from "@/lib/brave";
@@ -351,6 +352,26 @@ export async function GET(req: Request) {
   }
   const canaryUserId = canaryRequest.kind === "canary" ? canaryRequest.userId : null;
   const canaryDate = canaryUserId ? currentPeriodIso() : null;
+  // Workflow pins are process configuration, never a historical URL override.
+  // Revalidate before any database/retention work on every bounded page.
+  let pinnedIssueDate: string | null = null;
+  if (!canaryUserId && (
+    process.env.ALPHA_DELIVERY_ISSUE_DATE || process.env.ALPHA_DELIVERY_RUN_STARTED_AT ||
+    (process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_EVENT_NAME === "schedule")
+  )) {
+    const window = validateDeliveryIssueWindow({
+      eventName: process.env.GITHUB_EVENT_NAME,
+      schedule: process.env.ALPHA_DELIVERY_CRON,
+      issueDate: process.env.ALPHA_DELIVERY_ISSUE_DATE,
+      startedAt: process.env.ALPHA_DELIVERY_RUN_STARTED_AT,
+      now: new Date(startedAt),
+    });
+    if (window.state !== "ready") {
+      return NextResponse.json({ error: "Delivery run window is invalid or expired.", reason: window.reason },
+        { status: 503, headers: { "Cache-Control": "no-store" } });
+    }
+    pinnedIssueDate = window.issueDate;
+  }
   if (canaryUserId && (!BREVO_DELIVERY_SCHEMA_ENABLED || !BREVO_CANARY_DELIVERY_ENABLED)) {
     return NextResponse.json({ error: "Brevo rollout gates are closed." }, { status: 503 });
   }
@@ -468,7 +489,7 @@ export async function GET(req: Request) {
   // app/api/generate/route.ts's weekOf schema. Lower real exposure here
   // (CRON_SECRET-gated, trusted-operator-only), but the fix is one shared
   // helper call away, so there's no reason to leave the weaker check.
-  const weekOf = weekOfOverride ?? paidCallBudgetDate;
+  const weekOf = pinnedIssueDate ?? weekOfOverride ?? paidCallBudgetDate;
   // Cadence gate. CADENCE_UTC_DAYS is every day today, so this is currently a
   // no-op -- but nothing else in this route or the GitHub Actions schedule
   // that drives it (daily-send.yml fires every calendar day, no day-of-week

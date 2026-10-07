@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import vm from "node:vm";
 import ts from "typescript";
+import { validateDeliveryIssueWindow } from "../lib/delivery-issue-window.mjs";
 
 // Run the real GET and workflow parser with memory-only boundaries. No product
 // module, environment file, Next server, network transport or provider is loaded.
@@ -42,12 +43,14 @@ function parsePage(page: unknown): string {
     },
   };
   vm.runInNewContext(parserSource, {
-    process: { stdin, stdout: { write(value: string) { output += value; } } },
+    process: { env: { ALPHA_DELIVERY_ISSUE_DATE: period }, stdin, stdout: { write(value: string) { output += value; } } },
   }, { timeout: 1000 });
   return output;
 }
 
 type Options = {
+  at?: string;
+  window?: Record<string, string>;
   budget?: string;
   setupMs?: number;
   outcome?: "clean" | "accept-during-cursor" | "unresolved" | "accept-before-timeout-catch" | "stored-acceptance";
@@ -60,7 +63,7 @@ type Options = {
 type Response = { status: number; body: Record<string, unknown> };
 
 async function invoke(options: Options = {}) {
-  let now = epoch;
+  let now = options.at ? Date.parse(options.at) : epoch;
   let clientCalls = 0;
   let generationCalls = 0;
   let providerCalls = 0;
@@ -184,7 +187,8 @@ async function invoke(options: Options = {}) {
       },
     },
     "@/lib/letter-token": { deliveryLetterUrl: () => "https://example.invalid/fixture" },
-    "@/lib/cadence": { currentPeriodIso: () => period, sinceLastSendWindow: () => "pd", isSendDay: () => true },
+    "@/lib/cadence": { currentPeriodIso: () => new Date(now).toISOString().slice(0,10), sinceLastSendWindow: () => "pd", isSendDay: () => true },
+    "@/lib/delivery-issue-window.mjs": { validateDeliveryIssueWindow },
     "@/lib/issue-visibility": { issueIsReaderVisible: () => true },
     "@/lib/latest-visible-issue": { latestVisibleIssue: async () => { throw new Error("Unexpected historical lookup"); } },
     "@/lib/brave": { braveRateLimitedCount: zero },
@@ -227,7 +231,7 @@ async function invoke(options: Options = {}) {
   const exports: Record<string, unknown> = {};
   vm.runInNewContext(compiled, {
     exports, URL, Date: Clock,
-    process: { env: { CRON_SECRET: "local-fixture-secret", ALPHA_NO_MODEL_MODE: "1", ALPHA_ALLOW_PAID_AI: "0" } },
+    process: { env: { CRON_SECRET: "local-fixture-secret", ALPHA_NO_MODEL_MODE: "1", ALPHA_ALLOW_PAID_AI: "0", ...options.window } },
     console: { log() {}, warn() {}, error() {} },
     require(name: string) {
       if (!Object.hasOwn(mocks, name)) throw new Error("Unexpected runtime import in timing fixture");
@@ -275,6 +279,31 @@ async function invoke(options: Options = {}) {
 }
 
 const checks: Array<() => Promise<void>> = [];
+const runPin = {
+  GITHUB_ACTIONS: "true", GITHUB_EVENT_NAME: "schedule", ALPHA_DELIVERY_CRON: "47 18 * * *",
+  ALPHA_DELIVERY_ISSUE_DATE: period, ALPHA_DELIVERY_RUN_STARTED_AT: `${period}T23:59:00.000Z`,
+};
+checks.push(async () => {
+  const result = await invoke({ at: "2026-10-04T00:05:00Z", window: runPin });
+  equal(result.response.status, 200, "an active pinned run can finish across midnight");
+  equal(result.response.body.weekOf, period, "midnight cannot open a new issue");
+  equal(result.response.body.paidCallBudgetDate, "2026-10-04", "paid budget remains on actual request date");
+  equal(parsePage(result.response.body).startsWith("OK|"), true, "workflow accepts pinned issue date");
+  equal(parsePage({ ...result.response.body, weekOf: "2026-10-04" }), "SHAPE_INVALID", "workflow rejects a different issue date");
+});
+for (const window of [
+  { ...runPin, ALPHA_DELIVERY_ISSUE_DATE: "2026-10-04" },
+  { ...runPin, ALPHA_DELIVERY_RUN_STARTED_AT: "2026-10-03T13:00:00.000Z" },
+  { ...runPin, ALPHA_DELIVERY_RUN_STARTED_AT: "2026-10-03T22:35:00.000Z" },
+  { ...runPin, ALPHA_DELIVERY_RUN_STARTED_AT: "2026-10-04T00:06:00.000Z" },
+  { GITHUB_ACTIONS: "true", GITHUB_EVENT_NAME: "schedule" },
+]) checks.push(async () => {
+  const result = await invoke({ at: "2026-10-04T00:05:00Z", window });
+  equal(result.response.status, 503, "invalid, early, missing, future or expired pin fails closed");
+  equal(result.clientCalls, 0, "rejected pin stops before database or retention");
+  equal(result.generationCalls, 0, "rejected pin cannot generate");
+  equal(result.providerCalls, 0, "rejected pin cannot send");
+});
 checks.push(async () => {
   const curl = workflowSource.split(/\r?\n/).find((line) => line.includes("RAW=$(curl") && line.includes("${PAGE_CURL_TIMEOUT}"));
   equal(typeof curl, "string", "actual bounded page curl exists");

@@ -1,26 +1,53 @@
 # Alpha remaining work
 
-Reconciled locally October 5, 2026 from the calendar release receipt, the
-October 5 05:34 UTC normal-outcome record and the fresh feed/cache review.
-Reviewed release base: `7c33961f7feb7cb80ff8b3e8320f00e66061f9f2`.
-The calendar receipt last verified that website release at 16:29:34 UTC.
-No remote or live check was repeated for this local review.
-This is a dated decision record. New local and authorized live evidence takes
-priority. Historical release approvals are completed and cannot be reused.
+Current local timing candidate review, October 7, 2026. The active release base
+is `ba22400eed642bc570d2e667922398e6adb42573`; the October 5 feed-pool repair
+has since shipped. The fresh bounded normal-delivery receipt is
+`normal-delivery-check-20261007.md` in the external receipt folder. It records
+that bounded check only. It does not establish an arbitrary scheduled start,
+the cause of a scheduler delay, or provider acceptance time for deliveries
+outside the diagnostic's date window.
+
+The current checkout contains an unreleased local timing candidate. Focused
+offline checks, typecheck and disposable local PostgreSQL SQL verification
+passed. No production build or RPC installation, push, or deployment is
+included. Those actions require separate exact approval. The additive exact-date
+coverage RPC does not change the old cutoff RPC. Historical test debt below is
+preserved as history and is not reopened by this candidate.
+
+The October 5 reconciliation and its feed-pool status below are retained as a
+dated record, superseded by this current summary. Historical release approvals
+are completed and cannot be reused.
 
 ## Current result
 
-Alpha's free invite-only daily delivery is already released. The October 5
-calendar repair completed its separate exact build, push, CI and deployment.
-A further feed-pool repair is local, uncommitted and unreleased. Rejected entries
-could previously fill the 100-item limit and hide a usable later item. The
-candidate retains only permitted metadata in a shared, size-bounded snapshot,
-then filters and caps usable items on every read. Ten focused offline checks,
-typecheck and two final independent reviews passed. Its fresh production build
-and release remain separate approval gates.
-The latest normal delivery evidence covers three delivery-eligible readers.
-Current eligibility is resolved from protected records, never a launch-group
-allowlist. Access approval and letter enrollment remain separate.
+Alpha's free invite-only daily delivery is released. The October 5 calendar
+and feed-pool repairs are completed release history. The October 7 normal
+delivery receipt is the newest bounded evidence. Current eligibility is
+resolved from protected records, never a launch-group allowlist. Access
+approval and letter enrollment remain separate.
+
+The local timing candidate defers scheduled delivery before 14:17 UTC, ahead of
+provider preflight, install or build. A ready run pins the actual UTC issue date
+and start time. Later pages preserve that date across midnight while the run is
+under 90 minutes old. Manual dispatch uses the actual current UTC date and keeps
+legacy Resend selection. No new resend or old-issue permission is added.
+
+The candidate's additive `watchdog_issue_delivery_check(date)` checks exact
+`week_of` values for today or yesterday UTC. It counts only currently eligible
+accounts and exact-date issues with a nonblank Resend/Brevo message ID and a
+`delivered_at` claim marker within that UTC day and no later than now. The claim
+marker does not prove acceptance time. Out-of-window accepted rows remain
+unproven by this bounded check. Eligibility follows enrollment, subscription,
+access/cancellation, unsubscribe and suppression state.
+
+Before 20:37 UTC, a scheduled watchdog checks the most recent closed day and
+retains timing failure, even when uncovered count is zero. Due scheduled or
+manual checks may close only exact-date notices for the date checked, with a
+nonempty eligible audience and complete coverage. Closed-day and empty-audience
+checks cannot close those notices. Undated alerts remain untouched in open
+mode. The explicit paused branch keeps its prior closure behavior and
+disclaimer. The original scheduler cause remains unknown.
 
 The October 1 source-dispatch and watchdog Issue-channel patch shipped as
 `6f6e8c12`. Its exact build, CI and twelve non-sending live checks passed.
@@ -57,11 +84,16 @@ gates or reopen historical Round-script debt merely to close this backlog.
 
 ## Remaining backlog, in priority order
 
+The date-scoped timing candidate does not change the separate outcome evidence
+items below. Its local passing checks do not reopen historical acceptance,
+delivery-event, inbox-receipt or scheduler-cause questions.
+
 Priority scores use (impact + risk) x (6 - effort). Each input is 1 to 5.
 Effort is relative, not an elapsed-time promise.
 
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
+| Decide on the October 7 delivery timing candidate | Local focused checks, typecheck and offline PostgreSQL verification passed. The candidate remains unreleased. Production build and the RPC installation, push and deployment are separate actions requiring fresh exact approval. No live timing change has occurred. | 5 / 4 / 3 | 27 |
 | Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
 | Improve independent topic coverage where evidence supports it | Existing public-source adapters remain released. Broad news/music coverage is still limited. The October 5 research pass qualified no new adapter: Wikidata timed out once, Pressenza's exact original-item reuse boundary remains unresolved, and SciDev.Net's documented route does not establish current complete-credit coverage. Do not replay held probes or relax source guards to force output. See `public-source-gaps.md` and the named dated receipt below. The separate local calendar repair is described next. | 4 / 3 / 4 | 14 |
 
@@ -72,7 +104,7 @@ Broad-topic coverage would need more evidence-backed research. Outcome proof
 needs an observed event. Neither is a currently confirmed runtime bug.
 No further live configuration change or external probe is authorized here.
 
-## Unreleased local calendar repair, October 5
+## Calendar repair, released October 5 (historical record)
 
 Node's permissive `Date.parse` converted an impossible RSS February 30 into
 March 2. The old freshness gate could treat that malformed item as current and
@@ -98,7 +130,7 @@ The exact build, CI, deploy and twelve non-sending live checks passed under
 separate approval. `calendar-release-receipt-20261005.md` supersedes its earlier
 pending-build status. This does not authorize a release of the new feed-pool fix.
 
-## Local usable-feed-pool repair, October 5
+## Usable-feed-pool repair, released October 5 (historical record)
 
 The new offline regression failed on the released base and passes on the local
 candidate. It covers valid item 101 behind bad dates, stale/future metadata,

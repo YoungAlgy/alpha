@@ -419,7 +419,7 @@ function parseWorkflowPage(overrides: Record<string, unknown> = {}): string {
     deliveryPageComplete: true, deliveryRetryRequired: false, deliveryPageBlocked: false,
     deliveryHasMore: false, deliveryWrapped: false, deliveryCursorAdvanceFailed: false,
     deliveryCursorState: "advanced", deliveryCursor: null, deliveryCursorNext: last,
-    deliveryPageLastUserId: last, paidCallBudgetDate: "2026-09-24", paidCallCeilingHit: false,
+    weekOf: "2026-09-24", deliveryPageLastUserId: last, paidCallBudgetDate: "2026-09-24", paidCallCeilingHit: false,
     paidCallReservationsGranted: 0, paidCallReservationsUsed: 0, paidCallReservationsUnused: 0,
     paidCallReservationExhausted: false, paidCallReservationError: null, ...overrides,
   };
@@ -430,7 +430,7 @@ function parseWorkflowPage(overrides: Record<string, unknown> = {}): string {
     return stdin;
   } };
   vm.runInNewContext(parserSource, {
-    process: { stdin, stdout: { write(value: string) { output += value; } } },
+    process: { env: { ALPHA_DELIVERY_ISSUE_DATE: "2026-09-24" }, stdin, stdout: { write(value: string) { output += value; } } },
   }, { timeout: 1000 });
   return output;
 }
