@@ -14,8 +14,8 @@ const lock = readJson("package-lock.json");
 assert.equal(lock.lockfileVersion, 3);
 
 const floors = new Map([
-  ["next", "16.3.3"],
-  ["eslint-config-next", "16.3.3"],
+  ["next", "16.3.8"],
+  ["eslint-config-next", "16.3.8"],
   ["sharp", "0.35.5"],
   ["proxy-addr", "2.0.8"],
   ["source-map-js", "1.2.2"],

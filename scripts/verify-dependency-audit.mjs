@@ -18,8 +18,8 @@ export const exceptionPolicy = Object.freeze({
   approval: "Alex approved local preparation October 3. No release permission.",
 });
 const reviewed = new Map([
-  ["eslint-config-next", ["16.3.6", "@next/eslint-plugin-next", "16.3.6"]],
-  ["@next/eslint-plugin-next", ["16.3.6", "fast-glob", "3.3.1"]],
+  ["eslint-config-next", ["16.3.8", "@next/eslint-plugin-next", "16.3.8"]],
+  ["@next/eslint-plugin-next", ["16.3.8", "fast-glob", "3.3.1"]],
   ["fast-glob", ["3.3.1", "micromatch", "^4.0.4"]],
   ["patch-package", ["8.0.1", "find-yarn-workspace-root", "^2.0.0"]],
   ["find-yarn-workspace-root", ["2.0.0", "micromatch", "^4.0.2"]],

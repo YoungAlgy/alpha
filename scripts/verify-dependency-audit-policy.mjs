@@ -189,6 +189,14 @@ pass(()=>assert.equal(classify().waivedHighPackageEntries,7));
 pass(()=>assert.equal(classify().rawCounts.high,7));
 pass(()=>assert.equal(classify().expiresAt,exceptionPolicy.expiresAt));
 pass(()=>assert.equal(classify().blockingHighOrCritical,0));
+// A production Next advisory must never inherit the development-only braces exception.
+for(const severity of ["high","critical"]){
+ mutated(r=>{r.vulnerabilities.next={name:"next",severity,isDirect:true,nodes:["node_modules/next"],via:[{source:1241496,name:"next",dependency:"next",severity,range:">=16.0.0 <16.3.8",url:"https://github.com/advisories/GHSA-cjq9-62q9-8jv4"}]};});
+}
+// Matching lint updates retain the reviewed dependency edges and reject old installs.
+for(const name of ["eslint-config-next","@next/eslint-plugin-next"]){
+ mutated((r,l)=>{l.packages["node_modules/"+name].version="16.3.6";});
+}
 const empty={auditReportVersion:2,vulnerabilities:{},metadata:{vulnerabilities:{info:0,low:0,moderate:0,high:0,critical:0,total:0}}};
 pass(()=>assert.equal(classify(empty,lock,now,0).exceptionUsed,false));
 pass(()=>assert.equal(classify(empty,lock,exceptionPolicy.expiresAt,0).exceptionUsed,false));

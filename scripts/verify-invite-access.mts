@@ -207,7 +207,7 @@ const signinPage = source("../app/signin/page.tsx");
 assert.match(signinPage, /return path === "\/checkout" \? path : null/);
 assert.match(
   signinPage,
-  /signInWithOtp\([\s\S]*?shouldCreateUser: true[\s\S]*?verifyOtp\([\s\S]*?await destinationAfterSignIn\(\)/
+  /signInWithOtp\([\s\S]*?shouldCreateUser: true[\s\S]*?verifyOtp\([\s\S]*?await destinationAfterSignIn\(identity\)/
 );
 // A requested return path wins, then the account decides (signInDestination).
 assert.match(signinPage, /const returnPath = takeSignInReturnPath\(\);\s*\n\s*if \(returnPath\) return returnPath;/);
