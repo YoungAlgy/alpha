@@ -1,10 +1,15 @@
 # Alpha remaining work
 
-Current release reconciliation, October 7, 2026. Release
-`53b901eae0181be55016655624ac63886cccb472` includes the October 7 timing/watchdog
-patch and narrow dependency security repair. Its fresh build, exact-source CI
-and twelve non-sending live checks passed. Final live readback was at 15:46:23
-UTC. The newest bounded normal-delivery receipt is
+Current release reconciliation, October 8, 2026. Release
+`551acfcab0eb1ea3808544828c992fc30bbb47de` includes the October 7 timing/watchdog
+repair, the covered-reader accounting correction and the Next 16.3.8 security
+update. Its fresh build and exact-source CI passed. The immediate smoke failed
+without retained failing-check details, so its cause remains unknown. A bounded
+follow-up confirmed the exact source at 04:28:17 UTC and passed all twelve
+non-sending live checks at 04:29:54 UTC, without another deployment. Evidence is
+`next-security-release-final-20261008.json` and
+`next-security-release-acceptance-20261008.json` in the external receipt folder.
+The newest bounded normal-delivery receipt is still
 `postrelease-normal-check-20261007-2313.md` in the external receipt folder.
 Its one history read at 23:13 UTC and bounded projections through 23:17 UTC
 establish three new acceptance outcomes for the October 7 issue, followed by a
@@ -89,6 +94,15 @@ gates or reopen historical Round-script debt merely to close this backlog.
 - The October 7 dependency repair is released. Sharp 0.35.5, proxy-addr 2.0.8
   and source-map-js 1.2.2 passed all-copy lock and installed checks in the fresh
   native release checkout. Windows node_modules was not replaced.
+- The covered-reader accounting correction shipped as `ae931742` and reached
+  the website with the October 8 `551acfc` release. Existing ordinary delivery
+  proof settles a covered reader before profile validation. Unproved and forced
+  readers retain their checks. No new send or retry permission is added.
+- The October 8 Next 16.3.8 security update is released. Matching lint packages,
+  installed dependency checks and exact-source CI passed. The existing Braces
+  exception was reviewed and retained its November 2 deadline in that release.
+  The separately approved local policy candidate below supersedes that date
+  only after a future maintenance release.
 
 ## Remaining backlog, in priority order
 
@@ -101,7 +115,6 @@ Effort is relative, not an elapsed-time promise.
 
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
-| Release the covered-reader accounting correction | Local correction and focused checks passed. An ordinary reader with existing delivery proof is settled before validating a subsequently blanked profile. Unproved and forced readers retain their checks. Fresh production build and exact release approval remain pending. See the local correction below. | 3 / 2 / 2 | 20 |
 | Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
 | Improve independent topic coverage where evidence supports it | Existing public-source adapters remain released. Broad news/music coverage is still limited. The October 5 research pass qualified no new adapter: Wikidata timed out once, Pressenza's exact original-item reuse boundary remains unresolved, and SciDev.Net's documented route does not establish current complete-credit coverage. Do not replay held probes or relax source guards to force output. See `public-source-gaps.md` and the named dated receipt below. The calendar and feed-pool repairs are completed history below. | 4 / 3 / 4 | 14 |
 
@@ -113,12 +126,19 @@ needs an observed event. Neither is a currently confirmed runtime bug.
 No further live configuration change or external probe is authorized here.
 
 The dependency audit still has the one existing, locally patched Braces
-exception. Its exact allowance expires November 2, 2026 at 00:00 UTC. The
-October 7 patch added no exception and did not extend it. Resolve that future
-release-gate deadline under a separate focused task. Raw package-entry counts
+exception. The released version has the November 2 expiry. Alex approved the
+October 8 local candidate to remove that calendar gate and retain an ongoing
+allowance only for the exact advisory with verified depth protection and the
+reviewed development-tool graph. All other high/critical findings still block,
+and weekly fresh audits remain required. The candidate is uncommitted and
+unreleased. The initial arbitrary review date is no longer a pending policy
+decision. A separate maintenance commit/push and exact-source CI are needed to
+apply this local policy remotely. No website deployment is needed for this
+verification/docs scope. See `dependency-audit-exception.md`. No supported
+upstream fix was established by the earlier review. Raw package-entry counts
 are not counts of independent vulnerabilities.
 
-## Local covered-reader accounting correction, unreleased
+## Covered-reader accounting correction, released October 8 (historical record)
 
 The fresh October 7 review found a false retry on recovery pages. The reader
 loop validated name and effective topics before checking prefetched delivery
@@ -126,7 +146,7 @@ proof. A covered reader who later cleared their name or topics could therefore
 be counted as blank and retry-required. Today's healthy run had zero blank
 skips and did not exhibit this defect.
 
-The local correction moves the unchanged ordinary proof gate ahead of profile
+The correction moves the unchanged ordinary proof gate ahead of profile
 and pool work. Covered readers receive the existing covered-skip credit.
 Unproved readers and forced paths retain profile validation. Eligibility,
 suppression, address checks, provider ownership, locks and unresolved-outcome
@@ -139,11 +159,13 @@ pass. Application typecheck and a separate check of the changed test script
 pass. Independent review found no further defect in the correction or source
 failure paths. These are local checks with isolated inputs and no service calls.
 
-Runtime scope is `app/api/cron/weekly-send/route.ts` and
-`scripts/verify-weekly-send-delivery-cursor.mts`. Existing documentation edits
-are preserved. A fresh candidate production build has not been run. No commit,
-push, deployment or letter was made. Evidence is in
-`covered-reader-accounting-review-20261007.md` outside the repository.
+Runtime scope was `app/api/cron/weekly-send/route.ts` and
+`scripts/verify-weekly-send-delivery-cursor.mts`. At the local October 7 review,
+the fresh build, commit, push and deployment were still pending. That dated
+state is superseded by the completed release: committed as `ae931742`, included
+in the fresh `551acfc` build and deployed October 8. No letter was triggered.
+Evidence is in `covered-reader-accounting-review-20261007.md` and
+`next-security-release-final-20261008.json` outside the repository.
 
 ## Calendar repair, released October 5 (historical record)
 

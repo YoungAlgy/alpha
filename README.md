@@ -467,24 +467,27 @@ Hot-reload across `app/`, `components/`, `lib/`.
 
 Hosted on Cloudflare Workers (via OpenNext), not Vercel — migrated 2026-08-05 after
 the Workers Free plan's fixed CPU-time limit made the daily send unreliable there.
-Nothing auto-deploys on push; deploys are manual:
+Nothing auto-deploys on push. Each release requires Alex's explicit approval.
 
-```bash
-npm run cf:deploy
-```
+Use a fresh WSL-native checkout of the exact approved source with matching
+Linux dependencies. Preserve owned mirrors, prior release checkouts and local
+work. The October 8 release used this path, with a fresh committed-source build,
+exact-source CI, captured rollback target and a deployment using `--keep-vars`.
+Its bounded live readback and twelve non-sending checks passed. See
+`next-security-release-final-20261008.json` in the external receipt folder.
+That completed approval does not authorize another release.
 
-`cf:deploy` first proves the intended commit matches the deployment checkout. It then verifies build env, builds OpenNext, typechecks the Worker, deploys, and runs the live smoke test. The smoke test requires the canonical host to return that exact commit SHA.
+`cf:deploy` proves the intended commit, verifies build configuration, builds
+OpenNext, typechecks the Worker, deploys and runs the exact-source live smoke
+test. Its checked-in command does not include `--keep-vars`. Do not assume it
+preserves the live variables used by the approved release process.
 
-**Must run from a WSL-native checkout, not the `/mnt/c` Windows mount** — `node_modules` here
-has Linux-native binaries (workerd, etc.) that fail outright from Windows. Use the wrapper,
-which also fixes a real bug hit twice on 2026-08-05 (a stale WSL copy silently redeploying
-old config because a changed file wasn't hand-copied over): it force-syncs the WSL checkout
-to match `origin/master` immediately before every deploy, so nothing stale can ship. Commit
-and push from Windows first, then from WSL:
-
-```bash
-bash scripts/deploy-from-wsl.sh
-```
+The older `scripts/deploy-from-wsl.sh` wrapper fetches and hard-resets its clean
+master checkout to `origin/master` before invoking `cf:deploy`. It refuses dirty
+or non-master checkouts, but can still replace a clean owned mirror's revision.
+Do not use it against an owned mirror or prior release checkout. Its historical
+sync approach is not the current release procedure. No deploy command is
+authorized by these instructions alone.
 
 The daily letter send itself does **not** run on Cloudflare (see the CPU-limit note above) —
 it runs on GitHub Actions instead (`.github/workflows/daily-send.yml`, `next build && next start`,

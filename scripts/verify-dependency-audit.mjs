@@ -14,8 +14,8 @@ export const exceptionPolicy = Object.freeze({
   version: "3.0.3",
   range: "<=3.0.3",
   notBefore: "2026-10-03T00:00:00.000Z",
-  expiresAt: "2026-11-02T00:00:00.000Z",
-  approval: "Alex approved local preparation October 3. No release permission.",
+  basis: "verified-local-depth-mitigation",
+  approval: "Alex approved this exact mitigation-bound allowance without calendar expiry October 8, 2026. No release permission.",
 });
 const reviewed = new Map([
   ["eslint-config-next", ["16.3.8", "@next/eslint-plugin-next", "16.3.8"]],
@@ -27,6 +27,32 @@ const reviewed = new Map([
   ["braces", ["3.0.3", null]],
 ]);
 const severities = ["info", "low", "moderate", "high", "critical"];
+const failureStages = new Set([
+  "preflight", "installed-mitigation", "installed-graph", "audit-process", "audit-report", "audit-policy",
+]);
+const failureReasons = new Map([
+  "ADVISORY_INVALID", "CLOCK_INVALID", "COUNTS_INVALID", "ENTRY_INVALID",
+  "EXCEPTION_COPY_DRIFT", "EXCEPTION_EDGE_DRIFT", "EXCEPTION_NOT_ACTIVE",
+  "EXCEPTION_GRAPH_DRIFT", "EXCEPTION_VERSION_DRIFT", "EXIT_INVALID", "GRAPH_INVALID",
+  "GRAPH_TOO_LARGE", "INSTALLED_GRAPH_DRIFT", "JSON_INVALID", "LINUX_RUNNER_REQUIRED",
+  "LOCK_INVALID", "MITIGATION_FAILED", "NODES_INVALID", "NPM_MISSING", "OTHER_HIGH_OR_CRITICAL",
+  "OUTPUT_MISSING", "PROCESS_FAILED", "PROJECT_CONFIG_FORBIDDEN", "REFERENCE_INVALID",
+  "REPORT_INVALID", "REPORT_TOO_LARGE", "SEVERITY_INVALID", "VIA_INVALID",
+].map(reason => ["AUDIT_" + reason, "AUDIT_" + reason]));
+let failureStage = "preflight";
+
+// Return code-owned labels only. Assertion messages may append raw object diffs.
+export function summarizeAuditFailure(error, stage) {
+  let reason = "AUDIT_UNEXPECTED_FAILURE";
+  try {
+    const message = Object.getOwnPropertyDescriptor(error, "message")?.value;
+    if (typeof message === "string") {
+      const firstLine = message.slice(0, 64).split(/\r?\n/, 1)[0];
+      reason = failureReasons.get(firstLine) ?? reason;
+    }
+  } catch { /* Unknown values and accessor/proxy errors retain the fixed fallback. */ }
+  return { stage: failureStages.has(stage) ? stage : "unknown", reason };
+}
 const own = (object, key) => Object.hasOwn(object, key);
 const plain = value => value !== null && typeof value === "object" && !Array.isArray(value)
   && [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -130,7 +156,7 @@ export function evaluateAudit(report, lock, { status, now }) {
       && via.url === exceptionPolicy.advisory && via.source === exceptionPolicy.source
       && via.severity === "high" && via.range === exceptionPolicy.range);
     if (!exact || !reviewed.has(name)) { blocked.push([name, finding]); continue; }
-    assert(checkedAt >= Date.parse(exceptionPolicy.notBefore) && checkedAt < Date.parse(exceptionPolicy.expiresAt), "AUDIT_EXCEPTION_EXPIRED");
+    assert(checkedAt >= Date.parse(exceptionPolicy.notBefore), "AUDIT_EXCEPTION_NOT_ACTIVE");
     // Validate every dependency along this exception path, never just its leaf.
     let current = name;
     while (current) { verifyReviewedNode(current); current = reviewed.get(current)[1]; }
@@ -140,15 +166,23 @@ export function evaluateAudit(report, lock, { status, now }) {
   return { rawCounts: { ...counts }, waivedHighPackageEntries: waived,
     blockingHighOrCritical: 0, exceptionUsed: waived > 0,
     advisory: waived ? exceptionPolicy.advisory : null,
-    expiresAt: waived ? exceptionPolicy.expiresAt : null };
+    exceptionBasis: waived ? exceptionPolicy.basis : null };
 }
 
-export function parseAuditProcess(result) {
+function verifyAuditExit(result) {
   assert(!result.error && result.signal === null && [0, 1].includes(result.status), "AUDIT_PROCESS_FAILED");
+}
+
+function parseAuditOutput(result) {
   assert(typeof result.stdout === "string" && result.stdout.trim().length > 0, "AUDIT_OUTPUT_MISSING");
   let report;
   try { report = JSON.parse(result.stdout); } catch { throw new Error("AUDIT_JSON_INVALID"); }
   return report;
+}
+
+export function parseAuditProcess(result) {
+  verifyAuditExit(result);
+  return parseAuditOutput(result);
 }
 
 function main() {
@@ -160,6 +194,7 @@ function main() {
   const env = { PATH: dirname(process.execPath) + ":/usr/bin:/bin", HOME: home, LANG: "C.UTF-8", CI: "1",
     npm_config_userconfig: join(home, "empty-user.npmrc"), npm_config_globalconfig: join(home, "empty-global.npmrc"),
     npm_config_cache: join(home, "cache"), npm_config_update_notifier: "false", npm_config_fund: "false" };
+  failureStage = "installed-mitigation";
   for (const script of ["verify-security-dependency-lock.mjs", "verify-braces-depth-guard.mjs"]) {
     const args = [join(root, "scripts", script), ...(script.includes("dependency-lock") ? ["--installed"] : [])];
     const guard = spawnSync(process.execPath, args, { cwd: root, env, encoding: "utf8", timeout: 15000, maxBuffer: 1024 * 1024 });
@@ -167,27 +202,32 @@ function main() {
   }
   console.log("ALPHA_AUDIT_MITIGATION_VERIFIED");
   // Match installed parent tooling too, not just the patched leaf and lockfile.
+  failureStage = "installed-graph";
   for (const [name, [version]] of reviewed) {
     const path = join(root, "node_modules", name);
     assert(realpathSync(path) === path, "AUDIT_INSTALLED_GRAPH_DRIFT");
     const pkg = JSON.parse(readFileSync(join(path, "package.json"), "utf8"));
     assert(pkg.name === name && pkg.version === version, "AUDIT_INSTALLED_GRAPH_DRIFT");
   }
+  failureStage = "audit-process";
   const npm = join(dirname(process.execPath), "npm");
   assert(existsSync(npm), "AUDIT_NPM_MISSING");
   const audit = spawnSync(npm, ["audit", "--json", "--audit-level=high", "--include=dev", "--include=optional", "--include=peer",
     "--registry=https://registry.npmjs.org/", "--fetch-retries=0", "--fetch-timeout=30000"],
   { cwd: root, env, encoding: "utf8", timeout: 45000, maxBuffer: 4 * 1024 * 1024 });
-  const report = parseAuditProcess(audit);
+  verifyAuditExit(audit);
+  failureStage = "audit-report";
+  const report = parseAuditOutput(audit);
   const checkedAt = new Date();
+  failureStage = "audit-policy";
   const result = evaluateAudit(report, JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")), { status: audit.status, now: checkedAt });
   console.log("ALPHA_DEPENDENCY_AUDIT " + JSON.stringify({ checkedAt: checkedAt.toISOString(), ...result }));
-  if (result.exceptionUsed) console.log("::warning::One high advisory remains reported. Verified local depth mitigation exception expires 2026-11-02T00:00:00Z.");
+  if (result.exceptionUsed) console.log("::warning::One high advisory remains reported. Its advisory-specific allowance requires verified local depth mitigation and the exact reviewed development graph.");
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); } catch {
+  try { main(); } catch (error) {
     // Do not expose npm stderr, URLs with auth, raw report content or error data.
-    console.error("ALPHA_DEPENDENCY_AUDIT_BLOCKED: mitigation, report, process or policy verification failed.");
+    console.error("ALPHA_DEPENDENCY_AUDIT_BLOCKED " + JSON.stringify(summarizeAuditFailure(error, failureStage)));
     process.exitCode = 1;
   }
 }

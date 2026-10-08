@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Offline policy checks. Public npm package metadata only. No app/env/network.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { evaluateAudit, exceptionPolicy, parseAuditProcess } from "./verify-dependency-audit.mjs";
+import { fileURLToPath } from "node:url";
+import { evaluateAudit, exceptionPolicy, parseAuditProcess, summarizeAuditFailure } from "./verify-dependency-audit.mjs";
 const lock=JSON.parse(readFileSync(new URL("../package-lock.json",import.meta.url),"utf8"));
 const observed={
   "auditReportVersion": 2,
@@ -173,7 +175,8 @@ const observed={
   }
 };
 const clone=value=>structuredClone(value);
-const now="2026-10-03T04:41:36.058Z";
+// All default negative cases also run after the removed calendar deadline.
+const now="2027-01-01T00:00:00.000Z";
 let checks=0;
 const pass=callback=>{callback();checks++;};
 const reject=callback=>pass(()=>assert.throws(callback,/AUDIT_/));
@@ -187,7 +190,9 @@ function recount(report){
 function mutated(change, sync=true){const report=clone(observed),packages=clone(lock);change(report,packages);if(sync)recount(report);reject(()=>classify(report,packages));}
 pass(()=>assert.equal(classify().waivedHighPackageEntries,7));
 pass(()=>assert.equal(classify().rawCounts.high,7));
-pass(()=>assert.equal(classify().expiresAt,exceptionPolicy.expiresAt));
+pass(()=>assert.equal(classify().exceptionBasis,"verified-local-depth-mitigation"));
+pass(()=>assert.equal(Object.hasOwn(exceptionPolicy,"expiresAt"),false));
+pass(()=>assert.equal(Object.hasOwn(classify(),"expiresAt"),false));
 pass(()=>assert.equal(classify().blockingHighOrCritical,0));
 // A production Next advisory must never inherit the development-only braces exception.
 for(const severity of ["high","critical"]){
@@ -199,7 +204,7 @@ for(const name of ["eslint-config-next","@next/eslint-plugin-next"]){
 }
 const empty={auditReportVersion:2,vulnerabilities:{},metadata:{vulnerabilities:{info:0,low:0,moderate:0,high:0,critical:0,total:0}}};
 pass(()=>assert.equal(classify(empty,lock,now,0).exceptionUsed,false));
-pass(()=>assert.equal(classify(empty,lock,exceptionPolicy.expiresAt,0).exceptionUsed,false));
+pass(()=>assert.equal(classify(empty,lock,now,0).exceptionBasis,null));
 for(const severity of ["info","low","moderate"]){
  pass(()=>{const report=clone(empty),packages=clone(lock);report.vulnerabilities["public-test"]=clone(observed.vulnerabilities.braces);const item=report.vulnerabilities["public-test"];item.name="public-test";item.nodes=["node_modules/public-test"];item.severity=severity;Object.assign(item.via[0],{name:"public-test",dependency:"public-test",severity,source:1,url:"https://github.com/advisories/GHSA-aaaa-bbbb-cccc"});packages.packages["node_modules/public-test"]={version:"1.0.0",dev:true};recount(report);assert.equal(classify(report,packages,now,0).exceptionUsed,false);});
 }
@@ -245,12 +250,53 @@ for(const severity of ["high","critical"]){
 }
 reject(()=>classify(observed,lock,"invalid date",1));
 reject(()=>classify(observed,lock,"2026-10-02T23:59:59.999Z",1));
-pass(()=>assert.equal(classify(observed,lock,"2026-11-01T23:59:59.999Z",1).exceptionUsed,true));
-reject(()=>classify(observed,lock,exceptionPolicy.expiresAt,1));
-reject(()=>classify(observed,lock,"2026-11-03T00:00:00.000Z",1));
+for(const date of [exceptionPolicy.notBefore,"2026-10-08T00:00:00.000Z","2026-11-01T23:59:59.999Z","2026-11-02T00:00:00.000Z","2026-11-03T00:00:00.000Z",now,"2031-01-01T00:00:00.000Z"]){
+ pass(()=>assert.equal(classify(observed,lock,date,1).exceptionUsed,true));
+}
 const successfulProcess={status:1,signal:null,stdout:JSON.stringify(observed)};
 pass(()=>assert.deepEqual(parseAuditProcess(successfulProcess),observed));
 for(const modification of [{error:{code:"ETIMEDOUT"}},{error:{code:"ENOBUFS"}},{status:null,signal:"SIGTERM"},{status:2},{stdout:""},{stdout:"prefix "+JSON.stringify(observed)},{stdout:"{} trailing text"},{stdout:'{"truncated":'}]){reject(()=>parseAuditProcess({...successfulProcess,...modification}));}
+// Failures identify the fixed stage/reason without exposing arbitrary error data.
+const privateMarker="ALPHA_OFFLINE_PRIVATE_MARKER";
+const capturedFailure=callback=>{try{callback();}catch(error){return error;}throw new Error("Expected offline failure");};
+for(const stage of ["preflight","installed-mitigation","installed-graph","audit-process","audit-report","audit-policy"]){
+ pass(()=>assert.deepEqual(summarizeAuditFailure(new Error("AUDIT_MITIGATION_FAILED"),stage),{stage,reason:"AUDIT_MITIGATION_FAILED"}));
+}
+for(const error of [null,undefined,false,privateMarker,new Error(privateMarker),new Error("AUDIT_COUNTS_INVALID "+privateMarker),{message:{toString(){throw new Error(privateMarker);}}},Object.create({message:"AUDIT_JSON_INVALID"}),Object.defineProperty({},"message",{get(){throw new Error(privateMarker);}}),new Proxy({},{getOwnPropertyDescriptor(){throw new Error(privateMarker);}})]){
+ pass(()=>assert.deepEqual(summarizeAuditFailure(error,"audit-report"),{stage:"audit-report",reason:"AUDIT_UNEXPECTED_FAILURE"}));
+}
+pass(()=>assert.deepEqual(summarizeAuditFailure(new Error("AUDIT_JSON_INVALID"),privateMarker),{stage:"unknown",reason:"AUDIT_JSON_INVALID"}));
+for(const modification of [{stdout:privateMarker},{stdout:'{"'+privateMarker+'":'},{error:new Error(privateMarker),stderr:privateMarker},{status:2,stderr:privateMarker}]){
+ pass(()=>{
+  const error=capturedFailure(()=>parseAuditProcess({...successfulProcess,...modification}));
+  const result=summarizeAuditFailure(error,modification.stdout===undefined?"audit-process":"audit-report");
+  assert.equal(result.stage,modification.stdout===undefined?"audit-process":"audit-report");
+  assert.equal(result.reason,modification.stdout===undefined?"AUDIT_PROCESS_FAILED":"AUDIT_JSON_INVALID");
+  assert(!JSON.stringify(result).includes(privateMarker));
+ });
+}
+pass(()=>{
+ const report=clone(observed);
+ report.metadata.vulnerabilities[privateMarker]=1;
+ const error=capturedFailure(()=>classify(report));
+ assert(error.message.includes(privateMarker));
+ assert.deepEqual(summarizeAuditFailure(error,"audit-policy"),{stage:"audit-policy",reason:"AUDIT_COUNTS_INVALID"});
+});
+pass(()=>assert.deepEqual(summarizeAuditFailure(new Error("AUDIT_EXCEPTION_COPY_DRIFT\r\n"+privateMarker),"audit-policy"),{stage:"audit-policy",reason:"AUDIT_EXCEPTION_COPY_DRIFT"}));
+const auditSource=readFileSync(new URL("./verify-dependency-audit.mjs",import.meta.url),"utf8");
+pass(()=>assert.match(auditSource,/failureStage = "audit-process";\s+const npm =[\s\S]*?verifyAuditExit\(audit\);\s+failureStage = "audit-report";\s+const report = parseAuditOutput\(audit\);/));
+pass(()=>assert.equal(auditSource.includes("EXCEPTION_EXPIRED"),false));
+pass(()=>assert.equal(auditSource.includes("2026-11-02"),false));
+const assertedReasons=[...auditSource.matchAll(/"(AUDIT_[A-Z_]+)"\);/g)].map(match=>match[1]);
+pass(()=>assert(assertedReasons.length>0));
+for(const reason of new Set(assertedReasons)){
+ pass(()=>assert.equal(summarizeAuditFailure(new Error(reason),"audit-policy").reason,reason));
+}
+// The extra argument fails at the first guard, before mitigation or npm audit.
+const rejectedCli=spawnSync(process.execPath,[fileURLToPath(new URL("./verify-dependency-audit.mjs",import.meta.url)),"--offline-invalid-argument"],{env:{},encoding:"utf8",timeout:5000,maxBuffer:4096});
+pass(()=>assert.equal(rejectedCli.status,1));
+pass(()=>assert.equal(rejectedCli.stdout,""));
+pass(()=>assert.deepEqual(JSON.parse(rejectedCli.stderr.trim().replace(/^ALPHA_DEPENDENCY_AUDIT_BLOCKED /,"")),{stage:"preflight",reason:"AUDIT_LINUX_RUNNER_REQUIRED"}));
 const require=createRequire(import.meta.url);
 const workflow=require("js-yaml").load(readFileSync(new URL("../.github/workflows/wrangler-config-guard.yml",import.meta.url),"utf8"));
 const auditJob=workflow.jobs["dependency-audit"];
