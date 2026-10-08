@@ -1,15 +1,17 @@
 # Braces depth-mitigation audit exception
 
-The released CI policy in `551acfc` still has the November 2 calendar expiry.
-Alex approved a local replacement on October 8, 2026: this one advisory's
-allowance depends on verified mitigation and the exact reviewed development
-graph, with no calendar expiry. This candidate is uncommitted and unreleased.
-Approval includes one fresh public dependency audit and focused local checks.
-It does not authorize a commit, push, deployment or workflow run.
+The current CI policy was committed and pushed as `7426ce5` on October 8, 2026
+under Alex's separate maintenance-release approval. Exact-source CI passed,
+including the fresh dependency audit and normal production build. This one
+advisory's allowance depends on verified mitigation and the exact reviewed
+development graph, with no calendar expiry. No website deployment or letter
+was needed or performed. The completed approval grants no further release or
+workflow action. Evidence is `braces-mitigation-policy-release-20261008.md`
+in the external receipt folder.
 
 `scripts/verify-dependency-audit.mjs` records the exact policy. It permits only
 GHSA-vfj7-8cjw-p6xm, npm advisory source 1240992, for published braces 3.0.3.
-Its calendar expiry is removed in the local candidate. Invalid clocks and
+Its former November 2 calendar expiry is removed. Invalid clocks and
 dates before the original October 3 activation still fail. Alpha owns the local
 patch until a supported fixed replacement is verified. This is an ongoing,
 advisory-specific risk allowance. It is not a claim that the published package
@@ -28,10 +30,9 @@ configuration, credentials or environment hooks. Only sanitized aggregate
 results and a visible exception warning are printed. Raw npm stderr and audit
 reports are withheld. A project `.npmrc` also blocks this credential-free path.
 
-The October 8 local follow-up adds fixed failure stage/reason labels. Unknown
+The same maintenance release adds fixed failure stage/reason labels. Unknown
 errors use a fixed fallback. Error messages, assertion diffs and child output
-are never printed. This diagnostic change is uncommitted and unreleased until
-separately approved. The safe labels do not alter advisory classification.
+are never printed. The safe labels do not alter advisory classification.
 
 Every high finding must traverse entirely to the one exact reviewed advisory.
 The locked development-tool paths, versions and dependency edges must match

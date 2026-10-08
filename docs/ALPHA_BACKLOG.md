@@ -1,6 +1,6 @@
 # Alpha remaining work
 
-Current release reconciliation, October 8, 2026. Release
+Current release reconciliation, October 8, 2026. Website release
 `551acfcab0eb1ea3808544828c992fc30bbb47de` includes the October 7 timing/watchdog
 repair, the covered-reader accounting correction and the Next 16.3.8 security
 update. Its fresh build and exact-source CI passed. The immediate smoke failed
@@ -99,10 +99,18 @@ gates or reopen historical Round-script debt merely to close this backlog.
   proof settles a covered reader before profile validation. Unproved and forced
   readers retain their checks. No new send or retry permission is added.
 - The October 8 Next 16.3.8 security update is released. Matching lint packages,
-  installed dependency checks and exact-source CI passed. The existing Braces
-  exception was reviewed and retained its November 2 deadline in that release.
-  The separately approved local policy candidate below supersedes that date
-  only after a future maintenance release.
+  installed dependency checks and exact-source CI passed.
+- The October 8 dependency-audit maintenance was committed and pushed as
+  `7426ce5`. Exact-source guard, fresh audit and production-build CI passed.
+  It removed the arbitrary November 2 expiry while retaining the exact Braces
+  advisory, reviewed development graph and verified depth mitigation gates.
+  All other high/critical findings still block, and weekly fresh audits remain
+  required. Safe failure labels are included. No website deployment or letters
+  were performed. No calendar renewal or maintenance release remains pending.
+  The published advisory still exists. No supported upstream fix was established
+  by the earlier review. See `dependency-audit-exception.md` for the narrow risk
+  allowance and conditional upstream replacement path. Raw package-entry counts
+  are not counts of independent vulnerabilities.
 
 ## Remaining backlog, in priority order
 
@@ -124,19 +132,6 @@ PLOS release. Both completed items have been removed from the remaining table.
 Broad-topic coverage would need more evidence-backed research. Outcome proof
 needs an observed event. Neither is a currently confirmed runtime bug.
 No further live configuration change or external probe is authorized here.
-
-The dependency audit still has the one existing, locally patched Braces
-exception. The released version has the November 2 expiry. Alex approved the
-October 8 local candidate to remove that calendar gate and retain an ongoing
-allowance only for the exact advisory with verified depth protection and the
-reviewed development-tool graph. All other high/critical findings still block,
-and weekly fresh audits remain required. The candidate is uncommitted and
-unreleased. The initial arbitrary review date is no longer a pending policy
-decision. A separate maintenance commit/push and exact-source CI are needed to
-apply this local policy remotely. No website deployment is needed for this
-verification/docs scope. See `dependency-audit-exception.md`. No supported
-upstream fix was established by the earlier review. Raw package-entry counts
-are not counts of independent vulnerabilities.
 
 ## Covered-reader accounting correction, released October 8 (historical record)
 
@@ -409,6 +404,9 @@ outside the public repository. The authoritative resume checkpoint is
 - `dependency-security-release-receipt-20261007.md` (completed successor)
 - `postrelease-normal-check-20261007-2313.md` and `.json`
 - `covered-reader-accounting-review-20261007.md` (local correction)
+- `next-security-release-final-20261008.json` and
+  `next-security-release-acceptance-20261008.json`
+- `braces-mitigation-policy-release-20261008.md` and `.json`
 
 Use current source, exact release receipts and fresh authorized evidence.
 Preserve unrelated work and the owned native mirror. Current release receipts
