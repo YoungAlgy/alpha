@@ -20,6 +20,7 @@ import { ccmixterMetadataFallbackEnabled, ccmixterMetadataSearch } from "./ccmix
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
+import { createSourceObserver, type EvidenceProvider, type SourceObserver } from "./source-evidence";
 
 // How many top sources we fetch in FULL per topic (the deep read), how many
 // more we include as headline+link breadth, and how many raw candidates we pull
@@ -63,6 +64,7 @@ async function tryFallback(
 type LiveSearchAttempt =
   | { state: "signal"; signal: TopicSignal }
   | { state: "healthy-empty" }
+  | { state: "no-signal-unconfirmed" }
   | { state: "unavailable" };
 
 type BraveFallbackReason = "rate-limited" | "unavailable" | "not configured";
@@ -116,8 +118,19 @@ export async function resolveTopicSignal(
     excludeUrls?: Set<string>;
     /** Shared only within the caller's generation batch. */
     quotaState?: BraveQuotaState;
+    /** Fixed operational enums/counts only. No topic, source text or URLs. */
+    onSourceObservation?: SourceObserver;
   }
 ): Promise<TopicSignal | undefined> {
+  const mode = noKeySourcesEnabled() ? "no-key" : "keyed";
+  const observe = createSourceObserver(opts?.onSourceObservation);
+  const observed = async (provider: EvidenceProvider, work: () => Promise<LiveSearchAttempt>) => {
+    let result: LiveSearchAttempt;
+    try { result = await work(); }
+    catch (error) { observe(provider, "unavailable", 0, mode); throw error; }
+    observe(provider, result.state, result.state === "signal" ? result.signal.citableUrls?.size ?? 0 : 0, mode);
+    return result;
+  };
   const custom = isCustomTopic(topicId);
   // A per-sign zodiac id ("zodiac-leo") builds its search from the sign, not the
   // catalog query table. Custom topics use the reader's free text. Everything
@@ -132,48 +145,48 @@ export async function resolveTopicSignal(
     const tryPublicSources = async (): Promise<TopicSignal | undefined> => {
       if (publicFeedFallbackEnabled()) {
         const viaFeed = await tryFallback(topicId, "public RSS search", () =>
-          fetchLiveSignal(topicId, queries, weekOf, opts?.freshness, opts?.excludeUrls,
-            undefined, publicFeedSearch, "Public RSS Search", false)
+          observed("google-rss", () => fetchLiveSignal(topicId, queries, weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, publicFeedSearch, "Public RSS Search", false))
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaFeed) return viaFeed;
       }
       if (publisherFeedFallbackEnabled()) {
         const viaPublisher = await tryFallback(topicId, "publisher feeds", () =>
-          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
-            undefined, publisherFeedSearch, "Direct Publisher RSS", false)
+          observed("publisher-rss", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, publisherFeedSearch, "Direct Publisher RSS", false))
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaPublisher) return viaPublisher;
       }
       if (openNewsFeedFallbackEnabled()) {
         const viaOpenNews = await tryFallback(topicId, "licensed public news feeds", () =>
-          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
-            undefined, openNewsFeedSearch, "Global Voices RSS", false)
+          observed("globalvoices-rss", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, openNewsFeedSearch, "Global Voices RSS", false))
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaOpenNews) return viaOpenNews;
       }
       if (researchMetadataFallbackEnabled()) {
         const viaResearch = await tryFallback(topicId, "open research metadata", () =>
-          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
-            undefined, researchMetadataSearch, "Crossref Research Metadata", false)
+          observed("crossref", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, researchMetadataSearch, "Crossref Research Metadata", false))
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaResearch) return viaResearch;
       }
       if (plosMetadataFallbackEnabled()) {
         const viaPlos = await tryFallback(topicId, "PLOS research metadata", () =>
-          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
-            undefined, plosMetadataSearch, "PLOS Research Metadata", false)
+          observed("plos", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, plosMetadataSearch, "PLOS Research Metadata", false))
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaPlos) return viaPlos;
       }
       if (topicId === "music-hiphop" && ccmixterMetadataFallbackEnabled()) {
         const viaCcmixter = await tryFallback(topicId, "ccMixter upload metadata", () =>
-          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
-            undefined, ccmixterMetadataSearch, "ccMixter Community Uploads", false, 1)
+          observed("ccmixter", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, ccmixterMetadataSearch, "ccMixter Community Uploads", false, 1))
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaCcmixter) return viaCcmixter;
@@ -181,8 +194,8 @@ export async function resolveTopicSignal(
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {
         const viaGdelt = await tryFallback(topicId, "GDELT public discovery", () =>
-          fetchLiveSignal(topicId, [phrase], weekOf, opts?.freshness, opts?.excludeUrls,
-            undefined, gdeltSearch, "GDELT Public Discovery", false)
+          observed("gdelt", () => fetchLiveSignal(topicId, [phrase], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, gdeltSearch, "GDELT Public Discovery", false))
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaGdelt) return viaGdelt;
@@ -209,7 +222,7 @@ export async function resolveTopicSignal(
 
     if (braveConfigured() && !monthlyExhausted) {
       try {
-        const live = await fetchLiveSignal(
+        const live = await observed("brave", () => fetchLiveSignal(
           topicId,
           queries,
           weekOf,
@@ -217,7 +230,7 @@ export async function resolveTopicSignal(
           opts?.excludeUrls,
           () => { rateLimitedThisTopic = true; },
           (query, searchOptions) => braveSearch(query, { ...searchOptions, quotaState: opts?.quotaState })
-        );
+        ));
         if (live.state === "signal") return live.signal;
         if (live.state === "unavailable") {
           shouldTryFallback = true;
@@ -242,7 +255,12 @@ export async function resolveTopicSignal(
       if (geminiConfigured() && !noModelModeEnabled()) {
         console.warn(`[source-resolver] Brave ${fallbackReason} for ${isCustomTopic(topicId) ? "custom topic" : topicId}, trying Gemini grounded search`);
         const grounded = await tryFallback(topicId, "Gemini grounded search", () =>
-          resolveTopicSignalViaGemini(topicId, weekOf, queries.join("; "), opts?.excludeUrls)
+          observed("gemini", async () => {
+            const signal = await resolveTopicSignalViaGemini(topicId, weekOf, queries.join("; "), opts?.excludeUrls);
+            // This helper collapses failures and unconfirmed empty responses.
+            // Absence cannot establish a healthy quiet-topic verdict.
+            return signal ? { state: "signal", signal } : { state: "no-signal-unconfirmed" };
+          }).then(attempt => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (grounded) return withBraveFallbackReason(grounded, fallbackReason);
       }
@@ -261,7 +279,7 @@ export async function resolveTopicSignal(
       if (youConfigured()) {
         console.warn(`[source-resolver] Brave ${fallbackReason} for ${isCustomTopic(topicId) ? "custom topic" : topicId}, trying You.com search`);
         const viaYou = await tryFallback(topicId, "You.com search", () =>
-          fetchLiveSignal(
+          observed("you", () => fetchLiveSignal(
             topicId,
             queries,
             weekOf,
@@ -271,7 +289,7 @@ export async function resolveTopicSignal(
             youSearch,
             "You.com Search",
             false
-          ).then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+          )).then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaYou) return viaYou;
       }

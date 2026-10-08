@@ -154,11 +154,11 @@ Exact custom phrases `country music` and `indie music` use the existing genre
 filters on the fixed music feed. Other custom phrases keep general-feed local
 matching. Saved topics are unchanged, and bare `country` or `indie` is ambiguous.
 It is off by default, including in strict no-key mode.
-The current local qualifier repair keeps the original two-long-anchor minimum
+The qualifier repair released as `b12cc587` keeps the original two-long-anchor minimum
 for general custom matching and also requires short subject qualifiers such as
 US, AI, ISS and numeric identifiers. All selection tokens are capped at six.
 Matching stays local and uses complete title/category tokens. No short qualifier
-is expanded into an inferred alias. This repair is not released yet.
+is expanded into an inferred alias.
 
 `ALPHA_RESEARCH_METADATA_FALLBACK=1` adds a narrow Crossref nutrition-research
 backup after the feeds. It requires no-model mode and stays off by default,
@@ -304,8 +304,9 @@ The daily workflow passes `SEND_ALPHA_NO_KEY_SOURCES`,
 `SEND_ALPHA_RESEARCH_METADATA_FALLBACK`, `SEND_ALPHA_PLOS_METADATA_FALLBACK` and
 `SEND_ALPHA_GDELT_FALLBACK` into both
 preflight and runtime.
-The unreleased candidate also forwards `SEND_ALPHA_CCMIXTER_METADATA_FALLBACK`
-to those two steps. No remote variable was changed or assumed enabled.
+The released workflow also forwards `SEND_ALPHA_CCMIXTER_METADATA_FALLBACK`
+to those two steps. Its scheduled opt-in was enabled with the October 8
+`2d8a6a4d` release and left unchanged by `b12cc587`. The code default stays off.
 `SEND_ALPHA_DURABLE_SOURCE_COOLDOWN` separately forwards the opt-in circuit flag.
 The scheduled setting enables it while the code default remains off.
 Missing or unreadable admission state blocks a
@@ -467,7 +468,7 @@ ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA/Federal Reserve t
 ALPHA_OPEN_NEWS_FALLBACK=     # set to "1" for licensed Global Voices metadata in no-model mode (optional, off by default)
 ALPHA_RESEARCH_METADATA_FALLBACK= # set to "1" for open-license nutrition research metadata in no-model mode (optional, off by default)
 ALPHA_PLOS_METADATA_FALLBACK= # scheduled opt-in activated October 2; requires no-model plus durable budget/cooldown and installed circuit migration (code default off)
-ALPHA_CCMIXTER_METADATA_FALLBACK= # unreleased hip-hop community-upload candidate, off by default, requires no-model and durable budget/cooldown plus separately installed identity
+ALPHA_CCMIXTER_METADATA_FALLBACK= # scheduled opt-in activated October 8; code default off, requires no-model and durable budget/cooldown plus installed ccMixter identity
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 ALPHA_DURABLE_SOURCE_COOLDOWN= # opt-in private provider circuit, requires reviewed migration before activation
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release

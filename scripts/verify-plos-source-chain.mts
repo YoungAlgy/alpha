@@ -1,6 +1,7 @@
 // Offline execution of the real resolver with injected public adapters. No
 // service client, provider account, reader, letter persistence or send.
 import assert from "node:assert/strict";
+import * as sourceEvidence from "../lib/engine/source-evidence";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
@@ -51,7 +52,8 @@ try {
       const modules: Record<string, any> = {
         "@/lib/brave": { braveConfigured: forbiddenCall, braveSearch: forbiddenCall },
         "@/lib/you-search": { youConfigured: forbiddenCall, youSearch: forbiddenCall },
-        "./source-rank": rank, "./fetch-content": { fetchArticleText: forbiddenCall, deepReadEnabled: () => true },
+        "./source-rank": rank, "./source-evidence": sourceEvidence,
+        "./fetch-content": { fetchArticleText: forbiddenCall, deepReadEnabled: () => true },
         "./topic-queries": queries, "./url-guard": urlGuard,
         "./gemini-client": { geminiConfigured: forbiddenCall }, "./gemini-search": { resolveTopicSignalViaGemini: forbiddenCall },
         "@/lib/topics": topics, "@/lib/prompt-fence": promptFence, "./text-clean": textClean,

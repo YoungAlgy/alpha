@@ -1,24 +1,36 @@
 # Alpha remaining work
 
-Latest completed release: `2d8a6a4d1d36ea4757c309ed6717668494615dfb`, October 8
-at 18:30 UTC. ccMixter's narrow hip-hop metadata lane is shipped and its
-scheduled opt-in enabled. Fresh committed build, exact CI, twelve non-sending
-live checks and the guarded additive source-identity migration passed. Nine
-private provider identities are installed, with prior states and permissions
-preserved. This supersedes the local ccMixter status below. See
-`ccmixter-release-final-20261008.md` in the external Alpha receipt folder.
+Latest completed release: `b12cc5875770ccf2fbf3cd2e573af90a87ae7523`, October 8.
+Website readback passed at 20:19:53 UTC and final release controls passed at
+20:20:50 UTC. The Global Voices custom-qualifier relevance repair is shipped.
+Fresh committed build, exact-source CI and twelve non-sending live checks passed.
+Source order, controls and scheduled opt-ins stayed unchanged. See
+`source-qualifier-release-final-20261008.md` in the external Alpha receipt folder.
 The completed approval is consumed. No new rollout follows from this document.
 
-Current local work: a reproduced Global Voices custom-qualifier relevance fix
-and release-document reconciliation. Source order and source controls stay
-unchanged. NASA's main RSS exceeded the existing bound. Its compact public
+The preceding `2d8a6a4d` release shipped ccMixter's narrow hip-hop metadata lane
+and enabled its scheduled opt-in. Its guarded additive source-identity migration
+installed the ninth private provider identity, preserving prior states and
+permissions. See `ccmixter-release-final-20261008.md`. The older local candidate
+states below are historical and superseded by these completed receipts.
+
+Current local work also prepares privacy-safe content-source diagnostics.
+The local candidate records logical resolver outcomes and final selected
+section provenance without topics, reader data or source text. Cached/shared
+provenance remains unknown. It changes no source-selection or delivery rule.
+See `source-evidence.md`. A fresh production build and separate release
+approval are still required. No new release or source request is authorized.
+CFPB's separately approved one-request check returned valid metadata but no
+current personal-finance title matches. It remains held and adds no adapter.
+The earlier documentation reconciliation is preserved. NASA's main RSS
+exceeded the existing bound. Its compact public
 metadata API was usable, but none of its two current records matched the
 tested topic lanes. No NASA adapter or provider identity was added. Broad
 news, other music and arbitrary custom coverage remain limited. Natural
 fallback and real delivery/safety-event proof require ordinary observed events.
-Six affected offline scripts and the non-incremental application typecheck pass.
-Independent review found no code blocker. This local candidate has no fresh
-production build and has not been committed, pushed, deployed or activated.
+The qualifier candidate's six affected offline scripts and non-incremental
+application typecheck passed before its completed release. That completed
+release is separate from the current local diagnostics candidate.
 
 Earlier October 8 release reconciliation, superseded above. Website release
 `551acfcab0eb1ea3808544828c992fc30bbb47de` includes the October 7 timing/watchdog
@@ -121,6 +133,11 @@ gates or reopen historical Round-script debt merely to close this backlog.
   readers retain their checks. No new send or retry permission is added.
 - The October 8 Next 16.3.8 security update is released. Matching lint packages,
   installed dependency checks and exact-source CI passed.
+- The October 8 ccMixter release added its narrow licensed hip-hop metadata lane
+  and protected provider identity, with the scheduled opt-in enabled.
+- The October 8 Global Voices qualifier repair is released as `b12cc587`.
+  Custom matching retains its two-long-anchor minimum and now requires selected
+  short/numeric qualifiers. Whole-token matching stays local with a six-token cap.
 - The October 8 dependency-audit maintenance was committed and pushed as
   `7426ce5`. Exact-source guard, fresh audit and production-build CI passed.
   It removed the arbitrary November 2 expiry while retaining the exact Braces
@@ -144,8 +161,8 @@ Effort is relative, not an elapsed-time promise.
 
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
-| Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | Broad news/music/custom-topic coverage remains limited. ccMixter is released and enabled as `2d8a6a4d`, with exact adapter and release evidence recorded. A later local qualifier repair preserves US/AI/ISS/numeric requirements without broadening existing custom anchor selection. NASA metadata is public and current, but the tested topic-fit checks were empty, so no adapter was added. Current held-candidate reasons and closed ledgers are summarized in `public-source-gaps.md`. Do not replay held probes or relax guards to force output. | 4 / 3 / 4 | 14 |
+| Record natural fallback and safety-event evidence | Privacy-safe content diagnostics are prepared locally in `source-evidence.md`, with a production build and separate release approval pending. These logical resolver/selected-section counts cannot prove persistence or delivery. Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
+| Improve independent topic coverage where evidence supports it | Broad news/music/custom-topic coverage remains limited. ccMixter is released and enabled as `2d8a6a4d`, with exact adapter and release evidence recorded. The qualifier repair released as `b12cc587` preserves US/AI/ISS/numeric requirements without broadening existing custom anchor selection. NASA metadata is public and current, but the tested topic-fit checks were empty, so no adapter was added. Current held-candidate reasons and closed ledgers are summarized in `public-source-gaps.md`. Do not replay held probes or relax guards to force output. | 4 / 3 / 4 | 14 |
 
 Keyed search was removed from normal scheduled content by the approved October 2
 05:47 UTC activation. The `1eb3a14b` maintenance cleanup was retained in the exact
@@ -273,10 +290,10 @@ passing exact CI. No runtime deployment was required for that maintenance step.
 The subsequent PLOS source release completed under separate approval as
 `207a4fae`, with its exact build, deployment, migration and activation recorded.
 
-## Latest recorded normal observation, checked October 8 at 15:55 UTC
+## Latest recorded normal observation, checked October 8 at 17:05 UTC
 
 The unfiltered history snapshot returned the newest 100 of 498 repository runs,
-unchanged from the 15:36 UTC snapshot. No October 8 sender was visible then.
+unchanged from the 15:55 and 15:36 UTC snapshots. No October 8 sender was visible then.
 That day's outcome remains unknown, not zero recipients or a final missed-day
 failure. Only the earlier requested pass read the newly visible runs' bounded
 logs. The later snapshot did not repeat those log reads.
@@ -298,7 +315,8 @@ The earlier October 7 acceptance evidence below remains dated. No new provider
 acceptance, provider-confirmed delivery, inbox receipt, natural source/provider
 fallback or real safety-event proof was established by these later checks.
 No live repair was indicated by the bounded outcome. Evidence:
-`normal-observation-20261008.md` and `normal-observation-20261008-1555.md`.
+`normal-observation-20261008-1705.md`, `normal-observation-20261008-1555.md`
+and `normal-observation-20261008.md`.
 
 ## Earlier recorded normal outcomes, checked October 7 at 23:13 UTC
 
@@ -479,6 +497,8 @@ outside the public repository. The authoritative resume checkpoint is
 - `source-coverage-followup-20261008-1608.md` and its closed FTC/NIH ledgers
 - `remaining-source-decision-20261008.md` and its closed remaining-source ledger
 - `ccmixter-local-postgres-20261008.json`
+- `ccmixter-release-final-20261008.md`
+- `source-qualifier-release-final-20261008.md`
 - `source-review-calendar-fix-20261005.md`
 - `source-valid-pool-release-receipt-20261005.md`
 - `normal-delivery-check-20261007.md`

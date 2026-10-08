@@ -15,6 +15,7 @@ import * as rank from "../lib/engine/source-rank";
 import * as urlGuard from "../lib/engine/url-guard";
 import * as textClean from "../lib/engine/text-clean";
 import * as promptFence from "../lib/prompt-fence";
+import * as sourceEvidence from "../lib/engine/source-evidence";
 import { sourceCreditsForIssue } from "../lib/email";
 import type { Issue, TopicId } from "../lib/types";
 import type { TopicBlurb, TopicSignal } from "../lib/engine/types";
@@ -80,6 +81,7 @@ try {
           } },
         "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbiddenCall },
         "@/lib/source-attribution": attribution,
+        "./source-evidence": sourceEvidence,
       };
       assert.ok(Object.hasOwn(modules, name), "Unexpected resolver import");
       return modules[name];

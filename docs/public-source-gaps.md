@@ -14,7 +14,11 @@ October 8 remaining-gaps pass made bounded new-source qualifications and one
 normal-run history read. The ccMixter candidate subsequently shipped and was
 activated as `2d8a6a4d` at 18:29 UTC. Its completed receipt is
 `ccmixter-release-final-20261008.md` outside the repository. Earlier candidate
-states below are historical. A later local pass has not released new code.
+states below are historical. The later Global Voices qualifier repair shipped
+as `b12cc587`, with website readback at 20:19:53 UTC and final release controls
+at 20:20:50 UTC. Its fresh committed build, exact-source CI and twelve
+non-sending live checks passed. Source order, controls and live opt-ins
+stayed unchanged. See `source-qualifier-release-final-20261008.md`.
 
 ## Selected backup
 
@@ -218,7 +222,7 @@ letters, retries, source probes or audience changes occurred during rollout.
 This supersedes the earlier local-only and pending-build statements above.
 Evidence: `ccmixter-release-final-20261008.md` outside the repository.
 
-## Later October 8 source-coverage pass, local only
+## Later October 8 source-coverage pass (historical local review)
 
 Independent catalog review found eleven of thirty-eight fixed topics have
 dedicated independent lanes. This describes routing, not guaranteed fresh daily
@@ -250,18 +254,65 @@ anchor minimum, appends required non-grammar short qualifiers, and caps all
 selection tokens at six. Exact whole-token matching is local. Fixed-topic and
 exact music-alias behavior, source order, dates, credit, cache, prior-link
 exclusions, request budgets and cooldowns are unchanged. It does not infer
-AI/US/ISS aliases or claim geographic semantic understanding. The candidate is
-uncommitted and unreleased. Fresh build/release approval remains separate.
+AI/US/ISS aliases or claim geographic semantic understanding. At this local
+review the candidate was uncommitted and unreleased, with separate fresh-build
+and release approval pending.
 The before-fix adapter regression failed as expected on the US/UK distinction.
 After the repair, six focused offline scripts pass, including licensed-source
 credit/storage/rendering, exclusions, metadata privacy, no-key/no-model policy,
 cache reuse, cooldown, exhaustion and timeout paths. Application typecheck passes
 with incremental output disabled. Independent code review found no blocker.
-No fresh production build has been run for this candidate.
+No fresh production build had been run at that local review.
 
 The finite new research ledgers are closed. This pass made no delivery-history
 read or live service change. Latest normal observation remains the recorded
 17:05 UTC check. Natural fallback and real safety-event proof remain separate.
+
+The qualifier candidate subsequently completed its exact approved release as
+`b12cc587`. The committed production build, exact-source CI and twelve
+non-sending live checks passed. No new adapter, migration, live opt-in change
+or letter accompanied that release. The completed approval is consumed.
+
+## New documentation-only candidates, October 8
+
+CFPB is a proposed independent personal-finance metadata lane. Its official
+[press resources](https://www.consumerfinance.gov/about-us/newsroom/press-resources/)
+link to the newsroom RSS feed. The
+[website policy](https://www.consumerfinance.gov/privacy/website-privacy-policy/)
+puts CFPB-created material in the public domain and requests citation, with
+third-party rights exceptions. Only first-party attributed title/date/link
+metadata would be considered. Article bodies and media are outside the proposal.
+
+At the 21:12 UTC documentation review, feed/date/current-fit proof was still
+absent and the one-request approval was pending. Alex subsequently approved
+that exact check. On October 8 at 22:03:07 UTC, its one anonymous request
+returned HTTP 200 and 15,722 decoded UTF-8 bytes. All 22 entries had valid
+direct metadata, strict dates and canonical first-party newsroom paths.
+Only one entry was within a week or a month, and none passed the conservative
+personal-finance title check. Newest source date was October 2.
+
+CFPB remains held for insufficient current topic fit. This proves feed format
+and bounded retrieval only. It establishes no daily cadence or useful lane.
+No retry, redirect, article/body/media read or raw-feed persistence occurred.
+No adapter, topic map, provider identity or opt-in was added. The one-request
+approval is consumed. The earlier closed probe ledgers stay closed. Exact
+aggregate evidence is `cfpb-feed-qualification-20261008.json` outside the repo.
+
+Census publishes an official economic-indicator feed directory, but the
+proposed feed's metadata, topic fit and reuse basis have not been qualified.
+Monthly housing indicators cannot be counted as daily backup news. BLS's feed
+documentation returned an automated-access refusal. That path was stopped,
+without retry or alternate-route probing. Both candidates remain held.
+
+ccMixter's API documents generic tag/date filters. Current, conservatively
+matched electronic/indie/country metadata was not established. New genre
+queries would share the same upstream infrastructure and would improve
+coverage only if separately qualified. They would not add source independence.
+The already released narrow hip-hop lane and its evidence remain unchanged.
+
+Separate local diagnostics in `source-evidence.md` address the inability to
+observe final fresh content-tier use without inspecting letter text. These
+diagnostics are uncommitted and unreleased. They add no provider or coverage.
 
 ## Calendar validation, released October 5 (historical review)
 

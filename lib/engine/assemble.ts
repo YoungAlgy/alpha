@@ -11,6 +11,7 @@ import { withDeadline } from "@/lib/with-deadline";
 import type { BraveQuotaState } from "@/lib/brave";
 import type { Issue, UserProfile, TopicId } from "@/lib/types";
 import type { TopicBlurb } from "./types";
+import { createSourceEvidence, type SourceObservation } from "./source-evidence";
 
 // Per-topic deadline covering the WHOLE search+generate path (both
 // resolveTopicSignal attempts, including its own possible Gemini
@@ -166,6 +167,7 @@ export async function generateIssue(
     if (set.size > 0) citedByTopic.set(tid, set);
   }
   const blockedByHistory = new Set<string>();
+  const sourceEvidence = createSourceEvidence<TopicBlurb>();
 
   // Generate a topic's section from FRESH live signal. Returns null WITHOUT a
   // model call when the topic has nothing new this period, so the selector can
@@ -180,7 +182,9 @@ export async function generateIssue(
     // never be served (to this reader or any later one) and the topic should
     // backfill instead.
     if (cached && cached.items.length > 0 && issueIsReaderVisible({ sections: [cached] })) {
-      return { ...cached, topicLabel: topicLabel(id) };
+      const value = { ...cached, topicLabel: topicLabel(id) };
+      sourceEvidence.mark(value, "cached");
+      return value;
     }
     if (citationHistory.state === "unavailable" || citationHistory.unavailableTopicIds.has(id)) {
       blockedByHistory.add(id);
@@ -198,6 +202,7 @@ export async function generateIssue(
     // shared promise below, so a late reuser isn't bound by a deadline that's
     // already mostly elapsed for whoever started the work.
     let raw = inFlight.get(dryKey);
+    const reused = raw !== undefined;
     if (!raw) {
       // The WHOLE search+generate path is under one deadline, not just the
       // model call. resolveTopicSignal can itself fall to Gemini's grounded
@@ -208,13 +213,18 @@ export async function generateIssue(
       // topic's contribution to the parallel wave.
       raw = (async () => {
         const excludeUrls = citedByTopic.get(id);
-        let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls, quotaState });
+        let selectedSource: Readonly<SourceObservation> | undefined;
+        const onSourceObservation = (observation: Readonly<SourceObservation>) => {
+          sourceEvidence.observe(observation);
+          if (observation.outcome === "signal") selectedSource = observation;
+        };
+        let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls, quotaState, onSourceObservation });
         // Dry in the tight since-last-send window? Retry ONCE at past-week before
         // giving up the slot. With the exclusion set filtering out everything
         // already cited, whatever the wide pass finds is guaranteed new to the
         // reader - this keeps daily letters grounded in real current articles.
         if (!signal && freshness && freshness !== "pw") {
-          signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls, quotaState });
+          signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls, quotaState, onSourceObservation });
         }
         if (!signal) {
           dryCache.add(dryKey);
@@ -277,6 +287,7 @@ export async function generateIssue(
         // own errors and warns — so this can't turn a real send into a
         // failure; it only makes sure the write gets a real chance to finish.
         await setCachedBlurb(blurb);
+        if (selectedSource) sourceEvidence.mark(blurb, selectedSource);
         return blurb;
       })();
       // Evict this attempt from inFlight on any outcome that ISN'T a genuine,
@@ -317,7 +328,10 @@ export async function generateIssue(
       );
       inFlight.set(dryKey, raw);
     }
-    return withDeadline(raw, TOPIC_GEN_DEADLINE_MS, "topic-blurb");
+    const value = await withDeadline(raw, TOPIC_GEN_DEADLINE_MS, "topic-blurb");
+    // This assembly cannot recover another caller's discovery provenance.
+    if (value && reused) sourceEvidence.mark(value, "reused");
+    return value;
   }
 
   // Pick the letter's sections from the ranked pool: top fresh topics first,
@@ -505,6 +519,11 @@ export async function generateIssue(
     })),
   };
 
+  // Logical resolver outcomes and final selected sections for this assembly.
+  // These counts do not measure HTTP requests, persistence or email receipt.
+  // Telemetry stays outside issue content and every shared/durable blurb cache.
+  try { console.info("[source-evidence]", JSON.stringify(sourceEvidence.snapshot(blurbs))); }
+  catch { /* diagnostics must not fail a usable issue */ }
   return issue;
 }
 
