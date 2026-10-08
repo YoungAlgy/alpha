@@ -1,9 +1,12 @@
 # Delivery timing and issue dates
 
-Status: local timing candidate, October 7, 2026. This document describes the
-current candidate in the active checkout. It is not evidence that the candidate
-has been built for production or released. The October 5 feed-pool repair is
-already released and is separate work.
+Status: released October 7, 2026 in
+`53b901eae0181be55016655624ac63886cccb472`. The timing patch was committed as
+`e63e2d30`; the successor also contains the narrow dependency security repair.
+The additive RPC was installed before release. Source, build, CI and live
+readback evidence is recorded below. The later bounded normal-run evidence
+records provider acceptance for October 7 only. The scheduler cause remains
+unknown, and future schedule punctuality is not established.
 
 ## Scheduled sends
 
@@ -60,11 +63,33 @@ disclaimer.
 ## Evidence and release state
 
 The latest bounded normal-delivery receipt is
-`normal-delivery-check-20261007.md` in the external receipt folder. Its result
-applies only to that check and does not establish future schedule punctuality
-or arbitrary-date acceptance evidence. The scheduler cause remains unknown.
+`postrelease-normal-check-20261007-2313.md` in the external receipt folder.
+Run `37678700835` on `53b901ea` started October 7 at 20:00:01 UTC and recorded
+three provider acceptances for that day's issue, zero retry-required and zero final
+uncovered readers. Resend readiness/capacity passed, so automatic Brevo
+selection was unnecessary. Later run `37684420132` started at 20:45:15 UTC and
+skipped the covered issue before provider selection or sending.
 
-Focused offline checks, typecheck and local offline PostgreSQL verification
-passed for the candidate. No production build, RPC installation, push or
-deployment is included. Each of those release actions needs separate exact
-approval.
+Those two invocations show no duplicate or unsafe provider switch. Per-message
+provider identity, provider delivery and inbox receipt were not independently
+read. No postrelease watchdog invocation was visible in the one 23:13 UTC
+history query. Natural fallback and a normal postrelease watchdog result remain
+unproven. This local review made no fresh external read. The result does not
+establish future schedule punctuality or the original scheduler cause.
+
+Focused offline checks, typecheck and disposable local PostgreSQL verification
+passed. The approved additive RPC installation completed October 7 at 15:00:41
+UTC without changing the old cutoff function or protected delivery contracts.
+
+The fresh successor production build passed at 15:40:29 UTC. Exact-source CI
+`37646022019` passed all three jobs. Deployment completed at 15:45:06 UTC.
+All twelve non-sending live checks passed. Final canonical and Worker readback
+at 15:46:23 UTC matched `53b901ea` at 100 percent, with invite access, billing
+closed and delivery open. No manual letter, retry or enrollment change occurred.
+
+The completed release receipt is `dependency-security-release-receipt-20261007.md`
+in the external receipt folder. It supersedes the earlier pending candidate and
+CI-blocked timing receipt. Rollback source is
+`ba22400eed642bc570d2e667922398e6adb42573`, Worker
+`5e4fa775-d622-4739-acf2-9085a5bc9db1`. Retain the unused additive RPC if rolling
+back. This records the target and does not authorize a rollback or another release.

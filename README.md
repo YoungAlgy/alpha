@@ -59,11 +59,19 @@ Live deployment and first-batch evidence belong in the dated Desktop Files
 launch checkpoint. Scheduled configuration alone does not prove that a future
 scheduled run started or completed.
 
-The unreleased October 7 local timing candidate defers scheduled runs before
+The latest bounded normal-run receipt is
+`postrelease-normal-check-20261007-2313.md` in the external receipt folder.
+The October 7 issue recorded three new provider-acceptance outcomes, with zero
+failures, retry-required or uncovered readers. A later run skipped the covered
+issue.
+Provider delivery, inbox receipt and natural fallback remain unproven. See the
+dated outcome section in [`docs/ALPHA_BACKLOG.md`](docs/ALPHA_BACKLOG.md).
+
+The October 7 release `53b901ea` defers scheduled runs before
 14:17 UTC, ahead of provider preflight, dependency installation and build. A
 ready run pins its UTC issue date and start time; later pages keep that date
 across midnight while the run is less than 90 minutes old. Manual runs use the
-actual current UTC date and keep legacy Resend selection. This candidate adds
+actual current UTC date and keep legacy Resend selection. This policy adds
 no permission to resend or reopen an older issue. See
 [`docs/delivery-timing-window.md`](docs/delivery-timing-window.md).
 
@@ -306,7 +314,7 @@ Lives at `alpha.everyday.report` (its own domain, app at the root — no basePat
 - **Delivery reliability** (started 2026-08-05 and extended through Round 80) —
   - **Stuck-claim reclaim**. `runPersistAndSend` stamps `delivered_at` as an atomic claim before calling the selected provider. A killed runner can leave a claim without recorded provider acceptance. That does not prove no send happened. The cron reclaims stale unproved claims after its safety margin, while the durable attempt ledger retains provider ownership and retry protection for uncertain outcomes.
   - **Provider acceptance record**. A stored `resend_message_id` or `brevo_message_id` records a successful provider acceptance. `delivered_at` alone is only a claim. Acceptance does not prove a provider delivery event or inbox receipt.
-  - **Local date-scoped issue coverage candidate**. The unreleased additive `watchdog_issue_delivery_check(date)` RPC is designed to check the exact `issues.week_of` date and return that checked date with aggregate uncovered and eligible counts. Coverage requires a nonblank Resend or Brevo message ID and a `delivered_at` claim marker inside that UTC date and no later than now. The marker is not an acceptance timestamp, so this bounded check cannot prove when the provider accepted the message. The candidate watchdog can inspect today or yesterday; its scheduled send precheck uses an immutable pinned issue date. The older cutoff RPC remains unchanged for existing callers. A zero-uncovered result does not establish provider delivery or inbox receipt. The migration has not been installed or released.
+  - **Date-scoped issue coverage**. The additive `watchdog_issue_delivery_check(date)` RPC checks the exact `issues.week_of` date and returns that checked date with aggregate uncovered and eligible counts. Coverage requires a nonblank Resend or Brevo message ID and a `delivered_at` claim marker inside that UTC date and no later than now. The marker is not an acceptance timestamp, so this bounded check cannot prove when the provider accepted the message. The watchdog can inspect today or yesterday; its scheduled send precheck uses an immutable pinned issue date. The older cutoff RPC remains unchanged for existing callers. A zero-uncovered result does not establish provider delivery or inbox receipt. The migration was installed October 7 before the approved release. See `docs/delivery-timing-window.md` for the dated evidence.
   - **`prior_issue_counts()`** — one grouped RPC for every subscriber's lifetime "Issue N" count, replacing N per-subscriber count queries.
   - **Resend retry-with-backoff** (`retryResendCall` in `lib/email.ts`) — up to 3 attempts with backoff on transient errors (`rate_limit_exceeded`, `internal_server_error`, `application_error`, `concurrent_idempotent_requests`); permanent errors (bad API key, invalid recipient, quota exceeded) fail fast with no retry.
   - **Bounded fair delivery cursor**. Each route call inspects at most 250 readers with a one-row lookahead. One workflow drains at most 16 pages or 55 minutes, records inspected position with a compare-and-swap cursor, and leaves retry-required readers visible. The next same-day slot resumes beyond the bound and later wraps to uncovered readers. A retry outcome, undrained tail, or cursor conflict keeps the job red.
@@ -484,12 +492,12 @@ it runs on GitHub Actions instead (`.github/workflows/daily-send.yml`, `next bui
 top-of-hour contention, but GitHub does not guarantee punctual execution),
 starting its own temporary server on the GitHub runner and calling that server's
 `/api/cron/weekly-send` route over localhost. `.github/workflows/letter-watchdog.yml` checks delivery + secrets health daily and
-opens a GitHub Issue on failure. In the unreleased October 7 candidate, its
+opens a GitHub Issue on failure. Since the October 7 release, its
 20:37 UTC run checks the exact `week_of` date. A previous day's late delivery
 cannot satisfy today's check. It shares GitHub with the sender and is not an
 independent safeguard against a GitHub-wide outage.
 
-In the unreleased candidate, a scheduled watchdog before 20:37 UTC checks the
+A scheduled watchdog before 20:37 UTC checks the
 most recent closed UTC day and keeps a timing-failure status, even if that
 day's eligible audience has zero uncovered readers. The timing result never
 proves the original cron date or its delay cause. A due scheduled check or

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import ts from "typescript";
 
 const route = readFileSync(
   new URL("../app/api/cron/weekly-send/route.ts", import.meta.url),
@@ -401,6 +402,90 @@ check(
     "s.unsubscribedMidRunSkips+s.cancelledMidRunSkips+s.suppressedMidRunSkips+s.unenrolledMidRunSkips"
   )
 );
+
+// Exercise the actual per-reader cheap gates without importing the route or
+// loading application configuration. All inputs and helpers below are isolated
+// fixtures. No database, generation, provider or alert path is reachable.
+const loopStart = route.indexOf("for (const row of rows)");
+const gatesStart = route.indexOf("let currentDeliveryEmail = row.email;", loopStart);
+const gatesEnd = route.indexOf("const profile: UserProfile = {", gatesStart);
+if (loopStart < 0 || gatesStart < 0 || gatesEnd <= gatesStart) {
+  throw new Error("Per-reader gate boundaries not found");
+}
+const readerGates = route.slice(gatesStart, gatesEnd);
+check(
+  "stored acceptance proof precedes blank-profile validation",
+  readerGates.indexOf("if (!force && alreadyDelivered.has(row.id))") >= 0 &&
+    readerGates.indexOf("if (!force && alreadyDelivered.has(row.id))") <
+      readerGates.indexOf("if (!row.first_name || effectivePool.length === 0)")
+);
+const gateProgram = ts.transpileModule(`
+  let skippedAlreadyDelivered = 0;
+  let skippedNoName = 0;
+  let skippedEmptyPool = 0;
+  const skippedBlankSubscribers = [];
+  const deliveryRetryRequiredUserIds = new Set();
+  const deferred = [];
+  const reached = [];
+  for (const row of rows) {
+    ${readerGates}
+    reached.push(row.id);
+  }
+  ({ skippedAlreadyDelivered, skippedNoName, skippedEmptyPool,
+     blank: skippedBlankSubscribers.length, deferred: deferred.length,
+     retry: deliveryRetryRequiredUserIds.size, reached: reached.length });
+`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+function checkReaderGates(
+  label: string,
+  options: { covered?: boolean; force?: boolean; firstName?: string | null;
+    topics?: string[]; expired?: boolean },
+  expected: { covered: number; noName?: number; emptyPool?: number;
+    blank?: number; deferred?: number; retry?: number; reached?: number }
+) {
+  const actual = vm.runInNewContext(gateProgram, {
+    rows: [{ id: "fixture-reader", email: "fixture@example.invalid",
+      first_name: options.firstName === undefined ? "Fixture" : options.firstName,
+      topics: options.topics ?? ["fixture-topic"], birthday: null, topic_quota: 5 }],
+    force: options.force ?? false,
+    alreadyDelivered: new Set(options.covered ? ["fixture-reader"] : []),
+    clampQuota: (quota: number) => quota,
+    poolCap: () => 25,
+    mapTopicsForUser: (topics: string[]) => topics.filter((topic) => topic !== "zodiac"),
+    Date: { now: () => options.expired ? 100 : 0 },
+    startedAt: 0, cronTimeBudgetMs: 100,
+    console: { log() {}, warn() {} },
+  }, { timeout: 1000 });
+  check(label,
+    actual.skippedAlreadyDelivered === expected.covered &&
+      actual.skippedNoName === (expected.noName ?? 0) &&
+      actual.skippedEmptyPool === (expected.emptyPool ?? 0) &&
+      actual.blank === (expected.blank ?? 0) &&
+      actual.deferred === (expected.deferred ?? 0) &&
+      actual.retry === (expected.retry ?? 0) &&
+      actual.reached === (expected.reached ?? 0)
+  );
+}
+for (const blank of [
+  { label: "missing name", options: { firstName: null }, counter: { noName: 1 } },
+  { label: "empty topic pool", options: { topics: [] }, counter: { emptyPool: 1 } },
+  { label: "empty effective pool", options: { topics: ["zodiac"] }, counter: { emptyPool: 1 } },
+]) {
+  checkReaderGates(`covered reader with ${blank.label} stays settled`,
+    { ...blank.options, covered: true }, { covered: 1 });
+  checkReaderGates(`uncovered reader with ${blank.label} still needs retry`,
+    blank.options, { covered: 0, ...blank.counter, blank: 1, retry: 1 });
+  checkReaderGates(`forced reader with ${blank.label} still needs retry`,
+    { ...blank.options, covered: true, force: true },
+    { covered: 0, ...blank.counter, blank: 1, retry: 1 });
+}
+checkReaderGates("covered valid reader skips new work", { covered: true }, { covered: 1 });
+checkReaderGates("uncovered valid reader reaches later protected checks", {}, { covered: 0, reached: 1 });
+checkReaderGates("forced valid reader reaches later protected checks",
+  { covered: true, force: true }, { covered: 0, reached: 1 });
+checkReaderGates("covered blank reader stays settled after page time budget",
+  { covered: true, firstName: null, expired: true }, { covered: 1 });
+checkReaderGates("uncovered valid reader defers after page time budget",
+  { expired: true }, { covered: 0, deferred: 1, retry: 1 });
 
 // Run the exact embedded workflow parser locally with synthetic counters.
 // No shell, network, subscriber data or send path is used by this fixture.

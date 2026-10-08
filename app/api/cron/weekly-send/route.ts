@@ -1083,6 +1083,16 @@ export async function GET(req: Request) {
     // account read immediately before a provider call. Protected summaries use
     // the same value so they identify the address that was actually targeted.
     let currentDeliveryEmail = row.email;
+    // Stored acceptance proof settles ordinary delivery for this period even
+    // if the reader later clears their name or topics. Check it before profile
+    // validation so a covered reader cannot become a false retry or blank skip.
+    // Forced resends still validate the profile and keep their separate lane.
+    if (!force && alreadyDelivered.has(row.id)) {
+      skippedAlreadyDelivered++;
+      console.log("[cron/weekly-send] skipped (already delivered this period)");
+      continue;
+    }
+
     // letterSize = sections they pay for. The topics array is their ranked
     // POOL — clamp it to poolCap (letterSize + backups, ≤25) so generation
     // stays bounded and a topics array written straight to the DB (the RLS
@@ -1108,16 +1118,6 @@ export async function GET(req: Request) {
         `[cron/weekly-send] SKIPPED ELIGIBLE READER (got nothing): ` +
           `first_name=${row.first_name ? "ok" : "MISSING"} pool=${effectivePool.length}`
       );
-      continue;
-    }
-
-    // Idempotency gate: if this (user, week) already has a delivered_at
-    // stamp, skip the send entirely. Prevents duplicate emails when the
-    // endpoint gets hit multiple times (admin re-trigger, a retried
-    // scheduled run, ?weekOf= backfill, etc.). Override with ?force=1.
-    if (!force && alreadyDelivered.has(row.id)) {
-      skippedAlreadyDelivered++;
-      console.log("[cron/weekly-send] skipped (already delivered this period)");
       continue;
     }
 

@@ -4,9 +4,11 @@ Status: PLOS was released as `207a4fae` and its scheduled opt-in was activated
 October 2 at 14:00 UTC. The additive migration and exact release checks passed.
 The no-key source activation completed earlier at 05:47 UTC. Both approvals are
 closed. Scheduled writing remains no-model with paid AI off.
-The PLOS qualification below is dated October 2. The October 5 local review
-adds the latest held-source decisions and a separate unreleased calendar repair.
-No adapter or live setting was added.
+The PLOS qualification below is dated October 2. The October 5 review added the
+latest held-source decisions. Its calendar and usable-feed-pool repairs later
+shipped as `7c33961f` and `ba22400e`, respectively. Those repairs are also included
+in the October 7 successor `53b901ea`. No new adapter or live setting was added
+by those repairs.
 This update uses recorded release and normal-run evidence. No new live check
 or source probe was made for this documentation cleanup.
 
@@ -101,10 +103,10 @@ Details and primary references are in the external dated receipt
 `independent-source-decision-20261005.md`. That pass consumed two availability
 requests, bringing the extended ledger to five of twenty-four. Its closed
 probe helper is intentionally blocked from replay. Keep the current chain and
-the response, attribution and prior-link guards. The separate local repair below
+the response, attribution and prior-link guards. The separate calendar repair below
 strengthens calendar freshness validation without relaxing the source chain.
 
-## Unreleased local date validation, October 5
+## Calendar validation, released October 5 (historical review)
 
 An offline review reproduced impossible RSS dates rolling forward through
 `Date.parse`. The local candidate replaces that permissive freshness conversion
@@ -114,15 +116,16 @@ cached pools survive. Malformed-only Google results leave the resolver free to
 try its next eligible source. No new provider is enabled or claimed proven.
 
 Twelve focused offline checks and the application typecheck passed. Independent
-review found no blocking issue. This fix is uncommitted and unreleased. A fresh
-production build and a separate release decision remain. Full local evidence is
+review found no blocking issue. At that review the fix was uncommitted and
+unreleased, with a fresh production build and separate release decision pending.
+Full local evidence is
 in `source-review-calendar-fix-20261005.md` outside the repository.
 
 The calendar candidate above subsequently completed its exact approved release
 as `7c33961f`. See `calendar-release-receipt-20261005.md` for its successful build,
 CI, deployment and non-sending acceptance. The earlier pending status is dated.
 
-## Unreleased usable-feed-pool repair, October 5
+## Usable-feed-pool repair, released October 5 (historical review)
 
 A fresh offline pass reproduced rejected feed entries consuming the 100-item
 limit before a usable later entry could be considered. Google, fixed publishers
@@ -134,10 +137,17 @@ rechecks freshness, including publication times becoming current during cache
 lifetime. Empty/unusable metadata keeps the one-minute cache lifetime.
 
 Ten focused offline checks, typecheck and two final independent reviews passed.
-No source probe or new adapter was added. This candidate has not received a
-production build or release. Source order, credits, request/cooldown controls,
+No source probe or new adapter was added. At that local review a production
+build and release were still pending. Source order, credits, request/cooldown controls,
 prior-link filters, no-model policy and the coverage limits below are unchanged.
 Evidence: `source-valid-pool-review-20261005.md` outside the repository.
+
+The feed-pool repair subsequently shipped as `ba22400e`. Its fresh committed
+build, CI, deployment and twelve non-sending live checks passed. The exact
+receipt is `source-valid-pool-release-receipt-20261005.md`. The first stale-SHA
+observation and later exact readback are retained there. No second deployment
+was needed. This closes that candidate's pending release status without proving
+natural source failover or provider-confirmed delivery.
 
 ## Limits and recorded release outcome
 

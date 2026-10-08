@@ -1,19 +1,21 @@
 # Alpha remaining work
 
-Current local timing candidate review, October 7, 2026. The active release base
-is `ba22400eed642bc570d2e667922398e6adb42573`; the October 5 feed-pool repair
-has since shipped. The fresh bounded normal-delivery receipt is
-`normal-delivery-check-20261007.md` in the external receipt folder. It records
-that bounded check only. It does not establish an arbitrary scheduled start,
-the cause of a scheduler delay, or provider acceptance time for deliveries
-outside the diagnostic's date window.
+Current release reconciliation, October 7, 2026. Release
+`53b901eae0181be55016655624ac63886cccb472` includes the October 7 timing/watchdog
+patch and narrow dependency security repair. Its fresh build, exact-source CI
+and twelve non-sending live checks passed. Final live readback was at 15:46:23
+UTC. The newest bounded normal-delivery receipt is
+`postrelease-normal-check-20261007-2313.md` in the external receipt folder.
+Its one history read at 23:13 UTC and bounded projections through 23:17 UTC
+establish three new acceptance outcomes for the October 7 issue, followed by a
+covered-day skip. Provider delivery, inbox receipt, per-message provider identity
+and a postrelease watchdog outcome remain unverified. No scheduler cause is
+inferred. This local review makes no fresh external read.
 
-The current checkout contains an unreleased local timing candidate. Focused
-offline checks, typecheck and disposable local PostgreSQL SQL verification
-passed. No production build or RPC installation, push, or deployment is
-included. Those actions require separate exact approval. The additive exact-date
-coverage RPC does not change the old cutoff RPC. Historical test debt below is
-preserved as history and is not reopened by this candidate.
+The additive exact-date coverage RPC was installed at 15:00:41 UTC before the
+release. It does not change the old cutoff RPC. The completed approval does not
+authorize another database change, push, deployment or send. Historical test
+debt below is preserved as history and is not reopened by this reconciliation.
 
 The October 5 reconciliation and its feed-pool status below are retained as a
 dated record, superseded by this current summary. Historical release approvals
@@ -22,18 +24,19 @@ are completed and cannot be reused.
 ## Current result
 
 Alpha's free invite-only daily delivery is released. The October 5 calendar
-and feed-pool repairs are completed release history. The October 7 normal
-delivery receipt is the newest bounded evidence. Current eligibility is
+and feed-pool repairs are completed release history. The October 7 23:13 UTC
+receipt is the newest bounded normal-delivery evidence. Its acceptance counts
+do not establish provider delivery or inbox receipt. Current eligibility is
 resolved from protected records, never a launch-group allowlist. Access
 approval and letter enrollment remain separate.
 
-The local timing candidate defers scheduled delivery before 14:17 UTC, ahead of
+The released timing guard defers scheduled delivery before 14:17 UTC, ahead of
 provider preflight, install or build. A ready run pins the actual UTC issue date
 and start time. Later pages preserve that date across midnight while the run is
 under 90 minutes old. Manual dispatch uses the actual current UTC date and keeps
 legacy Resend selection. No new resend or old-issue permission is added.
 
-The candidate's additive `watchdog_issue_delivery_check(date)` checks exact
+The installed additive `watchdog_issue_delivery_check(date)` checks exact
 `week_of` values for today or yesterday UTC. It counts only currently eligible
 accounts and exact-date issues with a nonblank Resend/Brevo message ID and a
 `delivered_at` claim marker within that UTC day and no later than now. The claim
@@ -81,21 +84,26 @@ gates or reopen historical Round-script debt merely to close this backlog.
 - The October 3 citation-history release and service-only RPC installation are
   complete. Ordinary history-enabled runs are recorded on two issue dates.
   Aggregate logs do not prove a particular history-RPC call or natural failover.
+- The October 7 timing/watchdog release and exact-date RPC installation are
+  complete. Early scheduled sends defer and ready runs retain their issue date.
+- The October 7 dependency repair is released. Sharp 0.35.5, proxy-addr 2.0.8
+  and source-map-js 1.2.2 passed all-copy lock and installed checks in the fresh
+  native release checkout. Windows node_modules was not replaced.
 
 ## Remaining backlog, in priority order
 
-The date-scoped timing candidate does not change the separate outcome evidence
-items below. Its local passing checks do not reopen historical acceptance,
-delivery-event, inbox-receipt or scheduler-cause questions.
+The timing release's build and live checks are separate from ordinary delivery
+evidence. The later October 7 normal run adds three acceptance outcomes only for
+that inspected invocation. It does not reopen historical outcome questions.
 
 Priority scores use (impact + risk) x (6 - effort). Each input is 1 to 5.
 Effort is relative, not an elapsed-time promise.
 
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
-| Decide on the October 7 delivery timing candidate | Local focused checks, typecheck and offline PostgreSQL verification passed. The candidate remains unreleased. Production build and the RPC installation, push and deployment are separate actions requiring fresh exact approval. No live timing change has occurred. | 5 / 4 / 3 | 27 |
+| Release the covered-reader accounting correction | Local correction and focused checks passed. An ordinary reader with existing delivery proof is settled before validating a subsequently blanked profile. Unproved and forced readers retain their checks. Fresh production build and exact release approval remain pending. See the local correction below. | 3 / 2 / 2 | 20 |
 | Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | Existing public-source adapters remain released. Broad news/music coverage is still limited. The October 5 research pass qualified no new adapter: Wikidata timed out once, Pressenza's exact original-item reuse boundary remains unresolved, and SciDev.Net's documented route does not establish current complete-credit coverage. Do not replay held probes or relax source guards to force output. See `public-source-gaps.md` and the named dated receipt below. The separate local calendar repair is described next. | 4 / 3 / 4 | 14 |
+| Improve independent topic coverage where evidence supports it | Existing public-source adapters remain released. Broad news/music coverage is still limited. The October 5 research pass qualified no new adapter: Wikidata timed out once, Pressenza's exact original-item reuse boundary remains unresolved, and SciDev.Net's documented route does not establish current complete-credit coverage. Do not replay held probes or relax source guards to force output. See `public-source-gaps.md` and the named dated receipt below. The calendar and feed-pool repairs are completed history below. | 4 / 3 / 4 | 14 |
 
 Keyed search was removed from normal scheduled content by the approved October 2
 05:47 UTC activation. The `1eb3a14b` maintenance cleanup was retained in the exact
@@ -103,6 +111,39 @@ PLOS release. Both completed items have been removed from the remaining table.
 Broad-topic coverage would need more evidence-backed research. Outcome proof
 needs an observed event. Neither is a currently confirmed runtime bug.
 No further live configuration change or external probe is authorized here.
+
+The dependency audit still has the one existing, locally patched Braces
+exception. Its exact allowance expires November 2, 2026 at 00:00 UTC. The
+October 7 patch added no exception and did not extend it. Resolve that future
+release-gate deadline under a separate focused task. Raw package-entry counts
+are not counts of independent vulnerabilities.
+
+## Local covered-reader accounting correction, unreleased
+
+The fresh October 7 review found a false retry on recovery pages. The reader
+loop validated name and effective topics before checking prefetched delivery
+proof. A covered reader who later cleared their name or topics could therefore
+be counted as blank and retry-required. Today's healthy run had zero blank
+skips and did not exhibit this defect.
+
+The local correction moves the unchanged ordinary proof gate ahead of profile
+and pool work. Covered readers receive the existing covered-skip credit.
+Unproved readers and forced paths retain profile validation. Eligibility,
+suppression, address checks, provider ownership, locks and unresolved-outcome
+rules are unchanged. No additional send or retry permission is introduced.
+
+The regression failed against the unrepaired source in five checks. All 65
+cursor checks pass after the correction, including 15 new exact-source gate
+checks. The 166 route timing assertions and 25 alert/privacy assertions also
+pass. Application typecheck and a separate check of the changed test script
+pass. Independent review found no further defect in the correction or source
+failure paths. These are local checks with isolated inputs and no service calls.
+
+Runtime scope is `app/api/cron/weekly-send/route.ts` and
+`scripts/verify-weekly-send-delivery-cursor.mts`. Existing documentation edits
+are preserved. A fresh candidate production build has not been run. No commit,
+push, deployment or letter was made. Evidence is in
+`covered-reader-accounting-review-20261007.md` outside the repository.
 
 ## Calendar repair, released October 5 (historical record)
 
@@ -164,7 +205,49 @@ passing exact CI. No runtime deployment was required for that maintenance step.
 The subsequent PLOS source release completed under separate approval as
 `207a4fae`, with its exact build, deployment, migration and activation recorded.
 
-## Latest recorded normal outcomes, checked October 5 at 05:34 UTC
+## Latest recorded normal outcomes, checked October 7 at 23:13 UTC
+
+The single unfiltered history read and bounded projections through 23:17 UTC
+inspected two scheduled runs on `53b901ea`. Run `37678700835` started at
+20:00:01 UTC and completed successfully at 20:01:53 UTC. Its actual issue date
+was October 7. Protected execution-time checks found three eligible readers
+and three uncovered. Resend was selected after sender and both capacity checks
+passed. The page recorded three new acceptance outcomes and zero failures,
+deferred or retry-required readers, prior-content backup sends or final uncovered
+readers.
+Terminal accounting passed. Paid calls and reservations were zero.
+
+Run `37684420132` started at 20:45:15 UTC and completed at 20:45:23 UTC. It found
+three eligible readers and zero uncovered, then skipped provider preflight,
+install, build, server and sending. No duplicate or unsafe provider switch was
+observed across those two invocations. Exact HTTP subattempt counts and
+per-message provider identity were not independently read.
+
+No postrelease watchdog run was visible in that bounded history read. Its
+normal result remains unverified as of that check. Provider delivery, inbox
+receipt, natural source/provider fallback and real safety-event processing
+also remain unproven. Missing events are not zero-delivery counts. Run times
+do not identify the original cron slot or its delay cause. Evidence:
+`postrelease-normal-check-20261007-2313.md` and its sanitized JSON receipt.
+
+## Earlier pre-release normal check, October 7 at 13:23 UTC
+
+The bounded check inspected October 5/6 runs on `ba22400e` before the October 7
+timing release. Runs `37376275852` and `37393623815` started October 5 at
+21:30:20 UTC and October 6 at 00:22:03 UTC. Each recorded three eligible readers
+and three new Resend acceptances, zero failures, retries or uncovered readers,
+and zero paid calls. Resend readiness/capacity passed. Later invocations skipped
+sending after finding the same issues covered.
+
+The October 6 issue was accepted before its primary target. Two early watchdogs
+failed the former timing guard without querying coverage. That evidence led to
+the now-released timing repair. The upstream scheduler cause remains unknown.
+No post-timing-release normal outcome had been checked at that earlier release
+or documentation review. The later 23:13 UTC evidence above supersedes that
+normal-outcome gap. Provider-confirmed delivery, inbox receipt and
+natural fallback remain unproven. See `normal-delivery-check-20261007.md`.
+
+## Earlier normal outcomes, checked October 5 at 05:34 UTC
 
 The saved requested check inspected completed October 3/4 runs on `583ef265`.
 Primaries `37142507128` and `37223445816` started at 17:59:07 and 18:11:26 UTC
@@ -298,14 +381,18 @@ outside the public repository. The authoritative resume checkpoint is
 - `post-history-normal-outcomes-20261005.json`
 - `independent-source-decision-20261005.md`
 - `source-review-calendar-fix-20261005.md`
+- `source-valid-pool-release-receipt-20261005.md`
+- `normal-delivery-check-20261007.md`
+- `timing-window-release-receipt-20261007.md` (earlier CI-blocked step)
+- `dependency-security-release-receipt-20261007.md` (completed successor)
+- `postrelease-normal-check-20261007-2313.md` and `.json`
+- `covered-reader-accounting-review-20261007.md` (local correction)
 
 Use current source, exact release receipts and fresh authorized evidence.
-Preserve unrelated work and the owned native mirror. The October 3 receipt
-records a clean active Windows checkout at `583ef265` and a separate native
-release checkout, with earlier owned mirrors untouched. The October 5 local
-review confirmed that Windows baseline before the local calendar and documentation changes.
-These edits remain uncommitted. Further local work stays unreleased until
-separately approved. No commit/push/deploy, send,
+Preserve unrelated work and the owned native mirror. Current release receipts
+supersede older local candidate states. The October 7 successor receipt records
+the clean released Windows checkout and preserved native mirrors. Any subsequent
+local work stays unreleased until separately approved. No commit/push/deploy, send,
 retry/backfill, source probe, audience/enrollment, account/billing/secrets or
 remote-setting change follows from this backlog. Keep Alpha separate from the
 owner's other products.
