@@ -16,6 +16,7 @@ import { publisherFeedFallbackEnabled, publisherFeedSearch } from "./publisher-f
 import { openNewsFeedFallbackEnabled, openNewsFeedSearch } from "./open-news-feed-search";
 import { researchMetadataFallbackEnabled, researchMetadataSearch } from "./research-metadata-search";
 import { plosMetadataFallbackEnabled, plosMetadataSearch } from "./plos-metadata-search";
+import { ccmixterMetadataFallbackEnabled, ccmixterMetadataSearch } from "./ccmixter-metadata-search";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
@@ -169,6 +170,14 @@ export async function resolveTopicSignal(
         );
         if (viaPlos) return viaPlos;
       }
+      if (topicId === "music-hiphop" && ccmixterMetadataFallbackEnabled()) {
+        const viaCcmixter = await tryFallback(topicId, "ccMixter upload metadata", () =>
+          fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, ccmixterMetadataSearch, "ccMixter Community Uploads", false, 1)
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaCcmixter) return viaCcmixter;
+      }
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {
         const viaGdelt = await tryFallback(topicId, "GDELT public discovery", () =>
@@ -304,7 +313,10 @@ async function fetchLiveSignal(
   // headlines working fine elsewhere in this same function (the "MORE THIS
   // WEEK" breadth list) — trading prose depth for guaranteed speed is the
   // right call for a tier whose whole reason to exist is racing a deadline.
-  deepRead = true
+  deepRead = true,
+  // Optional narrow discovery lanes keep a small visible result AFTER prior
+  // link exclusion and ordinary source filters. Existing providers keep all.
+  maxSources = Number.MAX_SAFE_INTEGER
 ): Promise<LiveSearchAttempt> {
   if (!queries || queries.length === 0) return { state: "healthy-empty" };
 
@@ -352,7 +364,7 @@ async function fetchLiveSignal(
   //    a match can't be dodged by a fragment.
   const candidates = perQuery.flat().filter((source) => source.attribution === undefined ||
     !!validatedSourceAttribution(source.url, source.attribution));
-  const ranked = rankAndDedup(candidates, 2, excludeUrls, topicId);
+  const ranked = rankAndDedup(candidates, 2, excludeUrls, topicId).slice(0, maxSources);
   if (ranked.length === 0) {
     if (failedQueries > 0) {
       console.warn(

@@ -148,6 +148,8 @@ const researchMetadataEnabled = strictNoModel && enabled("ALPHA_RESEARCH_METADAT
 // successful PLOS fetch, durable admission or actual fallback selection.
 const plosMetadataEnabled = strictNoModel && enabled("ALPHA_PLOS_METADATA_FALLBACK") &&
   enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
+const ccmixterMetadataEnabled = strictNoModel && enabled("ALPHA_CCMIXTER_METADATA_FALLBACK") &&
+  enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
 if (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0") {
   console.error("::error::Manual-first delivery requires no-model mode and paid AI disabled.");
   deliveryReady = false;
@@ -175,6 +177,7 @@ const freshSourceTiers = [
   openNewsFeedEnabled ? "open-news-feed" : null,
   researchMetadataEnabled ? "research-metadata" : null,
   plosMetadataEnabled ? "plos-research" : null,
+  ccmixterMetadataEnabled ? "ccmixter-uploads" : null,
   gdeltEnabled ? "gdelt" : null,
 ].filter(Boolean);
 const freshSourceReady = freshSourceTiers.length > 0;

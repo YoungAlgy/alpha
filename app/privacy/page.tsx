@@ -192,6 +192,11 @@ export default function PrivacyPage() {
           these topics locally and keeps selected paper titles, author credit,
           publisher links and publication dates. It requests no paper bodies,
           abstracts or images.
+          An optional ccMixter backup requests a fixed public hip-hop remix
+          feed. No account, profile or custom topic is sent. Alpha keeps selected
+          upload titles, creator credit, canonical links and upload dates.
+          Upload dates are not original music release dates. It does not fetch
+          music or images, and does not retain or use upload descriptions.
         </li>
         <li>
           <strong>Resend</strong> delivers letters and account emails.

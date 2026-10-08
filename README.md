@@ -59,13 +59,11 @@ Live deployment and first-batch evidence belong in the dated Desktop Files
 launch checkpoint. Scheduled configuration alone does not prove that a future
 scheduled run started or completed.
 
-The latest bounded normal-run receipt is
-`postrelease-normal-check-20261007-2313.md` in the external receipt folder.
-The October 7 issue recorded three new provider-acceptance outcomes, with zero
-failures, retry-required or uncovered readers. A later run skipped the covered
-issue.
-Provider delivery, inbox receipt and natural fallback remain unproven. See the
-dated outcome section in [`docs/ALPHA_BACKLOG.md`](docs/ALPHA_BACKLOG.md).
+Latest dated normal-delivery and watchdog observations are recorded in
+[`docs/ALPHA_BACKLOG.md`](docs/ALPHA_BACKLOG.md), with named external receipts.
+Provider acceptance, provider-confirmed delivery, inbox receipt and natural
+fallback remain separate proof levels. Documentation does not establish a
+fresh execution or delivery result.
 
 The October 7 release `53b901ea` defers scheduled runs before
 14:17 UTC, ahead of provider preflight, dependency installation and build. A
@@ -205,6 +203,27 @@ Any further live change still needs separate approval.
 Current selection evidence and rejected sources are in
 [docs/public-source-gaps.md](docs/public-source-gaps.md).
 
+Local candidate, October 8: `ALPHA_CCMIXTER_METADATA_FALLBACK=1` adds a narrow
+hip-hop community-upload tier after the existing useful sources. It also
+requires no-model mode and both durable controls. It stays off by default.
+The fixed ccMixter query sends no reader, profile or custom topic. Every retained
+record needs creator credit, explicit `hip_hop` and `remix` tags, a strict upload
+timestamp and a canonical HTTPS upload link. The [API](https://ccmixter.org/query-api)
+defines the date as upload time, never an original album release date.
+Only factual title/creator/date/link metadata is used. Feed descriptions are
+discarded. No music or images are fetched and no track license is inferred.
+The [terms](https://ccmixter.org/terms) govern API use and per-track reuse.
+This editorial linkout is not promotional reuse or an endorsement.
+At most one item is selected after prior-link exclusion and normal ranking.
+Its separate `ccmixter-uploads` budget admits two requests per fixed fifteen
+minutes. Existing timeout, byte-bound and cross-run circuit rules apply.
+The local additive migration `20261008000000_ccmixter_public_source_circuit.sql`
+preserves the eight installed source states and adds one identity. It has not
+been applied live. A generic endpoint check found one fresh weekly upload,
+without proving exact live adapter acceptance or daily coverage. Focused local
+checks and typecheck passed. A fresh production build and any rollout remain
+separate approval gates. Nothing here activates the candidate.
+
 `ALPHA_GDELT_FALLBACK=1` adds an independent public discovery tier after RSS
 and the enabled publisher feeds have no usable sources. It makes one topic-phrase query, never reads full article
 bodies, and uses dated headline/link metadata. Source timestamps are discovery
@@ -278,6 +297,8 @@ The daily workflow passes `SEND_ALPHA_NO_KEY_SOURCES`,
 `SEND_ALPHA_RESEARCH_METADATA_FALLBACK`, `SEND_ALPHA_PLOS_METADATA_FALLBACK` and
 `SEND_ALPHA_GDELT_FALLBACK` into both
 preflight and runtime.
+The unreleased candidate also forwards `SEND_ALPHA_CCMIXTER_METADATA_FALLBACK`
+to those two steps. No remote variable was changed or assumed enabled.
 `SEND_ALPHA_DURABLE_SOURCE_COOLDOWN` separately forwards the opt-in circuit flag.
 The scheduled setting enables it while the code default remains off.
 Missing or unreadable admission state blocks a
@@ -439,6 +460,7 @@ ALPHA_PUBLISHER_FEED_FALLBACK= # set to "1" for fixed NIST/FDA/Federal Reserve t
 ALPHA_OPEN_NEWS_FALLBACK=     # set to "1" for licensed Global Voices metadata in no-model mode (optional, off by default)
 ALPHA_RESEARCH_METADATA_FALLBACK= # set to "1" for open-license nutrition research metadata in no-model mode (optional, off by default)
 ALPHA_PLOS_METADATA_FALLBACK= # scheduled opt-in activated October 2; requires no-model plus durable budget/cooldown and installed circuit migration (code default off)
+ALPHA_CCMIXTER_METADATA_FALLBACK= # unreleased hip-hop community-upload candidate, off by default, requires no-model and durable budget/cooldown plus separately installed identity
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 ALPHA_DURABLE_SOURCE_COOLDOWN= # opt-in private provider circuit, requires reviewed migration before activation
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release

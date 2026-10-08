@@ -102,6 +102,13 @@ try {
   );
   assert.equal(scopes.get("public_source:plos_research")?.size, 1);
   assert.equal(rpcCalls, 67, "PLOS shares its two-slot ceiling across independent instances");
+  await first("ccmixter-uploads");
+  await second("ccmixter-uploads");
+  await assert.rejects(first("ccmixter-uploads"), (error: unknown) =>
+    error instanceof PublicSourceBudgetError && error.code === "exhausted" && error.provider === "ccmixter-uploads"
+  );
+  assert.equal(scopes.get("public_source:ccmixter_uploads")?.size, 1);
+  assert.equal(rpcCalls, 70, "ccMixter has its own shared two-slot budget");
 
   const unavailable = createPublicSourceBudget({
     enabled: () => true,

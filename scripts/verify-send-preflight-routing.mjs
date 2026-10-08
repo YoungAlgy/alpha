@@ -262,4 +262,28 @@ for (const changes of [{ ALPHA_ALLOW_PAID_AI: "1" }, { ALPHA_NO_MODEL_MODE: "0" 
   assert.equal(result.outputs.selected_provider, undefined);
   assert.deepEqual(result.calls, { resend: 0, brevo: 0, oldDomains: 0 });
 }
-console.log("PASS full preflight sender selection, no-key/PLOS discovery and accurate no-model reporting fixtures");
+const ccmixterFlags = {
+  ALPHA_CCMIXTER_METADATA_FALLBACK: "1",
+  ALPHA_DURABLE_SOURCE_BUDGET: "1",
+  ALPHA_DURABLE_SOURCE_COOLDOWN: "1",
+};
+for (const enabled of ["1", "true", "yes", " YES "]) {
+  result = await run({ changes: { ...ccmixterFlags, ALPHA_CCMIXTER_METADATA_FALLBACK: enabled } });
+  assert.equal(result.exit, null);
+  assert.equal(result.outputs.fresh_source_ready, "true");
+  assert.ok(result.logs.includes("OK: current-source discovery tiers configured: ccmixter-uploads."));
+  assert.equal(result.outputs.selected_provider, "resend");
+  assert.deepEqual(result.calls, { resend: 0, brevo: 0, oldDomains: 1 });
+}
+for (const flag of Object.keys(ccmixterFlags)) {
+  for (const disabled of [undefined, "0", "false", "invalid"]) {
+    result = await run({ changes: { ...ccmixterFlags, [flag]: disabled } });
+    assert.equal(result.outputs.fresh_source_ready, "false");
+    assert.ok(!result.logs.some((line) => line.includes("ccmixter-uploads")));
+  }
+}
+result = await run({ changes: { ...ccmixterFlags, ALPHA_NO_MODEL_MODE: "0" } });
+assert.equal(result.exit, 1);
+assert.equal(result.outputs.fresh_source_ready, "false");
+assert.ok(!result.logs.some((line) => line.includes("ccmixter-uploads")));
+console.log("PASS full preflight sender selection, no-key/PLOS/ccMixter discovery and accurate no-model reporting fixtures");

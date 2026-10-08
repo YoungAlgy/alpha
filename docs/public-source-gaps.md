@@ -1,16 +1,17 @@
-# Public source coverage, reviewed October 5, 2026
+# Public source coverage, reviewed October 8, 2026
 
 Status: PLOS was released as `207a4fae` and its scheduled opt-in was activated
 October 2 at 14:00 UTC. The additive migration and exact release checks passed.
 The no-key source activation completed earlier at 05:47 UTC. Both approvals are
 closed. Scheduled writing remains no-model with paid AI off.
-The PLOS qualification below is dated October 2. The October 5 review added the
-latest held-source decisions. Its calendar and usable-feed-pool repairs later
-shipped as `7c33961f` and `ba22400e`, respectively. Those repairs are also included
+The PLOS qualification below is dated October 2. The October 5 and October 8
+held-source decisions are recorded below. The calendar and usable-feed-pool
+repairs later shipped as `7c33961f` and `ba22400e`, respectively. Those repairs are also included
 in the October 7 successor `53b901ea`. No new adapter or live setting was added
 by those repairs.
-This update uses recorded release and normal-run evidence. No new live check
-or source probe was made for this documentation cleanup.
+The earlier documentation cleanup used recorded evidence only. The later
+October 8 remaining-gaps pass made bounded new-source qualifications and one
+normal-run history read. Its unreleased candidate and limits are separate below.
 
 ## Selected backup
 
@@ -53,8 +54,9 @@ documented policy assumption, not a version proved by that marker alone.
 Google News RSS remains first for broad discovery. Mapped NIST/FDA/Federal
 Reserve feeds follow. Global Voices remains a limited licensed-feed tier.
 Crossref serves narrow nutrition metadata. PLOS follows it for the three fixed
-topics, with its scheduled opt-in enabled and code default off. GDELT stays off
-and unproven.
+topics, with its scheduled opt-in enabled and code default off. The unreleased
+ccMixter candidate would follow for `music-hiphop` only. GDELT stays off and
+unproven. No live source order was changed by the candidate.
 
 An unavailable or quiet optional tier lets the resolver continue. Each source
 keeps its deadline, response bound, relevance and freshness checks. Prior reader
@@ -105,6 +107,103 @@ requests, bringing the extended ledger to five of twenty-four. Its closed
 probe helper is intentionally blocked from replay. Keep the current chain and
 the response, attribution and prior-link guards. The separate calendar repair below
 strengthens calendar freshness validation without relaxing the source chain.
+
+### Additional held leads, October 8
+
+The two requested bounded passes added no source adapter or live setting.
+FTC's Consumer Alerts RSS returned HTTP 200. Final qualification parsed ten
+complete item records and safe first-party links, but zero timestamps under
+the existing strict parser and zero exact `BCP Staff` credit matches. The actual
+field-format cause remains unknown. The generic whitespace-CDATAs pass the app
+helpers, so no app-parser defect was established. Freshness gated the topic
+counts, leaving useful topic fit unassessed. Do not infer dates from month-only
+paths, relax credit/freshness gates or replay the closed helpers.
+
+Federal Register's generic healthcare and health-workforce metadata queries
+returned current structured records. None passed the fixed conservative
+healthcare-term AND workforce-context gate in the second bounded query. This
+does not establish semantic irrelevance or an exhaustive absence of useful
+documents. Its useful Alpha lane remains unproven.
+
+The exact officially documented NIH Research Matters feed returned HTTP 403
+on one anonymous request. No response body was read and no feed/date/topic
+qualification occurred. Hold that route without retry, alternate URLs or
+access-control bypass. This is one refusal, not a global outage or proof of
+permanent unavailability.
+
+Music-News.com and All About Jazz document RSS uses, but free automated
+newsletter reuse was not clearly established. Neither feed was probed. No
+contact, account action or spending occurred. This is a qualification gap,
+not a conclusion that all RSS uses are paid or legally prohibited.
+
+Full dated evidence is outside the repository in
+`independent-source-decision-20261008.md` and
+`source-coverage-followup-20261008-1608.md`. The latter links the closed FTC and
+NIH ledgers. The ledger at the end of that earlier pass accounts for eleven availability/feed/API
+requests, including one publisher About-page check, with zero outstanding
+reservations and thirteen unused slots. Unused budget does not authorize more
+requests. Previously held GDELT, MusicBrainz, Wikidata and oversized Global
+Voices routes were not retried. The installed chain and safeguards are unchanged.
+
+## Remaining-gaps pass and local ccMixter candidate, October 8
+
+One final new generic ccMixter hip-hop/remix query at 17:20 UTC returned HTTP
+200 and 19,643 bytes. Ten records had complete fields, strict timestamps,
+canonical HTTPS upload links, creator credit and both explicit tags. One was
+uploaded in the past week, on October 7 at 20:01:44 UTC. This is endpoint-level
+evidence. The new exact adapter has not been exercised against a live response.
+
+The [query API](https://ccmixter.org/query-api) documents upload-date sorting,
+off-site feeds and programmatic metadata use. This is community-upload
+discovery, with no claim of original release dates, listening quality,
+popularity or daily editorial news. The [terms](https://ccmixter.org/terms)
+require separate per-track license compliance for music use. The local lane
+uses factual title/creator/upload-date/link metadata only. It copies no audio,
+images or upload descriptions and assigns no track or site license. Source
+labeling does not imply endorsement. It is not advertising or outreach reuse.
+
+The local candidate is fixed to `music-hiphop` and off by default. It follows
+the existing useful sources, with no mapping to all music or custom topics.
+Both exact tags, one complete creator and strict canonical metadata are
+mandatory. The shared ranker excludes prior links before selecting one item.
+Unavailable, expired, exhausted or malformed results keep the existing
+fallback/backup behavior. No larger source pool or relaxed freshness gate was
+added to manufacture coverage.
+
+It uses the existing five-second and 256 KiB bounds. Parsed factual metadata is
+cached in process, with per-read freshness and bounded cooldown. The private
+`ccmixter-uploads` identity has an independent two-request fixed fifteen-minute
+budget and durable outage/probe state across runs. The additive migration is
+local only. A disposable PostgreSQL 17.11 test preserved all eight prior rows,
+columns, RPC definitions and permissions, tested apply/reapply/rollback and
+admitted one of two simultaneous recovery probes. The database is shut down.
+Ninety-three adapter assertions, focused chain/storage/rendering/workflow/
+preflight/budget/circuit/response tests and application typecheck pass.
+Targeted lint has zero errors and three pre-existing unused-catch warnings.
+
+Other new leads remain held. LOC music RSS had ten valid dated metadata items
+and one current credited item, but no demonstrated current genre fit for the
+catalog music lanes. Its archive/history value does not justify a broad music
+adapter. blocSonic's release RSS exceeded 256 KiB and was canceled before
+parsing. No larger limit or alternate feed was tried. Techdirt and VOA feed
+opens returned web-tool errors without records or confirmed origin HTTP status.
+Those two unreserved documentation-agent attempts were disclosed and counted.
+Neither route was retried. Older held candidates were not reopened.
+
+The current ledger totals sixteen of twenty-four endpoint/availability
+attempts cumulatively, including five in this pass. It is closed with zero
+reservations and eight unused slots. All dated network helpers are blocked
+against replay. Unused budget is not restart authority.
+The one normal-run history read at 17:05 UTC was unchanged. It adds no natural
+fallback, provider-delivery, inbox or real safety-event proof.
+
+Full evidence is in `remaining-source-decision-20261008.md`,
+`remaining-source-probe-ledger-20261008.json`,
+`ccmixter-local-postgres-20261008.json` and
+`normal-observation-20261008-1705.md` outside the repository.
+A fresh production build needs separate build-only approval. No source probe,
+push, deployment, database application, opt-in or send follows from this note.
+Broad news, other music genres and arbitrary custom coverage remain limited.
 
 ## Calendar validation, released October 5 (historical review)
 

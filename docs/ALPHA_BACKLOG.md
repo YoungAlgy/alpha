@@ -9,13 +9,14 @@ follow-up confirmed the exact source at 04:28:17 UTC and passed all twelve
 non-sending live checks at 04:29:54 UTC, without another deployment. Evidence is
 `next-security-release-final-20261008.json` and
 `next-security-release-acceptance-20261008.json` in the external receipt folder.
-The newest bounded normal-delivery receipt is still
-`postrelease-normal-check-20261007-2313.md` in the external receipt folder.
-Its one history read at 23:13 UTC and bounded projections through 23:17 UTC
-establish three new acceptance outcomes for the October 7 issue, followed by a
-covered-day skip. Provider delivery, inbox receipt, per-message provider identity
-and a postrelease watchdog outcome remain unverified. No scheduler cause is
-inferred. This local review makes no fresh external read.
+The newest bounded history snapshot is the October 8 17:05 UTC receipt,
+`normal-observation-20261008-1705.md`. It was unchanged from the 15:55 receipt,
+`normal-observation-20261008-1555.md`, and earlier
+`normal-observation-20261008.md` snapshot and bounded log projection. See the
+latest recorded normal outcomes below. Today's delivery remains unverified.
+No scheduler cause is inferred. The earlier documentation-only review used
+saved receipts. The later remaining-gaps pass made one fresh history read.
+No job/log/provider/reader reads or recurring checks followed.
 
 The additive exact-date coverage RPC was installed at 15:00:41 UTC before the
 release. It does not change the old cutoff RPC. The completed approval does not
@@ -29,9 +30,9 @@ are completed and cannot be reused.
 ## Current result
 
 Alpha's free invite-only daily delivery is released. The October 5 calendar
-and feed-pool repairs are completed release history. The October 7 23:13 UTC
-receipt is the newest bounded normal-delivery evidence. Its acceptance counts
-do not establish provider delivery or inbox receipt. Current eligibility is
+and feed-pool repairs are completed release history. The latest dated outcomes
+below distinguish coverage, timing uncertainty and provider acceptance from
+provider-confirmed delivery or inbox receipt. Current eligibility is
 resolved from protected records, never a launch-group allowlist. Access
 approval and letter enrollment remain separate.
 
@@ -124,7 +125,7 @@ Effort is relative, not an elapsed-time promise.
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
 | Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | Existing public-source adapters remain released. Broad news/music coverage is still limited. The October 5 research pass qualified no new adapter: Wikidata timed out once, Pressenza's exact original-item reuse boundary remains unresolved, and SciDev.Net's documented route does not establish current complete-credit coverage. Do not replay held probes or relax source guards to force output. See `public-source-gaps.md` and the named dated receipt below. The calendar and feed-pool repairs are completed history below. | 4 / 3 / 4 | 14 |
+| Improve independent topic coverage where evidence supports it | Broad news/music/custom-topic coverage remains limited. The October 8 later pass selected a small default-off local ccMixter hip-hop community-upload candidate. Focused checks, disposable database preservation/race tests and typecheck pass. A fresh production build and exact live adapter acceptance remain unproven. No rollout is authorized or performed. Current held-candidate reasons and closed ledgers are summarized in `public-source-gaps.md`. Do not replay held probes or relax guards to force output. | 4 / 3 / 4 | 14 |
 
 Keyed search was removed from normal scheduled content by the approved October 2
 05:47 UTC activation. The `1eb3a14b` maintenance cleanup was retained in the exact
@@ -132,6 +133,32 @@ PLOS release. Both completed items have been removed from the remaining table.
 Broad-topic coverage would need more evidence-backed research. Outcome proof
 needs an observed event. Neither is a currently confirmed runtime bug.
 No further live configuration change or external probe is authorized here.
+
+## Local ccMixter candidate, October 8
+
+The final new-source check returned ten complete, credited, strictly dated
+hip-hop remix metadata records in 19,643 bytes. One was uploaded within the
+past week. This supports a small independent discovery lane, with no claim of
+daily news volume or original release dates. The candidate is fixed to
+`music-hiphop` and off by default behind no-model and durable-control gates.
+It follows the existing sources and selects one item only after repeat
+exclusion. Missing, stale, malformed, exhausted or unavailable results return
+to the existing fallback/backup rules. No source data is invented.
+
+The additive identity migration is local only. A disposable PostgreSQL 17.11
+rehearsal preserved all eight prior states, RPC definitions, columns and
+permissions. Reapply/rollback and an actual two-session recovery race passed.
+The test database is shut down. Focused metadata, chain, saved-JSON/rendering,
+workflow, preflight, budget, circuit and response-bound checks pass. Typecheck
+passes. Targeted lint has no errors and three unchanged unused-catch warnings.
+
+A fresh production build is still required under a build-only approval.
+Windows node_modules was not refreshed and is not proof of the released
+security dependency installation. No owned mirror was changed. The generic
+endpoint probe is not exact live adapter acceptance. No new deployment,
+migration application, remote activation, delivery or natural failover is
+proved. See `remaining-source-decision-20261008.md` and
+`ccmixter-local-postgres-20261008.json` outside the repository.
 
 ## Covered-reader accounting correction, released October 8 (historical record)
 
@@ -222,7 +249,34 @@ passing exact CI. No runtime deployment was required for that maintenance step.
 The subsequent PLOS source release completed under separate approval as
 `207a4fae`, with its exact build, deployment, migration and activation recorded.
 
-## Latest recorded normal outcomes, checked October 7 at 23:13 UTC
+## Latest recorded normal observation, checked October 8 at 15:55 UTC
+
+The unfiltered history snapshot returned the newest 100 of 498 repository runs,
+unchanged from the 15:36 UTC snapshot. No October 8 sender was visible then.
+That day's outcome remains unknown, not zero recipients or a final missed-day
+failure. Only the earlier requested pass read the newly visible runs' bounded
+logs. The later snapshot did not repeat those log reads.
+
+Scheduled sender `37701633806`, source `53b901ea`, started October 7 at
+23:19:45 UTC and completed successfully at 23:19:57 UTC. Its protected precheck
+reported three eligible readers and zero uncovered. It skipped provider
+selection, setup and sending. Those are execution-time counts, not a new
+audience read or hard-coded recipient list.
+
+Scheduled watchdog `37707350592`, same source, started October 8 at 00:21:40 UTC
+and completed with failure at 00:21:59 UTC. It explicitly checked October 7
+with `closed_day` basis. The exact-issue RPC reported three eligible readers
+and zero uncovered, and bounded accepted-issue coverage passed. The failed
+status retained after-midnight timing uncertainty. It is not proof of failed
+letter delivery. Original cron date and scheduler cause remain unverified.
+
+The earlier October 7 acceptance evidence below remains dated. No new provider
+acceptance, provider-confirmed delivery, inbox receipt, natural source/provider
+fallback or real safety-event proof was established by these later checks.
+No live repair was indicated by the bounded outcome. Evidence:
+`normal-observation-20261008.md` and `normal-observation-20261008-1555.md`.
+
+## Earlier recorded normal outcomes, checked October 7 at 23:13 UTC
 
 The single unfiltered history read and bounded projections through 23:17 UTC
 inspected two scheduled runs on `53b901ea`. Run `37678700835` started at
@@ -397,12 +451,18 @@ outside the public repository. The authoritative resume checkpoint is
 - `post-history-normal-check-20261005.md`
 - `post-history-normal-outcomes-20261005.json`
 - `independent-source-decision-20261005.md`
+- `independent-source-decision-20261008.md` and its closed probe ledger
+- `source-coverage-followup-20261008-1608.md` and its closed FTC/NIH ledgers
+- `remaining-source-decision-20261008.md` and its closed remaining-source ledger
+- `ccmixter-local-postgres-20261008.json`
 - `source-review-calendar-fix-20261005.md`
 - `source-valid-pool-release-receipt-20261005.md`
 - `normal-delivery-check-20261007.md`
 - `timing-window-release-receipt-20261007.md` (earlier CI-blocked step)
 - `dependency-security-release-receipt-20261007.md` (completed successor)
 - `postrelease-normal-check-20261007-2313.md` and `.json`
+- `normal-observation-20261008.md` and `normal-observation-20261008-1555.md`
+- `normal-observation-20261008-1705.md`
 - `covered-reader-accounting-review-20261007.md` (local correction)
 - `next-security-release-final-20261008.json` and
   `next-security-release-acceptance-20261008.json`
