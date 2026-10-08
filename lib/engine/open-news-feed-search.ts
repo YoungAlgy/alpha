@@ -20,6 +20,13 @@ const CUSTOM_STOP_WORDS = new Set([
   "about", "after", "best", "current", "daily", "for", "from", "latest", "news",
   "the", "this", "today", "updates", "week", "weekly", "with",
 ]);
+// Grammar may be ignored, but short subject qualifiers such as US, AI, ISS
+// and numeric identifiers must survive. Keep long-anchor selection unchanged.
+const SHORT_GRAMMAR_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "but", "by", "do", "for",
+  "has", "he", "her", "him", "his", "i", "if", "in", "is", "it", "of",
+  "on", "or", "s", "the", "to", "was", "we",
+]);
 
 type FeedKind = keyof typeof FEEDS;
 type FeedItem = BraveResult & { categories: string[] };
@@ -54,10 +61,14 @@ function parseGlobalVoicesXml(xml: string, freshness: BraveSearchOptions["freshn
   return items;
 }
 
-function meaningfulTokens(value: string): string[] {
+function normalizedTokens(value: string): string[] {
   return [...new Set(value.normalize("NFKD").toLowerCase()
     .replace(/\p{Diacritic}/gu, "")
-    .match(/[\p{L}\p{N}]+/gu) ?? [])]
+    .match(/[\p{L}\p{N}]+/gu) ?? [])];
+}
+
+function meaningfulTokens(value: string): string[] {
+  return normalizedTokens(value)
     .filter((token) => token.length >= 4 && !CUSTOM_STOP_WORDS.has(token));
 }
 
@@ -94,8 +105,14 @@ function selectTopic(topicId: string): TopicSelection | undefined {
     }
   }
 
-  const tokens = meaningfulTokens(phrase);
+  let tokens = meaningfulTokens(phrase);
   if (tokens.length === 0 || tokens.length > 6 || (isCustomTopic(topicId) && tokens.length < 2)) return;
+  if (isCustomTopic(topicId)) {
+    const qualifiers = normalizedTokens(phrase).filter((token) =>
+      token.length < 4 && !CUSTOM_STOP_WORDS.has(token) && !SHORT_GRAMMAR_WORDS.has(token));
+    tokens = [...tokens, ...qualifiers];
+    if (tokens.length > 6) return;
+  }
   return { feed: "general", mode: "phrase", tokens };
 }
 
@@ -118,7 +135,7 @@ function genreMatches(item: FeedItem, genre: string): boolean {
 }
 
 function phraseMatches(item: FeedItem, tokens: string[]): boolean {
-  const searchable = meaningfulTokens([
+  const searchable = normalizedTokens([
     item.title.replace(/^Global Voices:\s*/i, ""),
     ...item.categories,
   ].join(" "));

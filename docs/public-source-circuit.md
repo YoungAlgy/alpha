@@ -15,7 +15,9 @@ operational provider state. No paid dependency or additional service is needed.
 
 The original October 1 rollout used seven fixed private Supabase circuit rows
 and two service-role-only RPCs. The approved October 2 PLOS migration brought
-the current set to eight fixed rows without changing those RPCs or privileges.
+the set to eight fixed rows. The approved October 8 ccMixter migration added
+the ninth identity as part of release `2d8a6a4d`. Both additions preserved all
+prior provider state, RPC definitions and privileges.
 `ALPHA_DURABLE_SOURCE_COOLDOWN` is off by default. The migration was reviewed
 and applied before the approved activation. Its scheduled variable is
 `SEND_ALPHA_DURABLE_SOURCE_COOLDOWN`. Existing request ceilings stay separate.

@@ -1,6 +1,26 @@
 # Alpha remaining work
 
-Current release reconciliation, October 8, 2026. Website release
+Latest completed release: `2d8a6a4d1d36ea4757c309ed6717668494615dfb`, October 8
+at 18:30 UTC. ccMixter's narrow hip-hop metadata lane is shipped and its
+scheduled opt-in enabled. Fresh committed build, exact CI, twelve non-sending
+live checks and the guarded additive source-identity migration passed. Nine
+private provider identities are installed, with prior states and permissions
+preserved. This supersedes the local ccMixter status below. See
+`ccmixter-release-final-20261008.md` in the external Alpha receipt folder.
+The completed approval is consumed. No new rollout follows from this document.
+
+Current local work: a reproduced Global Voices custom-qualifier relevance fix
+and release-document reconciliation. Source order and source controls stay
+unchanged. NASA's main RSS exceeded the existing bound. Its compact public
+metadata API was usable, but none of its two current records matched the
+tested topic lanes. No NASA adapter or provider identity was added. Broad
+news, other music and arbitrary custom coverage remain limited. Natural
+fallback and real delivery/safety-event proof require ordinary observed events.
+Six affected offline scripts and the non-incremental application typecheck pass.
+Independent review found no code blocker. This local candidate has no fresh
+production build and has not been committed, pushed, deployed or activated.
+
+Earlier October 8 release reconciliation, superseded above. Website release
 `551acfcab0eb1ea3808544828c992fc30bbb47de` includes the October 7 timing/watchdog
 repair, the covered-reader accounting correction and the Next 16.3.8 security
 update. Its fresh build and exact-source CI passed. The immediate smoke failed
@@ -125,7 +145,7 @@ Effort is relative, not an elapsed-time promise.
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
 | Record natural fallback and safety-event evidence | Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | Broad news/music/custom-topic coverage remains limited. The October 8 later pass selected a small default-off local ccMixter hip-hop community-upload candidate. Focused checks, disposable database preservation/race tests and typecheck pass. A fresh production build and exact live adapter acceptance remain unproven. No rollout is authorized or performed. Current held-candidate reasons and closed ledgers are summarized in `public-source-gaps.md`. Do not replay held probes or relax guards to force output. | 4 / 3 / 4 | 14 |
+| Improve independent topic coverage where evidence supports it | Broad news/music/custom-topic coverage remains limited. ccMixter is released and enabled as `2d8a6a4d`, with exact adapter and release evidence recorded. A later local qualifier repair preserves US/AI/ISS/numeric requirements without broadening existing custom anchor selection. NASA metadata is public and current, but the tested topic-fit checks were empty, so no adapter was added. Current held-candidate reasons and closed ledgers are summarized in `public-source-gaps.md`. Do not replay held probes or relax guards to force output. | 4 / 3 / 4 | 14 |
 
 Keyed search was removed from normal scheduled content by the approved October 2
 05:47 UTC activation. The `1eb3a14b` maintenance cleanup was retained in the exact
@@ -134,7 +154,7 @@ Broad-topic coverage would need more evidence-backed research. Outcome proof
 needs an observed event. Neither is a currently confirmed runtime bug.
 No further live configuration change or external probe is authorized here.
 
-## Local ccMixter candidate, October 8
+## ccMixter local qualification, October 8 (historical record)
 
 The final new-source check returned ten complete, credited, strictly dated
 hip-hop remix metadata records in 19,643 bytes. One was uploaded within the
@@ -159,6 +179,10 @@ endpoint probe is not exact live adapter acceptance. No new deployment,
 migration application, remote activation, delivery or natural failover is
 proved. See `remaining-source-decision-20261008.md` and
 `ccmixter-local-postgres-20261008.json` outside the repository.
+
+The exact candidate subsequently completed its approved release as `2d8a6a4d`.
+The newer `ccmixter-release-final-20261008.md` receipt supersedes the pending
+build, migration and activation status above. No new release is authorized.
 
 ## Covered-reader accounting correction, released October 8 (historical record)
 

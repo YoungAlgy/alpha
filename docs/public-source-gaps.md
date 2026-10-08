@@ -11,7 +11,10 @@ in the October 7 successor `53b901ea`. No new adapter or live setting was added
 by those repairs.
 The earlier documentation cleanup used recorded evidence only. The later
 October 8 remaining-gaps pass made bounded new-source qualifications and one
-normal-run history read. Its unreleased candidate and limits are separate below.
+normal-run history read. The ccMixter candidate subsequently shipped and was
+activated as `2d8a6a4d` at 18:29 UTC. Its completed receipt is
+`ccmixter-release-final-20261008.md` outside the repository. Earlier candidate
+states below are historical. A later local pass has not released new code.
 
 ## Selected backup
 
@@ -54,9 +57,10 @@ documented policy assumption, not a version proved by that marker alone.
 Google News RSS remains first for broad discovery. Mapped NIST/FDA/Federal
 Reserve feeds follow. Global Voices remains a limited licensed-feed tier.
 Crossref serves narrow nutrition metadata. PLOS follows it for the three fixed
-topics, with its scheduled opt-in enabled and code default off. The unreleased
-ccMixter candidate would follow for `music-hiphop` only. GDELT stays off and
-unproven. No live source order was changed by the candidate.
+topics, with its scheduled opt-in enabled and code default off. Released and
+enabled ccMixter follows for `music-hiphop` only. GDELT stays off and unproven.
+The newer release receipt establishes installation and activation. It does not
+establish a natural scheduled ccMixter fallback.
 
 An unavailable or quiet optional tier lets the resolver continue. Each source
 keeps its deadline, response bound, relevance and freshness checks. Prior reader
@@ -145,7 +149,7 @@ reservations and thirteen unused slots. Unused budget does not authorize more
 requests. Previously held GDELT, MusicBrainz, Wikidata and oversized Global
 Voices routes were not retried. The installed chain and safeguards are unchanged.
 
-## Remaining-gaps pass and local ccMixter candidate, October 8
+## Remaining-gaps pass and ccMixter qualification, October 8 (historical review)
 
 One final new generic ccMixter hip-hop/remix query at 17:20 UTC returned HTTP
 200 and 19,643 bytes. Ten records had complete fields, strict timestamps,
@@ -204,6 +208,60 @@ Full evidence is in `remaining-source-decision-20261008.md`,
 A fresh production build needs separate build-only approval. No source probe,
 push, deployment, database application, opt-in or send follows from this note.
 Broad news, other music genres and arbitrary custom coverage remain limited.
+
+The separate exact frozen rollout subsequently completed as `2d8a6a4d`.
+CI, fresh committed build, deployment, protected identity migration and its
+single scheduled activation passed. All eight prior source states, RPCs and
+permissions were preserved. Nine provider identities are installed. Exact
+finished-adapter metadata acceptance was established before release. No extra
+letters, retries, source probes or audience changes occurred during rollout.
+This supersedes the earlier local-only and pending-build statements above.
+Evidence: `ccmixter-release-final-20261008.md` outside the repository.
+
+## Later October 8 source-coverage pass, local only
+
+Independent catalog review found eleven of thirty-eight fixed topics have
+dedicated independent lanes. This describes routing, not guaranteed fresh daily
+coverage. Global Voices also performs limited general/custom matching. Google
+remains the main broad discovery dependency.
+
+New primary-documentation research did not qualify another broad source.
+DW's public material describes partnership/feed reuse with terms still
+unqualified for this path. The Conversation's licensing and syndication were
+documented, but no exact current credited structured route was established.
+No endpoint was probed for either source in this pass.
+
+NASA publishes [RSS routes](https://www.nasa.gov/rss-feeds/) and permits credited
+factual use under its [media rules](https://www.nasa.gov/nasa-brand-center/images-and-media/),
+with endorsement and third-party-content restrictions. One fixed main-feed
+request returned HTTP 200 but exceeded the existing 256 KiB bound. It was
+rejected without parsing. The bound was not increased and the feed was not
+retried. A separately bounded compact WordPress metadata request returned
+HTTP 200, 475 bytes and two strictly dated same-day records. Only publication
+date, type, title and link were requested. None matched the tested AI/practical
+sustainability or generic science-topic qualification. This proves a public
+metadata route, not useful coverage for the tested lanes. No NASA adapter,
+extra source identity or new source activation was added.
+
+A local offline regression did establish a relevance defect in Global Voices:
+custom `US healthcare recruiting` admitted UK or missing-US headlines because
+short qualifiers were discarded. The local repair keeps the original two-long-
+anchor minimum, appends required non-grammar short qualifiers, and caps all
+selection tokens at six. Exact whole-token matching is local. Fixed-topic and
+exact music-alias behavior, source order, dates, credit, cache, prior-link
+exclusions, request budgets and cooldowns are unchanged. It does not infer
+AI/US/ISS aliases or claim geographic semantic understanding. The candidate is
+uncommitted and unreleased. Fresh build/release approval remains separate.
+The before-fix adapter regression failed as expected on the US/UK distinction.
+After the repair, six focused offline scripts pass, including licensed-source
+credit/storage/rendering, exclusions, metadata privacy, no-key/no-model policy,
+cache reuse, cooldown, exhaustion and timeout paths. Application typecheck passes
+with incremental output disabled. Independent code review found no blocker.
+No fresh production build has been run for this candidate.
+
+The finite new research ledgers are closed. This pass made no delivery-history
+read or live service change. Latest normal observation remains the recorded
+17:05 UTC check. Natural fallback and real safety-event proof remain separate.
 
 ## Calendar validation, released October 5 (historical review)
 

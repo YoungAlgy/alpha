@@ -154,6 +154,11 @@ Exact custom phrases `country music` and `indie music` use the existing genre
 filters on the fixed music feed. Other custom phrases keep general-feed local
 matching. Saved topics are unchanged, and bare `country` or `indie` is ambiguous.
 It is off by default, including in strict no-key mode.
+The current local qualifier repair keeps the original two-long-anchor minimum
+for general custom matching and also requires short subject qualifiers such as
+US, AI, ISS and numeric identifiers. All selection tokens are capped at six.
+Matching stays local and uses complete title/category tokens. No short qualifier
+is expanded into an inferred alias. This repair is not released yet.
 
 `ALPHA_RESEARCH_METADATA_FALLBACK=1` adds a narrow Crossref nutrition-research
 backup after the feeds. It requires no-model mode and stays off by default,
@@ -203,7 +208,7 @@ Any further live change still needs separate approval.
 Current selection evidence and rejected sources are in
 [docs/public-source-gaps.md](docs/public-source-gaps.md).
 
-Local candidate, October 8: `ALPHA_CCMIXTER_METADATA_FALLBACK=1` adds a narrow
+Released October 8: `ALPHA_CCMIXTER_METADATA_FALLBACK=1` adds a narrow
 hip-hop community-upload tier after the existing useful sources. It also
 requires no-model mode and both durable controls. It stays off by default.
 The fixed ccMixter query sends no reader, profile or custom topic. Every retained
@@ -217,12 +222,14 @@ This editorial linkout is not promotional reuse or an endorsement.
 At most one item is selected after prior-link exclusion and normal ranking.
 Its separate `ccmixter-uploads` budget admits two requests per fixed fifteen
 minutes. Existing timeout, byte-bound and cross-run circuit rules apply.
-The local additive migration `20261008000000_ccmixter_public_source_circuit.sql`
-preserves the eight installed source states and adds one identity. It has not
-been applied live. A generic endpoint check found one fresh weekly upload,
-without proving exact live adapter acceptance or daily coverage. Focused local
-checks and typecheck passed. A fresh production build and any rollout remain
-separate approval gates. Nothing here activates the candidate.
+The additive migration `20261008000000_ccmixter_public_source_circuit.sql`
+preserved all eight prior source states and added one identity in the approved
+release `2d8a6a4d`. Exact CI, a fresh committed-source production build and twelve
+non-sending live checks passed. The scheduled runtime opt-in is enabled. One
+separately approved finished-adapter request retained current credited metadata.
+This does not prove natural scheduled fallback, daily coverage or delivery.
+Full evidence is in `ccmixter-release-final-20261008.md` in the external Alpha
+receipt folder. The completed approval does not authorize another release.
 
 `ALPHA_GDELT_FALLBACK=1` adds an independent public discovery tier after RSS
 and the enabled publisher feeds have no usable sources. It makes one topic-phrase query, never reads full article
@@ -255,8 +262,8 @@ process-local too. The separate circuit below persists outage memory when enable
 The opt-in `ALPHA_DURABLE_SOURCE_COOLDOWN=1` adds private cross-run outage memory.
 It requires the reviewed `20261001000000_public_source_circuit.sql` migration,
 which was applied during the approved October 1 rollout.
-It is off by default. Eight fixed provider identities are stored after the
-October 2 PLOS addition, with
+It is off by default. Nine fixed provider identities are stored after the
+October 2 PLOS and October 8 ccMixter additions, with
 no query, topic, link, reader, credential or response data. Admission runs only
 on a raw-cache miss and before the existing budget reservation. A source fetch
 failure starts a fifteen-minute cooldown. Failed recovery probes increase it
