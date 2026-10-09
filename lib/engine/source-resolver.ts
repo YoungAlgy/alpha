@@ -17,6 +17,7 @@ import { openNewsFeedFallbackEnabled, openNewsFeedSearch } from "./open-news-fee
 import { researchMetadataFallbackEnabled, researchMetadataSearch } from "./research-metadata-search";
 import { plosMetadataFallbackEnabled, plosMetadataSearch } from "./plos-metadata-search";
 import { ccmixterMetadataFallbackEnabled, ccmixterMetadataSearch } from "./ccmixter-metadata-search";
+import { federalRegisterFinanceFallbackEnabled, federalRegisterFinanceSearch } from "./federal-register-finance-search";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
@@ -190,6 +191,14 @@ export async function resolveTopicSignal(
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaCcmixter) return viaCcmixter;
+      }
+      if (topicId === "personal-finance" && federalRegisterFinanceFallbackEnabled()) {
+        const viaFederalRegister = await tryFallback(topicId, "Federal Register financial-rule metadata", () =>
+          observed("federal-register", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, federalRegisterFinanceSearch, "Federal Register Financial Rule Metadata", false, 1))
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaFederalRegister) return viaFederalRegister;
       }
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {

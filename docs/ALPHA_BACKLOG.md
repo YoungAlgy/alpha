@@ -1,25 +1,24 @@
 # Alpha remaining work
 
-Latest completed release: `b12cc5875770ccf2fbf3cd2e573af90a87ae7523`, October 8.
-Website readback passed at 20:19:53 UTC and final release controls passed at
-20:20:50 UTC. The Global Voices custom-qualifier relevance repair is shipped.
+Latest completed release: `9b41f5c531bbe68606507f64a312b5e9dc41e873`, October 8.
+Website readback passed at 22:39:02.943 UTC and final release controls passed at
+22:39:43.540 UTC. Privacy-safe content-source diagnostics are shipped.
 Fresh committed build, exact-source CI and twelve non-sending live checks passed.
 Source order, controls and scheduled opt-ins stayed unchanged. See
-`source-qualifier-release-final-20261008.md` in the external Alpha receipt folder.
+`source-reporting-release-final-20261008.md` in the external Alpha receipt folder.
 The completed approval is consumed. No new rollout follows from this document.
 
+The preceding `b12cc587` release shipped the Global Voices custom-qualifier
+relevance repair. See `source-qualifier-release-final-20261008.md`.
 The preceding `2d8a6a4d` release shipped ccMixter's narrow hip-hop metadata lane
 and enabled its scheduled opt-in. Its guarded additive source-identity migration
 installed the ninth private provider identity, preserving prior states and
 permissions. See `ccmixter-release-final-20261008.md`. The older local candidate
 states below are historical and superseded by these completed receipts.
 
-Current local work also prepares privacy-safe content-source diagnostics.
-The local candidate records logical resolver outcomes and final selected
-section provenance without topics, reader data or source text. Cached/shared
-provenance remains unknown. It changes no source-selection or delivery rule.
-See `source-evidence.md`. A fresh production build and separate release
-approval are still required. No new release or source request is authorized.
+The diagnostics' count definitions, cached/shared unknown provenance and proof
+limits are documented in `source-evidence.md`. They establish neither delivery
+nor natural fallback. No new release or source request is authorized.
 CFPB's separately approved one-request check returned valid metadata but no
 current personal-finance title matches. It remains held and adds no adapter.
 The earlier documentation reconciliation is preserved. NASA's main RSS
@@ -29,8 +28,8 @@ tested topic lanes. No NASA adapter or provider identity was added. Broad
 news, other music and arbitrary custom coverage remain limited. Natural
 fallback and real delivery/safety-event proof require ordinary observed events.
 The qualifier candidate's six affected offline scripts and non-incremental
-application typecheck passed before its completed release. That completed
-release is separate from the current local diagnostics candidate.
+application typecheck passed before its completed release. The diagnostics
+were built and released separately afterward.
 
 Earlier October 8 release reconciliation, superseded above. Website release
 `551acfcab0eb1ea3808544828c992fc30bbb47de` includes the October 7 timing/watchdog
@@ -161,7 +160,7 @@ Effort is relative, not an elapsed-time promise.
 
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
-| Record natural fallback and safety-event evidence | Privacy-safe content diagnostics are prepared locally in `source-evidence.md`, with a production build and separate release approval pending. These logical resolver/selected-section counts cannot prove persistence or delivery. Ordinary healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregate evidence only under an appropriate requested check. Do not manufacture events or send letters just to make a test green. | 3 / 3 / 3 | 18 |
+| Record natural fallback and safety-event evidence | The source diagnostics are released. What remains is ordinary observed evidence. Resolver/selected-section counts cannot prove persistence or delivery. Healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregates only under an appropriate requested check. Do not manufacture events or send letters just to fill evidence. | 3 / 3 / 3 | 18 |
 | Improve independent topic coverage where evidence supports it | Broad news/music/custom-topic coverage remains limited. ccMixter is released and enabled as `2d8a6a4d`, with exact adapter and release evidence recorded. The qualifier repair released as `b12cc587` preserves US/AI/ISS/numeric requirements without broadening existing custom anchor selection. NASA metadata is public and current, but the tested topic-fit checks were empty, so no adapter was added. Current held-candidate reasons and closed ledgers are summarized in `public-source-gaps.md`. Do not replay held probes or relax guards to force output. | 4 / 3 / 4 | 14 |
 
 Keyed search was removed from normal scheduled content by the approved October 2
@@ -499,6 +498,7 @@ outside the public repository. The authoritative resume checkpoint is
 - `ccmixter-local-postgres-20261008.json`
 - `ccmixter-release-final-20261008.md`
 - `source-qualifier-release-final-20261008.md`
+- `source-reporting-release-final-20261008.md`
 - `source-review-calendar-fix-20261005.md`
 - `source-valid-pool-release-receipt-20261005.md`
 - `normal-delivery-check-20261007.md`
@@ -520,3 +520,23 @@ local work stays unreleased until separately approved. No commit/push/deploy, se
 retry/backfill, source probe, audience/enrollment, account/billing/secrets or
 remote-setting change follows from this backlog. Keep Alpha separate from the
 owner's other products.
+
+## October 9: finance gap now has a local candidate
+
+Alex resumed the parked selection work. Federal Register's documented no-key
+metadata route supplied two current-week investing proposals through the completed
+adapter. Zero rolling-day results at this check. It is an independent narrow
+IRS/SEC household-finance rule lane, not guaranteed broad daily coverage.
+
+The default-off local candidate has a separate durable request budget and outage
+identity. Ten focused offline scripts, application typecheck, correction review
+and disposable PostgreSQL preservation/concurrency checks pass. New calendar-day
+metadata does not loosen RSS clock rules. Proposals and publication-day meaning
+stay explicit through deterministic saved/web/email rendering. Paid/model paths,
+audience, billing and schedules are unchanged.
+
+Next gate is a separately approved fresh disposable production app/Worker build.
+No build result, live identity migration, source opt-in, release or natural-use
+proof yet. No send or new delivery/watchdog inspection. Existing dirty docs and
+owned release/mirrors preserved. Full scope and limits are in the external
+`federal-register-local-candidate-20261009.md` receipt.

@@ -109,6 +109,13 @@ try {
   );
   assert.equal(scopes.get("public_source:ccmixter_uploads")?.size, 1);
   assert.equal(rpcCalls, 70, "ccMixter has its own shared two-slot budget");
+  await first("federal-register-finance");
+  await second("federal-register-finance");
+  await assert.rejects(first("federal-register-finance"), (error: unknown) =>
+    error instanceof PublicSourceBudgetError && error.code === "exhausted" && error.provider === "federal-register-finance"
+  );
+  assert.equal(scopes.get("public_source:federal_register_finance")?.size, 1);
+  assert.equal(rpcCalls, 73, "Federal Register shares its own two-slot budget across runs");
 
   const unavailable = createPublicSourceBudget({
     enabled: () => true,

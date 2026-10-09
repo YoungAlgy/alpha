@@ -150,6 +150,8 @@ const plosMetadataEnabled = strictNoModel && enabled("ALPHA_PLOS_METADATA_FALLBA
   enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
 const ccmixterMetadataEnabled = strictNoModel && enabled("ALPHA_CCMIXTER_METADATA_FALLBACK") &&
   enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
+const federalRegisterFinanceEnabled = strictNoModel && enabled("ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK") &&
+  enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
 if (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0") {
   console.error("::error::Manual-first delivery requires no-model mode and paid AI disabled.");
   deliveryReady = false;
@@ -178,6 +180,7 @@ const freshSourceTiers = [
   researchMetadataEnabled ? "research-metadata" : null,
   plosMetadataEnabled ? "plos-research" : null,
   ccmixterMetadataEnabled ? "ccmixter-uploads" : null,
+  federalRegisterFinanceEnabled ? "federal-register-finance" : null,
   gdeltEnabled ? "gdelt" : null,
 ].filter(Boolean);
 const freshSourceReady = freshSourceTiers.length > 0;

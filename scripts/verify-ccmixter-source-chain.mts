@@ -80,6 +80,7 @@ try {
             return ccmixter(...args);
           } },
         "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbiddenCall },
+        "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: forbiddenCall },
         "@/lib/source-attribution": attribution,
         "./source-evidence": sourceEvidence,
       };

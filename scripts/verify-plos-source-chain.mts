@@ -66,6 +66,7 @@ try {
           plosMetadataSearch: (...args: Parameters<typeof plos>) => plosUnavailable
             ? fail("plos")() : plos(...args) },
         "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => false, ccmixterMetadataSearch: forbiddenCall },
+        "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: forbiddenCall },
         "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbiddenCall },
         "@/lib/source-attribution": attribution,
       };

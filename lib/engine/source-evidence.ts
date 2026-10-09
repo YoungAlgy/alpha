@@ -1,7 +1,7 @@
 // Operational counts only. No topic, reader, URL, source text or error fields.
 export const SOURCE_EVIDENCE_PROVIDERS = [
   "brave", "gemini", "you", "google-rss", "publisher-rss",
-  "globalvoices-rss", "crossref", "plos", "ccmixter", "gdelt",
+  "globalvoices-rss", "crossref", "plos", "ccmixter", "federal-register", "gdelt",
 ] as const;
 export type EvidenceProvider = typeof SOURCE_EVIDENCE_PROVIDERS[number];
 export type EvidenceOutcome = "signal" | "healthy-empty" | "unavailable" | "no-signal-unconfirmed";

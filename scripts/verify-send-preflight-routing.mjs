@@ -286,4 +286,28 @@ result = await run({ changes: { ...ccmixterFlags, ALPHA_NO_MODEL_MODE: "0" } });
 assert.equal(result.exit, 1);
 assert.equal(result.outputs.fresh_source_ready, "false");
 assert.ok(!result.logs.some((line) => line.includes("ccmixter-uploads")));
-console.log("PASS full preflight sender selection, no-key/PLOS/ccMixter discovery and accurate no-model reporting fixtures");
+const federalRegisterFlags = {
+  ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK: "1",
+  ALPHA_DURABLE_SOURCE_BUDGET: "1",
+  ALPHA_DURABLE_SOURCE_COOLDOWN: "1",
+};
+for (const enabled of ["1", "true", "yes", " YES "]) {
+  result = await run({ changes: { ...federalRegisterFlags, ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK: enabled } });
+  assert.equal(result.exit, null);
+  assert.equal(result.outputs.fresh_source_ready, "true");
+  assert.ok(result.logs.includes("OK: current-source discovery tiers configured: federal-register-finance."));
+  assert.equal(result.outputs.selected_provider, "resend");
+  assert.deepEqual(result.calls, { resend: 0, brevo: 0, oldDomains: 1 });
+}
+for (const flag of Object.keys(federalRegisterFlags)) {
+  for (const disabled of [undefined, "0", "false", "invalid"]) {
+    result = await run({ changes: { ...federalRegisterFlags, [flag]: disabled } });
+    assert.equal(result.outputs.fresh_source_ready, "false");
+    assert.ok(!result.logs.some((line) => line.includes("federal-register-finance")));
+  }
+}
+result = await run({ changes: { ...federalRegisterFlags, ALPHA_NO_MODEL_MODE: "0" } });
+assert.equal(result.exit, 1);
+assert.equal(result.outputs.fresh_source_ready, "false");
+assert.ok(!result.logs.some((line) => line.includes("federal-register-finance")));
+console.log("PASS full preflight sender selection, gated public-source discovery and accurate no-model reporting fixtures");

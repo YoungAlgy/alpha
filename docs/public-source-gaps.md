@@ -310,9 +310,11 @@ queries would share the same upstream infrastructure and would improve
 coverage only if separately qualified. They would not add source independence.
 The already released narrow hip-hop lane and its evidence remain unchanged.
 
-Separate local diagnostics in `source-evidence.md` address the inability to
-observe final fresh content-tier use without inspecting letter text. These
-diagnostics are uncommitted and unreleased. They add no provider or coverage.
+Source diagnostics released as `9b41f5c5` can record final fresh content-tier
+use without inspecting letter text. They add no provider or coverage and do
+not prove natural fallback or delivery. See `source-evidence.md` for count
+definitions and proof limits, and the external
+`source-reporting-release-final-20261008.md` receipt for dated release evidence.
 
 ## Calendar validation, released October 5 (historical review)
 
@@ -391,3 +393,25 @@ supplied content, that Brevo failover occurred, provider-confirmed delivery or
 inbox receipt. The 20:37 UTC watchdog outcome was not checked in that pass.
 Full receipts are in the owner's Desktop Files release checkpoint.
 Nothing here authorizes another send, retry, live change or release.
+
+## October 9: local Federal Register personal-finance candidate
+
+New evidence supersedes the earlier parked selection status for a narrow lane.
+The publisher documents a no-key metadata API, and NARA permits reproduction of
+Federal Register material. A bounded Linux Node request with normal TLS and
+the completed adapter found two current-week investing proposals, zero rolling-day
+items. This is useful narrow coverage, not a broad or daily finance guarantee.
+Only IRS/SEC household-finance rule metadata is admitted. Proposals are labeled,
+and publication does not assert effective law. Bodies and media are excluded.
+
+The local default-off candidate follows PLOS and precedes optional GDELT. It has
+its own fixed cross-run circuit and two-per-15-minute budget. Calendar publication
+days retain their original precision. Existing RSS timestamp rules, exclusions,
+citations and no-model writing remain unchanged. Ten focused offline scripts,
+application typecheck, independent correction review and disposable PostgreSQL
+apply/reapply/rollback plus a two-session probe race pass. A fresh production
+build, live migration, opt-in and ordinary source use remain unproven.
+
+No live variable, deployment, send or private service check occurred. See
+`federal-register-local-candidate-20261009.md` in the external Alpha receipt folder
+for exact evidence, limits and the pending build-only approval scope.

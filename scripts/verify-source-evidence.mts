@@ -86,6 +86,7 @@ assert.equal(createSourceEvidence().snapshot([]).selectedSections, 0);
 const flags = ["ALPHA_NO_KEY_SOURCES", "ALPHA_NO_MODEL_MODE", "ALPHA_ALLOW_PAID_AI",
   "ALPHA_PUBLISHER_FEED_FALLBACK", "ALPHA_OPEN_NEWS_FALLBACK", "ALPHA_RESEARCH_METADATA_FALLBACK",
   "ALPHA_PLOS_METADATA_FALLBACK", "ALPHA_CCMIXTER_METADATA_FALLBACK", "ALPHA_GDELT_FALLBACK",
+  "ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK",
   "ALPHA_DURABLE_SOURCE_BUDGET", "ALPHA_DURABLE_SOURCE_COOLDOWN"];
 const old = new Map(flags.map(name => [name, process.env[name]]));
 const savedFetch = globalThis.fetch;
@@ -151,6 +152,7 @@ try {
       "./research-metadata-search": { researchMetadataFallbackEnabled: () => false, researchMetadataSearch: forbidden },
       "./plos-metadata-search": { plosMetadataFallbackEnabled: () => false, plosMetadataSearch: forbidden },
       "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => false, ccmixterMetadataSearch: forbidden },
+      "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: forbidden },
       "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbidden },
       "@/lib/source-attribution": attribution,
     };
