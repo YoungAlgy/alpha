@@ -4,7 +4,7 @@
 // to O(topics × periods) regardless of subscriber count.
 
 import { supabaseServiceClient } from "@/lib/supabase/server";
-import { validatedSourceAttribution } from "@/lib/source-attribution";
+import { validatedAttributedItem } from "@/lib/source-attribution";
 import { normalizeUrl } from "./url-guard";
 import { readIssueCitationHistory } from "./issue-citation-history";
 import type { TopicBlurb } from "./types";
@@ -39,10 +39,7 @@ function isCachedItem(value: unknown): value is TopicBlurb["items"][number] {
   if (value.sourceUrl !== undefined && (typeof value.sourceUrl !== "string" || !normalizeUrl(value.sourceUrl))) return false;
   if (value.supplementaryRefs !== undefined && (!Array.isArray(value.supplementaryRefs)
       || !value.supplementaryRefs.every(isReference))) return false;
-  return value.attribution === undefined || !!validatedSourceAttribution(
-    isRecord(value.primaryRef) ? value.primaryRef.url : undefined,
-    value.attribution
-  );
+  return validatedAttributedItem(value);
 }
 
 export function blurbCacheEnabled(): boolean {
@@ -224,6 +221,7 @@ export async function getRecentlyCitedUrls(
 }
 
 export async function setCachedBlurb(blurb: TopicBlurb): Promise<void> {
+  if (!Array.isArray(blurb.items) || !blurb.items.every(isCachedItem)) return;
   if (!blurbCacheEnabled()) return;
   try {
     const sb = await supabaseServiceClient();

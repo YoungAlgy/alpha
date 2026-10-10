@@ -87,6 +87,7 @@ const flags = ["ALPHA_NO_KEY_SOURCES", "ALPHA_NO_MODEL_MODE", "ALPHA_ALLOW_PAID_
   "ALPHA_PUBLISHER_FEED_FALLBACK", "ALPHA_OPEN_NEWS_FALLBACK", "ALPHA_RESEARCH_METADATA_FALLBACK",
   "ALPHA_PLOS_METADATA_FALLBACK", "ALPHA_CCMIXTER_METADATA_FALLBACK", "ALPHA_GDELT_FALLBACK",
   "ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK",
+  "ALPHA_GOVUK_NEWS_FALLBACK",
   "ALPHA_DURABLE_SOURCE_BUDGET", "ALPHA_DURABLE_SOURCE_COOLDOWN"];
 const old = new Map(flags.map(name => [name, process.env[name]]));
 const savedFetch = globalThis.fetch;
@@ -153,6 +154,7 @@ try {
       "./plos-metadata-search": { plosMetadataFallbackEnabled: () => false, plosMetadataSearch: forbidden },
       "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => false, ccmixterMetadataSearch: forbidden },
       "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: forbidden },
+      "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: forbidden },
       "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbidden },
       "@/lib/source-attribution": attribution,
     };

@@ -231,6 +231,100 @@ This does not prove natural scheduled fallback, daily coverage or delivery.
 Full evidence is in `ccmixter-release-final-20261008.md` in the external Alpha
 receipt folder. The completed approval does not authorize another release.
 
+Released October 9: `ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK=1` adds fixed
+Federal Register IRS/SEC household-finance rule metadata for `personal-finance`
+only. It follows PLOS and precedes optional GDELT. It requires no-model mode and
+both durable controls, with an independent two-request-per-fifteen-minute budget
+and the `federal-register-finance` circuit identity. The query includes no reader,
+profile or custom-topic data. Only attributed title, canonical link, publication
+day, document type and agency metadata are admitted. Proposals stay labeled as
+proposals. Publication does not imply that a rule is effective. No bodies or
+media are fetched. Qualification found two current-week investing proposals,
+zero rolling-day items, so broad or daily finance coverage is not claimed.
+Release `85040546` passed the fresh committed app/Worker build, exact-source CI,
+guarded identity migration and twelve non-sending live checks. The new scheduled
+opt-in is enabled. The code default remains off. This does not prove natural
+fallback use or delivery. See `federal-register-release-20261009.md` in the external
+receipt folder for actual release identities, times and captured rollback.
+
+Local only, October 10 UTC: the unconnected Democracy Now metadata prototype now
+has a title-only selector for narrow `macro-markets` phrases and strictly matched
+custom topics. Alpha has no general politics catalog topic. At 00:01:47.981 UTC,
+one bounded generic-topic fit check returned HTTP 200 and 135,823 bytes. All six
+generic topics had zero rolling-day matches. Only `human rights` had a rolling-
+week match, with one record. Useful broad daily coverage remains unproven, so
+runtime credit rendering, the request adapter and durable controls are held.
+No freshness or topic rule was relaxed to produce a match. The earlier October 9
+check established current metadata and one usable HTTPS target, not topic fit.
+Original headlines, zoned dates and prior-link guards remain intact. There is no
+source-chain caller, flag, migration or activation. The local shared token helper
+removes duplicated Global Voices matching logic without changing its behavior.
+Focused offline source checks and the application typecheck passed. The live
+source order and ten durable identities remain unchanged. See external
+`ADR-DEMOCRACY-NOW-TOPIC-FIT-20261010.md`. Nothing was deployed or sent.
+
+Later local qualification, October 10 00:23 UTC: ECB's officially documented
+statistical press feed returned HTTP 200, 5,511 decoded UTF-8 bytes and fifteen
+RSS records. None passed the candidate's combined rolling-day or rolling-week
+metadata and macro-topic gates. The aggregate check did not retain the field
+diagnostics needed to attribute exclusion to a specific gate. It does not prove
+a source outage or a permanent lack of useful material. The pure unconnected
+parser has no request client, caller, flag, migration or live effect. Its narrow
+`macro-markets` contract rejects ambiguous fields, named-author markers, unsafe
+links, invalid dates and mismatched publisher weekdays. Runtime integration is
+held. No freshness gate or response bound was loosened and no source was retried.
+See external `ADR-ECB-STATISTICAL-QUALIFICATION-20261010.md` and aggregate receipt.
+
+Local only, October 10 00:37 UTC: one bounded GOV.UK public search-API request
+returned useful original headline/link/date metadata for three narrow lanes.
+Daily/week matches were `ai-news` 1/2, `macro-markets` 0/1 and `real-estate` 0/2.
+Those are the original diagnostic counts. Later local hardening excludes
+Housing Benefit headlines from real estate, without repeating the request.
+The first useful HTTPS news page answered a body-free HEAD with 200. This is a
+separate government-announcement source, not broad news or music coverage.
+`public_timestamp` can be a major update to an older page. The new pure local
+parser, selector and citation therefore keep "Published or updated" explicit.
+They retain the exact original headline and canonical link, drop body/media/
+byline payloads and apply current age, topic and previously used-link checks
+after raw metadata retrieval. OGL credit is limited to public metadata and does
+not clear underlying article text, media or third-party rights. The candidate
+passed 217 offline checks at that pure-candidate stage.
+
+Local integration completed October 10 at 01:06 UTC. The default-off
+`ALPHA_GOVUK_NEWS_FALLBACK` path requires no-model mode and both durable source
+controls. Its fixed latest-100 request has no reader/topic query, a five-second
+header/body deadline, the shared 256 KiB cap and no retry or redirect follow.
+`govuk-news` has its own two-request fixed fifteen-minute budget and circuit
+identity. The additive circuit-row migration is a local draft and is unapplied.
+Raw metadata shares the existing five-minute process cache across supported
+topics, with freshness/topic/prior-link selection afterward. That cache is not
+durable state. Protected budget/circuit RPCs are the cross-run controls.
+
+The local source order places GOV.UK after earlier public sources and the
+topic-specific ccMixter/Federal Register lanes, before optional GDELT. It serves
+only `ai-news`, `macro-markets` and `real-estate`, with one visible item after
+normal source filters and prior-link exclusion. Failure falls through and does
+not discard useful earlier work. Exhausted/admission-denied requests cannot fetch.
+Saved sections, final issue assembly, app and HTML/text email rendering retain
+the exact title/link, "Published or updated" timestamp and separate OGL metadata
+credit. No author, article excerpt or model rewrite is added. License links stay
+outside story citation/repeat sets.
+
+Four focused GOV.UK suites passed 688 offline assertions. Workflow/preflight and
+affected source/cache regressions passed, as did non-incremental typecheck.
+The finished adapter was qualified October 10 at 01:58 UTC with one anonymous
+request. The latest pool retained daily/week matches of AI 1/2, macro 0/1 and
+housing 0/2 before the one-item visible cap. One canonical target HEAD was 200.
+The disposable PostgreSQL checks passed preservation, rollback, permission and
+cross-session admission tests. The app/OpenNext/Worker candidate build passed.
+Its strict outer runner was flagged by one failed allowed Google Fonts connection,
+with no denied destination. That receipt remains flagged and is not release proof.
+The adapter remains default-off. A release needs an exact committed build, guarded
+managed migration, accepted deployment and a separate scheduled opt-in. Local
+qualification does not establish natural fallback, durable live admission or
+delivery. See external `govuk-final-qualification-20261010.md` and the actual
+release receipt for the current installed and activated state.
+
 `ALPHA_GDELT_FALLBACK=1` adds an independent public discovery tier after RSS
 and the enabled publisher feeds have no usable sources. It makes one topic-phrase query, never reads full article
 bodies, and uses dated headline/link metadata. Source timestamps are discovery
@@ -262,8 +356,8 @@ process-local too. The separate circuit below persists outage memory when enable
 The opt-in `ALPHA_DURABLE_SOURCE_COOLDOWN=1` adds private cross-run outage memory.
 It requires the reviewed `20261001000000_public_source_circuit.sql` migration,
 which was applied during the approved October 1 rollout.
-It is off by default. Nine fixed provider identities are stored after the
-October 2 PLOS and October 8 ccMixter additions, with
+It is off by default. Ten fixed provider identities are stored after the
+October 2 PLOS, October 8 ccMixter and October 9 Federal Register additions, with
 no query, topic, link, reader, credential or response data. Admission runs only
 on a raw-cache miss and before the existing budget reservation. A source fetch
 failure starts a fifteen-minute cooldown. Failed recovery probes increase it
@@ -307,6 +401,8 @@ preflight and runtime.
 The released workflow also forwards `SEND_ALPHA_CCMIXTER_METADATA_FALLBACK`
 to those two steps. Its scheduled opt-in was enabled with the October 8
 `2d8a6a4d` release and left unchanged by `b12cc587`. The code default stays off.
+`SEND_ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK` is also forwarded to both steps,
+and its scheduled opt-in was enabled by the October 9 `85040546` release.
 `SEND_ALPHA_DURABLE_SOURCE_COOLDOWN` separately forwards the opt-in circuit flag.
 The scheduled setting enables it while the code default remains off.
 Missing or unreadable admission state blocks a
@@ -469,6 +565,7 @@ ALPHA_OPEN_NEWS_FALLBACK=     # set to "1" for licensed Global Voices metadata i
 ALPHA_RESEARCH_METADATA_FALLBACK= # set to "1" for open-license nutrition research metadata in no-model mode (optional, off by default)
 ALPHA_PLOS_METADATA_FALLBACK= # scheduled opt-in activated October 2; requires no-model plus durable budget/cooldown and installed circuit migration (code default off)
 ALPHA_CCMIXTER_METADATA_FALLBACK= # scheduled opt-in activated October 8; code default off, requires no-model and durable budget/cooldown plus installed ccMixter identity
+ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK= # scheduled opt-in activated October 9; personal-finance only, code default off, requires no-model and durable controls plus installed Federal Register identity
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 ALPHA_DURABLE_SOURCE_COOLDOWN= # opt-in private provider circuit, requires reviewed migration before activation
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release

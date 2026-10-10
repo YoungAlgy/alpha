@@ -89,11 +89,15 @@ export interface Reference {
 }
 
 // A recognized source identity, never a publisher-supplied license URL.
-export interface SourceAttribution {
+export interface AuthoredSourceAttribution {
   publisher: "global-voices" | "plos";
   author: string;
   publishedAt: string;
 }
+
+// Government metadata carries its own exact headline, URL and update-date
+// meaning. It has no personal author and is not a Creative Commons grant.
+export type SourceAttribution = AuthoredSourceAttribution | import("./engine/govuk-news-metadata").GovUkNewsMetadata;
 
 export interface DigestItem {
   kind: ItemKind;

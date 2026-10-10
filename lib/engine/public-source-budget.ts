@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { consumeDistributedRateLimit } from "@/lib/distributed-rate-limit";
 
-export type PublicSourceProvider = "google-rss" | "publisher-rss" | "gdelt" | "plos-research" | "ccmixter-uploads" | "federal-register-finance";
+export type PublicSourceProvider = "google-rss" | "publisher-rss" | "gdelt" | "plos-research" | "ccmixter-uploads" | "federal-register-finance" | "govuk-news";
 export type PublicSourceBudgetErrorCode = "unavailable" | "exhausted";
 
 type RpcClient = Pick<SupabaseClient, "rpc">;
@@ -9,6 +9,7 @@ type RpcClient = Pick<SupabaseClient, "rpc">;
 interface PublicSourceBudgetDependencies {
   enabled?: () => boolean;
   loadClient?: () => Promise<RpcClient>;
+  consume?: typeof consumeDistributedRateLimit;
   timeoutMs?: number;
 }
 
@@ -24,6 +25,7 @@ const PROVIDER_LIMITS: Record<PublicSourceProvider, number> = {
   // Narrow fixed upload feed. Shared across runs, independent of other sources.
   "ccmixter-uploads": 2,
   "federal-register-finance": 2,
+  "govuk-news": 2,
 };
 
 export class PublicSourceBudgetError extends Error {
@@ -62,6 +64,7 @@ async function loadServiceClient(): Promise<RpcClient> {
 export function createPublicSourceBudget(deps: PublicSourceBudgetDependencies = {}) {
   const enabled = deps.enabled ?? durablePublicSourceBudgetEnabled;
   const loadClient = deps.loadClient ?? loadServiceClient;
+  const consume = deps.consume ?? consumeDistributedRateLimit;
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return async function reservePublicSourceRequest(provider: PublicSourceProvider): Promise<void> {
@@ -79,7 +82,7 @@ export function createPublicSourceBudget(deps: PublicSourceBudgetDependencies = 
     });
     const reservation = (async () => {
       const client = await loadClient();
-      const result = await consumeDistributedRateLimit(
+      const result = await consume(
         client,
         `public_source:${provider.replaceAll("-", "_")}`,
         provider,

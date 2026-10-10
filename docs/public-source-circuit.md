@@ -100,6 +100,28 @@ calls. It does not establish a natural PLOS outage, recovery or content selectio
 
 ## Consequences and limits
 
+### Local GOV.UK candidate, October 10
+
+The default-off GOV.UK metadata adapter now uses the fixed `govuk-news` circuit
+identity and a separate two-request fixed fifteen-minute durable budget.
+Both durable switches and no-model mode are required for its opt-in. Its raw
+pool shares the existing process cache, without treating it as durable state.
+Admission denial occurs before reservation/fetch. Actual upstream failure uses
+the existing backoff and fenced probe contract. Quota/control failures remain
+neutral. Failed optional completion cannot discard valid retrieved metadata.
+
+`20261010000000_govuk_public_source_circuit.sql` is the guarded additive migration.
+It checks the exact ten prior provider rows and recognized prior/extended
+constraint, then extends that constraint and inserts only `govuk-news`.
+It preserves prior provider state, RPCs and ACLs. Disposable PostgreSQL 17.11
+checks passed apply/reapply/rollback, unexpected-prior-state rejection, actual
+permission denials and cross-session healthy/probe/budget admission. The prior
+constraint guard rejects a matching literal list widened by `OR true`.
+The finished adapter's single anonymous qualification used injected reservation
+and circuit hooks, with zero durable RPC calls. It does not prove live admission.
+Managed installation and scheduled activation require the current external
+release receipt. The raw cache remains process-only acceleration.
+
 Supabase remains a dependency. A database outage can prevent new source requests
 when this opt-in is active. Existing valid cache/sections remain usable. Cooldowns
 reduce needless attempts but cannot supply missing current coverage or guarantee

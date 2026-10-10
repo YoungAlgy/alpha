@@ -18,6 +18,7 @@ import { researchMetadataFallbackEnabled, researchMetadataSearch } from "./resea
 import { plosMetadataFallbackEnabled, plosMetadataSearch } from "./plos-metadata-search";
 import { ccmixterMetadataFallbackEnabled, ccmixterMetadataSearch } from "./ccmixter-metadata-search";
 import { federalRegisterFinanceFallbackEnabled, federalRegisterFinanceSearch } from "./federal-register-finance-search";
+import { govUkNewsFallbackEnabled, govUkNewsSearch } from "./govuk-news-search";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
@@ -199,6 +200,14 @@ export async function resolveTopicSignal(
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaFederalRegister) return viaFederalRegister;
+      }
+      if ((topicId === "ai-news" || topicId === "macro-markets" || topicId === "real-estate") && govUkNewsFallbackEnabled()) {
+        const viaGovernment = await tryFallback(topicId, "GOV.UK announcement metadata", () =>
+          observed("govuk-news", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, govUkNewsSearch, "GOV.UK Government Announcements", false, 1))
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaGovernment) return viaGovernment;
       }
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {
@@ -389,8 +398,12 @@ async function fetchLiveSignal(
   //    host's cap slot and starve out a legitimate new one from the same host.
   //    Compare on the SAME normalizeUrl identity the citable allow-set uses so
   //    a match can't be dodged by a fragment.
-  const candidates = perQuery.flat().filter((source) => source.attribution === undefined ||
-    !!validatedSourceAttribution(source.url, source.attribution));
+  const candidates = perQuery.flat().filter((source) => {
+    if (source.attribution === undefined) return true;
+    const credit = validatedSourceAttribution(source.url, source.attribution);
+    return !!credit && (credit.publisher !== "govuk" ||
+      source.title === credit.title && source.description === "" && source.age === credit.publicTimestamp);
+  });
   const ranked = rankAndDedup(candidates, 2, excludeUrls, topicId).slice(0, maxSources);
   if (ranked.length === 0) {
     if (failedQueries > 0) {
@@ -421,13 +434,13 @@ async function fetchLiveSignal(
   const readCount = contents.filter(Boolean).length;
   const sources: SignalSource[] = [
     ...deep.map((s, i) => ({
-      title: cleanField(s.title),
+      title: s.attribution?.publisher === "govuk" ? s.title : cleanField(s.title),
       url: s.url,
       excerpt: cleanField(contents[i] || s.description),
       attribution: validatedSourceAttribution(s.url, s.attribution),
     })),
     ...more.map((s) => ({
-      title: cleanField(s.title),
+      title: s.attribution?.publisher === "govuk" ? s.title : cleanField(s.title),
       url: s.url,
       excerpt: cleanField(s.description),
       attribution: validatedSourceAttribution(s.url, s.attribution),

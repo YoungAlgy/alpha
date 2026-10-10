@@ -108,7 +108,7 @@ try {
   const guardSource = readFileSync(new URL("../app/api/cron/weekly-send/route.ts", import.meta.url), "utf8");
   const itemGuard = guardSource.slice(guardSource.indexOf("const PERSISTED_ITEM_KINDS"), guardSource.indexOf("// Shape guard for a persisted"));
   const guardModule = { valid: (_: unknown) => false };
-  vm.runInNewContext(ts.transpileModule(`${itemGuard}\nexports.valid = isValidPersistedItem`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: guardModule, validatedSourceAttribution: attribution.validatedSourceAttribution });
+  vm.runInNewContext(ts.transpileModule(`${itemGuard}\nexports.valid = isValidPersistedItem`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: guardModule, validatedSourceAttribution: attribution.validatedSourceAttribution, validatedAttributedItem: attribution.validatedAttributedItem });
   assert.equal(guardModule.valid(issue.sections[0].items[0]), true);
   assert.equal(guardModule.valid({ ...issue.sections[0].items[0], attribution: { publisher: "unknown" } }), false);
   assert.equal(guardModule.valid({ ...issue.sections[0].items[0], primaryRef: { label: "Spoof", url: "https://evil.test/story" } }), false);

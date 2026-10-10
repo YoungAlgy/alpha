@@ -9,24 +9,13 @@ import { createPublicFeedCache, publicFeedSnapshot } from "./public-feed-cache";
 import { freshPublicResults, publicSourceWindow } from "./public-source-freshness";
 import { reservePublicSourceRequest } from "./public-source-budget";
 import { runPublicSourceAttempt, type PublicSourceAttempt } from "./public-source-circuit";
+import { customNewsTopicTokens, meaningfulNewsTokens, normalizedNewsTokens } from "./news-topic-tokens";
 
 const FEEDS = {
   music: "https://globalvoices.org/-/topics/music/feed/",
   general: "https://globalvoices.org/feed/",
 } as const;
 const ACCEPT = "application/rss+xml, application/xml, text/xml";
-
-const CUSTOM_STOP_WORDS = new Set([
-  "about", "after", "best", "current", "daily", "for", "from", "latest", "news",
-  "the", "this", "today", "updates", "week", "weekly", "with",
-]);
-// Grammar may be ignored, but short subject qualifiers such as US, AI, ISS
-// and numeric identifiers must survive. Keep long-anchor selection unchanged.
-const SHORT_GRAMMAR_WORDS = new Set([
-  "a", "an", "and", "are", "as", "at", "be", "but", "by", "do", "for",
-  "has", "he", "her", "him", "his", "i", "if", "in", "is", "it", "of",
-  "on", "or", "s", "the", "to", "was", "we",
-]);
 
 type FeedKind = keyof typeof FEEDS;
 type FeedItem = BraveResult & { categories: string[] };
@@ -59,17 +48,6 @@ function parseGlobalVoicesXml(xml: string, freshness: BraveSearchOptions["freshn
     if (items.length >= 100) break;
   }
   return items;
-}
-
-function normalizedTokens(value: string): string[] {
-  return [...new Set(value.normalize("NFKD").toLowerCase()
-    .replace(/\p{Diacritic}/gu, "")
-    .match(/[\p{L}\p{N}]+/gu) ?? [])];
-}
-
-function meaningfulTokens(value: string): string[] {
-  return normalizedTokens(value)
-    .filter((token) => token.length >= 4 && !CUSTOM_STOP_WORDS.has(token));
 }
 
 type TopicSelection = { feed: FeedKind; mode: "all" | "genre" | "phrase"; tokens?: string[]; genre?: string };
@@ -105,15 +83,9 @@ function selectTopic(topicId: string): TopicSelection | undefined {
     }
   }
 
-  let tokens = meaningfulTokens(phrase);
-  if (tokens.length === 0 || tokens.length > 6 || (isCustomTopic(topicId) && tokens.length < 2)) return;
-  if (isCustomTopic(topicId)) {
-    const qualifiers = normalizedTokens(phrase).filter((token) =>
-      token.length < 4 && !CUSTOM_STOP_WORDS.has(token) && !SHORT_GRAMMAR_WORDS.has(token));
-    tokens = [...tokens, ...qualifiers];
-    if (tokens.length > 6) return;
-  }
-  return { feed: "general", mode: "phrase", tokens };
+  const tokens = isCustomTopic(topicId) ? customNewsTopicTokens(phrase) : meaningfulNewsTokens(phrase);
+  if (!tokens?.length || tokens.length > 6) return;
+  return { feed: "general", mode: "phrase", tokens: [...tokens] };
 }
 
 function genreMatches(item: FeedItem, genre: string): boolean {
@@ -135,7 +107,7 @@ function genreMatches(item: FeedItem, genre: string): boolean {
 }
 
 function phraseMatches(item: FeedItem, tokens: string[]): boolean {
-  const searchable = normalizedTokens([
+  const searchable = normalizedNewsTokens([
     item.title.replace(/^Global Voices:\s*/i, ""),
     ...item.categories,
   ].join(" "));
@@ -195,8 +167,8 @@ export function createOpenNewsFeedSearch(deps: {
     return matched.flatMap(({ categories: _categories, ...item }) => {
       const attribution = validatedGlobalVoicesAttribution(
         item.url,
-        item.attribution?.author,
-        item.attribution?.publishedAt
+        item.attribution?.publisher === "global-voices" ? item.attribution.author : undefined,
+        item.attribution?.publisher === "global-voices" ? item.attribution.publishedAt : undefined
       );
       return attribution ? [{ ...item, attribution }] : [];
     });

@@ -4,7 +4,7 @@ import { cleanField } from "./text-clean";
 import { normalizeUrl } from "./url-guard";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
 import { WRAPPED_SOURCE_NOTE } from "@/lib/issue-visibility";
-import { validatedSourceAttribution } from "@/lib/source-attribution";
+import { validatedSourceAttribution, govUkItemFields } from "@/lib/source-attribution";
 import type { TopicBlurb, TopicSignal, BlurbItem, SignalSource } from "./types";
 
 /**
@@ -92,9 +92,19 @@ function uniqueSources(signal: TopicSignal): SignalSource[] {
   const result: SignalSource[] = [];
   const candidates = signal.sources ?? [...parseDeepSources(signal), ...parseHeadlineSources(signal)];
   for (const source of candidates) {
-    if (source.attribution !== undefined && !validatedSourceAttribution(source.url, source.attribution)) continue;
+    const credit = validatedSourceAttribution(source.url, source.attribution);
+    if (source.attribution !== undefined && !credit) continue;
     const normalized = normalizeUrl(source.url);
     if (!normalized || !sourceIsAllowed(signal, source.url) || seen.has(normalized)) continue;
+    if (credit?.publisher === "govuk") {
+      // Preserve the exact original metadata title. Never format or truncate
+      // it through the ordinary narrative/voice sanitizer or admit an excerpt.
+      if (source.title !== credit.title || source.excerpt !== "") continue;
+      seen.add(normalized);
+      result.push({ title: credit.title, url: credit.url, excerpt: "", attribution: credit });
+      if (result.length >= MAX_SOURCES) break;
+      continue;
+    }
     const title = sanitizeVoice(cleanField(source.title)) || new URL(source.url).hostname;
     seen.add(normalized);
     result.push({
@@ -112,6 +122,8 @@ function uniqueSources(signal: TopicSignal): SignalSource[] {
 }
 
 function itemForSource(topic: string, source: SignalSource): BlurbItem {
+  const credit = validatedSourceAttribution(source.url, source.attribution);
+  if (credit?.publisher === "govuk") return govUkItemFields(credit);
   const body = source.excerpt
     ? source.excerpt
     : `Read the piece for the details on ${topic.toLowerCase()}.`;
@@ -124,7 +136,7 @@ function itemForSource(topic: string, source: SignalSource): BlurbItem {
       url: source.url,
     },
     supplementaryRefs: [],
-    attribution: validatedSourceAttribution(source.url, source.attribution),
+    attribution: credit,
   };
 }
 

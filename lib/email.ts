@@ -2,7 +2,7 @@ import { Resend } from "resend";
 import type { CreateEmailResponse } from "resend";
 import { createHash } from "node:crypto";
 import type { Issue, SourceAttribution } from "@/lib/types";
-import { sourceAttributionCredit, validatedSourceAttribution } from "@/lib/source-attribution";
+import { sourceAttributionCredit, validatedSourceAttribution, validatedAttributedItem } from "@/lib/source-attribution";
 import { unsubscribeUrl as buildUnsubscribeUrl } from "@/lib/unsubscribe";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
 import { requireResendMessageId } from "@/lib/resend-response";
@@ -694,13 +694,21 @@ type SourceCredit = { url: string; attribution: SourceAttribution };
 // Every headline reused in a preview keeps its publisher credit. No story
 // bodies are copied here, and license links never enter story deduplication.
 export function sourceCreditsForIssue(issue: Pick<Issue, "sections">): SourceCredit[] {
-  const seen = new Set<string>();
+  const seen = new Map<string, SourceAttribution>();
   return issue.sections.flatMap((section) => section.items.flatMap((item) => {
+    if (!validatedAttributedItem(item)) throw new Error("Invalid licensed source attribution");
     if (item.attribution === undefined) return [];
     const attribution = validatedSourceAttribution(item.primaryRef?.url, item.attribution);
     if (!attribution || !item.primaryRef) throw new Error("Invalid licensed source attribution");
-    if (seen.has(item.primaryRef.url)) return [];
-    seen.add(item.primaryRef.url);
+    const previous = seen.get(item.primaryRef.url);
+    if (previous) {
+      if ((previous.publisher === "govuk" || attribution.publisher === "govuk") &&
+          JSON.stringify(previous) !== JSON.stringify(attribution)) {
+        throw new Error("Conflicting government source attribution");
+      }
+      return [];
+    }
+    seen.set(item.primaryRef.url, attribution);
     return [{ url: item.primaryRef.url, attribution }];
   }));
 }
@@ -717,13 +725,34 @@ interface RenderArgs {
   sourceCredits?: SourceCredit[];
 }
 
+function creditsForRender(sourceCredits: SourceCredit[]) {
+  const seen = new Map<string, NonNullable<ReturnType<typeof sourceAttributionCredit>>>();
+  const seenAttributions = new Map<string, SourceAttribution>();
+  for (const { url, attribution } of sourceCredits) {
+    const validated = validatedSourceAttribution(url, attribution);
+    const credit = sourceAttributionCredit(url, validated);
+    if (!validated || !credit) throw new Error("Invalid licensed source attribution");
+    const previous = seenAttributions.get(url);
+    if (previous && (previous.publisher === "govuk" || validated.publisher === "govuk") &&
+        JSON.stringify(previous) !== JSON.stringify(validated)) {
+      throw new Error("Conflicting government source attribution");
+    }
+    if (!previous) {
+      seen.set(url, credit);
+      seenAttributions.set(url, validated);
+    }
+  }
+  return [...seen.values()];
+}
+
 // Exported (pure, no I/O) so the email can be previewed/snapshot-tested
 // without ever triggering a live send.
 export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl, letterUrl, weekOf, unsubscribeUrl, sourceCredits = [] }: RenderArgs): string {
-  const creditsHtml = sourceCredits.map(({ url, attribution }) => {
-    const credit = sourceAttributionCredit(url, attribution);
-    if (!credit) throw new Error("Invalid licensed source attribution");
-    return `<p style="font-size:13px;line-height:1.5;margin:0 0 12px;overflow-wrap:anywhere;word-break:break-word;">By ${escapeHtml(credit.author)}. <a href="${escapeAttr(credit.articleUrl)}">${escapeHtml(credit.publisherLabel)}, ${escapeHtml(credit.date)}</a>. <a href="${escapeAttr(credit.licenseUrl)}">${credit.licenseLabel}</a>. ${credit.changes}</p>`;
+  const creditsHtml = creditsForRender(sourceCredits).map((credit) => {
+    const sourceLine = credit.kind === "government"
+      ? `<a href="${escapeAttr(credit.articleUrl)}">${escapeHtml(credit.originalTitle)}</a>. Source: ${escapeHtml(credit.publisherLabel)}. Published or updated: ${escapeHtml(credit.publicTimestamp)}.`
+      : `By ${escapeHtml(credit.author)}. <a href="${escapeAttr(credit.articleUrl)}">${escapeHtml(credit.publisherLabel)}, ${escapeHtml(credit.date)}</a>.`;
+    return `<p style="font-size:13px;line-height:1.5;margin:0 0 12px;overflow-wrap:anywhere;word-break:break-word;">${sourceLine} <a href="${escapeAttr(credit.licenseUrl)}">${escapeHtml(credit.licenseLabel)}</a>. ${escapeHtml(credit.changes)}${credit.kind === "government" ? ` ${escapeHtml(credit.limitations)}` : ""}</p>`;
   }).join("");
   // CTA prefers the tokenized /letter URL — it opens the letter directly with
   // no session, on any device (the view-in-browser pattern). Falls back to
@@ -870,10 +899,11 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
 }
 
 export function renderText({ firstName, teaser, sectionList, inboxUrl, letterUrl, weekOf, unsubscribeUrl, sourceCredits = [] }: RenderArgs): string {
-  const creditsText = sourceCredits.map(({ url, attribution }) => {
-    const credit = sourceAttributionCredit(url, attribution);
-    if (!credit) throw new Error("Invalid licensed source attribution");
-    return `By ${credit.author}. ${credit.publisherLabel}, ${credit.date}: ${credit.articleUrl}\n${credit.licenseLabel}: ${credit.licenseUrl}. ${credit.changes}\n\n`;
+  const creditsText = creditsForRender(sourceCredits).map((credit) => {
+    const sourceLine = credit.kind === "government"
+      ? `${credit.originalTitle}: ${credit.articleUrl}\nSource: ${credit.publisherLabel}. Published or updated: ${credit.publicTimestamp}.`
+      : `By ${credit.author}. ${credit.publisherLabel}, ${credit.date}: ${credit.articleUrl}`;
+    return `${sourceLine}\n${credit.licenseLabel}: ${credit.licenseUrl}. ${credit.changes}${credit.kind === "government" ? ` ${credit.limitations}` : ""}\n\n`;
   }).join("");
   const unsubLine = unsubscribeUrl ? `\n\nUnsubscribe: ${unsubscribeUrl}` : "";
   return `${weekOf}

@@ -1,6 +1,47 @@
 # Alpha remaining work
 
-Latest completed release: `9b41f5c531bbe68606507f64a312b5e9dc41e873`, October 8.
+Latest completed release: `850405460eaf0f8d0bbcb67e9937523c62e39545`, October 9.
+Worker acceptance passed at 07:45:34.808 UTC and source activation/readback at
+07:46:34.182 UTC. The independent narrow Federal Register personal-finance lane
+is enabled. Fresh committed app/Worker build, exact-source CI, guarded additive
+identity migration and twelve non-sending live checks passed. Only the new
+scheduled source flag changed. There were no manual letters or retries.
+See `federal-register-release-20261009.md` in the external Alpha receipt folder.
+This does not prove natural fallback, daily broad finance coverage or delivery.
+The completed release approval is consumed.
+
+Newest local qualification, October 10 02:01 UTC: GOV.UK's finished default-off
+adapter passed one bounded public request and a body-free canonical target HEAD.
+The current generic pool retained daily/week matches of AI 1/2, macro 0/1 and
+housing 0/2 before the visible cap. Four focused suites passed 688 assertions,
+affected regressions and typecheck passed, and disposable PostgreSQL migration
+checks passed. The app/OpenNext/Worker candidate build passed. Its strict outer
+runner remains flagged for one failed allowed Google Fonts connection, with no
+denied destination. This is not a committed release build or live activation.
+Release state must come from the current external receipt. The guarded managed
+migration and scheduled opt-in remain separate gates. No natural GOV.UK fallback,
+live durable admission, recovery or delivery is established by qualification.
+See external `govuk-final-qualification-20261010.md`.
+
+Earlier local source qualification, October 10 00:23 UTC: the documented ECB
+statistical feed returned HTTP 200 with fifteen records, but zero usable daily
+or weekly macro records under the combined candidate filters. Exact rejection
+causes were not measured. The pure parser is tested locally and unconnected.
+Runtime integration is held. No new source, live change or release was added.
+See external `ADR-ECB-STATISTICAL-QUALIFICATION-20261010.md`.
+
+Earlier local source work, October 10 00:01 UTC: Democracy Now now has an
+unconnected title-only topic selector. One bounded fixed-feed request returned
+200 and 135,823 bytes. All six generic topics had zero rolling-day matches.
+Only human rights matched the rolling-week window, with one record. Broad daily
+topic usefulness remains unproven. Runtime rendering and durable integration
+are held pending useful fit evidence. Shared Global Voices token matching was
+deduplicated locally, with behavior parity independently reviewed and focused
+offline tests passing. Application typecheck passed. No build, flag, migration,
+activation or release followed. See external
+`ADR-DEMOCRACY-NOW-TOPIC-FIT-20261010.md`. Earlier metadata evidence remains dated.
+
+The preceding completed release was `9b41f5c531bbe68606507f64a312b5e9dc41e873`, October 8.
 Website readback passed at 22:39:02.943 UTC and final release controls passed at
 22:39:43.540 UTC. Privacy-safe content-source diagnostics are shipped.
 Fresh committed build, exact-source CI and twelve non-sending live checks passed.
@@ -161,14 +202,15 @@ Effort is relative, not an elapsed-time promise.
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
 | Record natural fallback and safety-event evidence | The source diagnostics are released. What remains is ordinary observed evidence. Resolver/selected-section counts cannot prove persistence or delivery. Healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregates only under an appropriate requested check. Do not manufacture events or send letters just to fill evidence. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | Broad news/music/custom-topic coverage remains limited. ccMixter is released and enabled as `2d8a6a4d`, with exact adapter and release evidence recorded. The qualifier repair released as `b12cc587` preserves US/AI/ISS/numeric requirements without broadening existing custom anchor selection. NASA metadata is public and current, but the tested topic-fit checks were empty, so no adapter was added. Current held-candidate reasons and closed ledgers are summarized in `public-source-gaps.md`. Do not replay held probes or relax guards to force output. | 4 / 3 / 4 | 14 |
+| Improve independent topic coverage where evidence supports it | GOV.UK's default-off adapter, two-request fixed fifteen-minute durable identity and saved/web/email metadata credit passed final public qualification, offline migration tests and the candidate app/Worker build. The strict build wrapper remains flagged for one allowed Fonts connection failure. Exact committed build, managed migration, deployment and opt-in need current release evidence. Broad news/music/custom coverage is still limited. ECB and Democracy Now runtime work stays held by sparse generic-topic fit, and FTC daily admission stays parked. Published-or-major-update dates remain labeled. Do not replay consumed probes or relax guards to force output. | 4 / 3 / 4 | 14 |
 
 Keyed search was removed from normal scheduled content by the approved October 2
 05:47 UTC activation. The `1eb3a14b` maintenance cleanup was retained in the exact
 PLOS release. Both completed items have been removed from the remaining table.
 Broad-topic coverage would need more evidence-backed research. Outcome proof
 needs an observed event. Neither is a currently confirmed runtime bug.
-No further live configuration change or external probe is authorized here.
+This local candidate does not authorize another external probe, live configuration
+change or release. New evidence must remain distinct from held-source history.
 
 ## ccMixter local qualification, October 8 (historical record)
 
@@ -521,7 +563,7 @@ retry/backfill, source probe, audience/enrollment, account/billing/secrets or
 remote-setting change follows from this backlog. Keep Alpha separate from the
 owner's other products.
 
-## October 9: finance gap now has a local candidate
+## October 9: finance candidate qualification, superseded by completed release
 
 Alex resumed the parked selection work. Federal Register's documented no-key
 metadata route supplied two current-week investing proposals through the completed
@@ -535,8 +577,142 @@ metadata does not loosen RSS clock rules. Proposals and publication-day meaning
 stay explicit through deterministic saved/web/email rendering. Paid/model paths,
 audience, billing and schedules are unchanged.
 
-Next gate is a separately approved fresh disposable production app/Worker build.
-No build result, live identity migration, source opt-in, release or natural-use
-proof yet. No send or new delivery/watchdog inspection. Existing dirty docs and
-owned release/mirrors preserved. Full scope and limits are in the external
-`federal-register-local-candidate-20261009.md` receipt.
+At that local review the next gate was a separately approved fresh disposable
+production app/Worker build. The later `85040546` release completed that build,
+the guarded migration, deployment and scheduled activation. Its external receipt
+supersedes pending states here. Natural source use remains unproven. Full dated
+local scope and limits remain in
+`federal-register-local-candidate-20261009.md`.
+
+## October 9: next source gap, local preparation only
+
+Independent broad news, music and arbitrary custom-topic coverage remain open.
+No new provider was qualified in this pass. The new leads require feed or reuse
+clarification before an adapter is justified. FTC's held consumer-finance route
+also remains unqualified. Its earlier diagnostic did not retain the exact
+extracted date and staff-credit strings needed to explain rejection. There is
+no confirmed application parser defect.
+
+A pure, bounded public-field projection and 35 local fixture checks now prepare
+that clarification. It retains at most three extracted date/credit records,
+withholds contact-shaped credit and stores no title, link, article text or media.
+It does not change freshness, source admission or letter behavior. No source
+probe, send, release or ordinary-run check occurred in that preparation pass.
+
+The separately approved one-request diagnostic completed October 9 at 18:07 UTC:
+HTTP 200, 10,491 bytes, ten items under cap, first three bounded records saved.
+The sampled dates lack a timezone and their cleaned credit is `By BCP Staff`.
+This explains their strict timestamp/exact-credit rejection. It does not prove
+a general parser defect, title relevance, all-ten freshness or useful coverage.
+The runner and previous qualifiers are closed. No further probe is authorized.
+The smallest next local work is a separately approved FTC-only adapter with
+explicit date uncertainty and exact credit, preserving the global RSS rules.
+See external `ftc-public-field-check-20261009.md` for the actual result and limits.
+
+## October 9: FTC local prototype, daily coverage still held
+
+The separately approved pure metadata adapter is prepared locally, with no
+network client, source-chain caller, flag or migration. It recognizes exact
+observed staff credit and preserves the publisher calendar day with unknown
+timezone. Its full-minute comparison interval covers every offset accepted by
+the existing strict parser. The entire interval must fit the existing freshness
+window. No exact timestamp or `BraveResult.age` is invented. General RSS rules
+remain unchanged.
+
+The interval spans nearly 48 hours. It cannot pass the 24-hour `pd` window or
+a narrower cadence range. Wider windows can admit interior metadata, but that
+does not prove current useful coverage or a daily fallback. Authoritative timezone
+evidence remains the daily-use blocker. Reuse basis, real generic-topic coverage,
+date-aware integration and durable source controls still need separate review.
+
+The prototype passed 125 generic fixture checks and the non-incremental application
+typecheck. Sol's bounded independent review found no concrete blocker. Tests cover
+calendar/time validity, uncertainty boundaries, ambiguous/duplicate fields,
+first-party links, finance relevance, prior-link exclusion and valid-pool limits.
+No full production build or source request occurred. The parser is referenced
+only by its offline verifier. Nothing is activated, sent, pushed or deployed.
+Decision and limits are in external `ADR-FTC-DATE-20261009.md`.
+
+### October 9, 23:10 UTC: documentation follow-up complete
+
+The approved official-document check found a conditional reuse basis for verified
+FTC-original credited metadata, subject to third-party exclusions. No timestamp
+timezone contract was established. FTC daily admission is parked unless new
+authoritative evidence appears. The wider-window prototype remains unconnected.
+No feed request, runtime change, test/build rerun or release occurred. See external
+`ftc-official-doc-check-20261009.md` for sources and retrieval limits. Independent
+broad-news/music/custom-topic daily coverage remains open. Repeating the consumed
+probe or weakening freshness is not a next step.
+
+## October 9: Democracy Now metadata, next local integration gap
+
+The pure candidate and its exact bounded qualification are complete. It has no
+request client or source-chain caller. Current dated individual headlines and a
+first HTTPS target are usable. Topic-level selection remains unproven because
+all six generic exact keyword checks were empty. Its safe direct author field
+is only a shape check, with text discarded. Fixed publisher credit does not
+claim personal authorship or blanket rights. Future rendering must retain the
+original headline and credited link without inventing a summary or reusing media.
+
+The smallest next local scope is useful topic/relevance selection and exact
+citation rendering, then a default-off adapter with a separate durable budget
+and outage identity. No process-only cooldown substitute or another provider's
+identity is justified. Preserve freshness, timeouts, valid partial work and
+prior-link exclusion. Topic qualification, app/Worker build and any migration,
+release or scheduled activation remain separate. The live source order is
+unchanged. Production availability and natural source/provider fallback were
+not checked in this pass. Full dated evidence and preserved file hashes are in
+external `ADR-DEMOCRACY-NOW-METADATA-20261009.md`.
+
+### October 10 UTC: topic-fit stage complete, runtime integration held
+
+The local selector admits narrow macro phrases or all required custom-topic
+tokens in the original title only. It retains the two-long-anchor requirement,
+short and numeric qualifiers, Unicode normalization and six-token bound.
+Categories, descriptions and generated publisher labels cannot supply missing
+topic evidence. Known non-economic grade-inflation and recession senses are
+rejected. Topic and prior-link filters precede the 100-useful-result cap.
+
+One fixed-feed generic-topic request ran 00:01:47.981 through 00:01:49.269 UTC.
+HTTP 200, 135,823 bytes, zero retries or followed redirects. All six generic
+topics had zero daily matches. One weekly human-rights match was retained.
+This is sparse title-token fit, not proof that every possible topic is unusable
+or that a future daily match cannot appear. No subscriber topic was inspected.
+
+Adding a large runtime path now would have little demonstrated daily benefit.
+The next integration stage is held. No author or license is invented. The
+reviewed future rendering contract requires exact original headlines, publisher
+calendar-day credit, canonical links, excerpt rejection and saved-item coupling.
+It still needs focused serialization and web/email checks when integration is
+justified. Separate durable admission and bounded metadata snapshots also remain
+unimplemented. No process-only resilience or natural fallback is claimed.
+
+The shared local token helper removes duplicated matching logic. Independent Sol
+review found parity with Global Voices' existing rules. Root reran the 34 named
+Global Voices checks, custom qualifiers, usable feed pools, 78 metadata checks,
+74 topic checks and six aggregate-runner fixture checks. All passed, as did the
+non-incremental application typecheck. No production build was authorized or run.
+The request runner is hard-closed and its consumed latch preserved. FTC files,
+prior work, HEAD, staging and owned mirrors were preserved. No release or send.
+Full decision and aggregate receipt: external
+`ADR-DEMOCRACY-NOW-TOPIC-FIT-20261010.md`.
+
+### October 10 UTC: ECB macro-source qualification held
+
+Official-document research established a fixed statistical RSS route and
+conditional credited-use rules. Named-author exceptions remain relevant.
+One feed GET returned HTTP 200, 5,511 decoded UTF-8 bytes and fifteen records.
+Zero records passed the combined rolling-day or rolling-week candidate gates.
+No per-field rejection reason was retained and no story target was requested.
+This is insufficient current usefulness evidence for runtime integration.
+
+The two new pure parser/verifier files stay local and unconnected. An independent
+review found a publisher-weekday mismatch edge case, fixed only in the new parser.
+The shared freshness helper is unchanged. Bounds, exact headline preservation,
+canonical URLs, author-marker exclusion, prior-link exclusion and valid-pool
+behavior are covered by generic tests. There is no source client, flag, migration,
+renderer or persistent identity. No build or release was run. The old work and
+owned mirrors are preserved. Source order and live opt-ins are unchanged.
+Both request entry points are closed with their latches retained. Current source
+coverage remains an open gap. See external
+`ADR-ECB-STATISTICAL-QUALIFICATION-20261010.md` for the decision and proof limits.

@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
-import { validatedSourceAttribution } from "../lib/source-attribution.ts";
+import { validatedSourceAttribution, validatedAttributedItem } from "../lib/source-attribution.ts";
 import { normalizeUrl } from "../lib/engine/url-guard.ts";
 
 const privacyBaseline = process.argv.includes("--privacy-baseline");
@@ -59,7 +59,7 @@ function harness(options: { data?: unknown; error?: { message: string }; reject?
     console: { warn: (...args: unknown[]) => warnings.push(args) },
     fetch: () => { throw new Error("network denied"); },
     require(name: string) {
-      if (name === "@/lib/source-attribution") return { validatedSourceAttribution };
+      if (name === "@/lib/source-attribution") return { validatedSourceAttribution, validatedAttributedItem };
       if (name === "./url-guard") return { normalizeUrl };
       if (name === "./issue-citation-history") return { readIssueCitationHistory: async () => ({ state: "disabled", urlsByTopic: new Map(), unavailableTopicIds: new Set() }) };
       if (name === "@/lib/supabase/server") return { supabaseServiceClient: async () => {
