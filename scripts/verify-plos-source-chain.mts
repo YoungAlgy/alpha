@@ -68,6 +68,7 @@ try {
         "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => false, ccmixterMetadataSearch: forbiddenCall },
         "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: forbiddenCall },
         "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: forbiddenCall },
+        "./statcan-labour-search": { statCanLabourFallbackEnabled: () => false, statCanLabourSearch: forbiddenCall },
         "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbiddenCall },
         "@/lib/source-attribution": attribution,
       };

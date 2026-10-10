@@ -275,7 +275,7 @@ links, invalid dates and mismatched publisher weekdays. Runtime integration is
 held. No freshness gate or response bound was loosened and no source was retried.
 See external `ADR-ECB-STATISTICAL-QUALIFICATION-20261010.md` and aggregate receipt.
 
-Local only, October 10 00:37 UTC: one bounded GOV.UK public search-API request
+Historical pre-release stage, October 10 00:37 UTC: one bounded GOV.UK search-API request
 returned useful original headline/link/date metadata for three narrow lanes.
 Daily/week matches were `ai-news` 1/2, `macro-markets` 0/1 and `real-estate` 0/2.
 Those are the original diagnostic counts. Later local hardening excludes
@@ -295,7 +295,7 @@ Local integration completed October 10 at 01:06 UTC. The default-off
 controls. Its fixed latest-100 request has no reader/topic query, a five-second
 header/body deadline, the shared 256 KiB cap and no retry or redirect follow.
 `govuk-news` has its own two-request fixed fifteen-minute budget and circuit
-identity. The additive circuit-row migration is a local draft and is unapplied.
+identity. At this pre-release stage the additive migration was unapplied.
 Raw metadata shares the existing five-minute process cache across supported
 topics, with freshness/topic/prior-link selection afterward. That cache is not
 durable state. Protected budget/circuit RPCs are the cross-run controls.
@@ -319,11 +319,68 @@ The disposable PostgreSQL checks passed preservation, rollback, permission and
 cross-session admission tests. The app/OpenNext/Worker candidate build passed.
 Its strict outer runner was flagged by one failed allowed Google Fonts connection,
 with no denied destination. That receipt remains flagged and is not release proof.
-The adapter remains default-off. A release needs an exact committed build, guarded
-managed migration, accepted deployment and a separate scheduled opt-in. Local
+At that stage the release still needed a committed build, guarded managed
+migration, accepted deployment and a separate scheduled opt-in. Local
 qualification does not establish natural fallback, durable live admission or
 delivery. See external `govuk-final-qualification-20261010.md` and the actual
 release receipt for the current installed and activated state.
+
+Released October 10 as `e51ba3f`: the subsequent clean committed app/Worker build,
+exact-source CI, guarded managed migration, twelve non-sending live checks and
+independent release readback passed. Only `SEND_ALPHA_GOVUK_NEWS_FALLBACK=1` was
+enabled. Final readback at 02:46:48 UTC confirmed eleven durable identities and
+unchanged prior source/provider flags and schedules. The earlier candidate's
+Fonts exception remains a separate dated receipt. The code default is still off.
+No natural scheduled GOV.UK selection, recovery or delivery is proved by these
+release checks. See external `govuk-release-20261010.md`.
+
+Local only, October 10: `ALPHA_STATCAN_LABOUR_FALLBACK=1` connects a narrow
+Statistics Canada Labour Atom metadata lane after GOV.UK and before optional
+GDELT. It requires no-model mode and both durable controls. It stays off by
+default, including in no-key mode. The fixed feed receives no topic, profile or
+reader data. Its `statcan-labour` identity has an independent two-request fixed
+fifteen-minute budget and the existing protected cross-run circuit. The additive
+`20261010010000_statcan_public_source_circuit.sql` is qualified in disposable
+local PostgreSQL but remains unapplied to the managed database.
+There is no new service or paid API. Existing source/provider opt-ins and schedules
+are unchanged.
+
+The five-second full-response deadline, 256 KiB response and projected-cache
+bounds, no redirects and no retries apply. The raw process cache keeps valid
+scalar metadata before current age, labour-title and previous-link selection.
+Both official Daily URL families and their normalized history keys share one
+story identity for exclusions. Earlier useful sources bypass this lane. Empty,
+unavailable or exhausted pools fall through without inventing an item.
+
+At most one original headline/link item serves `macro-markets`. Saved letters,
+the app and HTML/text email preserve Statistics Canada/The Daily credit, the
+Open Licence link, nonendorsement and excluded article/media/third-party rights.
+The label is "Feed entry updated" with the Daily link day. Original publication
+time remains unproven. The clock is not a statistics reference period. Rewritten
+text, missing credit or changed story fields fail validation. Licence links are
+separate from story citations. No article, media, summary, personal byline or
+writer-model call is added.
+
+The five StatCan suites passed 902 offline assertions, and affected source/control
+regressions and app typecheck passed. Final qualification October 10 at 07:11 UTC
+used the finished adapter: one anonymous fixed-feed GET returned HTTP 200,
+application/atom+xml and 20,959 bytes. Daily/week/month selections were 1/1/5.
+Exact metadata credit, rendering and same-story alias exclusion passed. One
+body-free HEAD to the selected story's exact official final alias returned 200.
+No original-title/link change, article-body fetch, retry or redirect follow.
+
+Disposable PostgreSQL 17.11 qualification passed 56 helper checks, including
+prior-state rejection, rollback, idempotence, unchanged rows/RPCs/ACLs/RLS and
+cross-session recovery ownership and request ceilings. The fresh uncommitted
+app/OpenNext/Worker build passed at 07:15 UTC, 51/51 pages, both typechecks and
+generated Worker syntax. Strict outer network checks passed with zero denied
+destinations or upstream failures. All runtime and held files stayed unchanged.
+The four documentation files were updated afterward with these receipts.
+No committed release build, managed installation, activation, natural fallback,
+delivery or inbox receipt is established. Existing build warnings remain.
+Nothing was pushed, deployed or sent. See external
+`statcan-final-qualification-20261010.md` and
+`ADR-STATCAN-LOCAL-INTEGRATION-20261010.md` for the decision and proof limits.
 
 `ALPHA_GDELT_FALLBACK=1` adds an independent public discovery tier after RSS
 and the enabled publisher feeds have no usable sources. It makes one topic-phrase query, never reads full article
@@ -356,8 +413,8 @@ process-local too. The separate circuit below persists outage memory when enable
 The opt-in `ALPHA_DURABLE_SOURCE_COOLDOWN=1` adds private cross-run outage memory.
 It requires the reviewed `20261001000000_public_source_circuit.sql` migration,
 which was applied during the approved October 1 rollout.
-It is off by default. Ten fixed provider identities are stored after the
-October 2 PLOS, October 8 ccMixter and October 9 Federal Register additions, with
+It is off by default. Eleven fixed provider identities are stored after the
+October 2 PLOS, October 8 ccMixter, October 9 Federal Register and October 10 GOV.UK additions, with
 no query, topic, link, reader, credential or response data. Admission runs only
 on a raw-cache miss and before the existing budget reservation. A source fetch
 failure starts a fifteen-minute cooldown. Failed recovery probes increase it
@@ -403,6 +460,8 @@ to those two steps. Its scheduled opt-in was enabled with the October 8
 `2d8a6a4d` release and left unchanged by `b12cc587`. The code default stays off.
 `SEND_ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK` is also forwarded to both steps,
 and its scheduled opt-in was enabled by the October 9 `85040546` release.
+`SEND_ALPHA_GOVUK_NEWS_FALLBACK` is forwarded to both steps, and its scheduled
+opt-in was enabled by the October 10 `e51ba3f` release.
 `SEND_ALPHA_DURABLE_SOURCE_COOLDOWN` separately forwards the opt-in circuit flag.
 The scheduled setting enables it while the code default remains off.
 Missing or unreadable admission state blocks a
@@ -566,6 +625,8 @@ ALPHA_RESEARCH_METADATA_FALLBACK= # set to "1" for open-license nutrition resear
 ALPHA_PLOS_METADATA_FALLBACK= # scheduled opt-in activated October 2; requires no-model plus durable budget/cooldown and installed circuit migration (code default off)
 ALPHA_CCMIXTER_METADATA_FALLBACK= # scheduled opt-in activated October 8; code default off, requires no-model and durable budget/cooldown plus installed ccMixter identity
 ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK= # scheduled opt-in activated October 9; personal-finance only, code default off, requires no-model and durable controls plus installed Federal Register identity
+ALPHA_GOVUK_NEWS_FALLBACK=    # scheduled opt-in activated October 10; AI/macro/housing metadata only, code default off, requires no-model and durable controls plus installed GOV.UK identity
+ALPHA_STATCAN_LABOUR_FALLBACK= # locally qualified default-off candidate, macro/labour metadata only; no-model and both durable controls required; managed migration/release/activation pending
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 ALPHA_DURABLE_SOURCE_COOLDOWN= # opt-in private provider circuit, requires reviewed migration before activation
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release

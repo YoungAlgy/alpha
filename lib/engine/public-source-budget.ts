@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { consumeDistributedRateLimit } from "@/lib/distributed-rate-limit";
 
-export type PublicSourceProvider = "google-rss" | "publisher-rss" | "gdelt" | "plos-research" | "ccmixter-uploads" | "federal-register-finance" | "govuk-news";
+export type PublicSourceProvider = "google-rss" | "publisher-rss" | "gdelt" | "plos-research" | "ccmixter-uploads" | "federal-register-finance" | "govuk-news" | "statcan-labour";
 export type PublicSourceBudgetErrorCode = "unavailable" | "exhausted";
 
 type RpcClient = Pick<SupabaseClient, "rpc">;
@@ -26,6 +26,7 @@ const PROVIDER_LIMITS: Record<PublicSourceProvider, number> = {
   "ccmixter-uploads": 2,
   "federal-register-finance": 2,
   "govuk-news": 2,
+  "statcan-labour": 2,
 };
 
 export class PublicSourceBudgetError extends Error {

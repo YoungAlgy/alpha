@@ -199,6 +199,7 @@ try {
         "@/lib/source-attribution": attribution,
         "./source-evidence": sourceEvidence,
         "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: forbiddenCall },
+        "./statcan-labour-search": { statCanLabourFallbackEnabled: () => false, statCanLabourSearch: forbiddenCall },
       };
       assert.ok(Object.hasOwn(modules, name), `Unexpected resolver import ${name}`);
       return modules[name];

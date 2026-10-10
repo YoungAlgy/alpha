@@ -19,6 +19,7 @@ import { plosMetadataFallbackEnabled, plosMetadataSearch } from "./plos-metadata
 import { ccmixterMetadataFallbackEnabled, ccmixterMetadataSearch } from "./ccmixter-metadata-search";
 import { federalRegisterFinanceFallbackEnabled, federalRegisterFinanceSearch } from "./federal-register-finance-search";
 import { govUkNewsFallbackEnabled, govUkNewsSearch } from "./govuk-news-search";
+import { statCanLabourFallbackEnabled, statCanLabourSearch } from "./statcan-labour-search";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
@@ -208,6 +209,15 @@ export async function resolveTopicSignal(
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaGovernment) return viaGovernment;
+      }
+      if (topicId === "macro-markets" && statCanLabourFallbackEnabled()) {
+        const viaStatCan = await tryFallback(topicId, "Statistics Canada labour metadata", () =>
+          observed("statcan-labour", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, (topic, searchOptions) => statCanLabourSearch(topic, searchOptions, opts?.excludeUrls),
+            "Statistics Canada Labour Bulletin Metadata", false, 1))
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaStatCan) return viaStatCan;
       }
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {
@@ -401,8 +411,12 @@ async function fetchLiveSignal(
   const candidates = perQuery.flat().filter((source) => {
     if (source.attribution === undefined) return true;
     const credit = validatedSourceAttribution(source.url, source.attribution);
-    return !!credit && (credit.publisher !== "govuk" ||
-      source.title === credit.title && source.description === "" && source.age === credit.publicTimestamp);
+    if (!credit) return false;
+    if (credit.publisher === "govuk") return source.title === credit.title &&
+      source.description === "" && source.age === credit.publicTimestamp;
+    if (credit.publisher === "Statistics Canada") return source.title === credit.title &&
+      source.description === "" && source.age === credit.updatedInstant;
+    return true;
   });
   const ranked = rankAndDedup(candidates, 2, excludeUrls, topicId).slice(0, maxSources);
   if (ranked.length === 0) {
@@ -434,13 +448,13 @@ async function fetchLiveSignal(
   const readCount = contents.filter(Boolean).length;
   const sources: SignalSource[] = [
     ...deep.map((s, i) => ({
-      title: s.attribution?.publisher === "govuk" ? s.title : cleanField(s.title),
+      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" ? s.title : cleanField(s.title),
       url: s.url,
       excerpt: cleanField(contents[i] || s.description),
       attribution: validatedSourceAttribution(s.url, s.attribution),
     })),
     ...more.map((s) => ({
-      title: s.attribution?.publisher === "govuk" ? s.title : cleanField(s.title),
+      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" ? s.title : cleanField(s.title),
       url: s.url,
       excerpt: cleanField(s.description),
       attribution: validatedSourceAttribution(s.url, s.attribution),

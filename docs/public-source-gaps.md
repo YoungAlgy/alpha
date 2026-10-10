@@ -1,22 +1,157 @@
 # Public source coverage, reviewed October 10, 2026 UTC
 
-Latest completed source release: `85040546`, Federal Register's narrow
-personal-finance metadata lane. Exact committed build, CI, guarded production
-identity migration and twelve non-sending live checks passed. Scheduled opt-in
-readback passed October 9 at 07:46:34.182 UTC. Natural fallback use, broad daily
-finance coverage and delivery are not established. Current release evidence is
-`federal-register-release-20261009.md` in the external Alpha receipt folder.
-Earlier pending-candidate sections below are dated history.
+Latest completed source release: `e51ba3f26cdeba9f08637d3cb3530792ff01cfbc`, GOV.UK's
+narrow AI, macro and housing metadata lane. Exact committed app/Worker build,
+CI, guarded production identity migration, twelve non-sending live checks and
+independent identity/readback passed. Final readback October 10 at 02:46:48 UTC
+confirmed the new scheduled opt-in and preserved prior flags and schedules.
+The circuit has eleven fixed provider identities. Natural source fallback,
+recovery and delivery remain unproven. Current evidence is external
+`govuk-release-20261010.md`. The previous Federal Register release remains
+enabled. Earlier pending-candidate sections below are dated history.
 
-Newest local qualification, October 10 02:01 UTC: GOV.UK's finished default-off
+Latest held coverage candidate: a bounded TechCrunch feed check retained
+seventeen unique daily records and five AI matches. Private email/inbox reuse
+is unresolved. One approved licensing/routing inquiry was sent October 10 at
+03:16:41 UTC. Permission is pending and recipient delivery unproven. No adapter,
+flag or circuit identity was added. No follow-up or monitoring is authorized.
+See external `broader-news-source-pass-20261010.md` and
+`techcrunch-permission-send-receipt-20261010.json`.
+
+EFF, October 10 03:33 UTC: the documented Updates RSS route returned HTTP 200,
+then failed the existing shared size/content-length guard. Metadata is null,
+so this is neither a zero-topic result nor proof of source exhaustion. No retry,
+alternate route, raw feed retention, limit relaxation or runtime integration.
+Original EFF material has an express mailing-list reuse grant under CC BY 4.0,
+but third-party exceptions still need an item-level gate. Feed-item provenance,
+dates, bylines and current-topic fit remain unqualified. See external
+`backlog-source-pass-20261010.md` and `eff-feed-qualification-20261010.json`.
+
+Latest Statistics Canada integration, October 10: the narrow macro/labour lane is
+connected locally after GOV.UK, before optional GDELT, with its opt-in off.
+No reader/topic data reaches the fixed Atom endpoint. Shared five-second/256 KiB
+response controls, projected-cache byte bound, isolated durable budget/circuit
+and downstream current-window/alias-exclusion checks apply. Source failure,
+cooldown and exhaustion fall through without discarding earlier useful work.
+The raw five-minute cache is process acceleration, not cross-run state.
+Protected RPC contracts provide cross-run controls when installed and enabled.
+
+The local candidate preserves original headline/link, explicit feed update and
+Daily day evidence, Statistics Canada/The Daily credit, licence, nonendorsement
+and article/media/third-party exclusions through saved/web/HTML/text email paths.
+The five dedicated suites passed 902 offline assertions. Affected regressions,
+workflow/preflight checks and app typecheck passed. Independent review found
+diagnostic/runtime normalized-history parity, fixed locally and rechecked.
+Root also bounded projected-cache expansion. No freshness gate was relaxed.
+
+Final qualification October 10 at 07:11 UTC proved the finished adapter's actual
+Atom header: one anonymous GET, HTTP 200, 20,959 bytes, day/week/month matches
+1/1/5. Metadata credit/rendering and same-story alias exclusion passed. One HEAD
+to the selected story's exact official final alias returned 200 without body
+read or redirect follow. Old consumed probes were not reopened. No retry.
+Disposable PostgreSQL 17.11 qualification passed 56 helper checks, exact rollback,
+prior-state rejection, idempotence, unchanged prior state/access/RPC contracts
+and cross-session recovery ownership and two-request ceilings. Cluster stopped.
+Fresh app/OpenNext/Worker production build passed at 07:15 UTC, including 51/51
+pages, both typechecks and generated Worker syntax. The strict Fonts-only outer
+runner passed, zero denied destinations, failures or network budget exhaustion.
+Runtime/held source bytes and owned native checkouts stayed unchanged. Only four
+documentation files changed after the successful uncommitted build.
+
+Ready for a scoped release decision. Managed migration, exact committed-source
+build/CI, deployment and scheduled opt-in still need separate approval. Recorded
+rollback is e51ba3f and must be freshly confirmed at a release gate. Existing live
+identities/opt-ins stay unchanged. No private service read, letter, send, alert,
+push, deployment or activation. No natural fallback or live recovery proof.
+This remains a narrow labour backup with finite capacity and uneven daily supply.
+See external `statcan-final-qualification-20261010.md` and closeout manifest.
+
+Earlier Statistics Canada work, October 10 05:56 UTC: the title rejection is fixed
+locally. One public diagnostic proved 22 XHTML divs contain plain text plus one
+text-only class span. The narrow reader preserves original text boundaries and
+discards class. Astra caught an intermediate whitespace-trimming defect, fixed
+and covered by exact-title/false-token checks. No general HTML cleaner was added.
+The same snapshot now retains 22 valid metadata rows, with rolling day/week/month
+labour counts 1/1/5. Seven unsupported links, eight off-topic rows, and 13 day/week
+or nine month stale rows stay excluded. Original publication remains unknown.
+
+Real-item projection, citation credit and both original/alias prior-link exclusion
+passed on five retained monthly items. One header-only HEAD301 verified the
+expected first-party alias redirect for the selected daily item. No redirect
+follow or article fetch. Destination HTTP200 is unproven. 285 focused offline
+assertions and final app typecheck passed. Raw feed/items stayed in memory and
+were discarded. No integration, flag, identity, cache, migration, build, release
+or live activation. This is narrow labour coverage, not broad daily news proof.
+Evidence: external `statcan-diagnostic-repair-20261010.md` and aggregate JSON.
+
+Earlier local Statistics Canada work, October 10 05:35 UTC: one new schema check
+proved 29 XHTML-div titles and 29 links on the other official hostname. Twenty-two
+dated Daily paths match each entry's written update calendar day. The pure reader
+now handles those forms without flattening arbitrary HTML or fetching articles.
+It retains original title/link metadata, explicit update evidence, and the
+Statistics Canada product/reference-date acknowledgment. Original publication
+time is not inferred. Entry-level ownership markers are rejected and body fields
+are dropped. This does not establish universal per-item reuse rights.
+
+The separately bounded finished-reader GET at 05:32 UTC returned 200 and 20,959
+bytes but no eligible labour items in any day/week/month window. No target HEAD
+was attempted because there was no retained item. Exact field/ownership/topic/
+clock rejection causes remain unmeasured. Equal response sizes between requests
+do not establish identical content. Real-item projection, citation and prior-link
+handling are unproven. The preserved receipt's true empty-array flags prove
+nothing about real items. The closed helper now emits null for future empty
+projection/credit results. No request repeated to force admission.
+
+222 parser, 87 schema-helper and 20 finished-runner offline assertions passed,
+along with the non-incremental app typecheck. Independent Astra review caught a
+bounded-input namespace-memory amplification gap and reserved-default-namespace
+acceptance. Root fixed both. Sol's focused tests found hostile cached-proxy
+exceptions, also fixed. All direct entry namespaces are checked before selection
+can hit its cap. The source stays unconnected and is not ready for release.
+No request client, renderer, circuit, cache, flag or migration was added to the
+app. Eleven installed identities and the live source order are unchanged.
+Evidence: external `statcan-labour-local-candidate-20261010.md`,
+`statcan-schema-qualification-20261010.json` and
+`statcan-reader-qualification-20261010.json`.
+
+Earlier independent-source screen, October 10 04:29 UTC: Statistics Canada's
+Labour Atom returned 200 and 20,959 bytes, with 29 entries and two recent updated
+timestamps. The first candidate rejects its title, assumed link and missing-
+published fields. The structured-field total does not locate title rejection.
+It does not establish zero macro coverage, a publisher
+defect or original publication dates. Its original-information licence permits
+covered reuse with product/reference-date acknowledgment and exclusions.
+
+Futurity RSS returned 200 and 61,651 decoded UTF-8 bytes. Ten safe titles,
+strict dates and bylines, four dates within the rolling week. None of the
+links matched the assumed canonical path. Topic coverage and exact URL rejection
+remain unproven. Its broad Creative Commons 4.0 attribution statement does not
+identify the exact variant. MIT's documented main feed answered 200 but declared
+length exceeded the unchanged 256 KiB bound, so item metadata is unknown.
+No new source cleared integration. Music/other leads remain held for freshness
+or reuse evidence. All three one-use entries are closed, consumed markers kept,
+114 offline checks passed. No app/flag/circuit/migration/renderer/live change.
+See external `independent-source-screen-20261010-round2.md` and receipts.
+
+Earlier independent-source screen, October 10 03:53 UTC: the official DG GROW
+News feed URL returned HTTP 404 on one bounded request. Metadata is null,
+so no quiet-day or source-exhaustion conclusion follows. Libre Arts' official
+posts index has no entry newer than September 15, despite useful audio subject
+fit. No root feed request or integration followed that freshness finding.
+JPL text rights and CISA's exact route/policy remain unproven. See external
+`next-source-screening-20261010.md` for research limits and receipts. No source
+order, runtime guard, durable identity, flag or live setting changed.
+
+Historical pre-release qualification, October 10 02:01 UTC: GOV.UK's default-off
 path passed one bounded public API request and a body-free canonical target HEAD.
 The current pool retained daily/week matches of AI 1/2, macro 0/1 and housing 0/2
 before the one-item visible cap. Disposable PostgreSQL migration and cross-session
 checks passed. The app/OpenNext/Worker build passed, while its strict outer runner
 remains flagged by one allowed Fonts connection failure. No denied destination
-was observed. That uncommitted candidate is not a release identity. Managed
-installation, deployment and scheduled activation need current separate release
-evidence. Generic qualification proves neither natural fallback nor delivery.
+was observed. The later clean committed release, managed installation,
+deployment and scheduled activation above supersede those pending gates.
+The earlier flagged candidate receipt remains unchanged. Generic qualification
+proves neither natural fallback nor delivery.
 See external `govuk-final-qualification-20261010.md`. Earlier sections below are
 dated stage records and do not override that receipt or a later actual release.
 
@@ -101,8 +236,9 @@ Reserve feeds follow. Global Voices remains a limited licensed-feed tier.
 Crossref serves narrow nutrition metadata. PLOS follows it for the three fixed
 topics, with its scheduled opt-in enabled and code default off. Released and
 enabled ccMixter follows for `music-hiphop` only. GDELT stays off and unproven.
-The enabled Federal Register lane follows PLOS for `personal-finance` only,
-before optional GDELT. It has an independent budget and cross-run circuit.
+The enabled Federal Register lane follows PLOS for `personal-finance` only.
+Enabled GOV.UK follows the earlier applicable sources for AI, macro and housing,
+before optional GDELT. Both have independent budgets and cross-run circuits.
 The newer release receipt establishes installation and activation. It does not
 establish a natural scheduled ccMixter fallback.
 

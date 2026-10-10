@@ -155,6 +155,7 @@ try {
       "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => false, ccmixterMetadataSearch: forbidden },
       "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: forbidden },
       "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: forbidden },
+      "./statcan-labour-search": { statCanLabourFallbackEnabled: () => false, statCanLabourSearch: forbidden },
       "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbidden },
       "@/lib/source-attribution": attribution,
     };

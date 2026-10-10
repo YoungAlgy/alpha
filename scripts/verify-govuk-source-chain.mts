@@ -109,6 +109,7 @@ try {
             mutation === "description" ? { ...result, description: "Invented summary" } :
             mutation === "age" ? { ...result, age: "2026-10-10" } : result);
         } },
+        "./statcan-labour-search": { statCanLabourFallbackEnabled: () => false, statCanLabourSearch: deny },
         "./gdelt-search": { gdeltFallbackEnabled: () => gdeltHealthy, gdeltSearch: async () => {
           events.push("gdelt");
           return [{ title: "Artificial intelligence independent report", url: "https://example.org/independent-ai-report", description: "Generic later source." }];

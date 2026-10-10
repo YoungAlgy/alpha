@@ -1,6 +1,128 @@
 # Alpha remaining work
 
-Latest completed release: `850405460eaf0f8d0bbcb67e9937523c62e39545`, October 9.
+Latest completed release: `e51ba3f26cdeba9f08637d3cb3530792ff01cfbc`, October 10.
+GOV.UK's narrow AI, macro and housing metadata lane is installed and enabled.
+Fresh committed app/Worker build, exact-source CI, guarded additive migration,
+twelve non-sending live checks and independent release readback passed. Final
+readback at 02:46:48 UTC confirmed only the new scheduled opt-in among settings changed.
+The private circuit now has eleven provider identities. No manual letter or
+retry was triggered. See external `govuk-release-20261010.md`. These checks do
+not establish natural fallback, recovery, provider delivery or inbox receipt.
+The completed release approval is consumed.
+
+Latest held coverage candidate: TechCrunch's one bounded October 10 feed check
+retained seventeen unique daily records and five AI matches. Its exact private
+email/inbox reuse scope remains unresolved. One approved licensing/routing
+inquiry was sent at 03:16:41 UTC. Permission is pending, recipient delivery
+unproven, and no adapter is integrated. No follow-up or monitoring is authorized.
+See external `broader-news-source-pass-20261010.md` and
+`techcrunch-permission-send-receipt-20261010.json`.
+
+New independent candidate check, October 10 03:33 UTC: EFF's documented fixed
+Updates RSS route returned HTTP 200 but failed the unchanged shared
+size/content-length guard. No item metadata was qualified. Its original-material
+policy expressly permits mailing-list reuse under CC BY 4.0, with third-party
+exceptions. That grant does not prove feed-item originality. No adapter,
+retry, alternate-feed request or limit relaxation. See external
+`backlog-source-pass-20261010.md` and `eff-feed-qualification-20261010.json`.
+
+Latest local StatCan integration, October 10: the default-off adapter now follows
+GOV.UK for macro/labour metadata, before optional GDELT. Its fixed anonymous Atom
+request uses the shared five-second/256 KiB bounds with zero retry/redirect follow.
+The projected raw cache is separately byte-bounded and current date/topic/prior
+links are selected after cache retrieval. Both official and normalized story
+aliases are excluded before the one-visible-item cap. Its separate two-request
+fixed fifteen-minute budget and protected cross-run circuit use `statcan-labour`.
+The eleven-to-twelve migration and rollback verifier passed disposable PostgreSQL
+17.11 qualification, including 56 helper checks, eight rejected prior-state cases,
+exact rollback/idempotence, unchanged prior rows/RPCs/ACLs/RLS and concurrent
+recovery/budget behavior. The temporary database is stopped. Managed installation
+remains pending. Existing eleven installed identities and live flags are unchanged.
+
+Exact title/link, feed-entry-updated clock, Daily link day, Statistics Canada/
+The Daily credit, licence/nonendorsement and rights limits survive deterministic
+writing, fresh/cached assembly and saved/web/HTML/text email rendering. Original
+publication remains unknown. Missing or changed metadata fails validation.
+The five StatCan suites passed 902 offline assertions. Affected source/control,
+workflow/preflight regressions and non-incremental app typecheck passed. Scoped
+lint has zero errors and three existing unused-catch-variable warnings in the
+resolver. Final qualification at 07:11 UTC used one fixed anonymous Atom GET:
+HTTP 200, actual application/atom+xml, 20,959 bytes, day/week/month matches 1/1/5.
+Credit/rendering and same-story alias exclusion passed. One body-free exact
+official alias HEAD returned 200. No article text, retry or redirect follow.
+Fresh uncommitted app/OpenNext/Worker build passed 07:13:52 to 07:15:17 UTC,
+51/51 pages, app/Worker typechecks and generated Worker syntax. Strict outer
+Google Fonts-only network boundary passed with zero denied destinations or
+upstream failures. All source inputs and seven owned native checkouts were
+preserved. Four documentation files were updated after that build.
+
+The candidate is ready for a separate scoped release decision. That scope is
+the StatCan lane and its filters/credit/rendering, protected additive identity,
+two workflow forwards, focused tests and documentation. Eight held prototype/
+test files stay excluded. It still needs an exact committed build/CI, guarded
+managed installation, variable-preserving deployment and non-sending checks
+before only its scheduled opt-in may be enabled. No manual dispatch or extra
+letter. Recorded rollback is e51ba3f, subject to fresh live confirmation.
+No natural fallback, installed StatCan identity, live recovery, delivery,
+unlimited capacity or daily coverage claim. No push/deploy/activation/send.
+See external `statcan-final-qualification-20261010.md` and closeout manifest.
+
+Earlier StatCan repair, October 10 05:56 UTC: one bounded public diagnostic isolated
+22 rejected titles to mixed plain text plus an XHTML span with an inert class.
+The local reader now preserves that visible text in source order and discards
+class. Nested/multiple/foreign elements and other attributes remain rejected.
+On the same in-memory snapshot, 22 metadata rows qualify, with one daily, one
+weekly and five monthly labour matches. Real-item credit/projection and prior-
+link exclusion passed. One body-free HEAD301 confirmed the expected first-party
+alias redirect. Its destination was not followed and HTTP200 remains unproven.
+240 metadata and 45 diagnostic checks plus final app typecheck passed.
+No build or runtime integration. Next local stage: request adapter, shared
+durable limits/cooldowns and saved/web/email credit. Source order and eleven
+identities unchanged. See external `statcan-diagnostic-repair-20261010.md`.
+
+Earlier local source work, October 10 05:35 UTC: the unconnected Statistics Canada
+Labour metadata reader is implemented and independently reviewed. A new schema
+check proved all 29 titles use an XHTML div, all links use the other official
+hostname, and 22 dated Daily links match their written update day. The reader
+keeps original headlines/links, labels the clock "Feed entry updated", and leaves
+original publication time unknown. Product/date credit and licence acknowledgment
+are separate from excluded article text, media and third-party material.
+
+One finished-reader check at 05:32:43 to 05:32:44 UTC returned HTTP 200 and 20,959
+bytes, but selected zero day/week/month labour items. The retained aggregate
+cannot identify the rejecting gate. Real-item projection, citation rendering,
+prior-link exclusion and target validity remain unproven. The attempt's
+"qualification_complete" status means it finished, not that the source qualified.
+Empty-array true flags in the unchanged receipt are vacuous. Future empty flags
+are null in the closed helper. No further public request or guard relaxation.
+329 focused offline assertions and the application typecheck passed. No build,
+runtime integration, circuit identity, flag, migration, release or send. The next
+bounded step is sanitized per-gate rejection counts, not a runtime adapter.
+See external `statcan-labour-local-candidate-20261010.md` and its two receipts.
+
+Earlier independent-source screen, October 10 04:29 UTC: Statistics Canada and
+Futurity each returned HTTP 200 within the unchanged response bound. Neither
+clears integration yet. Statistics Canada's 29 entries have updated timestamps
+and missed the first candidate's title/link/published-date contract. Exact title
+rejection cause is unknown. Its structured-field total is not title-specific. Two
+updated timestamps are recent, not proof of fresh publication. Futurity has
+ten safe titles/dates/bylines and four current-week dates, but all links missed
+the assumed canonical shape. Zero admitted topic counts do not prove absent
+coverage. MIT's main RSS answered 200 but exceeded the declared-length bound,
+leaving metadata unknown. Music leads lack current coverage or clear editorial
+reuse evidence. All three one-use probes are closed, 114 focused offline checks
+passed, existing source order/controls unchanged. See external
+`independent-source-screen-20261010-round2.md` and its aggregate receipts.
+
+Earlier source screening, October 10 03:53 UTC: the Commission's official DG GROW
+RSS directory exposed a fixed News URL, but one bounded GET returned HTTP 404.
+No metadata pool was qualified. Libre Arts fits audio-production subjects, but
+its newest indexed post is September 15, outside the current weekly window.
+JPL text reuse and CISA endpoint/policy evidence remain unresolved. No adapter,
+alternate guessed API, retry or gate relaxation. See external
+`next-source-screening-20261010.md`. The existing source chain is unchanged.
+
+The preceding completed release was `850405460eaf0f8d0bbcb67e9937523c62e39545`, October 9.
 Worker acceptance passed at 07:45:34.808 UTC and source activation/readback at
 07:46:34.182 UTC. The independent narrow Federal Register personal-finance lane
 is enabled. Fresh committed app/Worker build, exact-source CI, guarded additive
@@ -10,7 +132,7 @@ See `federal-register-release-20261009.md` in the external Alpha receipt folder.
 This does not prove natural fallback, daily broad finance coverage or delivery.
 The completed release approval is consumed.
 
-Newest local qualification, October 10 02:01 UTC: GOV.UK's finished default-off
+Historical pre-release qualification, October 10 02:01 UTC: GOV.UK's default-off
 adapter passed one bounded public request and a body-free canonical target HEAD.
 The current generic pool retained daily/week matches of AI 1/2, macro 0/1 and
 housing 0/2 before the visible cap. Four focused suites passed 688 assertions,
@@ -18,8 +140,9 @@ affected regressions and typecheck passed, and disposable PostgreSQL migration
 checks passed. The app/OpenNext/Worker candidate build passed. Its strict outer
 runner remains flagged for one failed allowed Google Fonts connection, with no
 denied destination. This is not a committed release build or live activation.
-Release state must come from the current external receipt. The guarded managed
-migration and scheduled opt-in remain separate gates. No natural GOV.UK fallback,
+The completed release above supersedes those pending build and release gates.
+The earlier candidate's flagged outer-runner receipt remains dated evidence.
+No natural GOV.UK fallback,
 live durable admission, recovery or delivery is established by qualification.
 See external `govuk-final-qualification-20261010.md`.
 
@@ -81,14 +204,12 @@ follow-up confirmed the exact source at 04:28:17 UTC and passed all twelve
 non-sending live checks at 04:29:54 UTC, without another deployment. Evidence is
 `next-security-release-final-20261008.json` and
 `next-security-release-acceptance-20261008.json` in the external receipt folder.
-The newest bounded history snapshot is the October 8 17:05 UTC receipt,
-`normal-observation-20261008-1705.md`. It was unchanged from the 15:55 receipt,
-`normal-observation-20261008-1555.md`, and earlier
-`normal-observation-20261008.md` snapshot and bounded log projection. See the
-latest recorded normal outcomes below. Today's delivery remains unverified.
-No scheduler cause is inferred. The earlier documentation-only review used
-saved receipts. The later remaining-gaps pass made one fresh history read.
-No job/log/provider/reader reads or recurring checks followed.
+The latest recorded normal-delivery evidence is the October 9 00:29 UTC receipt,
+`two-run-delivery-result-20261009-0029.md`, for the October 8 issue. It supersedes
+the earlier October 8 17:05 visibility-only snapshot. This source pass read the
+saved receipt once, with no fresh workflow, provider, reader or mailbox check.
+See the dated outcomes below. October 9/10 delivery and ordinary execution on
+the current release remain unverified. No scheduler cause is inferred.
 
 The additive exact-date coverage RPC was installed at 15:00:41 UTC before the
 release. It does not change the old cutoff RPC. The completed approval does not
@@ -146,6 +267,9 @@ gates or reopen historical Round-script debt merely to close this backlog.
   feeds, Global Voices, narrow licensed Crossref nutrition metadata and PLOS
   research metadata for nutrition, mental health and AI. PLOS is released and
   its scheduled opt-in is enabled. Each tier's coverage limits still apply.
+- GOV.UK's separate AI, macro and housing metadata lane is released and enabled.
+  Published-or-major-update dates remain labeled. It has its own protected
+  request budget and cross-run cooldown identity. Broad coverage is not claimed.
 - Shared request ceilings and separate persistent provider cooldowns are
   activated. Outage history and one owned recovery probe survive separate runs.
   Raw caches remain process-local. Finished sections remain durable.
@@ -202,7 +326,7 @@ Effort is relative, not an elapsed-time promise.
 | Item | Status and next step | Impact / risk / effort | Score |
 | --- | --- | --- | --- |
 | Record natural fallback and safety-event evidence | The source diagnostics are released. What remains is ordinary observed evidence. Resolver/selected-section counts cannot prove persistence or delivery. Healthy Resend sends do not prove automatic Brevo or content fallback. Accepted IDs do not prove provider-confirmed delivery or inbox receipt. Empty callbacks do not prove bounce, complaint or unsubscribe handling. Read sanitized aggregates only under an appropriate requested check. Do not manufacture events or send letters just to fill evidence. | 3 / 3 / 3 | 18 |
-| Improve independent topic coverage where evidence supports it | GOV.UK's default-off adapter, two-request fixed fifteen-minute durable identity and saved/web/email metadata credit passed final public qualification, offline migration tests and the candidate app/Worker build. The strict build wrapper remains flagged for one allowed Fonts connection failure. Exact committed build, managed migration, deployment and opt-in need current release evidence. Broad news/music/custom coverage is still limited. ECB and Democracy Now runtime work stays held by sparse generic-topic fit, and FTC daily admission stays parked. Published-or-major-update dates remain labeled. Do not replay consumed probes or relax guards to force output. | 4 / 3 / 4 | 14 |
+| Improve independent topic coverage where evidence supports it | Narrow GOV.UK coverage is released and enabled, including its separate durable identity and saved/web/email credit. Its clean committed release build supersedes the earlier candidate runner's Fonts exception. Broad news/music/custom coverage remains limited. TechCrunch is technically promising for AI but held on private email/inbox reuse permission after one approved inquiry. EFF's documented Updates feed failed the unchanged response guard and has no qualified item pool. ECB and Democracy Now stay held by sparse generic-topic fit, and FTC daily admission stays parked. Do not replay consumed probes or relax guards to force output. | 4 / 3 / 4 | 14 |
 
 Keyed search was removed from normal scheduled content by the approved October 2
 05:47 UTC activation. The `1eb3a14b` maintenance cleanup was retained in the exact
@@ -331,7 +455,26 @@ passing exact CI. No runtime deployment was required for that maintenance step.
 The subsequent PLOS source release completed under separate approval as
 `207a4fae`, with its exact build, deployment, migration and activation recorded.
 
-## Latest recorded normal observation, checked October 8 at 17:05 UTC
+## Latest recorded normal delivery, checked October 9 at 00:29 UTC
+
+Existing `two-run-delivery-result-20261009-0029.md` records the October 8 issue.
+Scheduled run `37835974537` on `2d8a6a4d` started October 8 at 19:58:44 UTC and
+finished its job at 20:00:26 UTC. Protected execution-time counts were three
+eligible and three uncovered. Resend was selected after verified sender and
+both capacity-window checks. One HTTP 200 application page reported three
+acceptances/durable finalizations, zero failures, prior-content backups, paid
+calls, retry-required or final uncovered readers.
+
+Later run `37842076694` on `b12cc587` started at 20:47:29 UTC and finished at
+20:47:43 UTC. It found three eligible and zero uncovered, then skipped provider
+selection, setup and sending. No competing send occurred through that recorded
+application path. Exact provider HTTP subattempts were not independently read.
+Provider-confirmed delivery, inbox receipt, natural source/provider fallback
+and real safety-event processing remain unproven. This is dated evidence on
+older releases, not proof of ordinary execution on current `e51ba3f2` or
+October 9/10 outcomes. No live check was repeated by the source-research pass.
+
+## Earlier normal observation, checked October 8 at 17:05 UTC
 
 The unfiltered history snapshot returned the newest 100 of 498 repository runs,
 unchanged from the 15:55 and 15:36 UTC snapshots. No October 8 sender was visible then.

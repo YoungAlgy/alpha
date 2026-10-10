@@ -6,7 +6,7 @@ import { PublicSourceControlError } from "./public-source-control-error";
 export const PUBLIC_SOURCE_CIRCUIT_PROVIDERS = [
   "google-rss", "publisher-nist", "publisher-fda-medwatch",
   "publisher-fed-speeches", "global-voices-rss", "crossref-research", "gdelt", "plos-research", "ccmixter-uploads",
-  "federal-register-finance", "govuk-news",
+  "federal-register-finance", "govuk-news", "statcan-labour",
 ] as const;
 export type PublicSourceCircuitProvider = typeof PUBLIC_SOURCE_CIRCUIT_PROVIDERS[number];
 type RpcClient = Pick<SupabaseClient, "rpc">;

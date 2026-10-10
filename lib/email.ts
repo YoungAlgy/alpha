@@ -323,11 +323,13 @@ export function prepareLetterNotification(
   const MAX_HEADLINE_LEN = 100;
   const sectionList = params.issue.sections
     .map((s) => {
-      const rawLead = s.items?.[0]?.headline?.trim();
+      const leadItem = s.items?.[0];
+      const exactStatCan = leadItem?.attribution?.publisher === "Statistics Canada";
+      const rawLead = exactStatCan ? leadItem.headline : leadItem?.headline?.trim();
       // alpha-drift-r20-08: same UTF-16-vs-code-point truncation-flag bug as
       // the teaser above, in the sibling guard this comment's own
       // r19-01 note (nearby) referenced but never actually fixed.
-      const leadCut = rawLead ? codePointSafeTruncate(rawLead, MAX_HEADLINE_LEN - 1) : null;
+      const leadCut = rawLead && !exactStatCan ? codePointSafeTruncate(rawLead, MAX_HEADLINE_LEN - 1) : null;
       const lead = leadCut?.truncated ? `${leadCut.text.trim()}…` : rawLead;
       // alpha-drift-r38-02 (2026-08-19): this em dash shipped in the
       // "IN THIS ISSUE" list of literally every daily letter that has a
@@ -631,7 +633,8 @@ export function subjectLine(firstName: string, issueNumber?: number, weekOf?: st
 // how many topics — so the open is still earned even though the subject is
 // the recognizable identity. This is what used to be the subject.
 function previewFromIssue(issue: Issue): string {
-  const lead = issue.sections[0]?.items?.[0]?.headline;
+  const item = issue.sections[0]?.items?.[0];
+  const lead = item?.headline;
   const others = Math.max(0, issue.sections.length - 1);
   if (lead) {
     // alpha-drift-r26-02 (2026-08-14): was plain lead.slice(0, 87) -- raw
@@ -655,7 +658,8 @@ function previewFromIssue(issue: Issue): string {
     // which counts UTF-16 units) so the trigger check itself can't be
     // fooled by a surrogate pair either.
     const leadCodePoints = Array.from(lead);
-    const trimmed = leadCodePoints.length > 90 ? leadCodePoints.slice(0, 87).join("").trimEnd() + "…" : lead;
+    const trimmed = item.attribution?.publisher !== "Statistics Canada" && leadCodePoints.length > 90
+      ? leadCodePoints.slice(0, 87).join("").trimEnd() + "…" : lead;
     if (others === 0) return trimmed;
     return `${trimmed}, plus ${others} more topic${others === 1 ? "" : "s"}.`;
   }
@@ -702,7 +706,8 @@ export function sourceCreditsForIssue(issue: Pick<Issue, "sections">): SourceCre
     if (!attribution || !item.primaryRef) throw new Error("Invalid licensed source attribution");
     const previous = seen.get(item.primaryRef.url);
     if (previous) {
-      if ((previous.publisher === "govuk" || attribution.publisher === "govuk") &&
+      if ((previous.publisher === "govuk" || attribution.publisher === "govuk" ||
+          previous.publisher === "Statistics Canada" || attribution.publisher === "Statistics Canada") &&
           JSON.stringify(previous) !== JSON.stringify(attribution)) {
         throw new Error("Conflicting government source attribution");
       }
@@ -733,7 +738,8 @@ function creditsForRender(sourceCredits: SourceCredit[]) {
     const credit = sourceAttributionCredit(url, validated);
     if (!validated || !credit) throw new Error("Invalid licensed source attribution");
     const previous = seenAttributions.get(url);
-    if (previous && (previous.publisher === "govuk" || validated.publisher === "govuk") &&
+    if (previous && (previous.publisher === "govuk" || validated.publisher === "govuk" ||
+        previous.publisher === "Statistics Canada" || validated.publisher === "Statistics Canada") &&
         JSON.stringify(previous) !== JSON.stringify(validated)) {
       throw new Error("Conflicting government source attribution");
     }
@@ -749,10 +755,12 @@ function creditsForRender(sourceCredits: SourceCredit[]) {
 // without ever triggering a live send.
 export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl, letterUrl, weekOf, unsubscribeUrl, sourceCredits = [] }: RenderArgs): string {
   const creditsHtml = creditsForRender(sourceCredits).map((credit) => {
-    const sourceLine = credit.kind === "government"
+    const sourceLine = credit.kind === "statcan"
+      ? `<a href="${escapeAttr(credit.articleUrl)}">${escapeHtml(credit.originalTitle)}</a>. Feed entry updated: ${escapeHtml(credit.updatedInstant)}. Daily link day: ${escapeHtml(credit.dailyLinkDay)}. Original publication time is unproven.`
+      : credit.kind === "government"
       ? `<a href="${escapeAttr(credit.articleUrl)}">${escapeHtml(credit.originalTitle)}</a>. Source: ${escapeHtml(credit.publisherLabel)}. Published or updated: ${escapeHtml(credit.publicTimestamp)}.`
       : `By ${escapeHtml(credit.author)}. <a href="${escapeAttr(credit.articleUrl)}">${escapeHtml(credit.publisherLabel)}, ${escapeHtml(credit.date)}</a>.`;
-    return `<p style="font-size:13px;line-height:1.5;margin:0 0 12px;overflow-wrap:anywhere;word-break:break-word;">${sourceLine} <a href="${escapeAttr(credit.licenseUrl)}">${escapeHtml(credit.licenseLabel)}</a>. ${escapeHtml(credit.changes)}${credit.kind === "government" ? ` ${escapeHtml(credit.limitations)}` : ""}</p>`;
+    return `<p style="font-size:13px;line-height:1.5;margin:0 0 12px;overflow-wrap:anywhere;word-break:break-word;">${sourceLine} <a href="${escapeAttr(credit.licenseUrl)}">${escapeHtml(credit.licenseLabel)}</a>. ${escapeHtml(credit.changes)}${credit.kind === "statcan" ? ` ${escapeHtml(credit.nonendorsement)}` : ""}${credit.kind === "government" || credit.kind === "statcan" ? ` ${escapeHtml(credit.limitations)}` : ""}</p>`;
   }).join("");
   // CTA prefers the tokenized /letter URL — it opens the letter directly with
   // no session, on any device (the view-in-browser pattern). Falls back to
@@ -900,10 +908,12 @@ export function renderHTML({ firstName, teaser, sectionList, preheader, inboxUrl
 
 export function renderText({ firstName, teaser, sectionList, inboxUrl, letterUrl, weekOf, unsubscribeUrl, sourceCredits = [] }: RenderArgs): string {
   const creditsText = creditsForRender(sourceCredits).map((credit) => {
-    const sourceLine = credit.kind === "government"
+    const sourceLine = credit.kind === "statcan"
+      ? `${credit.originalTitle}: ${credit.articleUrl}\nFeed entry updated: ${credit.updatedInstant}. Daily link day: ${credit.dailyLinkDay}. Original publication time is unproven.`
+      : credit.kind === "government"
       ? `${credit.originalTitle}: ${credit.articleUrl}\nSource: ${credit.publisherLabel}. Published or updated: ${credit.publicTimestamp}.`
       : `By ${credit.author}. ${credit.publisherLabel}, ${credit.date}: ${credit.articleUrl}`;
-    return `${sourceLine}\n${credit.licenseLabel}: ${credit.licenseUrl}. ${credit.changes}${credit.kind === "government" ? ` ${credit.limitations}` : ""}\n\n`;
+    return `${sourceLine}\n${credit.licenseLabel}: ${credit.licenseUrl}. ${credit.changes}${credit.kind === "statcan" ? ` ${credit.nonendorsement}` : ""}${credit.kind === "government" || credit.kind === "statcan" ? ` ${credit.limitations}` : ""}\n\n`;
   }).join("");
   const unsubLine = unsubscribeUrl ? `\n\nUnsubscribe: ${unsubscribeUrl}` : "";
   return `${weekOf}

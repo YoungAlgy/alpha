@@ -122,6 +122,31 @@ and circuit hooks, with zero durable RPC calls. It does not prove live admission
 Managed installation and scheduled activation require the current external
 release receipt. The raw cache remains process-only acceleration.
 
+### Local Statistics Canada candidate, October 10
+
+`statcan-labour` is a separate default-off identity for one fixed Atom endpoint.
+It has its own two-request fixed fifteen-minute budget. No-model mode and both
+durable switches are required before the source opt-in can run. New requests
+use existing protected admission, budget reservation, cooldown and fenced probe
+completion. Budget/control errors remain neutral and optional completion failure
+preserves validated metadata without claiming recovery. Generic offline fixtures
+test both independent budget instances and shared circuit behavior.
+
+The guarded `20261010010000_statcan_public_source_circuit.sql` draft requires the
+exact eleven existing identities and recognized constraint shape. It adds only
+the twelfth identity without changing existing state, RPCs or ACLs. The prepared
+local SQL verifier checks prior outage/probe preservation, RPC/ACL/RLS equality,
+admission, cooldown, idempotent reapplication and rollback. Final disposable
+PostgreSQL 17.11 execution passed October 10 at 07:09 UTC, 56 helper checks.
+Eight unexpected starting states were rejected, including boolean widening.
+Exact rollback and prior rows/RPCs/ACLs/RLS preservation passed. Separate sessions
+admitted one recovery owner and two requests while denying the third in the same
+fixed window. The temporary server is verified stopped. This proves a local
+fixture only. Managed installation, activation and release remain separate
+approvals. The source's response and projected raw metadata pool
+are both capped at 256 KiB, then current dates and prior-link aliases are selected
+on each cache read. Raw cache state remains process-local.
+
 Supabase remains a dependency. A database outage can prevent new source requests
 when this opt-in is active. Existing valid cache/sections remain usable. Cooldowns
 reduce needless attempts but cannot supply missing current coverage or guarantee

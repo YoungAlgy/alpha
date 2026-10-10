@@ -227,7 +227,10 @@ function Item({ item }: { item: DigestItem }) {
     <div>
       {credit && (
         <p className="alpha-ui text-sm mb-3 leading-relaxed break-words" style={{ color: "var(--ink-soft)" }}>
-          {credit.kind === "government" ? <>
+          {credit.kind === "statcan" ? <>
+            <a href={credit.articleUrl} target="_blank" rel="noopener noreferrer" className="underline">{credit.publisherLabel}</a>.
+            {" "}Feed entry updated: {credit.updatedInstant}. Daily link day: {credit.dailyLinkDay}. Original publication time is unproven.
+          </> : credit.kind === "government" ? <>
             <a href={credit.articleUrl} target="_blank" rel="noopener noreferrer" className="underline">{credit.publisherLabel}</a>.
             {" "}Published or updated: {credit.publicTimestamp}.
           </> : <>
@@ -235,7 +238,8 @@ function Item({ item }: { item: DigestItem }) {
           </>}
           {" "}<a href={credit.licenseUrl} target="_blank" rel="noopener noreferrer" className="underline">{credit.licenseLabel}</a>.
           {" "}{credit.changes}
-          {credit.kind === "government" && <> {credit.limitations}</>}
+          {credit.kind === "statcan" && <> {credit.nonendorsement}</>}
+          {(credit.kind === "government" || credit.kind === "statcan") && <> {credit.limitations}</>}
         </p>
       )}
       {kindLabel && (

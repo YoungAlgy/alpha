@@ -4,7 +4,7 @@ import { cleanField } from "./text-clean";
 import { normalizeUrl } from "./url-guard";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
 import { WRAPPED_SOURCE_NOTE } from "@/lib/issue-visibility";
-import { validatedSourceAttribution, govUkItemFields } from "@/lib/source-attribution";
+import { validatedSourceAttribution, govUkItemFields, statCanItemFields } from "@/lib/source-attribution";
 import type { TopicBlurb, TopicSignal, BlurbItem, SignalSource } from "./types";
 
 /**
@@ -96,7 +96,7 @@ function uniqueSources(signal: TopicSignal): SignalSource[] {
     if (source.attribution !== undefined && !credit) continue;
     const normalized = normalizeUrl(source.url);
     if (!normalized || !sourceIsAllowed(signal, source.url) || seen.has(normalized)) continue;
-    if (credit?.publisher === "govuk") {
+    if (credit?.publisher === "govuk" || credit?.publisher === "Statistics Canada") {
       // Preserve the exact original metadata title. Never format or truncate
       // it through the ordinary narrative/voice sanitizer or admit an excerpt.
       if (source.title !== credit.title || source.excerpt !== "") continue;
@@ -124,6 +124,7 @@ function uniqueSources(signal: TopicSignal): SignalSource[] {
 function itemForSource(topic: string, source: SignalSource): BlurbItem {
   const credit = validatedSourceAttribution(source.url, source.attribution);
   if (credit?.publisher === "govuk") return govUkItemFields(credit);
+  if (credit?.publisher === "Statistics Canada") return statCanItemFields(credit);
   const body = source.excerpt
     ? source.excerpt
     : `Read the piece for the details on ${topic.toLowerCase()}.`;

@@ -97,7 +97,8 @@ export interface AuthoredSourceAttribution {
 
 // Government metadata carries its own exact headline, URL and update-date
 // meaning. It has no personal author and is not a Creative Commons grant.
-export type SourceAttribution = AuthoredSourceAttribution | import("./engine/govuk-news-metadata").GovUkNewsMetadata;
+export type SourceAttribution = AuthoredSourceAttribution | import("./engine/govuk-news-metadata").GovUkNewsMetadata |
+  import("./engine/statcan-labour-metadata").StatCanLabourMetadata;
 
 export interface DigestItem {
   kind: ItemKind;
