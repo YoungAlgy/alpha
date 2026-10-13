@@ -19,6 +19,24 @@ function findIf(source: string, condition: string) {
   assert.ok(found, condition);
   return found.getText();
 }
+function findVariableStatement(source: string, variableName: string) {
+  const parsedSource = parse(source);
+  let found: ts.VariableStatement | undefined;
+  function visit(node: ts.Node) {
+    if (
+      ts.isVariableStatement(node) &&
+      node.declarationList.declarations.some(
+        (declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === variableName,
+      )
+    ) {
+      found ??= node;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(parsedSource);
+  assert.ok(found, variableName);
+  return found.getText(parsedSource);
+}
 const json = (body: unknown, init: { status?: number } = {}) => ({ body, status: init.status ?? 200 });
 function run(statement: string, context: Record<string, unknown> = {}) {
   const output = ts.transpileModule(`(function() { ${statement}\n return "allowed"; })()`, {
@@ -42,6 +60,7 @@ assert.equal(run(override, { url: new URL("https://fixture.invalid/") }), "allow
 
 // Execute the actual fresh-row branch with no provider dependency in the sandbox.
 const freshGate = findIf(cron, "freshUserErr || !freshUser");
+const markDeliverySettled = findVariableStatement(cron, "markDeliverySettled");
 const eligible = {
   email: "reader@fixture.invalid", delivery_enrolled: true,
   subscribed_at: "2026-01-01T00:00:00Z", access_granted_at: "2026-01-01T00:00:00Z",
@@ -49,26 +68,46 @@ const eligible = {
   suppression_cleanup_pending_at: null, brevo_unsubscribed_at: null,
 };
 function checkFresh(row: unknown, error: unknown = null, brevoSchemaEnabled = true) {
-  return run(freshGate, {
+  const deliveryRow = { id: "245fb183-0d73-4a57-bf17-38bd57e37fb6" };
+  const deliverySettledUserIds = new Set<string>();
+  const deliveryRetryRequiredUserIds = new Set<string>([deliveryRow.id]);
+  const outcome = run(`${markDeliverySettled}\n${freshGate}`, {
     freshUser: row, freshUserErr: error, hasReaderAccess,
     BREVO_DELIVERY_SCHEMA_ENABLED: brevoSchemaEnabled,
     eligibilityRecheckFailures: 0, unenrolledMidRunSkips: 0,
     unsubscribedMidRunSkips: 0, cancelledMidRunSkips: 0, suppressedMidRunSkips: 0,
+    row: deliveryRow, deliverySettledUserIds, deliveryRetryRequiredUserIds,
     console: { warn() {}, log() {} },
   });
+  return {
+    outcome,
+    settled: deliverySettledUserIds.has(deliveryRow.id),
+    retryRequired: deliveryRetryRequiredUserIds.has(deliveryRow.id),
+  };
 }
-assert.equal(checkFresh(eligible), "allowed");
+function assertFresh(
+  row: unknown,
+  expectedOutcome: "allowed" | "settled" | "retry-required",
+  error: unknown = null,
+  brevoSchemaEnabled = true,
+) {
+  const result = checkFresh(row, error, brevoSchemaEnabled);
+  assert.equal(result.outcome, expectedOutcome);
+  assert.equal(result.settled, expectedOutcome === "settled");
+  assert.equal(result.retryRequired, expectedOutcome !== "settled");
+}
+assertFresh(eligible, "allowed");
 for (const flag of [false, undefined, null, "true", 1]) {
-  assert.equal(checkFresh({ ...eligible, delivery_enrolled: flag }), "settled");
+  assertFresh({ ...eligible, delivery_enrolled: flag }, "settled");
 }
-assert.equal(checkFresh(null), "retry-required");
-assert.equal(checkFresh(eligible, { message: "fixture unavailable" }), "retry-required");
+assertFresh(null, "retry-required");
+assertFresh(eligible, "retry-required", { message: "fixture unavailable" });
 for (const key of ["unsubscribed_at", "brevo_unsubscribed_at", "bounced_at", "complained_at", "suppression_cleanup_pending_at"]) {
-  assert.equal(checkFresh({ ...eligible, [key]: "2026-01-02T00:00:00Z" }), "settled");
+  assertFresh({ ...eligible, [key]: "2026-01-02T00:00:00Z" }, "settled");
 }
-assert.equal(checkFresh({ ...eligible, brevo_unsubscribed_at: "2026-01-02T00:00:00Z" }, null, false), "allowed");
-assert.equal(checkFresh({ ...eligible, subscribed_at: null }), "settled");
-assert.equal(checkFresh({ ...eligible, email: null }), "retry-required");
+assertFresh({ ...eligible, brevo_unsubscribed_at: "2026-01-02T00:00:00Z" }, "allowed", null, false);
+assertFresh({ ...eligible, subscribed_at: null }, "settled");
+assertFresh({ ...eligible, email: null }, "retry-required");
 
 // The first population query filters before provider/generation work. The fresh
 // row read must include the flag, and the DB locked claim is the final backstop.

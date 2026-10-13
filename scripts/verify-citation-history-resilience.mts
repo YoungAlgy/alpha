@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
 import { normalizeUrl } from "../lib/engine/url-guard.ts";
-import { validatedSourceAttribution } from "../lib/source-attribution.ts";
+import { validatedAttributedItem, validatedSourceAttribution } from "../lib/source-attribution.ts";
 import { issueIsReaderVisible } from "../lib/issue-visibility.ts";
 
 assert.ok(process.argv.length <= 3 && process.argv.slice(2).every(arg => arg === "--baseline"), "unsupported verifier argument");
@@ -29,6 +29,9 @@ function compiled(path: string): string {
 const cacheCode = compiled("lib/engine/blurb-cache.ts");
 const assemblerCode = compiled("lib/engine/assemble.ts");
 const selectionCode = compiled("lib/engine/select-sections.ts");
+// The historical assembler predates this dependency. Keep its original module
+// graph instead of trying to read a file that did not exist at that checkpoint.
+const sourceEvidenceCode = baseline ? null : compiled("lib/engine/source-evidence.ts");
 const issueHistoryCode = ts.transpileModule(readFileSync(new URL("../lib/engine/issue-citation-history.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -126,7 +129,7 @@ function harness(options: {
     throw new Error(`unexpected issue history VM import: ${name}`);
   });
   const cache = load(cacheCode, "citation-history-cache-fixture.cjs", name => {
-    if (name === "@/lib/source-attribution") return { validatedSourceAttribution };
+    if (name === "@/lib/source-attribution") return { validatedAttributedItem, validatedSourceAttribution };
     if (name === "./url-guard") return { normalizeUrl };
     if (name === "./issue-citation-history") return issueHistory;
     if (name === "@/lib/supabase/server") return { supabaseServiceClient: async () => {
@@ -146,12 +149,16 @@ function harness(options: {
     throw new Error(`unexpected cache VM import: ${name}`);
   });
   const selection = load(selectionCode, "citation-history-selection-fixture.cjs", name => { throw new Error(`unexpected selection VM import: ${name}`); });
+  const sourceEvidence = sourceEvidenceCode === null ? null : load(sourceEvidenceCode, "citation-history-source-evidence-fixture.cjs", name => {
+    throw new Error(`unexpected source evidence VM import: ${name}`);
+  });
   function fromSignal(signal: Signal): Blurb {
     return { topicId: signal.topicId, topicLabel: signal.topicId, weekOf: signal.weekOf, intro: "Generic current intro.", items: signal.sources.map(source => item(source.url)) };
   }
   const assembler = load(assemblerCode, "citation-history-assemble-fixture.cjs", name => {
     if (name === "./blurb-cache") return cache;
     if (name === "./select-sections") return selection;
+    if (name === "./source-evidence" && sourceEvidence !== null) return sourceEvidence;
     if (name === "./url-guard") return { normalizeUrl };
     if (name === "@/lib/issue-visibility") return { issueIsReaderVisible };
     if (name === "@/lib/topics") return { topicLabel: (id: string) => id, mapTopicsForUser: (ids: string[]) => ids, GENERIC_FALLBACK_TOPICS: ["macro-markets"] };

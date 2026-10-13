@@ -4,6 +4,8 @@ import { isPublicSourceControlError, PublicSourceControlError } from "./public-s
 // A small per-process acceleration cache, never authoritative cross-run state.
 // Only successful, validated raw metadata is cached. Caller applies current
 // date bounds and per-reader exclusions after retrieval. No query is logged.
+// Values must be structured-cloneable metadata. Nested credits and arrays are
+// isolated from the work function and from every caller, including coalesced work.
 export function createPublicSourceCache<T extends object = BraveResult>(
   now: () => number = Date.now,
   ttlMs: (items: T[]) => number = (items) => items.length ? 5 * 60_000 : 60_000,
@@ -14,15 +16,15 @@ export function createPublicSourceCache<T extends object = BraveResult>(
   return async (provider: string, key: string, work: () => Promise<T[]>): Promise<T[]> => {
     const identity = `${provider}|${key}`;
     const cached = cache.get(identity);
-    if (cached && cached.until > now()) return cached.items.map((item) => ({ ...item }));
+    if (cached && cached.until > now()) return structuredClone(cached.items);
     cache.delete(identity);
     const pending = active.get(identity);
-    if (pending) return (await pending).map((item) => ({ ...item }));
+    if (pending) return structuredClone(await pending);
     if ((failures.get(provider)?.until ?? 0) > now()) throw new PublicSourceControlError("Public source cooling down");
     if (active.size >= 8) throw new PublicSourceControlError("Public source request capacity reached");
     // Start in a microtask so inFlight is set before even synchronous failures.
     const task = Promise.resolve().then(work).then((items) => {
-      cache.set(identity, { until: now() + ttlMs(items), items: items.map((item) => ({ ...item })) });
+      cache.set(identity, { until: now() + ttlMs(items), items: structuredClone(items) });
       while (cache.size > 64) cache.delete(cache.keys().next().value!);
       // An earlier concurrent success must not erase a later failure cooldown.
       const failure = failures.get(provider);
@@ -36,7 +38,7 @@ export function createPublicSourceCache<T extends object = BraveResult>(
       throw error;
     });
     active.set(identity, task);
-    try { return (await task).map((item) => ({ ...item })); }
+    try { return structuredClone(await task); }
     finally { if (active.get(identity) === task) active.delete(identity); }
   };
 }
