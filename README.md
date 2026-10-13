@@ -208,6 +208,41 @@ Any further live change still needs separate approval.
 Current selection evidence and rejected sources are in
 [docs/public-source-gaps.md](docs/public-source-gaps.md).
 
+Local candidate, October 13: `ALPHA_OPENALEX_METADATA_FALLBACK=1` adds a narrow
+OpenAlex research-citation tier after Crossref/PLOS. It stays off by default and
+requires no-model mode plus both durable controls. Only the exact custom topics
+"artificial intelligence research", "music research" and "climate change research"
+map to fixed generic title queries. No profile, contact or arbitrary custom text
+is sent. Research papers do not fill artist-release or general-news promises.
+
+The [OpenAlex API](https://help.openalex.org/api/) supplies
+[CC0 metadata](https://help.openalex.org/data/how-its-built/) with a finite keyless
+allowance. Its query service is separate from Google RSS, but many works overlap
+Crossref/PLOS. This is not a second original-reporting source for the same paper.
+One first-page request selects nine metadata fields for the last seven completed
+UTC days. No abstracts, authors, article text or DOI destinations are fetched.
+The five-second/256 KiB bounds and existing cooldown/cache controls apply.
+
+`publication_date` is a reported calendar day. It is never padded into a claimed
+publication timestamp. The entire closed day must fit the existing freshness
+window. A rolling `pd` at midday normally admits none. Normal explicit daily
+windows can admit yesterday. Current-day, stale, malformed or off-topic rows
+stay excluded. One metadata item can be selected after DOI/work/PLOS-alias repeat
+exclusion. Its supplied DOI is the primary citation. OpenAlex provenance and CC0
+credit stay separate. Saved/web/email paths retain exact title, fixed body and
+reported-day caveats. Article rights and access remain unproven.
+
+The existing database limiter reserves three calls per fixed UTC minute and
+sixty per UTC day using fixed provider identities, never reader/query keys.
+Both reservations share one deadline. A failed request is not refunded. Raw
+cache acceleration is process-local. Quota and `openalex-research` outage memory
+persist across runs when the reviewed circuit migration is installed. The local
+additive migration preserves the eleven installed identities and optional prior
+StatCan identity. It does not install or activate StatCan itself. No migration,
+native finished-adapter qualification, production build or release is claimed by
+this local integration. Workflow forwarding stays off unless separately enabled.
+Broad news, artist releases and arbitrary custom topics remain coverage gaps.
+
 Released October 8: `ALPHA_CCMIXTER_METADATA_FALLBACK=1` adds a narrow
 hip-hop community-upload tier after the existing useful sources. It also
 requires no-model mode and both durable controls. It stays off by default.
@@ -627,6 +662,7 @@ ALPHA_CCMIXTER_METADATA_FALLBACK= # scheduled opt-in activated October 8; code d
 ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK= # scheduled opt-in activated October 9; personal-finance only, code default off, requires no-model and durable controls plus installed Federal Register identity
 ALPHA_GOVUK_NEWS_FALLBACK=    # scheduled opt-in activated October 10; AI/macro/housing metadata only, code default off, requires no-model and durable controls plus installed GOV.UK identity
 ALPHA_STATCAN_LABOUR_FALLBACK= # locally qualified default-off candidate, macro/labour metadata only; no-model and both durable controls required; managed migration/release/activation pending
+ALPHA_OPENALEX_METADATA_FALLBACK= # local default-off research-citation candidate; three exact custom research topics, no-model and durable controls required; qualification/build/migration/release/activation pending
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 ALPHA_DURABLE_SOURCE_COOLDOWN= # opt-in private provider circuit, requires reviewed migration before activation
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release

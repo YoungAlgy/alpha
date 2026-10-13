@@ -230,6 +230,9 @@ function Item({ item }: { item: DigestItem }) {
           {credit.kind === "statcan" ? <>
             <a href={credit.articleUrl} target="_blank" rel="noopener noreferrer" className="underline">{credit.publisherLabel}</a>.
             {" "}Feed entry updated: {credit.updatedInstant}. Daily link day: {credit.dailyLinkDay}. Original publication time is unproven.
+          </> : credit.kind === "research" ? <>
+            Metadata source: <a href={credit.workUrl} target="_blank" rel="noopener noreferrer" className="underline">OpenAlex</a>.
+            {" "}Reported publication day: {credit.publicationDay}. Publication time is unproven.
           </> : credit.kind === "government" ? <>
             <a href={credit.articleUrl} target="_blank" rel="noopener noreferrer" className="underline">{credit.publisherLabel}</a>.
             {" "}Published or updated: {credit.publicTimestamp}.
@@ -239,7 +242,7 @@ function Item({ item }: { item: DigestItem }) {
           {" "}<a href={credit.licenseUrl} target="_blank" rel="noopener noreferrer" className="underline">{credit.licenseLabel}</a>.
           {" "}{credit.changes}
           {credit.kind === "statcan" && <> {credit.nonendorsement}</>}
-          {(credit.kind === "government" || credit.kind === "statcan") && <> {credit.limitations}</>}
+          {(credit.kind === "government" || credit.kind === "statcan" || credit.kind === "research") && <> {credit.limitations}</>}
         </p>
       )}
       {kindLabel && (

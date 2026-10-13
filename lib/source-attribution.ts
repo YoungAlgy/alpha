@@ -2,6 +2,7 @@ import type { SourceAttribution, AuthoredSourceAttribution, DigestItem } from ".
 import { cleanField } from "./engine/text-clean";
 import { validatedGovUkNewsMetadata, type GovUkNewsMetadata } from "./engine/govuk-news-metadata";
 import { validatedStatCanLabourMetadata, type StatCanLabourMetadata } from "./engine/statcan-labour-metadata";
+import { validatedOpenAlexMetadata, type OpenAlexMetadata } from "./engine/openalex-metadata";
 
 export const GLOBAL_VOICES_LICENSE_URL = "https://creativecommons.org/licenses/by/3.0/";
 export const GLOBAL_VOICES_LICENSE_LABEL = "CC BY 3.0";
@@ -62,6 +63,10 @@ export function validatedSourceAttribution(url: unknown, value: unknown): Source
     const publisher = Object.getOwnPropertyDescriptor(value, "publisher");
     if (!publisher || !("value" in publisher)) return;
     if (publisher.value === "Statistics Canada") return validatedStatCanAttribution(url, value);
+    if (publisher.value === "openalex") {
+      const metadata = validatedOpenAlexMetadata(value);
+      return metadata && url === metadata.url ? metadata : undefined;
+    }
     if (credit.publisher === "govuk") return validatedGovUkAttribution(url, value);
     const validated = credit.publisher === "global-voices"
       ? validatedGlobalVoicesAttribution(url, credit.author, credit.publishedAt)
@@ -76,6 +81,19 @@ export const GOVUK_RIGHTS_NOTE = "This credit does not clear article text, media
 export const STATCAN_LICENSE_URL = "https://www.statcan.gc.ca/en/terms-conditions/open-licence";
 export const STATCAN_NONENDORSEMENT = "This does not constitute an endorsement by Statistics Canada of this product.";
 export const STATCAN_RIGHTS_NOTE = "Original headline and link only. Article text, media and third-party material are excluded.";
+export const OPENALEX_LICENSE_URL = "https://creativecommons.org/publicdomain/zero/1.0/";
+export const OPENALEX_RIGHTS_NOTE = "CC0 covers OpenAlex metadata only. Article text, media, access and third-party rights are unproven.";
+
+function openAlexBody(credit: OpenAlexMetadata): string {
+  return `Research citation metadata. Reported publication day: ${credit.publicationDay}. Publication time and article access are unproven.`;
+}
+
+export function openAlexItemFields(record: OpenAlexMetadata): DigestItem {
+  const credit = validatedOpenAlexMetadata(record);
+  if (!credit) throw new Error("Invalid OpenAlex source metadata");
+  return { kind: "read", headline: credit.title, body: openAlexBody(credit),
+    primaryRef: { label: credit.title, url: credit.url }, supplementaryRefs: [], attribution: credit };
+}
 
 /** Exact own metadata fields and the original Daily URL are mandatory. */
 export function validatedStatCanAttribution(url: unknown, value: unknown): StatCanLabourMetadata | undefined {
@@ -136,13 +154,14 @@ export function validatedAttributedItem(value: unknown): boolean {
       typeof item.body === "string" && item.body.startsWith("Government announcement. Published or updated:");
     const lostStatCanCredit = typeof item.body === "string" &&
       item.body.startsWith("Canadian labour bulletin metadata. Feed entry updated:");
-    return !lostGovUkCredit && !lostStatCanCredit;
+    const lostOpenAlexCredit = typeof item.body === "string" && item.body.startsWith("Research citation metadata. Reported publication day:");
+    return !lostGovUkCredit && !lostStatCanCredit && !lostOpenAlexCredit;
   }
   const credit = validatedSourceAttribution(ref?.url, item.attribution);
   if (!credit) return false;
-  if (credit.publisher !== "govuk" && credit.publisher !== "Statistics Canada") return true;
+  if (credit.publisher !== "govuk" && credit.publisher !== "Statistics Canada" && credit.publisher !== "openalex") return true;
   return item.kind === "read" && item.headline === credit.title &&
-    item.body === (credit.publisher === "govuk" ? govUkBody(credit) : statCanBody(credit)) &&
+    item.body === (credit.publisher === "govuk" ? govUkBody(credit) : credit.publisher === "openalex" ? openAlexBody(credit) : statCanBody(credit)) &&
     ref?.label === credit.title && ref.note === undefined &&
     (item.supplementaryRefs === undefined || Array.isArray(item.supplementaryRefs) && item.supplementaryRefs.length === 0) &&
     item.source === undefined && item.sourceUrl === undefined;
@@ -152,6 +171,12 @@ export function validatedAttributedItem(value: unknown): boolean {
 export function sourceAttributionCredit(url: unknown, value: unknown) {
   const credit = validatedSourceAttribution(url, value);
   if (!credit) return;
+  if (credit.publisher === "openalex") return {
+    kind: "research" as const, articleUrl: credit.url, originalTitle: credit.title,
+    publicationDay: credit.publicationDay, workUrl: credit.workUrl, publisherLabel: "OpenAlex",
+    licenseUrl: OPENALEX_LICENSE_URL, licenseLabel: "CC0 metadata",
+    changes: "Original title and supplied DOI link from OpenAlex metadata.", limitations: OPENALEX_RIGHTS_NOTE,
+  };
   if (credit.publisher === "Statistics Canada") return {
     kind: "statcan" as const,
     articleUrl: credit.url,

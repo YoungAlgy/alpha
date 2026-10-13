@@ -156,6 +156,8 @@ const govUkNewsEnabled = strictNoModel && enabled("ALPHA_GOVUK_NEWS_FALLBACK") &
   enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
 const statCanLabourEnabled = strictNoModel && enabled("ALPHA_STATCAN_LABOUR_FALLBACK") &&
   enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
+const openAlexMetadataEnabled = strictNoModel && enabled("ALPHA_OPENALEX_METADATA_FALLBACK") &&
+  enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
 if (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0") {
   console.error("::error::Manual-first delivery requires no-model mode and paid AI disabled.");
   deliveryReady = false;
@@ -183,6 +185,7 @@ const freshSourceTiers = [
   openNewsFeedEnabled ? "open-news-feed" : null,
   researchMetadataEnabled ? "research-metadata" : null,
   plosMetadataEnabled ? "plos-research" : null,
+  openAlexMetadataEnabled ? "openalex" : null,
   ccmixterMetadataEnabled ? "ccmixter-uploads" : null,
   federalRegisterFinanceEnabled ? "federal-register-finance" : null,
   govUkNewsEnabled ? "govuk-news" : null,

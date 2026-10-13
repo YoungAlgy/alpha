@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { consumeDistributedRateLimit } from "@/lib/distributed-rate-limit";
 
-export type PublicSourceProvider = "google-rss" | "publisher-rss" | "gdelt" | "plos-research" | "ccmixter-uploads" | "federal-register-finance" | "govuk-news" | "statcan-labour";
+export type PublicSourceProvider = "google-rss" | "publisher-rss" | "gdelt" | "plos-research" | "ccmixter-uploads" | "federal-register-finance" | "govuk-news" | "statcan-labour" | "openalex-research";
 export type PublicSourceBudgetErrorCode = "unavailable" | "exhausted";
 
 type RpcClient = Pick<SupabaseClient, "rpc">;
@@ -27,6 +27,7 @@ const PROVIDER_LIMITS: Record<PublicSourceProvider, number> = {
   "federal-register-finance": 2,
   "govuk-news": 2,
   "statcan-labour": 2,
+  "openalex-research": 3,
 };
 
 export class PublicSourceBudgetError extends Error {
@@ -75,22 +76,28 @@ export function createPublicSourceBudget(deps: PublicSourceBudgetDependencies = 
     if (!enabled()) return;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let expired = false;
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(
-        () => reject(new PublicSourceBudgetError("unavailable", provider)),
+        () => { expired = true; reject(new PublicSourceBudgetError("unavailable", provider)); },
         timeoutMs
       );
     });
     const reservation = (async () => {
       const client = await loadClient();
-      const result = await consume(
-        client,
-        `public_source:${provider.replaceAll("-", "_")}`,
-        provider,
-        { limit: PROVIDER_LIMITS[provider], windowMs: WINDOW_MS }
-      );
-      if (!result.available) throw new PublicSourceBudgetError("unavailable", provider);
-      if (!result.ok) throw new PublicSourceBudgetError("exhausted", provider);
+      // OpenAlex has a keyless daily allowance, not an unlimited API. Both
+      // fixed windows share the existing cross-run limiter and one deadline.
+      // A reservation is conservative: failures never refund a spent slot.
+      const windows = provider === "openalex-research"
+        ? [{ scope: "public_source:openalex_minute", limit: 3, windowMs: 60_000 },
+           { scope: "public_source:openalex_day", limit: 60, windowMs: 86_400_000 }]
+        : [{ scope: `public_source:${provider.replaceAll("-", "_")}`, limit: PROVIDER_LIMITS[provider], windowMs: WINDOW_MS }];
+      for (const window of windows) {
+        if (expired) throw new PublicSourceBudgetError("unavailable", provider);
+        const result = await consume(client, window.scope, provider, { limit: window.limit, windowMs: window.windowMs });
+        if (expired || !result.available) throw new PublicSourceBudgetError("unavailable", provider);
+        if (!result.ok) throw new PublicSourceBudgetError("exhausted", provider);
+      }
     })();
 
     try {

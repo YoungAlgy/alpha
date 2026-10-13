@@ -3,6 +3,19 @@
 Status: Accepted, released and activated October 1, 2026 at 15:44 UTC.
 Date: October 1, 2026
 
+October 13 local OpenAlex draft: one fixed `openalex-research` identity follows
+the existing admission, generation-fenced recovery and neutral-budget rules.
+Its additive migration accepts only the exact eleven installed predecessors or
+those eleven plus the separately held StatCan identity. It adds only OpenAlex.
+Prior state, RPCs, RLS and ACLs are unchanged. No managed application authorized.
+The existing HMAC-backed limiter adds minute/day scopes for three calls/minute
+and sixty/day. Both fixed windows use one caller deadline and no reader/query
+identity. Raw five-minute cache is process acceleration only. Current dates and
+reader exclusions remain downstream. Existing cross-run RPCs hold quota and
+outage state, so a fresh Actions process cannot erase those controls.
+This draft still needs disposable database qualification and separate live
+approval. Adapter admission is off by default. No natural recovery proof.
+
 ## Context
 
 Raw caches and failure cooldowns expire within one process. The shared request

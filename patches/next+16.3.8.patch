@@ -1,0 +1,70 @@
+diff --git a/node_modules/next/dist/compiled/@next/font/dist/google/loader.js b/node_modules/next/dist/compiled/@next/font/dist/google/loader.js
+--- a/node_modules/next/dist/compiled/@next/font/dist/google/loader.js
++++ b/node_modules/next/dist/compiled/@next/font/dist/google/loader.js
+@@ -55,6 +55,57 @@
+     }
+     return str;
+ }
++// Alpha compatibility patch: identify extensionless Google files from bounded headers.
++// This is format identification, not a full compressed-font validator.
++function getGoogleFontFileExtension(url, fontFileBuffer) {
++    const extension = /\.(woff|woff2|eot|ttf|otf)$/.exec(url.split(/[?#]/, 1)[0]);
++    if (extension) return extension[1];
++    if (Buffer.isBuffer(fontFileBuffer) && fontFileBuffer.length >= 4) {
++        const size = fontFileBuffer.length;
++        const signature = fontFileBuffer.readUInt32BE(0);
++        if (signature === 0x774f4646 && size >= 44) {
++            const tables = fontFileBuffer.readUInt16BE(12);
++            const directoryEnd = 44 + 20 * tables;
++            if (tables > 0 && directoryEnd < size && fontFileBuffer.readUInt32BE(8) === size &&
++                fontFileBuffer.readUInt16BE(14) === 0) {
++                let valid = true, hasPayload = false;
++                for (let i = 44; i < directoryEnd && valid; i += 20) {
++                    const offset = fontFileBuffer.readUInt32BE(i + 4);
++                    const length = fontFileBuffer.readUInt32BE(i + 8);
++                    const originalLength = fontFileBuffer.readUInt32BE(i + 12);
++                    if (length > 0) {
++                        hasPayload = true;
++                        valid = offset >= directoryEnd && offset + length <= size && length <= originalLength;
++                    }
++                }
++                if (valid && hasPayload) return 'woff';
++            }
++        } else if (signature === 0x774f4632 && size >= 48) {
++            const tables = fontFileBuffer.readUInt16BE(12);
++            const compressedSize = fontFileBuffer.readUInt32BE(20);
++            if (tables > 0 && fontFileBuffer.readUInt32BE(8) === size &&
++                fontFileBuffer.readUInt16BE(14) === 0 &&
++                fontFileBuffer.readUInt32BE(16) >= 12 + 16 * tables &&
++                compressedSize > 0 && compressedSize <= size - 48 - 2 * tables) return 'woff2';
++        } else if ((signature === 0x00010000 || signature === 0x4f54544f) && size >= 12) {
++            const tables = fontFileBuffer.readUInt16BE(4);
++            const directoryEnd = 12 + 16 * tables;
++            if (tables > 0 && directoryEnd < size) {
++                let valid = true, hasPayload = false;
++                for (let i = 12; i < directoryEnd && valid; i += 16) {
++                    const offset = fontFileBuffer.readUInt32BE(i + 8);
++                    const length = fontFileBuffer.readUInt32BE(i + 12);
++                    if (length > 0) {
++                        hasPayload = true;
++                        valid = offset >= directoryEnd && offset + length <= size;
++                    }
++                }
++                if (valid && hasPayload) return signature === 0x4f54544f ? 'otf' : 'ttf';
++            }
++        }
++    }
++    (0, next_font_error_1.nextFontError)('Unsupported or truncated extensionless Google font file.');
++}
+ const nextFontGoogleFontLoader = async ({ functionName, data, emitFontFile, isDev, isServer, }) => {
+     var _a;
+     const { fontFamily, weights, styles, display, preload, selectedVariableAxes, fallback, adjustFontFallback, variable, subsets, } = (0, validate_google_font_function_call_1.validateGoogleFontFunctionCall)(functionName, data[0]);
+@@ -119,7 +170,7 @@
+             if (fontFileBuffer == null) {
+                 (0, next_font_error_1.nextFontError)(`Failed to fetch \`${fontFamily}\` from Google Fonts.`);
+             }
+-            const ext = /\.(woff|woff2|eot|ttf|otf)$/.exec(googleFontFileUrl)[1];
++            const ext = getGoogleFontFileExtension(googleFontFileUrl, fontFileBuffer);
+             // Emit font file to .next/static/media
+             const selfHostedFileUrl = emitFontFile(fontFileBuffer, ext, preloadFontFile, !!adjustFontFallbackMetrics);
+             return {

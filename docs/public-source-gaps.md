@@ -1,4 +1,25 @@
-# Public source coverage, reviewed October 10, 2026 UTC
+# Public source coverage, reviewed October 13, 2026 UTC
+
+Newest local addition: OpenAlex citation metadata after Crossref/PLOS, off by
+default. Its exact custom research lanes are artificial intelligence, music and
+climate change research. Fixed generic queries, strict scalar projection, exact
+supplied DOI, reported-day-only semantics and whole closed-day freshness apply.
+DOI/work/PLOS aliases are excluded before the visible cap. DOI primary citations
+give future issues stable repeat identity. Arbitrary older Crossref publisher
+links cannot always be mapped to a DOI. No global DOI/article trust rule changed.
+
+Three earlier anonymous generic qualification requests returned HTTP 200. They
+proved the bounded metadata route, not the finished adapter's new completed-day
+query. Metadata reuse is CC0, article rights/access are unproven. OpenAlex is a
+distinct query service with Crossref/PLOS overlap, not independent reporting for
+each paper. Native finished-adapter qualification, offline PostgreSQL migration
+qualification and a fresh app/Worker build remain separate gates. No live action.
+Shared minute/day budgets and cross-run cooldowns use the existing private RPCs.
+Broad news, artist-release music and arbitrary custom coverage remain open.
+Receipt: external `openalex-local-integration-20261013/result.md`.
+
+The release and candidate records below are dated history. Latest source code
+baseline for this local pass is `191c165f061b7b33beebc2afae4b1000bd134802`.
 
 Latest completed source release: `e51ba3f26cdeba9f08637d3cb3530792ff01cfbc`, GOV.UK's
 narrow AI, macro and housing metadata lane. Exact committed app/Worker build,

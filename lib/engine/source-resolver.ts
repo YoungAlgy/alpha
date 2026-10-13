@@ -20,6 +20,8 @@ import { ccmixterMetadataFallbackEnabled, ccmixterMetadataSearch } from "./ccmix
 import { federalRegisterFinanceFallbackEnabled, federalRegisterFinanceSearch } from "./federal-register-finance-search";
 import { govUkNewsFallbackEnabled, govUkNewsSearch } from "./govuk-news-search";
 import { statCanLabourFallbackEnabled, statCanLabourSearch } from "./statcan-labour-search";
+import { openAlexMetadataFallbackEnabled, openAlexMetadataSearch } from "./openalex-metadata-search";
+import { openAlexTopicLane } from "./openalex-metadata";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
@@ -185,6 +187,15 @@ export async function resolveTopicSignal(
             .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
         if (viaPlos) return viaPlos;
+      }
+      if (openAlexTopicLane(topicId) && openAlexMetadataFallbackEnabled()) {
+        const viaOpenAlex = await tryFallback(topicId, "OpenAlex research citation metadata", () =>
+          observed("openalex", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, (topic, searchOptions) => openAlexMetadataSearch(topic, searchOptions, opts?.excludeUrls),
+            "OpenAlex Research Citation Metadata", false, 1))
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaOpenAlex) return viaOpenAlex;
       }
       if (topicId === "music-hiphop" && ccmixterMetadataFallbackEnabled()) {
         const viaCcmixter = await tryFallback(topicId, "ccMixter upload metadata", () =>
@@ -416,6 +427,8 @@ async function fetchLiveSignal(
       source.description === "" && source.age === credit.publicTimestamp;
     if (credit.publisher === "Statistics Canada") return source.title === credit.title &&
       source.description === "" && source.age === credit.updatedInstant;
+    if (credit.publisher === "openalex") return source.title === credit.title &&
+      source.description === "" && source.age === credit.publicationDay;
     return true;
   });
   const ranked = rankAndDedup(candidates, 2, excludeUrls, topicId).slice(0, maxSources);
@@ -448,13 +461,13 @@ async function fetchLiveSignal(
   const readCount = contents.filter(Boolean).length;
   const sources: SignalSource[] = [
     ...deep.map((s, i) => ({
-      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" ? s.title : cleanField(s.title),
+      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" || s.attribution?.publisher === "openalex" ? s.title : cleanField(s.title),
       url: s.url,
       excerpt: cleanField(contents[i] || s.description),
       attribution: validatedSourceAttribution(s.url, s.attribution),
     })),
     ...more.map((s) => ({
-      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" ? s.title : cleanField(s.title),
+      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" || s.attribution?.publisher === "openalex" ? s.title : cleanField(s.title),
       url: s.url,
       excerpt: cleanField(s.description),
       attribution: validatedSourceAttribution(s.url, s.attribution),

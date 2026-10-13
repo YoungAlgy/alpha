@@ -1,5 +1,25 @@
 # Alpha remaining work
 
+October 13 current local work: the OpenAlex research-citation adapter is connected
+after Crossref/PLOS with its flag off. Three exact custom research topics map to
+fixed public title queries. Supplied DOI citations, explicit reported-day/date
+limits, strict saved/render metadata, current-window filtering, DOI/work/PLOS
+repeat exclusion, shared minute/day budgets and cross-run cooldowns are wired.
+No article text, paid AI/API or private reader input is sent to OpenAlex.
+
+Next gates for this candidate: one separately scoped finished-adapter public
+qualification, disposable PostgreSQL migration/rollback checks, and fresh
+app/OpenNext/Worker build. The earlier three successful metadata requests used
+different date bounds. They do not qualify the finished query or real scheduled
+fallback. No managed migration, commit, push, deployment or activation happened.
+Broad news, artist-release music and arbitrary custom-topic coverage remain open.
+Original dirty work and its owned mirrors remain preserved. Receipt: external
+`openalex-local-integration-20261013/result.md`.
+
+Records below are dated history. Current local base is cache-isolation release
+`191c165f061b7b33beebc2afae4b1000bd134802`. The independent monitor's first normal
+result remains a separate pending read, not part of this source adapter task.
+
 Latest completed release: `e51ba3f26cdeba9f08637d3cb3530792ff01cfbc`, October 10.
 GOV.UK's narrow AI, macro and housing metadata lane is installed and enabled.
 Fresh committed app/Worker build, exact-source CI, guarded additive migration,

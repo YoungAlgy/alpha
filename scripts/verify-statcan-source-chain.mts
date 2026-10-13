@@ -110,6 +110,8 @@ try {
         "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => true, ccmixterMetadataSearch: deny },
         "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => true, federalRegisterFinanceSearch: deny },
         "./govuk-news-search": { govUkNewsFallbackEnabled: () => true, govUkNewsSearch: async () => { events.push("govuk"); return []; } },
+        "./openalex-metadata": { openAlexTopicLane: () => undefined },
+        "./openalex-metadata-search": { openAlexMetadataFallbackEnabled: () => false, openAlexMetadataSearch: deny },
         "./statcan-labour-search": { statCanLabourFallbackEnabled, statCanLabourSearch: async (...args: Parameters<typeof search>) => {
           events.push("statcan-labour");
           receivedExclusions = args[2];
