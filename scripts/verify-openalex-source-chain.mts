@@ -225,6 +225,8 @@ try {
       "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: deny },
       "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: deny },
       "./statcan-labour-search": { statCanLabourFallbackEnabled: () => false, statCanLabourSearch: deny },
+      "./cdm-metadata": { cdmTopicSupported: () => false },
+      "./cdm-metadata-search": { cdmMetadataFallbackEnabled: () => false, cdmMetadataSearch: deny },
       "./gdelt-search": { gdeltFallbackEnabled: () => later, gdeltSearch: async () => { events.push("gdelt"); return [{ title: "Independent current research", url: "https://example.org/independent", description: "Generic public material" }]; } },
       "@/lib/source-attribution": attribution, "./source-evidence": evidence,
     };

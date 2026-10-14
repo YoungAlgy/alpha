@@ -208,8 +208,8 @@ Any further live change still needs separate approval.
 Current selection evidence and rejected sources are in
 [docs/public-source-gaps.md](docs/public-source-gaps.md).
 
-Local candidate, October 13: `ALPHA_OPENALEX_METADATA_FALLBACK=1` adds a narrow
-OpenAlex research-citation tier after Crossref/PLOS. It stays off by default and
+Released October 13: `ALPHA_OPENALEX_METADATA_FALLBACK=1` adds a narrow
+OpenAlex research-citation tier after Crossref/PLOS. Code stays off by default and
 requires no-model mode plus both durable controls. Only the exact custom topics
 "artificial intelligence research", "music research" and "climate change research"
 map to fixed generic title queries. No profile, contact or arbitrary custom text
@@ -237,11 +237,55 @@ sixty per UTC day using fixed provider identities, never reader/query keys.
 Both reservations share one deadline. A failed request is not refunded. Raw
 cache acceleration is process-local. Quota and `openalex-research` outage memory
 persist across runs when the reviewed circuit migration is installed. The local
-additive migration preserves the eleven installed identities and optional prior
+additive migration preserves the eleven predecessor identities and optional prior
 StatCan identity. It does not install or activate StatCan itself. No migration,
-native finished-adapter qualification, production build or release is claimed by
-this local integration. Workflow forwarding stays off unless separately enabled.
+native qualification or release is implied by the flag alone. The recorded
+20:26UTC release completed its build/CI, guarded migration, live readback and
+scheduled activation. Actual scheduled fallback and delivery remain unproven.
 Broad news, artist releases and arbitrary custom topics remain coverage gaps.
+
+Qualified locally, October 14 UTC: `ALPHA_CDM_METADATA_FALLBACK=1` adds the fixed
+[CDM RSS feed](https://cdm.link/feed/) for exactly `custom:music production`.
+It stays off by default and requires no-model mode and both durable controls.
+It follows the earlier useful public tiers and precedes optional GDELT. No
+reader text, profile, account, key or arbitrary topic reaches this feed.
+CDM's [About page](https://cdm.link/about/) states a
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) content license.
+That is a site-level policy, not proof of every item's third-party rights.
+
+Only original decoded headline, credited author, first-party story link and
+strict feed publication timestamp are retained. Standard XML entity decoding
+and edge-whitespace extraction apply. No voice rewrite, article excerpt,
+audio or artwork is added. Promoted/deals categories and explicit title markers
+are excluded. Separate item rights notices stay held. Saved web/email paths
+keep the exact retained fields, linked license and feed-date/rights caveats.
+Feed publication timestamps do not prove original article or music release time.
+Artist-release, genre and all-topic daily coverage are not claimed.
+
+One request has a five-second deadline and 256 KiB response/metadata bounds.
+There are no redirects, retries, pagination or article requests. Up to 100 valid
+raw metadata records share a clone-isolated process cache before current
+freshness and per-reader prior-link filtering. Only one item is selected.
+Partial/truncated pools keep their incompleteness marker across cached reads.
+An all-invalid response fails rather than proving a quiet day. Optional
+diagnostic/completion failure cannot discard validated useful metadata.
+
+The private cross-run budget reserves two calls per fixed fifteen-minute window
+with only the `cdm-music` identity. The separate circuit remembers outages across
+runs. Raw feed caching remains process-local; saved topic blurbs and citation
+history remain the durable content records. The additive guarded SQL candidate
+requires the exact thirteen existing source identities and adds only CDM.
+The finished adapter's single generic public qualification returned HTTP 200
+on October 13 at 23:55 UTC. The isolated PostgreSQL rehearsal passed 76 checks.
+The clean app/OpenNext/Worker candidate build passed October 14 at 02:54 UTC,
+with 51/51 app pages, both typechecks and the strict settled Fonts gate.
+895 CDM assertions and focused workflow checks passed. The earlier flagged
+build remains separate evidence with its connection failure cause unknown.
+Managed installation, exact committed release and activation still need their
+approved release gates. Workflow forwarding stays default-off in code. Live
+release evidence belongs in external `cdm-release-20261014/result.md`.
+These local results do not prove natural hosted fallback or daily coverage.
+See [the CDM candidate](docs/cdm-metadata-candidate.md).
 
 Released October 8: `ALPHA_CCMIXTER_METADATA_FALLBACK=1` adds a narrow
 hip-hop community-upload tier after the existing useful sources. It also
@@ -662,7 +706,8 @@ ALPHA_CCMIXTER_METADATA_FALLBACK= # scheduled opt-in activated October 8; code d
 ALPHA_FEDERAL_REGISTER_FINANCE_FALLBACK= # scheduled opt-in activated October 9; personal-finance only, code default off, requires no-model and durable controls plus installed Federal Register identity
 ALPHA_GOVUK_NEWS_FALLBACK=    # scheduled opt-in activated October 10; AI/macro/housing metadata only, code default off, requires no-model and durable controls plus installed GOV.UK identity
 ALPHA_STATCAN_LABOUR_FALLBACK= # locally qualified default-off candidate, macro/labour metadata only; no-model and both durable controls required; managed migration/release/activation pending
-ALPHA_OPENALEX_METADATA_FALLBACK= # local default-off research-citation candidate; three exact custom research topics, no-model and durable controls required; qualification/build/migration/release/activation pending
+ALPHA_OPENALEX_METADATA_FALLBACK= # scheduled opt-in activated October13; code defaultoff, three exact custom research topics, no-model and durable controls required
+ALPHA_CDM_METADATA_FALLBACK=   # qualified default-off fixed music-production metadata candidate; no-model and both durable controls required; live installation/activation requires the approved release gates
 ALPHA_DURABLE_SOURCE_BUDGET=  # "1" in scheduled runtime, uses existing private Supabase rate-limit RPC
 ALPHA_DURABLE_SOURCE_COOLDOWN= # opt-in private provider circuit, requires reviewed migration before activation
 NEXT_PUBLIC_ALPHA_RELEASE_SHA= # injected by the deploy wrapper or GitHub build, never hand-set for a release

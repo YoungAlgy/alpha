@@ -22,6 +22,8 @@ import { govUkNewsFallbackEnabled, govUkNewsSearch } from "./govuk-news-search";
 import { statCanLabourFallbackEnabled, statCanLabourSearch } from "./statcan-labour-search";
 import { openAlexMetadataFallbackEnabled, openAlexMetadataSearch } from "./openalex-metadata-search";
 import { openAlexTopicLane } from "./openalex-metadata";
+import { cdmTopicSupported } from "./cdm-metadata";
+import { cdmMetadataFallbackEnabled, cdmMetadataSearch } from "./cdm-metadata-search";
 import { validatedSourceAttribution } from "@/lib/source-attribution";
 import type { TopicId, FixedTopicId } from "@/lib/types";
 import type { TopicSignal, SignalSource } from "./types";
@@ -230,6 +232,15 @@ export async function resolveTopicSignal(
         );
         if (viaStatCan) return viaStatCan;
       }
+      if (cdmTopicSupported(topicId) && cdmMetadataFallbackEnabled()) {
+        const viaCdm = await tryFallback(topicId, "CDM music-production metadata", () =>
+          observed("cdm", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
+            undefined, (topic, searchOptions) => cdmMetadataSearch(topic, searchOptions, opts?.excludeUrls),
+            "CDM Music-Production Headline Metadata", false, 1))
+            .then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
+        );
+        if (viaCdm) return viaCdm;
+      }
       const phrase = publicTopicPhrase(topicId);
       if (gdeltFallbackEnabled() && phrase) {
         const viaGdelt = await tryFallback(topicId, "GDELT public discovery", () =>
@@ -429,6 +440,8 @@ async function fetchLiveSignal(
       source.description === "" && source.age === credit.updatedInstant;
     if (credit.publisher === "openalex") return source.title === credit.title &&
       source.description === "" && source.age === credit.publicationDay;
+    if (credit.publisher === "cdm") return source.title === credit.title &&
+      source.description === "" && source.age === credit.publishedAt;
     return true;
   });
   const ranked = rankAndDedup(candidates, 2, excludeUrls, topicId).slice(0, maxSources);
@@ -461,13 +474,13 @@ async function fetchLiveSignal(
   const readCount = contents.filter(Boolean).length;
   const sources: SignalSource[] = [
     ...deep.map((s, i) => ({
-      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" || s.attribution?.publisher === "openalex" ? s.title : cleanField(s.title),
+      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" || s.attribution?.publisher === "openalex" || s.attribution?.publisher === "cdm" ? s.title : cleanField(s.title),
       url: s.url,
       excerpt: cleanField(contents[i] || s.description),
       attribution: validatedSourceAttribution(s.url, s.attribution),
     })),
     ...more.map((s) => ({
-      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" || s.attribution?.publisher === "openalex" ? s.title : cleanField(s.title),
+      title: s.attribution?.publisher === "govuk" || s.attribution?.publisher === "Statistics Canada" || s.attribution?.publisher === "openalex" || s.attribution?.publisher === "cdm" ? s.title : cleanField(s.title),
       url: s.url,
       excerpt: cleanField(s.description),
       attribution: validatedSourceAttribution(s.url, s.attribution),

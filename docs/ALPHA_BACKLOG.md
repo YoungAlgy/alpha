@@ -1,6 +1,28 @@
 # Alpha remaining work
 
-October 13 current local work: the OpenAlex research-citation adapter is connected
+Current qualification, October14 02:54UTC: default-off CDM headline metadata for
+exactly `custom:music production` is connected to the source chain, shared
+finite budgets/cross-run cooldowns and strict saved/web/email credit rendering.
+895 CDM offline assertions, affected OpenAlex/StatCan/cache regressions,
+workflow/static SQL checks and app typecheck pass. The one finished-adapter
+generic public request returned HTTP 200 on October13 at23:55UTC. Executed
+isolated PostgreSQL checks passed76. The clean app/OpenNext/Worker candidate
+build passed with51/51 pages and a zero-failure settled Fonts gate. The earlier
+flagged build remains separate evidence with an unknown connection-failure cause.
+Exact committed release, managed installation and activation remain live gates
+under Alex's separate approval. No extra source probe or letter is authorized.
+Qualification: external `cdm-build-diagnostic-20261014/result.md`.
+Release evidence: external `cdm-release-20261014/result.md`. See
+[CDM candidate](cdm-metadata-candidate.md). Artist-release coverage remains open.
+
+Current source base is47d7a2a1c50599de4ea7efd2616e7cd143896913, verified locally.
+Most recent recorded release is OpenAlex at20:26UTC, with committed build/CI,
+guarded migration, exact live readback and only its scheduled opt-in enabled.
+Receipt: external `openalex-release-20261013/result.md`. No fresh production
+check in the CDM pass. Natural fallback and delivery stay separate/unproven.
+The independent monitor result remains a separate requested-read task.
+
+Historical local work, before the OpenAlex release: its research-citation adapter is connected
 after Crossref/PLOS with its flag off. Three exact custom research topics map to
 fixed public title queries. Supplied DOI citations, explicit reported-day/date
 limits, strict saved/render metadata, current-window filtering, DOI/work/PLOS
@@ -16,11 +38,11 @@ Broad news, artist-release music and arbitrary custom-topic coverage remain open
 Original dirty work and its owned mirrors remain preserved. Receipt: external
 `openalex-local-integration-20261013/result.md`.
 
-Records below are dated history. Current local base is cache-isolation release
+Records below are dated history. That earlier local base was cache-isolation release
 `191c165f061b7b33beebc2afae4b1000bd134802`. The independent monitor's first normal
 result remains a separate pending read, not part of this source adapter task.
 
-Latest completed release: `e51ba3f26cdeba9f08637d3cb3530792ff01cfbc`, October 10.
+Earlier completed release: `e51ba3f26cdeba9f08637d3cb3530792ff01cfbc`, October 10.
 GOV.UK's narrow AI, macro and housing metadata lane is installed and enabled.
 Fresh committed app/Worker build, exact-source CI, guarded additive migration,
 twelve non-sending live checks and independent release readback passed. Final

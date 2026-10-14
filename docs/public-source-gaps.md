@@ -1,6 +1,30 @@
-# Public source coverage, reviewed October 13, 2026 UTC
+# Public source coverage, reviewed October 14, 2026 UTC
 
-Newest local addition: OpenAlex citation metadata after Crossref/PLOS, off by
+Newest locally qualified candidate at02:54UTC: CDM headline metadata for exactly
+`custom:music production`, after earlier public tiers and before optionalGDELT.
+Fixed no-key feed, no-model/durable gates,2per15min/circuitidentitycdm-music,
+100rawrecord cap, strict dates, prior-link exclusion before one-item selection,
+partial-pool completeness and exact saved/web/email credits are connected.
+It stays off. Site-level CC BY-SA3.0 evidence is not an item-specific rights
+guarantee. Explicit rights/promotion markers are held. No article/media/model
+claims or artist-release coverage.895focused offline assertions plus affected
+regressions,workflow/static SQL scope and app types pass. One finished-adapter
+generic public request returned HTTP200 at23:55UTC October13. Executed isolated
+PostgreSQL checks passed76. The clean candidate app/OpenNext/Worker build passed
+at02:54UTC October14, with51/51 pages and zero settled Fonts failures. The earlier
+flagged build remains a separate receipt, cause unknown. Managed installation,
+exact committed release and activation remain approved live gates.
+See [CDM candidate](cdm-metadata-candidate.md), external
+`cdm-build-diagnostic-20261014/result.md` and `cdm-release-20261014/result.md`.
+Natural fallback, sustained daily coverage and delivery remain unproven.
+
+Recorded source baseline before this candidate is47d7a2a, OpenAlex's20:26UTC
+release. Exact build/CI, guarded migration, live smoke/readback and only the new
+scheduled opt-in completed. Receipt: external `openalex-release-20261013/result.md`.
+This pass did not refresh production or establish natural fallback/delivery.
+Broad daily news, artist releases and arbitrary custom coverage remain open.
+
+Historical local addition, before its release: OpenAlex citation metadata after Crossref/PLOS, off by
 default. Its exact custom research lanes are artificial intelligence, music and
 climate change research. Fixed generic queries, strict scalar projection, exact
 supplied DOI, reported-day-only semantics and whole closed-day freshness apply.
@@ -19,9 +43,9 @@ Broad news, artist-release music and arbitrary custom coverage remain open.
 Receipt: external `openalex-local-integration-20261013/result.md`.
 
 The release and candidate records below are dated history. Latest source code
-baseline for this local pass is `191c165f061b7b33beebc2afae4b1000bd134802`.
+baseline for that earlier local pass was `191c165f061b7b33beebc2afae4b1000bd134802`.
 
-Latest completed source release: `e51ba3f26cdeba9f08637d3cb3530792ff01cfbc`, GOV.UK's
+Earlier completed source release: `e51ba3f26cdeba9f08637d3cb3530792ff01cfbc`, GOV.UK's
 narrow AI, macro and housing metadata lane. Exact committed app/Worker build,
 CI, guarded production identity migration, twelve non-sending live checks and
 independent identity/readback passed. Final readback October 10 at 02:46:48 UTC

@@ -158,6 +158,8 @@ const statCanLabourEnabled = strictNoModel && enabled("ALPHA_STATCAN_LABOUR_FALL
   enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
 const openAlexMetadataEnabled = strictNoModel && enabled("ALPHA_OPENALEX_METADATA_FALLBACK") &&
   enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
+const cdmMetadataEnabled = strictNoModel && enabled("ALPHA_CDM_METADATA_FALLBACK") &&
+  enabled("ALPHA_DURABLE_SOURCE_BUDGET") && enabled("ALPHA_DURABLE_SOURCE_COOLDOWN");
 if (process.env.ALPHA_NO_MODEL_MODE !== "1" || process.env.ALPHA_ALLOW_PAID_AI !== "0") {
   console.error("::error::Manual-first delivery requires no-model mode and paid AI disabled.");
   deliveryReady = false;
@@ -190,6 +192,7 @@ const freshSourceTiers = [
   federalRegisterFinanceEnabled ? "federal-register-finance" : null,
   govUkNewsEnabled ? "govuk-news" : null,
   statCanLabourEnabled ? "statcan-labour" : null,
+  cdmMetadataEnabled ? "cdm-music" : null,
   gdeltEnabled ? "gdelt" : null,
 ].filter(Boolean);
 const freshSourceReady = freshSourceTiers.length > 0;

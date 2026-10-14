@@ -4,7 +4,7 @@ import { cleanField } from "./text-clean";
 import { normalizeUrl } from "./url-guard";
 import { codePointSafeTruncate } from "@/lib/text-truncate";
 import { WRAPPED_SOURCE_NOTE } from "@/lib/issue-visibility";
-import { validatedSourceAttribution, govUkItemFields, statCanItemFields, openAlexItemFields } from "@/lib/source-attribution";
+import { validatedSourceAttribution, govUkItemFields, statCanItemFields, openAlexItemFields, cdmItemFields } from "@/lib/source-attribution";
 import type { TopicBlurb, TopicSignal, BlurbItem, SignalSource } from "./types";
 
 /**
@@ -96,7 +96,7 @@ function uniqueSources(signal: TopicSignal): SignalSource[] {
     if (source.attribution !== undefined && !credit) continue;
     const normalized = normalizeUrl(source.url);
     if (!normalized || !sourceIsAllowed(signal, source.url) || seen.has(normalized)) continue;
-    if (credit?.publisher === "govuk" || credit?.publisher === "Statistics Canada" || credit?.publisher === "openalex") {
+    if (credit?.publisher === "govuk" || credit?.publisher === "Statistics Canada" || credit?.publisher === "openalex" || credit?.publisher === "cdm") {
       // Preserve the exact original metadata title. Never format or truncate
       // it through the ordinary narrative/voice sanitizer or admit an excerpt.
       if (source.title !== credit.title || source.excerpt !== "") continue;
@@ -126,6 +126,7 @@ function itemForSource(topic: string, source: SignalSource): BlurbItem {
   if (credit?.publisher === "govuk") return govUkItemFields(credit);
   if (credit?.publisher === "Statistics Canada") return statCanItemFields(credit);
   if (credit?.publisher === "openalex") return openAlexItemFields(credit);
+  if (credit?.publisher === "cdm") return cdmItemFields(credit);
   const body = source.excerpt
     ? source.excerpt
     : `Read the piece for the details on ${topic.toLowerCase()}.`;
@@ -152,6 +153,8 @@ export function buildDeterministicBlurb(signal: TopicSignal): TopicBlurb | null 
     weekOf: signal.weekOf,
     intro: sources.every(source => source.attribution?.publisher === "openalex")
       ? "Recent research citations. Publication days are reported by OpenAlex."
+      : sources.every(source => source.attribution?.publisher === "cdm")
+      ? "Music-production headline metadata from CDM. Dates are feed publication timestamps."
       : `A few useful reads on ${label.toLowerCase()} today.`,
     items: sources.map((source) => itemForSource(label, source)),
   };

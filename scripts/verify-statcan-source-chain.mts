@@ -112,6 +112,8 @@ try {
         "./govuk-news-search": { govUkNewsFallbackEnabled: () => true, govUkNewsSearch: async () => { events.push("govuk"); return []; } },
         "./openalex-metadata": { openAlexTopicLane: () => undefined },
         "./openalex-metadata-search": { openAlexMetadataFallbackEnabled: () => false, openAlexMetadataSearch: deny },
+        "./cdm-metadata": { cdmTopicSupported: () => false },
+        "./cdm-metadata-search": { cdmMetadataFallbackEnabled: () => false, cdmMetadataSearch: deny },
         "./statcan-labour-search": { statCanLabourFallbackEnabled, statCanLabourSearch: async (...args: Parameters<typeof search>) => {
           events.push("statcan-labour");
           receivedExclusions = args[2];
