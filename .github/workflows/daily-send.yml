@@ -95,6 +95,7 @@ jobs:
       # Keep exactly one checkout and defer early scheduled arrivals before any
       # coverage/provider call, install, build, generation or delivery.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        id: checkout
         with:
           persist-credentials: false
 
@@ -216,12 +217,14 @@ jobs:
           fi
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        id: setup
         if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         with:
           node-version: '22'
           cache: 'npm'
 
       - name: Validate exact send scope before provider access
+        id: scope
         if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         run: node scripts/run-brevo-canary.mjs --validate
 
@@ -284,10 +287,12 @@ jobs:
           fi
 
       - name: Install dependencies
+        id: install
         if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         run: npm ci
 
       - name: Verify build-time env vars before spending time on a build
+        id: build_env
         if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
@@ -295,6 +300,7 @@ jobs:
         run: node scripts/verify-build-env.mjs
 
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        id: cache
         if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         with:
           path: .next/cache
@@ -303,6 +309,7 @@ jobs:
             ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
 
       - name: Build (plain Next.js -- NOT the Cloudflare/OpenNext bundle, just a runnable server)
+        id: build
         if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SEND_SUPABASE_URL }}
@@ -312,6 +319,7 @@ jobs:
         run: npm run build
 
       - name: Start the server and run the real daily send
+        id: delivery
         if: steps.window.outputs.ready == 'true' && steps.precheck.outputs.skip != 'true'
         env:
           ALPHA_DELIVERY_ISSUE_DATE: ${{ steps.window.outputs.issue_date }}
@@ -686,6 +694,9 @@ jobs:
               echo "Calling bounded delivery page ${NEXT_PAGE_NUMBER}/${MAX_DELIVERY_PAGES} (${DELIVERY_MODE} mode) ..."
               # -w appends the HTTP status as the last line. The raw response
               # stays private to the runner because it can contain emails.
+              # Mark before the request. The pre-request alert must never
+              # claim nothing started after a possibly accepted route call.
+              echo "route_attempted=true" >> "$GITHUB_OUTPUT"
               RAW=$(curl -sS --max-time "${PAGE_CURL_TIMEOUT}" -H "Authorization: Bearer ${CRON_SECRET}" -H "X-Alpha-Page-Budget-Seconds: ${PAGE_CURL_TIMEOUT}" -w '\n%{http_code}' "${PAGE_URL}")
               PAGE_CURL_EXIT=$?
               PAGE_HTTP_STATUS=$(echo "${RAW}" | tail -n 1)
@@ -883,6 +894,141 @@ jobs:
             fi
 
           echo "OK: send completed and every active subscriber accounted for."
+
+      # One aggregate-only notice per failed scheduled run, before a route
+      # request is attempted. Inline mirror is checked offline against its
+      # dependency-free source so checkout/install failures can still alert.
+      - name: Report a pre-request scheduled workflow failure
+        id: failure_notice
+        if: failure() && github.event_name == 'schedule' && steps.delivery.outputs.route_attempted != 'true'
+        continue-on-error: true
+        timeout-minutes: 1
+        shell: bash
+        env:
+          ALPHA_OPS_ALERT_WEBHOOK_URL: ${{ secrets.SEND_ALPHA_OPS_ALERT_WEBHOOK_URL }}
+          ALPHA_WORKFLOW_EVENT: ${{ github.event_name }}
+          ALPHA_WORKFLOW_REPOSITORY: ${{ github.repository }}
+          ALPHA_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          ALPHA_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          ALPHA_WORKFLOW_ISSUE_DATE: ${{ steps.window.outputs.issue_date }}
+          ALPHA_ROUTE_ATTEMPTED: ${{ steps.delivery.outputs.route_attempted }}
+          ALPHA_STEP_CHECKOUT: ${{ steps.checkout.outcome }}
+          ALPHA_STEP_WINDOW: ${{ steps.window.outcome }}
+          ALPHA_STEP_PRECHECK: ${{ steps.precheck.outcome }}
+          ALPHA_STEP_SETUP: ${{ steps.setup.outcome }}
+          ALPHA_STEP_SCOPE: ${{ steps.scope.outcome }}
+          ALPHA_STEP_PREFLIGHT: ${{ steps.preflight.outcome }}
+          ALPHA_STEP_INSTALL: ${{ steps.install.outcome }}
+          ALPHA_STEP_BUILD_ENV: ${{ steps.build_env.outcome }}
+          ALPHA_STEP_CACHE: ${{ steps.cache.outcome }}
+          ALPHA_STEP_BUILD: ${{ steps.build.outcome }}
+          ALPHA_STEP_DELIVERY: ${{ steps.delivery.outcome }}
+        run: |
+          node --input-type=module <<'ALPHA_FAILURE_ALERT'
+          // Dependency-free source for the workflow's checked inline mirror. No I/O on
+          // import. Kept inline at runtime so even a checkout failure can be reported.
+          // This reports pre-request workflow failure, never recipient delivery failure.
+          export const WORKFLOW_FAILURE_ALERT_TIMEOUT_MS = 5_000;
+
+          export const WORKFLOW_FAILURE_STAGES = Object.freeze([
+            ["CHECKOUT", "checkout"],
+            ["WINDOW", "issue-window"],
+            ["PRECHECK", "coverage-precheck"],
+            ["SETUP", "node-setup"],
+            ["SCOPE", "scope-validation"],
+            ["PREFLIGHT", "provider-readiness"],
+            ["INSTALL", "dependency-install"],
+            ["BUILD_ENV", "build-configuration"],
+            ["CACHE", "build-cache"],
+            ["BUILD", "production-build"],
+            ["DELIVERY", "server-startup"],
+          ].map((stage) => Object.freeze(stage)));
+
+          export function approvedWorkflowFailureWebhook(value) {
+            if (typeof value !== "string" || value.length > 512 || value !== value.trim()) return false;
+            try {
+              const url = new URL(value);
+              return url.protocol === "https:" && url.hostname === "discord.com" &&
+                url.port === "" && url.username === "" && url.password === "" &&
+                url.search === "" && url.hash === "" &&
+                /^\/api\/webhooks\/\d+\/[A-Za-z0-9._-]+$/.test(url.pathname) &&
+                // Reject URL normalization tricks, including escaped path delimiters.
+                value === url.href;
+            } catch {
+              return false;
+            }
+          }
+
+          function pinnedIssueDate(value) {
+            if (value === "" || value === undefined) return "unavailable";
+            if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+            const stamp = Date.parse(`${value}T00:00:00.000Z`);
+            return Number.isFinite(stamp) && new Date(stamp).toISOString().slice(0, 10) === value
+              ? value : null;
+          }
+
+          export function workflowFailurePayload(env) {
+            try {
+              if (!env || env.GITHUB_ACTIONS !== "true" ||
+                env.ALPHA_WORKFLOW_EVENT !== "schedule" ||
+                env.ALPHA_WORKFLOW_REPOSITORY !== "YoungAlgy/alpha" ||
+                env.ALPHA_SEND_OPERATION !== "daily" ||
+                !["", undefined].includes(env.ALPHA_ROUTE_ATTEMPTED)) return null;
+              const runId = env.ALPHA_WORKFLOW_RUN_ID;
+              const attempt = env.ALPHA_WORKFLOW_RUN_ATTEMPT;
+              if (typeof runId !== "string" || !/^[1-9]\d{0,19}$/.test(runId) ||
+                typeof attempt !== "string" || !/^[1-9]\d{0,5}$/.test(attempt)) return null;
+              const issueDate = pinnedIssueDate(env.ALPHA_WORKFLOW_ISSUE_DATE);
+              if (issueDate === null) return null;
+              let failedStage;
+              for (const [key, label] of WORKFLOW_FAILURE_STAGES) {
+                const outcome = env[`ALPHA_STEP_${key}`];
+                if (![undefined, "", "success", "failure", "cancelled", "skipped"].includes(outcome)) return null;
+                if (!failedStage && outcome === "failure") failedStage = label;
+              }
+              // No observed failed step means there is no pre-request failure to report.
+              if (!failedStage) return null;
+              return {
+                content: "[Alpha scheduled workflow stopped before delivery request]\n" +
+                  `Issue date: ${issueDate}\nStage: ${failedStage}\nAttempt: ${attempt}\n` +
+                  `https://github.com/YoungAlgy/alpha/actions/runs/${runId}\n` +
+                  "Other runs may already cover this issue. Do not resend from this notice.",
+                allowed_mentions: { parse: [], users: [], roles: [], replied_user: false },
+              };
+            } catch {
+              return null;
+            }
+          }
+
+          export async function notifyAlphaWorkflowFailure(env, fetchFn = globalThis.fetch) {
+            // Every result is fixed text. Never expose a caught error, URL or body.
+            try {
+              const payload = workflowFailurePayload(env);
+              if (!payload) return "skipped-invalid-or-post-request-context";
+              const endpoint = env.ALPHA_OPS_ALERT_WEBHOOK_URL;
+              if (endpoint === "" || endpoint === undefined) return "skipped-not-configured";
+              if (!approvedWorkflowFailureWebhook(endpoint)) return "blocked-endpoint";
+              const response = await fetchFn(endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+                redirect: "error",
+                credentials: "omit",
+                signal: AbortSignal.timeout(WORKFLOW_FAILURE_ALERT_TIMEOUT_MS),
+              });
+              // Headers alone classify HTTP acceptance. Never inspect the body. The
+              // same five-second abort signal also bounds an unread response stream.
+              return Number.isInteger(response.status) && response.status >= 200 && response.status < 300
+                ? "accepted" : "not-accepted";
+            } catch {
+              // A failed/uncertain POST is never retried, including a timeout.
+              return "unavailable-no-retry";
+            }
+          }
+          const result = await notifyAlphaWorkflowFailure(process.env);
+          console.log("[alpha-workflow-failure-alert] " + result);
+          if (result !== "accepted") console.log("::warning::Alpha pre-request failure notice was not confirmed. Details withheld.");
+          ALPHA_FAILURE_ALERT
 
       - name: Upload public-safe server diagnostics on failure
         if: failure()
