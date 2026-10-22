@@ -6,3 +6,93 @@
 # content-addressed and never needing revalidation.
 /_next/static/*
   Cache-Control: public, max-age=31536000, immutable
+
+/fonts/fb526027db1fc1ae-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/4da3161b738b07dd-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/af4bf8399d1aacdf-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/7088c2b12ccac062-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/665e920483964785-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/5611c55482296524-s.p.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/7ab938503e4547a1-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/13971731025ec697-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/f11ffaf03a80bc19-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/b818b0ea116ed117-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/ed89fb4fc238c6bf-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/e115bc1b6e48400d-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/fc9d3723ce3bfccb-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/597b6a5d799c44de-s.p.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/ba9851c3c22cd980-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/21350d82a1f187e9-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/c5fe6dc8356a8c31-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/19cfc7226ec3afaa-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/df0a9ae256c0569c-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/8e9860b6e62d6359-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/e4af272ccee01ff0-s.p.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/aaf0e744731a46d3-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/9cb204d1bfdb6539-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/c565b14407d34fed-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/47f136985ef5b5cb-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/4ead58c4dcc3f285-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/28a2004cf8372660-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/eaead17c7dbfcd5d-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/8b44c7e6549520b2-s.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/6c25f6e897d845a3-s.woff2
+  Cache-Control: public, max-age=31536000, immutable

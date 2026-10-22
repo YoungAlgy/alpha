@@ -1,0 +1,65 @@
+Alpha self-hosted fonts
+
+These are unchanged WOFF2 files from Alpha's completed local build.
+No new subsetting, conversion, internal renaming or binary edits were performed.
+Each family remains under SIL Open Font License 1.1.
+Original embedded notices below are retained alongside the full family licenses.
+
+Fraunces
+Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces)
+Version 1.000;[b76b70a41]
+
+Newsreader 16pt 16pt
+Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)
+Version 1.003
+
+DM Sans 9pt
+Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)
+Version 4.004;gftools[0.9.30]
+
+Source Serif 4
+© 2014 - 2021 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name ‘Source’.
+Version 4.004;hotconv 1.0.116;makeotfexe 2.5.65601
+
+Inter
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+Version 4.001;git-66647c0bb
+
+Pixelify Sans
+Copyright 2021 The Pixelify Sans Project Authors (https://github.com/eifetx/Pixelify-Sans)
+Version 1.000
+
+Playfair Display
+Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name "Playfair Display".
+Version 1.203
+
+Bebas Neue
+Copyright 2019 The Bebas Neue Project Authors (https://github.com/dharmatype/Bebas-Neue)
+Version 2.000
+
+Official full licenses:
+
+licenses/fraunces-OFL.txt
+https://raw.githubusercontent.com/google/fonts/main/ofl/fraunces/OFL.txt
+licenses/newsreader-OFL.txt
+https://raw.githubusercontent.com/google/fonts/main/ofl/newsreader/OFL.txt
+licenses/dmsans-OFL.txt
+https://raw.githubusercontent.com/google/fonts/main/ofl/dmsans/OFL.txt
+licenses/sourceserif4-OFL.txt
+https://raw.githubusercontent.com/google/fonts/main/ofl/sourceserif4/OFL.txt
+licenses/inter-OFL.txt
+https://raw.githubusercontent.com/google/fonts/main/ofl/inter/OFL.txt
+licenses/pixelifysans-OFL.txt
+https://raw.githubusercontent.com/google/fonts/main/ofl/pixelifysans/OFL.txt
+licenses/playfairdisplay-OFL.txt
+https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/OFL.txt
+licenses/bebasneue-OFL.txt
+https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/OFL.txt
+licenses/source-serif-adobe-LICENSE.md
+https://raw.githubusercontent.com/adobe-fonts/source-serif/release/LICENSE.md
+licenses/inter-upstream-LICENSE.txt
+https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt
+
+Source Serif's Adobe RFN notice and Inter's original 2016 notice are included.
+Current Google catalog notice years are supplemental. Embedded original notices are not replaced.
+

@@ -1,0 +1,801 @@
+{
+  "version": 1,
+  "sourceArtifact": {
+    "id": "music-release-build-20261019",
+    "artifactSha256": "eadd5b045b1c79454a2a6dcd3aa6e765a601609d057a060a09c3992ec73ba9b2"
+  },
+  "files": [
+    {
+      "path": "13971731025ec697-s.woff2",
+      "bytes": 36980,
+      "sha256": "468d56b6b25b05b70190b6c233d773f6f1770e8579827ce022a57f03fa8002fb"
+    },
+    {
+      "path": "19cfc7226ec3afaa-s.woff2",
+      "bytes": 19044,
+      "sha256": "46dd4cdca58c26ae87cc6927657bf83b2e8abfc39ffd0ab176e301a8d28d22bf"
+    },
+    {
+      "path": "21350d82a1f187e9-s.woff2",
+      "bytes": 18744,
+      "sha256": "aebf2ab4a4ce6810d73c1ac7be7cafb4e5ec4cee2d6db5fb3e09691747ec4bd6"
+    },
+    {
+      "path": "28a2004cf8372660-s.woff2",
+      "bytes": 20980,
+      "sha256": "5628567856d60d714e7a35bcac9e3de08b336d63b12138f61b970990a1ee9547"
+    },
+    {
+      "path": "47f136985ef5b5cb-s.woff2",
+      "bytes": 21144,
+      "sha256": "d7f9db9b1034978ebebdf7312aa4aee55dff3ef6039e7ff71413780bd4a05558"
+    },
+    {
+      "path": "4da3161b738b07dd-s.woff2",
+      "bytes": 33640,
+      "sha256": "f1451edd6434085c4f9f3a8b4a674182dd7d6acccf53bfced19fd167f0705a06"
+    },
+    {
+      "path": "4ead58c4dcc3f285-s.woff2",
+      "bytes": 9056,
+      "sha256": "8fa67d5f0ab2a1d0b924729a0411a069b384d7a236edd96a6767ef342a6d048f"
+    },
+    {
+      "path": "5611c55482296524-s.p.woff2",
+      "bytes": 58152,
+      "sha256": "2a69ec1c0fb79a464de0e19957cdb3a65b5f626d85fffd164f9de557d3a64878"
+    },
+    {
+      "path": "597b6a5d799c44de-s.p.woff2",
+      "bytes": 50952,
+      "sha256": "8e38e3fbd74dea20aabe0831ffef04c9f30bf6fc5b99b7a2649be0dd8c6d859c"
+    },
+    {
+      "path": "665e920483964785-s.woff2",
+      "bytes": 36328,
+      "sha256": "fe52554ab1cd7dd9704db81572f45ef0eb122679c35bbbbc728baf701033b727"
+    },
+    {
+      "path": "6c25f6e897d845a3-s.woff2",
+      "bytes": 8596,
+      "sha256": "441b026df205d28954f61b6989c7bbd228c0adff42f746a266c6a5d89134bc34"
+    },
+    {
+      "path": "7088c2b12ccac062-s.woff2",
+      "bytes": 11852,
+      "sha256": "a61f9c4ae3b99795bd673ff0204b8f4e9adad39931e1da9470f216099771db34"
+    },
+    {
+      "path": "7ab938503e4547a1-s.woff2",
+      "bytes": 18192,
+      "sha256": "219b02c7d8884817d3d6ad4c8771f2c000ce4c5669a67ef4e2e5617ffa25c4cc"
+    },
+    {
+      "path": "8b44c7e6549520b2-s.woff2",
+      "bytes": 5664,
+      "sha256": "a724a4b6a8844a50c489b60294d308818f43a244213b0d687d2ba72cf6cee746"
+    },
+    {
+      "path": "8e9860b6e62d6359-s.woff2",
+      "bytes": 85272,
+      "sha256": "a28eb6d3ccb534ae0c94ca999371df024aab60b08c3c8a5720ee9e32fa0faaa2"
+    },
+    {
+      "path": "9cb204d1bfdb6539-s.woff2",
+      "bytes": 8236,
+      "sha256": "c508fbb0fcf9944e706cb9895c71fcdbc9ddc75d75af369f9f0af8becd550786"
+    },
+    {
+      "path": "aaf0e744731a46d3-s.woff2",
+      "bytes": 5032,
+      "sha256": "0276a1c025cd6c8b4f4543859fcefdff632de70d2b1284fd57d674c1d31b4010"
+    },
+    {
+      "path": "af4bf8399d1aacdf-s.woff2",
+      "bytes": 36560,
+      "sha256": "88e17be075f1be50ab67b057b99e3701b828f44ed28f9452df6c02645bb0cba9"
+    },
+    {
+      "path": "b818b0ea116ed117-s.woff2",
+      "bytes": 36628,
+      "sha256": "7683b72ed39c9fc64c626ae0ed611e7dc0121af71cde73fd060bd7a4a83c0d7c"
+    },
+    {
+      "path": "ba9851c3c22cd980-s.woff2",
+      "bytes": 25844,
+      "sha256": "fccca918fea40089dacadc7045861314d1a6bc91f1f323cc1eeb22ebcdb321b5"
+    },
+    {
+      "path": "c565b14407d34fed-s.woff2",
+      "bytes": 12008,
+      "sha256": "0f2216c1b7bf13b775e7b825c15e1c8414f3899cbd4120f275cdc96001a053a0"
+    },
+    {
+      "path": "c5fe6dc8356a8c31-s.woff2",
+      "bytes": 11272,
+      "sha256": "a2e2c783ca6f9c20486e81e72a279203e86730bbf8f01ff6a5ee9dbd09e1c271"
+    },
+    {
+      "path": "df0a9ae256c0569c-s.woff2",
+      "bytes": 10280,
+      "sha256": "8db00ff46c67b22cda8bed865acf7077651cac8d2841d5b40980556b48961931"
+    },
+    {
+      "path": "e115bc1b6e48400d-s.woff2",
+      "bytes": 13400,
+      "sha256": "752875b4c33f07a3dda7c8f0be846fef059cb0f4e85211b855aa93dd85d45a22"
+    },
+    {
+      "path": "e4af272ccee01ff0-s.p.woff2",
+      "bytes": 48432,
+      "sha256": "c940764593d0fe5d596be327ca7558855e018039fb78509aa21921fd3644c3e4"
+    },
+    {
+      "path": "eaead17c7dbfcd5d-s.woff2",
+      "bytes": 38460,
+      "sha256": "5d91eb5d522a03081946c44c8ca17c902230dfed5f0f9b5014262135d47b15b2"
+    },
+    {
+      "path": "ed89fb4fc238c6bf-s.woff2",
+      "bytes": 20164,
+      "sha256": "303d60869ffd404c141fa90d87ba574cd26ade348dd4659ea4b9caeadf72c183"
+    },
+    {
+      "path": "f11ffaf03a80bc19-s.woff2",
+      "bytes": 18036,
+      "sha256": "4d72739b0e43d64e6b2a086a66f62df1ef90f34d6f109b279c557a64eae5d23d"
+    },
+    {
+      "path": "fb526027db1fc1ae-s.woff2",
+      "bytes": 11536,
+      "sha256": "250cc2966c658fb6d336731de9d82a8129025e9839c20c253bbc477852f6cf4f"
+    },
+    {
+      "path": "fc9d3723ce3bfccb-s.woff2",
+      "bytes": 42040,
+      "sha256": "231f594ad829d45f905a8a6cdce704f659615e00f1a9db2699320e6e315c1d1f"
+    },
+    {
+      "path": "licenses/bebasneue-OFL.txt",
+      "bytes": 4338,
+      "sha256": "741c205c17715f24a7f3239d7f34cef247808c5a7098e7f953b756bce6e2dfcc"
+    },
+    {
+      "path": "licenses/dmsans-OFL.txt",
+      "bytes": 4390,
+      "sha256": "c6da9ab29436871bd4347b70607cf2fb2ab82a926a4afe84da0e7a02de4a189e"
+    },
+    {
+      "path": "licenses/fraunces-OFL.txt",
+      "bytes": 4392,
+      "sha256": "6c318c0ea755f3ff42c180802d6ecf0fa4692cd108eb729477b1149b3052c519"
+    },
+    {
+      "path": "licenses/inter-OFL.txt",
+      "bytes": 4378,
+      "sha256": "26dab55086aad1f00eb79ec805e90424170ff2b5d243a934cf04447a75995c0a"
+    },
+    {
+      "path": "licenses/inter-upstream-LICENSE.txt",
+      "bytes": 4381,
+      "sha256": "f3272aece4a2db56ef392cc4daac8c7feb949e2ebeb50fb77295c03efae76e23"
+    },
+    {
+      "path": "licenses/newsreader-OFL.txt",
+      "bytes": 4395,
+      "sha256": "806bdd7d159dc2965b41a80078851b8a549b97103f0b64519849aa662b371297"
+    },
+    {
+      "path": "licenses/pixelifysans-OFL.txt",
+      "bytes": 4396,
+      "sha256": "66055223a6274c5571d443bfcfe5edf11b21de251ef5b9a5352d5e70dfceb50f"
+    },
+    {
+      "path": "licenses/playfairdisplay-OFL.txt",
+      "bytes": 4450,
+      "sha256": "38392b456b09893673b9e75dc3930f2f797c3a66a3e8f5e06d0a30b1969ed1f3"
+    },
+    {
+      "path": "licenses/source-serif-adobe-LICENSE.md",
+      "bytes": 4492,
+      "sha256": "565b51e0f138efd3bf530184f51c342ca630157e49597821a51261baf32b07e0"
+    },
+    {
+      "path": "licenses/sourceserif4-OFL.txt",
+      "bytes": 4401,
+      "sha256": "6eff752a37f2300fcb32b7ba29ffc771996f92da8251c2e6badaa3b4a05d7b63"
+    },
+    {
+      "path": "NOTICES.txt",
+      "bytes": 2614,
+      "sha256": "5a0bb28f501cba3ff0269e999eaea8cd9767fa8b30c60d1f30208b4c86012524"
+    }
+  ],
+  "fonts": [
+    {
+      "path": "fb526027db1fc1ae-s.woff2",
+      "family": "Fraunces",
+      "bytes": 11536,
+      "sha256": "250cc2966c658fb6d336731de9d82a8129025e9839c20c253bbc477852f6cf4f",
+      "notices": {
+        "en": "Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces)"
+      },
+      "version": {
+        "en": "Version 1.000;[b76b70a41]"
+      }
+    },
+    {
+      "path": "4da3161b738b07dd-s.woff2",
+      "family": "Fraunces",
+      "bytes": 33640,
+      "sha256": "f1451edd6434085c4f9f3a8b4a674182dd7d6acccf53bfced19fd167f0705a06",
+      "notices": {
+        "en": "Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces)"
+      },
+      "version": {
+        "en": "Version 1.000;[b76b70a41]"
+      }
+    },
+    {
+      "path": "af4bf8399d1aacdf-s.woff2",
+      "family": "Fraunces",
+      "bytes": 36560,
+      "sha256": "88e17be075f1be50ab67b057b99e3701b828f44ed28f9452df6c02645bb0cba9",
+      "notices": {
+        "en": "Copyright 2020 The Fraunces Project Authors (github.com/undercasetype/Fraunces)"
+      },
+      "version": {
+        "en": "Version 1.000;[b76b70a41]"
+      }
+    },
+    {
+      "path": "7088c2b12ccac062-s.woff2",
+      "family": "Newsreader 16pt 16pt",
+      "bytes": 11852,
+      "sha256": "a61f9c4ae3b99795bd673ff0204b8f4e9adad39931e1da9470f216099771db34",
+      "notices": {
+        "en": "Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)"
+      },
+      "version": {
+        "en": "Version 1.003"
+      }
+    },
+    {
+      "path": "665e920483964785-s.woff2",
+      "family": "Newsreader 16pt 16pt",
+      "bytes": 36328,
+      "sha256": "fe52554ab1cd7dd9704db81572f45ef0eb122679c35bbbbc728baf701033b727",
+      "notices": {
+        "en": "Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)"
+      },
+      "version": {
+        "en": "Version 1.003"
+      }
+    },
+    {
+      "path": "5611c55482296524-s.p.woff2",
+      "family": "Newsreader 16pt 16pt",
+      "bytes": 58152,
+      "sha256": "2a69ec1c0fb79a464de0e19957cdb3a65b5f626d85fffd164f9de557d3a64878",
+      "notices": {
+        "en": "Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)"
+      },
+      "version": {
+        "en": "Version 1.003"
+      }
+    },
+    {
+      "path": "7ab938503e4547a1-s.woff2",
+      "family": "DM Sans 9pt",
+      "bytes": 18192,
+      "sha256": "219b02c7d8884817d3d6ad4c8771f2c000ce4c5669a67ef4e2e5617ffa25c4cc",
+      "notices": {
+        "en": "Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)"
+      },
+      "version": {
+        "en": "Version 4.004;gftools[0.9.30]"
+      }
+    },
+    {
+      "path": "13971731025ec697-s.woff2",
+      "family": "DM Sans 9pt",
+      "bytes": 36980,
+      "sha256": "468d56b6b25b05b70190b6c233d773f6f1770e8579827ce022a57f03fa8002fb",
+      "notices": {
+        "en": "Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)"
+      },
+      "version": {
+        "en": "Version 4.004;gftools[0.9.30]"
+      }
+    },
+    {
+      "path": "f11ffaf03a80bc19-s.woff2",
+      "family": "Source Serif 4",
+      "bytes": 18036,
+      "sha256": "4d72739b0e43d64e6b2a086a66f62df1ef90f34d6f109b279c557a64eae5d23d",
+      "notices": {
+        "en": "© 2014 - 2021 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name ‘Source’."
+      },
+      "version": {
+        "en": "Version 4.004;hotconv 1.0.116;makeotfexe 2.5.65601"
+      }
+    },
+    {
+      "path": "b818b0ea116ed117-s.woff2",
+      "family": "Source Serif 4",
+      "bytes": 36628,
+      "sha256": "7683b72ed39c9fc64c626ae0ed611e7dc0121af71cde73fd060bd7a4a83c0d7c",
+      "notices": {
+        "en": "© 2014 - 2021 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name ‘Source’."
+      },
+      "version": {
+        "en": "Version 4.004;hotconv 1.0.116;makeotfexe 2.5.65601"
+      }
+    },
+    {
+      "path": "ed89fb4fc238c6bf-s.woff2",
+      "family": "Source Serif 4",
+      "bytes": 20164,
+      "sha256": "303d60869ffd404c141fa90d87ba574cd26ade348dd4659ea4b9caeadf72c183",
+      "notices": {
+        "en": "© 2014 - 2021 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name ‘Source’."
+      },
+      "version": {
+        "en": "Version 4.004;hotconv 1.0.116;makeotfexe 2.5.65601"
+      }
+    },
+    {
+      "path": "e115bc1b6e48400d-s.woff2",
+      "family": "Source Serif 4",
+      "bytes": 13400,
+      "sha256": "752875b4c33f07a3dda7c8f0be846fef059cb0f4e85211b855aa93dd85d45a22",
+      "notices": {
+        "en": "© 2014 - 2021 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name ‘Source’."
+      },
+      "version": {
+        "en": "Version 4.004;hotconv 1.0.116;makeotfexe 2.5.65601"
+      }
+    },
+    {
+      "path": "fc9d3723ce3bfccb-s.woff2",
+      "family": "Source Serif 4",
+      "bytes": 42040,
+      "sha256": "231f594ad829d45f905a8a6cdce704f659615e00f1a9db2699320e6e315c1d1f",
+      "notices": {
+        "en": "© 2014 - 2021 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name ‘Source’."
+      },
+      "version": {
+        "en": "Version 4.004;hotconv 1.0.116;makeotfexe 2.5.65601"
+      }
+    },
+    {
+      "path": "597b6a5d799c44de-s.p.woff2",
+      "family": "Source Serif 4",
+      "bytes": 50952,
+      "sha256": "8e38e3fbd74dea20aabe0831ffef04c9f30bf6fc5b99b7a2649be0dd8c6d859c",
+      "notices": {
+        "en": "© 2014 - 2021 Adobe Systems Incorporated (http://www.adobe.com/), with Reserved Font Name ‘Source’."
+      },
+      "version": {
+        "en": "Version 4.004;hotconv 1.0.116;makeotfexe 2.5.65601"
+      }
+    },
+    {
+      "path": "ba9851c3c22cd980-s.woff2",
+      "family": "Inter",
+      "bytes": 25844,
+      "sha256": "fccca918fea40089dacadc7045861314d1a6bc91f1f323cc1eeb22ebcdb321b5",
+      "notices": {
+        "en": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      },
+      "version": {
+        "en": "Version 4.001;git-66647c0bb"
+      }
+    },
+    {
+      "path": "21350d82a1f187e9-s.woff2",
+      "family": "Inter",
+      "bytes": 18744,
+      "sha256": "aebf2ab4a4ce6810d73c1ac7be7cafb4e5ec4cee2d6db5fb3e09691747ec4bd6",
+      "notices": {
+        "en": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      },
+      "version": {
+        "en": "Version 4.001;git-66647c0bb"
+      }
+    },
+    {
+      "path": "c5fe6dc8356a8c31-s.woff2",
+      "family": "Inter",
+      "bytes": 11272,
+      "sha256": "a2e2c783ca6f9c20486e81e72a279203e86730bbf8f01ff6a5ee9dbd09e1c271",
+      "notices": {
+        "en": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      },
+      "version": {
+        "en": "Version 4.001;git-66647c0bb"
+      }
+    },
+    {
+      "path": "19cfc7226ec3afaa-s.woff2",
+      "family": "Inter",
+      "bytes": 19044,
+      "sha256": "46dd4cdca58c26ae87cc6927657bf83b2e8abfc39ffd0ab176e301a8d28d22bf",
+      "notices": {
+        "en": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      },
+      "version": {
+        "en": "Version 4.001;git-66647c0bb"
+      }
+    },
+    {
+      "path": "df0a9ae256c0569c-s.woff2",
+      "family": "Inter",
+      "bytes": 10280,
+      "sha256": "8db00ff46c67b22cda8bed865acf7077651cac8d2841d5b40980556b48961931",
+      "notices": {
+        "en": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      },
+      "version": {
+        "en": "Version 4.001;git-66647c0bb"
+      }
+    },
+    {
+      "path": "8e9860b6e62d6359-s.woff2",
+      "family": "Inter",
+      "bytes": 85272,
+      "sha256": "a28eb6d3ccb534ae0c94ca999371df024aab60b08c3c8a5720ee9e32fa0faaa2",
+      "notices": {
+        "en": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      },
+      "version": {
+        "en": "Version 4.001;git-66647c0bb"
+      }
+    },
+    {
+      "path": "e4af272ccee01ff0-s.p.woff2",
+      "family": "Inter",
+      "bytes": 48432,
+      "sha256": "c940764593d0fe5d596be327ca7558855e018039fb78509aa21921fd3644c3e4",
+      "notices": {
+        "en": "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+      },
+      "version": {
+        "en": "Version 4.001;git-66647c0bb"
+      }
+    },
+    {
+      "path": "aaf0e744731a46d3-s.woff2",
+      "family": "Pixelify Sans",
+      "bytes": 5032,
+      "sha256": "0276a1c025cd6c8b4f4543859fcefdff632de70d2b1284fd57d674c1d31b4010",
+      "notices": {
+        "en": "Copyright 2021 The Pixelify Sans Project Authors (https://github.com/eifetx/Pixelify-Sans)"
+      },
+      "version": {
+        "en": "Version 1.000"
+      }
+    },
+    {
+      "path": "9cb204d1bfdb6539-s.woff2",
+      "family": "Pixelify Sans",
+      "bytes": 8236,
+      "sha256": "c508fbb0fcf9944e706cb9895c71fcdbc9ddc75d75af369f9f0af8becd550786",
+      "notices": {
+        "en": "Copyright 2021 The Pixelify Sans Project Authors (https://github.com/eifetx/Pixelify-Sans)"
+      },
+      "version": {
+        "en": "Version 1.000"
+      }
+    },
+    {
+      "path": "c565b14407d34fed-s.woff2",
+      "family": "Pixelify Sans",
+      "bytes": 12008,
+      "sha256": "0f2216c1b7bf13b775e7b825c15e1c8414f3899cbd4120f275cdc96001a053a0",
+      "notices": {
+        "en": "Copyright 2021 The Pixelify Sans Project Authors (https://github.com/eifetx/Pixelify-Sans)"
+      },
+      "version": {
+        "en": "Version 1.000"
+      }
+    },
+    {
+      "path": "47f136985ef5b5cb-s.woff2",
+      "family": "Playfair Display",
+      "bytes": 21144,
+      "sha256": "d7f9db9b1034978ebebdf7312aa4aee55dff3ef6039e7ff71413780bd4a05558",
+      "notices": {
+        "en": "Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name \"Playfair Display\"."
+      },
+      "version": {
+        "en": "Version 1.203"
+      }
+    },
+    {
+      "path": "4ead58c4dcc3f285-s.woff2",
+      "family": "Playfair Display",
+      "bytes": 9056,
+      "sha256": "8fa67d5f0ab2a1d0b924729a0411a069b384d7a236edd96a6767ef342a6d048f",
+      "notices": {
+        "en": "Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name \"Playfair Display\"."
+      },
+      "version": {
+        "en": "Version 1.203"
+      }
+    },
+    {
+      "path": "28a2004cf8372660-s.woff2",
+      "family": "Playfair Display",
+      "bytes": 20980,
+      "sha256": "5628567856d60d714e7a35bcac9e3de08b336d63b12138f61b970990a1ee9547",
+      "notices": {
+        "en": "Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name \"Playfair Display\"."
+      },
+      "version": {
+        "en": "Version 1.203"
+      }
+    },
+    {
+      "path": "eaead17c7dbfcd5d-s.woff2",
+      "family": "Playfair Display",
+      "bytes": 38460,
+      "sha256": "5d91eb5d522a03081946c44c8ca17c902230dfed5f0f9b5014262135d47b15b2",
+      "notices": {
+        "en": "Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name \"Playfair Display\"."
+      },
+      "version": {
+        "en": "Version 1.203"
+      }
+    },
+    {
+      "path": "8b44c7e6549520b2-s.woff2",
+      "family": "Bebas Neue",
+      "bytes": 5664,
+      "sha256": "a724a4b6a8844a50c489b60294d308818f43a244213b0d687d2ba72cf6cee746",
+      "notices": {
+        "en": "Copyright 2019 The Bebas Neue Project Authors (https://github.com/dharmatype/Bebas-Neue)"
+      },
+      "version": {
+        "en": "Version 2.000"
+      }
+    },
+    {
+      "path": "6c25f6e897d845a3-s.woff2",
+      "family": "Bebas Neue",
+      "bytes": 8596,
+      "sha256": "441b026df205d28954f61b6989c7bbd228c0adff42f746a266c6a5d89134bc34",
+      "notices": {
+        "en": "Copyright 2019 The Bebas Neue Project Authors (https://github.com/dharmatype/Bebas-Neue)"
+      },
+      "version": {
+        "en": "Version 2.000"
+      }
+    }
+  ],
+  "preloads": [
+    "/fonts/e4af272ccee01ff0-s.p.woff2",
+    "/fonts/5611c55482296524-s.p.woff2",
+    "/fonts/597b6a5d799c44de-s.p.woff2"
+  ],
+  "faces": [
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/fb526027db1fc1ae-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/4da3161b738b07dd-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/af4bf8399d1aacdf-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/fb526027db1fc1ae-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/4da3161b738b07dd-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/af4bf8399d1aacdf-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/fb526027db1fc1ae-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/4da3161b738b07dd-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/af4bf8399d1aacdf-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/fb526027db1fc1ae-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/4da3161b738b07dd-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Fraunces;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/af4bf8399d1aacdf-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Fraunces Fallback;src:local(\"Times New Roman\");ascent-override:84.71%;descent-override:22.09%;line-gap-override:0.00%;size-adjust:115.45%}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/7088c2b12ccac062-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/665e920483964785-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/5611c55482296524-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/7088c2b12ccac062-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/665e920483964785-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/5611c55482296524-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/7088c2b12ccac062-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/665e920483964785-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/5611c55482296524-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/7088c2b12ccac062-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/665e920483964785-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Newsreader;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/5611c55482296524-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Newsreader Fallback;src:local(\"Times New Roman\");ascent-override:69.68%;descent-override:25.12%;line-gap-override:0.00%;size-adjust:105.48%}",
+    "@font-face{font-family:DM Sans;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/7ab938503e4547a1-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:DM Sans;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/13971731025ec697-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:DM Sans;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/7ab938503e4547a1-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:DM Sans;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/13971731025ec697-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:DM Sans;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/7ab938503e4547a1-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:DM Sans;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/13971731025ec697-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:DM Sans;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/7ab938503e4547a1-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:DM Sans;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/13971731025ec697-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:DM Sans Fallback;src:local(\"Arial\");ascent-override:94.90%;descent-override:29.66%;line-gap-override:0.00%;size-adjust:104.53%}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/f11ffaf03a80bc19-s.woff2) format(\"woff2\");unicode-range:u+0460-052f,u+1c80-1c8a,u+20b4,u+2de0-2dff,u+a640-a69f,u+fe2e-fe2f}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/b818b0ea116ed117-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/ed89fb4fc238c6bf-s.woff2) format(\"woff2\");unicode-range:u+0370-0377,u+037a-037f,u+0384-038a,u+038c,u+038e-03a1,u+03a3-03ff}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/e115bc1b6e48400d-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/fc9d3723ce3bfccb-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/597b6a5d799c44de-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/f11ffaf03a80bc19-s.woff2) format(\"woff2\");unicode-range:u+0460-052f,u+1c80-1c8a,u+20b4,u+2de0-2dff,u+a640-a69f,u+fe2e-fe2f}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/b818b0ea116ed117-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/ed89fb4fc238c6bf-s.woff2) format(\"woff2\");unicode-range:u+0370-0377,u+037a-037f,u+0384-038a,u+038c,u+038e-03a1,u+03a3-03ff}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/e115bc1b6e48400d-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/fc9d3723ce3bfccb-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/597b6a5d799c44de-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/f11ffaf03a80bc19-s.woff2) format(\"woff2\");unicode-range:u+0460-052f,u+1c80-1c8a,u+20b4,u+2de0-2dff,u+a640-a69f,u+fe2e-fe2f}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/b818b0ea116ed117-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/ed89fb4fc238c6bf-s.woff2) format(\"woff2\");unicode-range:u+0370-0377,u+037a-037f,u+0384-038a,u+038c,u+038e-03a1,u+03a3-03ff}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/e115bc1b6e48400d-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/fc9d3723ce3bfccb-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/597b6a5d799c44de-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/f11ffaf03a80bc19-s.woff2) format(\"woff2\");unicode-range:u+0460-052f,u+1c80-1c8a,u+20b4,u+2de0-2dff,u+a640-a69f,u+fe2e-fe2f}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/b818b0ea116ed117-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/ed89fb4fc238c6bf-s.woff2) format(\"woff2\");unicode-range:u+0370-0377,u+037a-037f,u+0384-038a,u+038c,u+038e-03a1,u+03a3-03ff}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/e115bc1b6e48400d-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/fc9d3723ce3bfccb-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:\"Source Serif 4\";font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/597b6a5d799c44de-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:\"Source Serif 4 Fallback\";src:local(\"Times New Roman\");ascent-override:87.87%;descent-override:28.41%;line-gap-override:0.00%;size-adjust:117.91%}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/fonts/ba9851c3c22cd980-s.woff2) format(\"woff2\");unicode-range:u+0460-052f,u+1c80-1c8a,u+20b4,u+2de0-2dff,u+a640-a69f,u+fe2e-fe2f}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/fonts/21350d82a1f187e9-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/fonts/c5fe6dc8356a8c31-s.woff2) format(\"woff2\");unicode-range:u+1f??}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/fonts/19cfc7226ec3afaa-s.woff2) format(\"woff2\");unicode-range:u+0370-0377,u+037a-037f,u+0384-038a,u+038c,u+038e-03a1,u+03a3-03ff}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/fonts/df0a9ae256c0569c-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/fonts/8e9860b6e62d6359-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Inter;font-style:normal;font-weight:100 900;font-display:swap;src:url(/fonts/e4af272ccee01ff0-s.p.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Inter Fallback;src:local(\"Arial\");ascent-override:90.44%;descent-override:22.52%;line-gap-override:0.00%;size-adjust:107.12%}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/aaf0e744731a46d3-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/9cb204d1bfdb6539-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/c565b14407d34fed-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/aaf0e744731a46d3-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/9cb204d1bfdb6539-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/c565b14407d34fed-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/aaf0e744731a46d3-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/9cb204d1bfdb6539-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/c565b14407d34fed-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/aaf0e744731a46d3-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/9cb204d1bfdb6539-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Pixelify Sans;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/c565b14407d34fed-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Pixelify Sans Fallback;src:local(\"Arial\");ascent-override:81.70%;descent-override:24.87%;line-gap-override:0.00%;size-adjust:112.61%}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/47f136985ef5b5cb-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/4ead58c4dcc3f285-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/28a2004cf8372660-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/eaead17c7dbfcd5d-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/47f136985ef5b5cb-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/4ead58c4dcc3f285-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/28a2004cf8372660-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/eaead17c7dbfcd5d-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/47f136985ef5b5cb-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/4ead58c4dcc3f285-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/28a2004cf8372660-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/eaead17c7dbfcd5d-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/47f136985ef5b5cb-s.woff2) format(\"woff2\");unicode-range:u+0301,u+0400-045f,u+0490-0491,u+04b0-04b1,u+2116}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/4ead58c4dcc3f285-s.woff2) format(\"woff2\");unicode-range:u+0102-0103,u+0110-0111,u+0128-0129,u+0168-0169,u+01a0-01a1,u+01af-01b0,u+0300-0301,u+0303-0304,u+0308-0309,u+0323,u+0329,u+1ea0-1ef9,u+20ab}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/28a2004cf8372660-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Playfair Display;font-style:normal;font-weight:700;font-display:swap;src:url(/fonts/eaead17c7dbfcd5d-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Playfair Display Fallback;src:local(\"Times New Roman\");ascent-override:97.25%;descent-override:22.56%;line-gap-override:0.00%;size-adjust:111.26%}",
+    "@font-face{font-family:Bebas Neue;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/8b44c7e6549520b2-s.woff2) format(\"woff2\");unicode-range:u+0100-02ba,u+02bd-02c5,u+02c7-02cc,u+02ce-02d7,u+02dd-02ff,u+0304,u+0308,u+0329,u+1d00-1dbf,u+1e00-1e9f,u+1ef2-1eff,u+2020,u+20a0-20ab,u+20ad-20c4,u+2113,u+2c60-2c7f,u+a720-a7ff}",
+    "@font-face{font-family:Bebas Neue;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/6c25f6e897d845a3-s.woff2) format(\"woff2\");unicode-range:u+00??,u+0131,u+0152-0153,u+02bb-02bc,u+02c6,u+02da,u+02dc,u+0304,u+0308,u+0329,u+2000-206f,u+20ac,u+2122,u+2191,u+2193,u+2212,u+2215,u+feff,u+fffd}",
+    "@font-face{font-family:Bebas Neue Fallback;src:local(\"Arial\");ascent-override:117.32%;descent-override:39.11%;line-gap-override:0.00%;size-adjust:76.72%}"
+  ],
+  "variables": [
+    {
+      "name": "--font-fraunces",
+      "value": "\"Fraunces\",\"Fraunces Fallback\""
+    },
+    {
+      "name": "--font-newsreader",
+      "value": "\"Newsreader\",\"Newsreader Fallback\""
+    },
+    {
+      "name": "--font-dm-sans",
+      "value": "\"DM Sans\",\"DM Sans Fallback\""
+    },
+    {
+      "name": "--font-source-serif",
+      "value": "\"Source Serif 4\",\"Source Serif 4 Fallback\""
+    },
+    {
+      "name": "--font-inter",
+      "value": "\"Inter\",\"Inter Fallback\""
+    },
+    {
+      "name": "--font-pixelify",
+      "value": "\"Pixelify Sans\",\"Pixelify Sans Fallback\""
+    },
+    {
+      "name": "--font-playfair",
+      "value": "\"Playfair Display\",\"Playfair Display Fallback\""
+    },
+    {
+      "name": "--font-bebas",
+      "value": "\"Bebas Neue\",\"Bebas Neue Fallback\""
+    }
+  ],
+  "licenses": [
+    {
+      "path": "licenses/fraunces-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/fraunces/OFL.txt",
+      "bytes": 4391,
+      "sha256": "bdf4c22802eaf804f998195871c6b8938aac2ac14b2d78a8bd66a6f1eced833b",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/newsreader-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/newsreader/OFL.txt",
+      "bytes": 4394,
+      "sha256": "fdfad38143ec470553cae82a1e45320bdd1b9ec70415d37bd0171051d8a4ded8",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/dmsans-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/dmsans/OFL.txt",
+      "bytes": 4482,
+      "sha256": "9af36190332437f5ecd09974de43c1f7c77a310a996cdd8ceb25628b458840e1",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/sourceserif4-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/sourceserif4/OFL.txt",
+      "bytes": 4400,
+      "sha256": "5f94c3fd3a23131a417ab5a0c8452de57e70c3cfb9f604d88241f7065ebf9fd9",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/inter-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/OFL.txt",
+      "bytes": 4377,
+      "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/pixelifysans-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/pixelifysans/OFL.txt",
+      "bytes": 4488,
+      "sha256": "b66ba46f511a851ab09998b5a5a9fdbb102545a3864cb993095e1745996873a7",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/playfairdisplay-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/OFL.txt",
+      "bytes": 4449,
+      "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/bebasneue-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/OFL.txt",
+      "bytes": 4337,
+      "sha256": "72082f6cb4d04be2ecf7cc7d9e1e7d73787f0af8a5a278a47cade70c16b78341",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/source-serif-adobe-LICENSE.md",
+      "url": "https://raw.githubusercontent.com/adobe-fonts/source-serif/release/LICENSE.md",
+      "bytes": 4491,
+      "sha256": "c21d7293d87b6d7ab1d0229a2f55b77f33a7613a6a4e66f6693d68d7d8d09464",
+      "conditionsHeading": true,
+      "disclaimer": true
+    },
+    {
+      "path": "licenses/inter-upstream-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt",
+      "bytes": 4380,
+      "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a",
+      "conditionsHeading": false,
+      "disclaimer": true
+    }
+  ]
+}
+
