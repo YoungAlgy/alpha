@@ -174,6 +174,8 @@ const observed={
     }
   }
 };
+// Mandatory portable projection of the saved October 25 public npm v2 report.
+const publicSnapshot=JSON.parse(readFileSync(new URL("./fixtures/dependency-audit-severity-20261025.json",import.meta.url),"utf8"));
 const clone=value=>structuredClone(value);
 // All default negative cases also run after the removed calendar deadline.
 const now="2027-01-01T00:00:00.000Z";
@@ -188,6 +190,36 @@ function recount(report){
  return report;
 }
 function mutated(change, sync=true){const report=clone(observed),packages=clone(lock);change(report,packages);if(sync)recount(report);reject(()=>classify(report,packages));}
+// The real public report has moderate parent labels over a high Undici leaf.
+// That shape is valid, but the high leaf still blocks. The other new high and
+// critical advisories cannot inherit the one Braces allowance.
+pass(()=>assert.deepEqual(publicSnapshot.metadata.vulnerabilities,{info:0,low:0,moderate:3,high:3,critical:2,total:8}));
+pass(()=>assert.deepEqual(Object.keys(publicSnapshot.vulnerabilities).sort(),
+  ["@opennextjs/cloudflare","body-parser","dompurify","miniflare","next","undici","wrangler","zod"].sort()));
+pass(()=>assert.throws(()=>classify(publicSnapshot),{message:"AUDIT_OTHER_HIGH_OR_CRITICAL"}));
+const moderateParentChain=clone(publicSnapshot);
+for(const name of ["body-parser","dompurify","next","zod"])delete moderateParentChain.vulnerabilities[name];
+recount(moderateParentChain);
+pass(()=>assert.throws(()=>classify(moderateParentChain),{message:"AUDIT_OTHER_HIGH_OR_CRITICAL"}));
+// A low parent reached through a string edge is valid report metadata. Its
+// high or critical child still blocks, independently of direct understatement.
+for(const severity of ["high","critical"]){
+ pass(()=>{const report=clone(moderateParentChain);
+  for(const name of ["@opennextjs/cloudflare","miniflare","wrangler"])report.vulnerabilities[name].severity="low";
+  report.vulnerabilities.undici.severity=severity;
+  for(const advisory of report.vulnerabilities.undici.via)if(typeof advisory==="object")advisory.severity=severity;
+  recount(report);
+  assert.throws(()=>classify(report),{message:"AUDIT_OTHER_HIGH_OR_CRITICAL"});});
+}
+pass(()=>{const report=clone(moderateParentChain);report.vulnerabilities.undici.severity="moderate";recount(report);
+  assert.throws(()=>classify(report),{message:"AUDIT_SEVERITY_INVALID"});});
+pass(()=>{const report=clone(moderateParentChain);report.vulnerabilities.undici.severity="critical";
+  report.vulnerabilities.undici.via[2].severity="critical";recount(report);
+  assert.throws(()=>classify(report),{message:"AUDIT_OTHER_HIGH_OR_CRITICAL"});});
+pass(()=>{const report=clone(moderateParentChain);report.vulnerabilities.wrangler.via=["missing"];
+  assert.throws(()=>classify(report),{message:"AUDIT_REFERENCE_INVALID"});});
+pass(()=>{const report=clone(moderateParentChain);report.vulnerabilities.undici.via=["@opennextjs/cloudflare"];
+  assert.throws(()=>classify(report),{message:"AUDIT_GRAPH_INVALID"});});
 pass(()=>assert.equal(classify().waivedHighPackageEntries,7));
 pass(()=>assert.equal(classify().rawCounts.high,7));
 pass(()=>assert.equal(classify().exceptionBasis,"verified-local-depth-mitigation"));

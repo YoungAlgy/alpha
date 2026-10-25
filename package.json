@@ -24,14 +24,14 @@
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.105.4",
     "gpt-tokenizer": "^3.4.0",
-    "next": "16.3.8",
+    "next": "16.4.3",
     "posthog-js": "^1.376.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.12.3",
     "stripe": "^22.1.1",
     "svix": "^1.99.1",
-    "zod": "^4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.20.2",
@@ -41,7 +41,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "16.4.3",
     "js-yaml": "5.4.1",
     "patch-package": "^8.0.1",
     "sharp": "0.35.5",
@@ -52,12 +52,14 @@
   },
   "overrides": {
     "miniflare@5.20260910.0-alpha": {
-      "undici": "7.29.1",
+      "undici": "7.30.1",
       "sharp": "0.35.5"
     },
     "@eslint/eslintrc": {
       "js-yaml": "4.3.2"
     },
-    "qs": "6.16.0"
+    "qs": "6.16.0",
+    "dompurify": "3.4.17",
+    "body-parser": "2.4.0"
   }
 }

@@ -7,6 +7,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
+import * as govUkMetadata from "../lib/engine/govuk-news-metadata";
+import * as statCanMetadata from "../lib/engine/statcan-labour-metadata";
+import * as openAlexMetadata from "../lib/engine/openalex-metadata";
+import * as cdmMetadata from "../lib/engine/cdm-metadata";
 import type { TopicBlurb, TopicSignal } from "../lib/engine/types.ts";
 import type { Issue, TopicId, UserProfile } from "../lib/types.ts";
 import type { SelectionResult } from "../lib/engine/select-sections.ts";
@@ -107,7 +111,14 @@ function harness(options: Scenario) {
   }, warnings);
   const voice = runModule("lib/engine/voice-guard.ts", { "@/lib/issue-visibility": visibility }, warnings);
   const truncate = runModule("lib/text-truncate.ts", {}, warnings);
-  const attribution = runModule("lib/source-attribution.ts", { "./engine/text-clean": textClean }, warnings);
+  const attribution = runModule("lib/source-attribution.ts", {
+    "./engine/text-clean": textClean,
+    "./engine/govuk-news-metadata": govUkMetadata,
+    "./engine/statcan-labour-metadata": statCanMetadata,
+    "./engine/openalex-metadata": openAlexMetadata,
+    "./engine/cdm-metadata": cdmMetadata,
+  }, warnings);
+  const sourceEvidence = runModule("lib/engine/source-evidence.ts", {}, warnings);
   const formatter = runModule("lib/engine/deterministic-fallback.ts", {
     "@/lib/topics": topics, "./voice-guard": voice, "./text-clean": textClean,
     "./url-guard": guard, "@/lib/text-truncate": truncate,
@@ -115,6 +126,11 @@ function harness(options: Scenario) {
   }, warnings);
   const selector = runModule("lib/engine/select-sections.ts", {}, warnings);
   let topicDeadlineCount = 0;
+  const resolveFixtureSignal = async (id: TopicId, _week: string, opts: { excludeUrls?: Set<string> }) => {
+    searches.push({ id, excludes: [...opts.excludeUrls ?? []] });
+    if (options.expireFirstTopic && id === timedOut) return new Promise<TopicSignal>(() => {});
+    return options.signals?.has(id) ? options.signals.get(id) : fixtureSignal(id);
+  };
   const assembly = runModule("lib/engine/assemble.ts", {
     "./topic-blurb": { generateTopicBlurb: async (id: TopicId) => {
       const draft = options.drafts?.get(id);
@@ -125,11 +141,14 @@ function harness(options: Scenario) {
       if (options.editorFails) throw new Error(editorDetail);
       return "Generic editor intro.";
     } },
-    "./source-resolver": { resolveTopicSignal: async (id: TopicId, _week: string, opts: { excludeUrls?: Set<string> }) => {
-      searches.push({ id, excludes: [...opts.excludeUrls ?? []] });
-      if (options.expireFirstTopic && id === timedOut) return new Promise<TopicSignal>(() => {});
-      return options.signals?.has(id) ? options.signals.get(id) : fixtureSignal(id);
-    } },
+    "./source-resolver": {
+      // The pinned baseline still calls the signal-only compatibility API.
+      resolveTopicSignal: resolveFixtureSignal,
+      resolveTopicSignalResult: async (...args: Parameters<typeof resolveFixtureSignal>) => {
+        const signal = await resolveFixtureSignal(...args);
+        return signal ? { state: "signal", signal } : { state: "healthy-empty" };
+      },
+    },
     "./blurb-cache": {
       getCachedBlurbs: async () => options.cached ?? new Map(),
       // Keep the legacy shape for the pinned pre-change --baseline source.
@@ -148,6 +167,7 @@ function harness(options: Scenario) {
       return result;
     } },
     "./deterministic-fallback": formatter, "@/lib/topics": topics,
+    "./source-evidence": sourceEvidence,
     "@/lib/with-deadline": { withDeadline: async (work: Promise<unknown>, _ms: number, label: string) => {
       deadlines.push(label);
       if (label !== "editor-note") {
@@ -217,7 +237,13 @@ await check("rejected custom generation retains hard-failure cache and other fin
   assert.deepEqual([...issue.sections].map(section => section.topicId), [ordinary]);
   assert.ok(h.failedCache.has(`${rejected}|${period}|pw`));
   assert.deepEqual(h.writes.map(blurb => blurb.topicId), [ordinary]);
-  assert.deepEqual([...h.selections[0].skippedDry], [rejected]);
+  assert.deepEqual([...h.selections[0].skippedDry], baseline ? [rejected] : []);
+  if (!baseline) {
+    assert.deepEqual([...h.selections[0].failedTopics], [rejected]);
+    assert.ok(h.warnings.some(args => args[0] === `[assemble] ${period}: 1 topic(s) failed or remained unconfirmed`));
+    assert.ok(h.warnings.every(args => !String(args[0]).includes("quiet topic(s)")),
+      "rejected generation must not be reported as a quiet news day");
+  }
   privateDiagnostics(h);
 });
 
@@ -227,7 +253,13 @@ await check("deadline rejection keeps fixed label and useful partial result", as
   assert.deepEqual([...issue.sections].map(section => section.topicId), [ordinary]);
   assert.ok(h.inFlight.has(`${timedOut}|${period}|pw`), "pending work retains its internal custom identity");
   assert.equal(h.failedCache.has(`${timedOut}|${period}|pw`), false);
-  assert.deepEqual([...h.selections[0].skippedDry], [timedOut]);
+  assert.deepEqual([...h.selections[0].skippedDry], baseline ? [timedOut] : []);
+  if (!baseline) {
+    assert.deepEqual([...h.selections[0].failedTopics], [timedOut]);
+    assert.ok(h.warnings.some(args => args[0] === `[assemble] ${period}: 1 topic(s) failed or remained unconfirmed`));
+    assert.ok(h.warnings.every(args => !String(args[0]).includes("quiet topic(s)")),
+      "deadline rejection must not be reported as a quiet news day");
+  }
   privateDiagnostics(h);
 });
 

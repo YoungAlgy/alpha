@@ -21,6 +21,10 @@ type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
+export function researchMetadataTopicSupported(topicId: string): boolean {
+  return topicId === "nutrition-food";
+}
+
 export function researchMetadataFallbackEnabled(): boolean {
   return noModelModeEnabled() &&
     /^(1|true|yes)$/i.test(process.env.ALPHA_RESEARCH_METADATA_FALLBACK?.trim() ?? "");
@@ -137,7 +141,7 @@ export function createResearchMetadataSearch(deps: {
 
   return async function researchMetadataSearch(topicId: string, opts: BraveSearchOptions = {}): Promise<BraveResult[]> {
     const window = publicSourceWindow(opts.freshness, now());
-    if (topicId !== "nutrition-food" || !window) return [];
+    if (!researchMetadataTopicSupported(topicId) || !window) return [];
     const start = new Date(window.start).toISOString().slice(0, 10);
     const end = new Date(window.end).toISOString().slice(0, 10);
     const raw = await cached("crossref-research", `${start}|${end}`, () => serial(() => attempt("crossref-research",

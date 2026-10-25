@@ -12,10 +12,10 @@ import { cleanField } from "./text-clean";
 import { publicFeedFallbackEnabled, publicFeedSearch } from "./public-feed-search";
 import { noModelModeEnabled, noKeySourcesEnabled } from "./provider-policy";
 import { gdeltFallbackEnabled, gdeltSearch } from "./gdelt-search";
-import { publisherFeedFallbackEnabled, publisherFeedSearch } from "./publisher-feed-search";
-import { openNewsFeedFallbackEnabled, openNewsFeedSearch } from "./open-news-feed-search";
-import { researchMetadataFallbackEnabled, researchMetadataSearch } from "./research-metadata-search";
-import { plosMetadataFallbackEnabled, plosMetadataSearch } from "./plos-metadata-search";
+import { publisherFeedFallbackEnabled, publisherFeedSearch, publisherFeedTopicSupported } from "./publisher-feed-search";
+import { openNewsFeedFallbackEnabled, openNewsFeedSearch, openNewsFeedTopicSupported } from "./open-news-feed-search";
+import { researchMetadataFallbackEnabled, researchMetadataSearch, researchMetadataTopicSupported } from "./research-metadata-search";
+import { plosMetadataFallbackEnabled, plosMetadataSearch, plosMetadataTopicSupported } from "./plos-metadata-search";
 import { ccmixterMetadataFallbackEnabled, ccmixterMetadataSearch } from "./ccmixter-metadata-search";
 import { federalRegisterFinanceFallbackEnabled, federalRegisterFinanceSearch } from "./federal-register-finance-search";
 import { govUkNewsFallbackEnabled, govUkNewsSearch } from "./govuk-news-search";
@@ -68,11 +68,13 @@ async function tryFallback(
   }
 }
 
-type LiveSearchAttempt =
+export type TopicResolution =
   | { state: "signal"; signal: TopicSignal }
   | { state: "healthy-empty" }
   | { state: "no-signal-unconfirmed" }
   | { state: "unavailable" };
+
+type LiveSearchAttempt = TopicResolution;
 
 type BraveFallbackReason = "rate-limited" | "unavailable" | "not configured";
 
@@ -113,7 +115,7 @@ function customQueries(topicId: string): string[] {
   return [t, `${t} news`, `${t} latest`];
 }
 
-export async function resolveTopicSignal(
+export async function resolveTopicSignalResult(
   topicId: TopicId,
   weekOf: string,
   opts?: {
@@ -128,13 +130,21 @@ export async function resolveTopicSignal(
     /** Fixed operational enums/counts only. No topic, source text or URLs. */
     onSourceObservation?: SourceObserver;
   }
-): Promise<TopicSignal | undefined> {
+): Promise<TopicResolution> {
   const mode = noKeySourcesEnabled() ? "no-key" : "keyed";
   const observe = createSourceObserver(opts?.onSourceObservation);
+  let healthyEmpty = false, unavailable = false, unconfirmed = false;
+  const finish = (signal?: TopicSignal): TopicResolution => signal ? { state: "signal", signal }
+    : unavailable ? { state: "unavailable" }
+    : unconfirmed || !healthyEmpty ? { state: "no-signal-unconfirmed" }
+    : { state: "healthy-empty" };
   const observed = async (provider: EvidenceProvider, work: () => Promise<LiveSearchAttempt>) => {
     let result: LiveSearchAttempt;
     try { result = await work(); }
-    catch (error) { observe(provider, "unavailable", 0, mode); throw error; }
+    catch (error) { unavailable = true; observe(provider, "unavailable", 0, mode); throw error; }
+    healthyEmpty ||= result.state === "healthy-empty";
+    unavailable ||= result.state === "unavailable";
+    unconfirmed ||= result.state === "no-signal-unconfirmed";
     observe(provider, result.state, result.state === "signal" ? result.signal.citableUrls?.size ?? 0 : 0, mode);
     return result;
   };
@@ -158,7 +168,7 @@ export async function resolveTopicSignal(
         );
         if (viaFeed) return viaFeed;
       }
-      if (publisherFeedFallbackEnabled()) {
+      if (publisherFeedFallbackEnabled() && publisherFeedTopicSupported(topicId)) {
         const viaPublisher = await tryFallback(topicId, "publisher feeds", () =>
           observed("publisher-rss", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
             undefined, publisherFeedSearch, "Direct Publisher RSS", false))
@@ -166,7 +176,7 @@ export async function resolveTopicSignal(
         );
         if (viaPublisher) return viaPublisher;
       }
-      if (openNewsFeedFallbackEnabled()) {
+      if (openNewsFeedFallbackEnabled() && openNewsFeedTopicSupported(topicId)) {
         const viaOpenNews = await tryFallback(topicId, "licensed public news feeds", () =>
           observed("globalvoices-rss", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
             undefined, openNewsFeedSearch, "Global Voices RSS", false))
@@ -174,7 +184,7 @@ export async function resolveTopicSignal(
         );
         if (viaOpenNews) return viaOpenNews;
       }
-      if (researchMetadataFallbackEnabled()) {
+      if (researchMetadataFallbackEnabled() && researchMetadataTopicSupported(topicId)) {
         const viaResearch = await tryFallback(topicId, "open research metadata", () =>
           observed("crossref", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
             undefined, researchMetadataSearch, "Crossref Research Metadata", false))
@@ -182,7 +192,7 @@ export async function resolveTopicSignal(
         );
         if (viaResearch) return viaResearch;
       }
-      if (plosMetadataFallbackEnabled()) {
+      if (plosMetadataFallbackEnabled() && plosMetadataTopicSupported(topicId)) {
         const viaPlos = await tryFallback(topicId, "PLOS research metadata", () =>
           observed("plos", () => fetchLiveSignal(topicId, [topicId], weekOf, opts?.freshness, opts?.excludeUrls,
             undefined, plosMetadataSearch, "PLOS Research Metadata", false))
@@ -255,7 +265,7 @@ export async function resolveTopicSignal(
 
     // An early return prevents any configured key from reopening metered
     // search. No-key source mode is independent of the writer-model policy.
-    if (noKeySourcesEnabled()) return tryPublicSources();
+    if (noKeySourcesEnabled()) return finish(await tryPublicSources());
 
     // Track whether THIS topic's OWN queries got rate-limited, via a
     // per-call callback (lib/brave.ts's onRateLimited) rather than the
@@ -267,6 +277,7 @@ export async function resolveTopicSignal(
     // into the Gemini fallback instead of the existing backup-topic behavior.
     let rateLimitedThisTopic = false;
     const monthlyExhausted = opts?.quotaState?.monthlyExhausted === true;
+    if (monthlyExhausted) unavailable = true;
     let shouldTryFallback = !braveConfigured() || monthlyExhausted;
     let fallbackReason: BraveFallbackReason = monthlyExhausted ? "rate-limited" : "not configured";
 
@@ -281,7 +292,7 @@ export async function resolveTopicSignal(
           () => { rateLimitedThisTopic = true; },
           (query, searchOptions) => braveSearch(query, { ...searchOptions, quotaState: opts?.quotaState })
         ));
-        if (live.state === "signal") return live.signal;
+        if (live.state === "signal") return live;
         if (live.state === "unavailable") {
           shouldTryFallback = true;
           fallbackReason = "unavailable";
@@ -312,7 +323,7 @@ export async function resolveTopicSignal(
             return signal ? { state: "signal", signal } : { state: "no-signal-unconfirmed" };
           }).then(attempt => attempt.state === "signal" ? attempt.signal : undefined)
         );
-        if (grounded) return withBraveFallbackReason(grounded, fallbackReason);
+        if (grounded) return finish(withBraveFallbackReason(grounded, fallbackReason));
       }
       // You.com is tried LAST, after Gemini — Gemini's grounded search is a
       // richer signal (a synthesized answer, not just headlines) when it
@@ -341,15 +352,21 @@ export async function resolveTopicSignal(
             false
           )).then((attempt) => attempt.state === "signal" ? attempt.signal : undefined)
         );
-        if (viaYou) return viaYou;
+        if (viaYou) return finish(viaYou);
       }
-      return tryPublicSources();
+      return finish(await tryPublicSources());
     }
   }
-  // liveOnly: caller wants to know if this topic has FRESH signal this period
-  // (the ranked-pool selector skips topics with nothing new and backfills from
-  // a backup that does). Return undefined when there's no live signal.
-  return undefined;
+  return finish();
+}
+
+// Compatibility for callers that only consume useful signal. Assembly uses
+// the terminal result so uncertainty never becomes a confirmed quiet verdict.
+export async function resolveTopicSignal(
+  ...args: Parameters<typeof resolveTopicSignalResult>
+): Promise<TopicSignal | undefined> {
+  const result = await resolveTopicSignalResult(...args);
+  return result.state === "signal" ? result.signal : undefined;
 }
 
 async function fetchLiveSignal(

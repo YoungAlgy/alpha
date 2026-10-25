@@ -21,6 +21,7 @@ import { withDeadline } from "../lib/with-deadline";
 import type { BraveResult } from "../lib/brave";
 import type { Issue, TopicId, UserProfile } from "../lib/types";
 import type { TopicBlurb, TopicSignal } from "../lib/engine/types";
+import type { TopicResolution } from "../lib/engine/source-resolver";
 
 let checks = 0;
 const eq = (actual: unknown, expected: unknown, message: string) => { checks++; assert.deepEqual(actual, expected, message); };
@@ -78,7 +79,10 @@ const makeSearch = (fails = false) => createStatCanLabourSearch({
 const compile = (path: string) => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const resolver: { resolveTopicSignal?: (topic: TopicId, date: string, opts?: any) => Promise<TopicSignal | undefined> } = {};
+const resolver: {
+  resolveTopicSignal?: (topic: TopicId, date: string, opts?: any) => Promise<TopicSignal | undefined>;
+  resolveTopicSignalResult?: (topic: TopicId, date: string, opts?: any) => Promise<TopicResolution>;
+} = {};
 const empty = (label: string) => async () => { events.push(label); return []; };
 
 try {
@@ -101,12 +105,12 @@ try {
           events.push("google");
           return googleHealthy ? [{ title: "Current macroeconomic report", url: "https://example.org/current-macro-report", description: "Current generic report." }] : [];
         } },
-        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedSearch: async () => {
+        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedTopicSupported: () => true, publisherFeedSearch: async () => {
           events.push("publisher"); throw new Error("Generic earlier source unavailable");
         } },
-        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedSearch: empty("global-voices") },
-        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataSearch: empty("crossref") },
-        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataSearch: empty("plos") },
+        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedTopicSupported: () => true, openNewsFeedSearch: empty("global-voices") },
+        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataTopicSupported: () => true, researchMetadataSearch: empty("crossref") },
+        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataTopicSupported: () => true, plosMetadataSearch: empty("plos") },
         "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => true, ccmixterMetadataSearch: deny },
         "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => true, federalRegisterFinanceSearch: deny },
         "./govuk-news-search": { govUkNewsFallbackEnabled: () => true, govUkNewsSearch: async () => { events.push("govuk"); return []; } },
@@ -212,8 +216,8 @@ try {
       const modules: Record<string, unknown> = {
         "./topic-blurb": writer,
         "./editor-note": { generateEditorNote: async () => "Generic offline intro." },
-        "./source-resolver": { resolveTopicSignal: (topic: TopicId, date: string, options: any) =>
-          resolver.resolveTopicSignal!(topic, date, { ...options, excludeUrls: new Set([urlGuard.normalizeUrl(canonical)! , urlGuard.normalizeUrl(alias)!]) }) },
+        "./source-resolver": { resolveTopicSignalResult: (topic: TopicId, date: string, options: any) =>
+          resolver.resolveTopicSignalResult!(topic, date, { ...options, excludeUrls: new Set([urlGuard.normalizeUrl(canonical)! , urlGuard.normalizeUrl(alias)!]) }) },
         "./blurb-cache": { getCachedBlurbs: async () => cachedBlurbs,
           getCitationHistory: async () => ({ state: "available", urlsByTopic: new Map(), unavailableTopicIds: new Set() }),
           setCachedBlurb: async (value: TopicBlurb) => { writes++; cachedBlurbs.set(value.topicId, JSON.parse(JSON.stringify(value))); } },

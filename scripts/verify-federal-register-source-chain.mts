@@ -176,13 +176,13 @@ try {
           events.push("google");
           return googleHealthy ? [{ title: "Personal finance savings news", url: "https://apnews.com/article/generic-finance-fixture", description: "Generic current headline." }] : [];
         } },
-        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedSearch: async () => {
+        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedTopicSupported: () => true, publisherFeedSearch: async () => {
           events.push("publisher");
           throw new Error("Generic prior-source failure fixture");
         } },
-        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedSearch: emptyTier("global-voices") },
-        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataSearch: emptyTier("crossref") },
-        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataSearch: emptyTier("plos") },
+        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedTopicSupported: () => true, openNewsFeedSearch: emptyTier("global-voices") },
+        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataTopicSupported: () => true, researchMetadataSearch: emptyTier("crossref") },
+        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataTopicSupported: () => true, plosMetadataSearch: emptyTier("plos") },
         "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => true, ccmixterMetadataSearch: forbiddenCall },
         "./gdelt-search": { gdeltFallbackEnabled: () => gdeltHealthy, gdeltSearch: async () => {
           events.push("gdelt");
@@ -196,6 +196,10 @@ try {
             return resolverSearch(...args);
           },
         },
+        "./openalex-metadata": { openAlexTopicLane: () => undefined },
+        "./openalex-metadata-search": { openAlexMetadataFallbackEnabled: () => false, openAlexMetadataSearch: forbiddenCall },
+        "./cdm-metadata": { cdmTopicSupported: () => false },
+        "./cdm-metadata-search": { cdmMetadataFallbackEnabled: () => false, cdmMetadataSearch: forbiddenCall },
         "@/lib/source-attribution": attribution,
         "./source-evidence": sourceEvidence,
         "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: forbiddenCall },

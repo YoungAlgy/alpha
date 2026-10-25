@@ -1,6 +1,6 @@
 import { generateTopicBlurb } from "./topic-blurb";
 import { generateEditorNote } from "./editor-note";
-import { resolveTopicSignal } from "./source-resolver";
+import { resolveTopicSignalResult } from "./source-resolver";
 import { getCachedBlurbs, getCitationHistory, setCachedBlurb } from "./blurb-cache";
 import { issueIsReaderVisible } from "@/lib/issue-visibility";
 import { normalizeUrl } from "./url-guard";
@@ -19,7 +19,7 @@ import { createSourceEvidence, type SourceObservation } from "./source-evidence"
 // Gemini text fallback). The model call is bounded per-attempt (60s) but the
 // SDK retry + topic-blurb's parse-retry can stack a single blurb past 2
 // minutes, and a Brave rate-limit can add a further ~20s Gemini round trip on
-// top. This caps ONE topic so a pathologically slow one is treated as "quiet"
+// top. This caps ONE topic so a pathologically slow one is recorded as failed
 // and BACKFILLED from a fresher backup, rather than dominating the parallel
 // wave and forcing the outer route/cron deadline to drop the WHOLE letter.
 // The reject lands in selectLetterSections' per-topic .catch → null.
@@ -167,6 +167,7 @@ export async function generateIssue(
     if (set.size > 0) citedByTopic.set(tid, set);
   }
   const blockedByHistory = new Set<string>();
+  const outputQualityMisses = new Set<string>();
   const sourceEvidence = createSourceEvidence<TopicBlurb>();
 
   // Generate a topic's section from FRESH live signal. Returns null WITHOUT a
@@ -192,7 +193,7 @@ export async function generateIssue(
     }
     const dryKey = `${id}|${weekOf}|${freshness ?? "pw"}`;
     if (dryCache.has(dryKey)) return null; // searched dry earlier this batch — no re-search
-    if (failedCache.has(dryKey)) return null; // hard-failed earlier this batch — no re-pay
+    if (failedCache.has(dryKey)) throw new Error("Topic generation unavailable in this batch"); // no re-pay
 
     // Reuse an already-running search+generate for this exact key instead of
     // starting a duplicate one (see inFlight's own comment on generateIssue's
@@ -218,18 +219,20 @@ export async function generateIssue(
           sourceEvidence.observe(observation);
           if (observation.outcome === "signal") selectedSource = observation;
         };
-        let signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness, excludeUrls, quotaState, onSourceObservation });
+        let resolution = await resolveTopicSignalResult(id, weekOf, { liveOnly: true, freshness, excludeUrls, quotaState, onSourceObservation });
         // Dry in the tight since-last-send window? Retry ONCE at past-week before
         // giving up the slot. With the exclusion set filtering out everything
         // already cited, whatever the wide pass finds is guaranteed new to the
         // reader - this keeps daily letters grounded in real current articles.
-        if (!signal && freshness && freshness !== "pw") {
-          signal = await resolveTopicSignal(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls, quotaState, onSourceObservation });
+        if (resolution.state !== "signal" && freshness && freshness !== "pw") {
+          resolution = await resolveTopicSignalResult(id, weekOf, { liveOnly: true, freshness: "pw", excludeUrls, quotaState, onSourceObservation });
         }
-        if (!signal) {
+        if (resolution.state !== "signal") {
+          if (resolution.state !== "healthy-empty") throw new Error("Topic sources unavailable or unconfirmed");
           dryCache.add(dryKey);
           return null; // no fresh signal — skip, no model call
         }
+        const signal = resolution.signal;
         let blurb: TopicBlurb;
         try {
           blurb = await generateTopicBlurb(id, weekOf, signal, {
@@ -329,6 +332,9 @@ export async function generateIssue(
       inFlight.set(dryKey, raw);
     }
     const value = await withDeadline(raw, TOPIC_GEN_DEADLINE_MS, "topic-blurb");
+    // A resolved null without a confirmed dry verdict is an output-quality
+    // miss. Keep its existing eviction/retry behavior, including shared work.
+    if (value === null && !dryCache.has(dryKey)) outputQualityMisses.add(id);
     // This assembly cannot recover another caller's discovery provenance.
     if (value && reused) sourceEvidence.mark(value, "reused");
     return value;
@@ -364,11 +370,17 @@ export async function generateIssue(
   if (blockedByHistory.size > 0) {
     console.warn(`[assemble] ${weekOf}: held ${blockedByHistory.size} topic(s) because citation history is unavailable`);
   }
-  const quietTopics = selection.skippedDry.filter((id) => !blockedByHistory.has(id));
+  const quietTopics = selection.skippedDry.filter((id) => !blockedByHistory.has(id) && !outputQualityMisses.has(id));
   if (quietTopics.length > 0) {
     console.warn(
       `[assemble] ${weekOf}: skipped ${quietTopics.length} quiet topic(s)`
     );
+  }
+  if (selection.failedTopics.length > 0) {
+    console.warn(`[assemble] ${weekOf}: ${selection.failedTopics.length} topic(s) failed or remained unconfirmed`);
+  }
+  if (outputQualityMisses.size > 0) {
+    console.warn(`[assemble] ${weekOf}: ${outputQualityMisses.size} topic(s) had unusable generated output`);
   }
   // alpha-drift-r17-12 (found+fixed 2026-08-07): a topic dropped for citing
   // a URL an earlier section of this SAME letter already used has real,
@@ -410,6 +422,12 @@ export async function generateIssue(
     // are perfectly fine. Name the actual observed cause(s) instead of
     // guessing one.
     const causes: string[] = [];
+    if (outputQualityMisses.size > 0) {
+      causes.push(`${outputQualityMisses.size} topic(s) had unusable generated output`);
+    }
+    if (selection.failedTopics.length > 0) {
+      causes.push(`${selection.failedTopics.length} topic(s) failed or remained unconfirmed`);
+    }
     if (blockedByHistory.size > 0) {
       causes.push(`${blockedByHistory.size} topic(s) held because citation history is unavailable`);
     }

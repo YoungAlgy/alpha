@@ -27,6 +27,10 @@ const TOPICS: Partial<Record<string, { feed: Feed; matches: RegExp }>> = {
   "macro-markets": { feed: "fed", matches: /\b(?:econom(?:y|ic)|inflation|monetary policy|interest rates?|labor market|financial stability)\b/i },
 };
 
+export function publisherFeedTopicSupported(topicId: string): boolean {
+  return Object.hasOwn(TOPICS, topicId) && TOPICS[topicId] !== undefined;
+}
+
 export function publisherFeedFallbackEnabled(): boolean {
   return /^(1|true|yes)$/i.test(process.env.ALPHA_PUBLISHER_FEED_FALLBACK?.trim() ?? "");
 }
@@ -38,7 +42,7 @@ export function createPublisherFeedSearch(deps: { fetcher?: typeof fetch; now?: 
   const attempt = deps.attempt ?? runPublicSourceAttempt;
   const cached = createPublicFeedCache(now);
   return async (topicId: string, opts: BraveSearchOptions = {}): Promise<BraveResult[]> => {
-    const selection = Object.hasOwn(TOPICS, topicId) ? TOPICS[topicId] : undefined;
+    const selection = publisherFeedTopicSupported(topicId) ? TOPICS[topicId] : undefined;
     if (!selection || !publicSourceWindow(opts.freshness, now())) return [];
     const feed = FEEDS[selection.feed];
     const circuit = selection.feed === "nist" ? "publisher-nist"

@@ -59,10 +59,10 @@ try {
         "@/lib/topics": topics, "@/lib/prompt-fence": promptFence, "./text-clean": textClean,
         "./provider-policy": { noModelModeEnabled: () => true, noKeySourcesEnabled: () => true },
         "./public-feed-search": { publicFeedFallbackEnabled: () => true, publicFeedSearch: fail("google") },
-        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedSearch: fail("publisher") },
-        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedSearch: fail("global-voices") },
-        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataSearch: fail("crossref") },
-        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true,
+        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedTopicSupported: () => true, publisherFeedSearch: fail("publisher") },
+        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedTopicSupported: () => true, openNewsFeedSearch: fail("global-voices") },
+        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataTopicSupported: () => true, researchMetadataSearch: fail("crossref") },
+        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataTopicSupported: () => true,
           plosMetadataSearch: (...args: Parameters<typeof plos>) => plosUnavailable
             ? fail("plos")() : plos(...args) },
         "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => false, ccmixterMetadataSearch: forbiddenCall },
@@ -70,6 +70,10 @@ try {
         "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: forbiddenCall },
         "./statcan-labour-search": { statCanLabourFallbackEnabled: () => false, statCanLabourSearch: forbiddenCall },
         "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbiddenCall },
+        "./openalex-metadata": { openAlexTopicLane: () => undefined },
+        "./openalex-metadata-search": { openAlexMetadataFallbackEnabled: () => false, openAlexMetadataSearch: forbiddenCall },
+        "./cdm-metadata": { cdmTopicSupported: () => false },
+        "./cdm-metadata-search": { cdmMetadataFallbackEnabled: () => false, cdmMetadataSearch: forbiddenCall },
         "@/lib/source-attribution": attribution,
       };
       assert.ok(Object.hasOwn(modules, name), "Unexpected resolver import");

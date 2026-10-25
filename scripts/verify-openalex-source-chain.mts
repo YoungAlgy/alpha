@@ -211,10 +211,10 @@ try {
       "./gemini-search": { resolveTopicSignalViaGemini: deny }, "@/lib/topics": topics, "@/lib/prompt-fence": promptFence,
       "./text-clean": textClean, "./provider-policy": { noModelModeEnabled: () => true, noKeySourcesEnabled: () => true },
       "./public-feed-search": { publicFeedFallbackEnabled: () => true, publicFeedSearch: async () => { events.push("google"); return earlier ? [{ title: "Generic research source", url: "https://example.org/current", description: "Generic public metadata" }] : []; } },
-      "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedSearch: empty("publisher") },
-      "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedSearch: empty("globalvoices") },
-      "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataSearch: empty("crossref") },
-      "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataSearch: empty("plos") },
+      "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedTopicSupported: () => true, publisherFeedSearch: empty("publisher") },
+      "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedTopicSupported: () => true, openNewsFeedSearch: empty("globalvoices") },
+      "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataTopicSupported: () => true, researchMetadataSearch: empty("crossref") },
+      "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataTopicSupported: () => true, plosMetadataSearch: empty("plos") },
       "./openalex-metadata": metadata,
       "./openalex-metadata-search": { openAlexMetadataFallbackEnabled, openAlexMetadataSearch: async (...args: Parameters<typeof search>) => {
         events.push("openalex");

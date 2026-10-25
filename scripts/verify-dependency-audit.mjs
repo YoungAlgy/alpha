@@ -18,8 +18,8 @@ export const exceptionPolicy = Object.freeze({
   approval: "Alex approved this exact mitigation-bound allowance without calendar expiry October 8, 2026. No release permission.",
 });
 const reviewed = new Map([
-  ["eslint-config-next", ["16.3.8", "@next/eslint-plugin-next", "16.3.8"]],
-  ["@next/eslint-plugin-next", ["16.3.8", "fast-glob", "3.3.1"]],
+  ["eslint-config-next", ["16.4.3", "@next/eslint-plugin-next", "16.4.3"]],
+  ["@next/eslint-plugin-next", ["16.4.3", "fast-glob", "3.3.1"]],
   ["fast-glob", ["3.3.1", "micromatch", "^4.0.4"]],
   ["patch-package", ["8.0.1", "find-yarn-workspace-root", "^2.0.0"]],
   ["find-yarn-workspace-root", ["2.0.0", "micromatch", "^4.0.2"]],
@@ -122,12 +122,21 @@ export function evaluateAudit(report, lock, { status, now }) {
     memo.set(name, result);
     return result;
   };
-  // Reject cyclic/dangling shapes even below the existing high threshold.
+  // A parent can report moderate while a referenced child reports high.
+  // Validate each package's own advisories against its own severity, then
+  // classify risk from every reachable advisory regardless of parent labels.
+  const effectiveSeverity = new Map();
   for (const [name, finding] of entries) {
     const all = leaves(name);
-    assert(all.every(({ via }) => severities.indexOf(via.severity) <= severities.indexOf(finding.severity)), "AUDIT_SEVERITY_INVALID");
+    for (const via of finding.via) {
+      if (typeof via !== "string") {
+        assert(severities.indexOf(via.severity) <= severities.indexOf(finding.severity), "AUDIT_SEVERITY_INVALID");
+      }
+    }
+    effectiveSeverity.set(name, Math.max(severities.indexOf(finding.severity),
+      ...all.map(({ via }) => severities.indexOf(via.severity))));
   }
-  const blocked = entries.filter(([, finding]) => finding.severity === "critical");
+  const blocked = entries.filter(([name]) => effectiveSeverity.get(name) === severities.indexOf("critical"));
   let waived = 0;
   const verifyReviewedNode = name => {
     const expected = reviewed.get(name);
@@ -149,7 +158,10 @@ export function evaluateAudit(report, lock, { status, now }) {
     assert(finding.isDirect === ["eslint-config-next", "patch-package"].includes(name), "AUDIT_EXCEPTION_GRAPH_DRIFT");
   };
   for (const [name, finding] of entries) {
-    if (finding.severity !== "high") continue;
+    if (effectiveSeverity.get(name) < severities.indexOf("high") || effectiveSeverity.get(name) === severities.indexOf("critical")) continue;
+    // The existing exception covers only the reviewed high-labelled chain.
+    // A newly low/moderate-labelled parent with a high descendant still blocks.
+    if (finding.severity !== "high") { blocked.push([name, finding]); continue; }
     const all = leaves(name);
     const exact = all.every(({ parent, via }) => parent === exceptionPolicy.package
       && via.name === exceptionPolicy.package && via.dependency === exceptionPolicy.package

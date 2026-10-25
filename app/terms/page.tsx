@@ -50,11 +50,12 @@ export default function TermsPage() {
       can't keep. */}
       <p>
         alpha. is an invite-only email/web newsletter right now. You pick a set of topics, and
-        every day we build a letter for you from real sources. A configured AI
-        writer or Alpha&apos;s local source formatter turns those sources into the
-        letter, with every link starting as a live web search made that period. On a
-        rare day something upstream breaks and we can&apos;t finish a fresh
-        letter in time. Rather than send nothing, we&apos;ll resend your most
+        every day we build a letter for you from real sources. The scheduled-send
+        workflow is configured to use Alpha&apos;s local formatter to turn
+        resolved sources into your letter. Alpha checks source details before
+        use, but links and facts can still go stale. On a rare day something
+        upstream breaks and we can&apos;t finish a fresh letter in time. Rather
+        than send nothing, we&apos;ll resend your most
         recent one and say so plainly in the letter itself. That fallback
         needs a letter of yours already on file, so it doesn&apos;t apply to
         your very first one as a new subscriber. On the rare day that first

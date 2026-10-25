@@ -19,6 +19,13 @@ type FinalizeRow = {
 };
 
 const MIN_PROVIDER_WINDOW_MS = 4 * 60_000;
+const CLAIM_REJECTIONS = new Set([
+  "invalid", "deletion_pending", "missing", "claim_conflict", "other_lane_pending",
+  "ineligible", "recipient_changed", "payload_changed", "busy", "ambiguous_expired", "provider_conflict",
+]);
+const FINALIZE_REJECTIONS = new Set([
+  "invalid", "missing", "payload_changed", "conflict", "lease_lost", "ambiguous_expired", "provider_conflict",
+]);
 
 export type ResendDeliveryAttemptResult = {
   providerSent: boolean;
@@ -79,7 +86,16 @@ export async function sendWithResendDeliveryAttempt(params: {
   }
 
   const leaseToken = randomUUID();
-  const { data, error } = await params.sb.rpc(
+  const rpcData = async (stage: "claim" | "finalize", name: string, args: Record<string, unknown>) => {
+    try {
+      const { data, error } = await params.sb.rpc(name, args);
+      if (error) throw new ResendDeliveryAttemptError(stage, "rpc_failed");
+      return data;
+    } catch {
+      throw new ResendDeliveryAttemptError(stage, "rpc_failed");
+    }
+  };
+  const data = await rpcData("claim",
     "claim_resend_delivery_attempt",
     {
       p_user_id: params.userId,
@@ -91,9 +107,6 @@ export async function sendWithResendDeliveryAttempt(params: {
       p_expected_claimed_at: params.expectedClaimedAt,
     }
   );
-  if (error) {
-    throw new ResendDeliveryAttemptError("claim", error.message);
-  }
   const row = claimRow(data);
   const status = row?.delivery_status;
   const storedRecipient = row?.stored_recipient;
@@ -119,7 +132,7 @@ export async function sendWithResendDeliveryAttempt(params: {
   ) {
     throw new ResendDeliveryAttemptError(
       "claim",
-      typeof status === "string" ? status : "invalid_claim_state"
+      typeof status === "string" && CLAIM_REJECTIONS.has(status) ? status : "invalid_claim_state"
     );
   }
   const leaseExpiresAt = Date.parse(row.stored_lease_expires_at);
@@ -144,17 +157,17 @@ export async function sendWithResendDeliveryAttempt(params: {
   let sent: { id: string };
   try {
     sent = await params.send(storedRecipient);
-  } catch (error) {
+  } catch {
     throw new ResendDeliveryAttemptError(
       "send",
-      error instanceof Error ? error.message : "provider_error"
+      "provider_failed"
     );
   }
   if (!sent?.id || typeof sent.id !== "string") {
     throw new ResendDeliveryAttemptError("send", "message_id_missing");
   }
 
-  const { data: finalized, error: finalizeError } = await params.sb.rpc(
+  const finalized = await rpcData("finalize",
     "finalize_resend_delivery_attempt",
     {
       p_user_id: params.userId,
@@ -168,7 +181,6 @@ export async function sendWithResendDeliveryAttempt(params: {
   const finalRow = finalizeRow(finalized);
   const finalStatus = finalRow?.delivery_status;
   if (
-    finalizeError ||
     typeof finalStatus !== "string" ||
     !["recorded", "recorded_stale", "replayed", "replayed_stale"].includes(
       finalStatus
@@ -178,8 +190,7 @@ export async function sendWithResendDeliveryAttempt(params: {
   ) {
     throw new ResendDeliveryAttemptError(
       "finalize",
-      finalizeError?.message ??
-        (typeof finalStatus === "string" ? finalStatus : "invalid_finalize_state")
+      typeof finalStatus === "string" && FINALIZE_REJECTIONS.has(finalStatus) ? finalStatus : "invalid_finalize_state"
     );
   }
   return {

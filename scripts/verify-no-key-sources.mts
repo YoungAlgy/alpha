@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 type FetchHandler = (url: URL) => Response;
 const envNames = [
   "ALPHA_NO_KEY_SOURCES", "ALPHA_GDELT_FALLBACK", "ALPHA_PUBLIC_FEED_FALLBACK",
-  "ALPHA_PUBLISHER_FEED_FALLBACK", "ALPHA_DURABLE_SOURCE_BUDGET",
+  "ALPHA_PUBLISHER_FEED_FALLBACK", "ALPHA_DURABLE_SOURCE_BUDGET", "ALPHA_DURABLE_SOURCE_COOLDOWN",
   "ALPHA_NO_MODEL_MODE", "ALPHA_ALLOW_PAID_AI", "BRAVE_SEARCH_API_KEY",
   "YOU_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "DEEPSEEK_API_KEY",
   "ANTHROPIC_API_KEY",
@@ -94,7 +94,7 @@ try {
   const { noKeySourcesEnabled } = await import("../lib/engine/provider-policy.ts");
   const { publicFeedFallbackEnabled } = await import("../lib/engine/public-feed-search.ts");
   const { normalizeUrl } = await import("../lib/engine/url-guard.ts");
-  const { resolveTopicSignal } = await import("../lib/engine/source-resolver.ts");
+  const { resolveTopicSignal, resolveTopicSignalResult } = await import("../lib/engine/source-resolver.ts");
   const { generateTopicBlurb } = await import("../lib/engine/topic-blurb.ts");
   const { readFile } = await import("node:fs/promises");
 
@@ -254,6 +254,8 @@ try {
   setScenario({ noKey: "1", gdelt: "1", nextHandler: () => new Response(null, { status: 503 }) });
   const allDownSignal = await resolveTopicSignal("music", currentDate, { liveOnly: true, freshness: "pd" });
   assert.equal(allDownSignal, undefined);
+  assert.equal((await resolveTopicSignalResult("music", currentDate, { liveOnly: true, freshness: "pd" })).state,
+    "unavailable", "source outage is not a healthy empty verdict");
   assert.equal(counts()[1], 1, "one GDELT attempt, with no automatic retry");
   assert.equal(unexpectedFetches, 0, "all-source outage cannot reopen metered providers");
 

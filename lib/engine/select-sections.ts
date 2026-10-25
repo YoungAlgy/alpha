@@ -23,6 +23,7 @@ export interface ChosenSection<T> {
 export interface SelectionResult<T> {
   chosen: ChosenSection<T>[]; // in rank order
   skippedDry: string[]; // topics with no fresh info this period, not used
+  failedTopics: string[]; // attempted generation rejected, never confirmed dry
   usedFiller: string[]; // topics filled from the last-resort filler
   // alpha-drift-r17-11/12 (found+fixed 2026-08-07): topics whose Pass-1 live
   // candidate had real, fresh content but got rejected for citing a URL an
@@ -90,7 +91,8 @@ export async function selectLetterSections<T>(
   const pool = Array.from(new Set(rawPool));
   const size = Math.max(1, Math.floor(letterSize));
   const chosen: ChosenSection<T>[] = [];
-  const live = (id: string) => genLive(id).catch(() => null);
+  const failedTopics = new Set<string>();
+  const live = (id: string) => genLive(id).catch(() => { failedTopics.add(id); return null; });
   const filler = genFiller
     ? (id: string) => genFiller(id).catch(() => null)
     : null;
@@ -134,7 +136,7 @@ export async function selectLetterSections<T>(
   }
 
   const skippedDry = pool.filter(
-    (id) => attempted.has(id) && !chosen.some((c) => c.topicId === id) && !dedupedByUrl.has(id)
+    (id) => attempted.has(id) && !chosen.some((c) => c.topicId === id) && !dedupedByUrl.has(id) && !failedTopics.has(id)
   );
 
   // Pass 2 is an optional compatibility hook for deterministic selection tests
@@ -167,6 +169,7 @@ export async function selectLetterSections<T>(
   return {
     chosen,
     skippedDry: skippedDry.filter((id) => !usedFiller.includes(id)),
+    failedTopics: [...failedTopics].filter((id) => !usedFiller.includes(id)),
     usedFiller,
     dedupedByUrl: Array.from(dedupedByUrl),
   };

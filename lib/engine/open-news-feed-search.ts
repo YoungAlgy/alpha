@@ -88,6 +88,10 @@ function selectTopic(topicId: string): TopicSelection | undefined {
   return { feed: "general", mode: "phrase", tokens: [...tokens] };
 }
 
+export function openNewsFeedTopicSupported(topicId: string): boolean {
+  return selectTopic(topicId) !== undefined;
+}
+
 function genreMatches(item: FeedItem, genre: string): boolean {
   const title = item.title.replace(/^Global Voices:\s*/i, "");
   const categories = item.categories.map((value) => value.toLowerCase());

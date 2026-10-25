@@ -69,10 +69,10 @@ try {
           events.push("google");
           return googleHealthy ? [{ title: "Generic hip-hop news", url: "https://apnews.com/article/generic-fixture", description: "Generic current headline." }] : [];
         } },
-        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedSearch: emptyTier("publisher") },
-        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedSearch: emptyTier("global-voices") },
-        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataSearch: emptyTier("crossref") },
-        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataSearch: emptyTier("plos") },
+        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedTopicSupported: () => true, publisherFeedSearch: emptyTier("publisher") },
+        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedTopicSupported: () => true, openNewsFeedSearch: emptyTier("global-voices") },
+        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataTopicSupported: () => true, researchMetadataSearch: emptyTier("crossref") },
+        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataTopicSupported: () => true, plosMetadataSearch: emptyTier("plos") },
         "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => enabled,
           ccmixterMetadataSearch: async (...args: Parameters<typeof ccmixter>) => {
             events.push("ccmixter");
@@ -81,6 +81,12 @@ try {
           } },
         "./gdelt-search": { gdeltFallbackEnabled: () => false, gdeltSearch: forbiddenCall },
         "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: forbiddenCall },
+        "./openalex-metadata": { openAlexTopicLane: () => undefined },
+        "./openalex-metadata-search": { openAlexMetadataFallbackEnabled: () => false, openAlexMetadataSearch: forbiddenCall },
+        "./cdm-metadata": { cdmTopicSupported: () => false },
+        "./cdm-metadata-search": { cdmMetadataFallbackEnabled: () => false, cdmMetadataSearch: forbiddenCall },
+        "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: forbiddenCall },
+        "./statcan-labour-search": { statCanLabourFallbackEnabled: () => false, statCanLabourSearch: forbiddenCall },
         "@/lib/source-attribution": attribution,
         "./source-evidence": sourceEvidence,
       };

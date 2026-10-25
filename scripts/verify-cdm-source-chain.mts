@@ -119,12 +119,12 @@ try {
           events.push("google");
           return googleHealthy ? [{ title: "Earlier useful current music technology report", url: "https://example.org/earlier-useful-music-report", description: "Generic source fixture." }] : [];
         } },
-        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedSearch: async () => {
+        "./publisher-feed-search": { publisherFeedFallbackEnabled: () => true, publisherFeedTopicSupported: () => true, publisherFeedSearch: async () => {
           events.push("publisher"); throw new Error("Earlier publisher source unavailable");
         } },
-        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedSearch: empty("global-voices") },
-        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataSearch: empty("crossref") },
-        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataSearch: empty("plos") },
+        "./open-news-feed-search": { openNewsFeedFallbackEnabled: () => true, openNewsFeedTopicSupported: () => true, openNewsFeedSearch: empty("global-voices") },
+        "./research-metadata-search": { researchMetadataFallbackEnabled: () => true, researchMetadataTopicSupported: () => true, researchMetadataSearch: empty("crossref") },
+        "./plos-metadata-search": { plosMetadataFallbackEnabled: () => true, plosMetadataTopicSupported: () => true, plosMetadataSearch: empty("plos") },
         "./ccmixter-metadata-search": { ccmixterMetadataFallbackEnabled: () => false, ccmixterMetadataSearch: deny },
         "./federal-register-finance-search": { federalRegisterFinanceFallbackEnabled: () => false, federalRegisterFinanceSearch: deny },
         "./govuk-news-search": { govUkNewsFallbackEnabled: () => false, govUkNewsSearch: deny },

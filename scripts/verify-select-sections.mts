@@ -163,6 +163,23 @@ const ids = (r: { chosen: { topicId: string }[] }) => r.chosen.map((c) => c.topi
   check("(13) filler-path collision also rejected: a,c (not a,b)", ids(r) === "a,c");
 }
 
+// Rejections backfill normally but cannot establish quiet-topic evidence.
+{
+  const calls: string[] = [];
+  const generate = async (id: string) => {
+    calls.push(id);
+    if (id === "failed") throw new Error("Offline generation failure");
+    return id === "dry" ? null : `live:${id}`;
+  };
+  const result = await selectLetterSections(["failed", "dry", "backup"], 1, generate, null);
+  check("failed topic backfills with the next usable section", ids(result) === "backup");
+  check("only confirmed empty is skippedDry", result.skippedDry.join(",") === "dry");
+  check("rejected generation is reported separately", result.failedTopics.join(",") === "failed");
+  check("failure adds no repeated generation", calls.join(",") === "failed,dry,backup");
+  const filled = await selectLetterSections(["failed"], 1, generate, fillerGen());
+  check("successful compatibility filler clears final failure", filled.failedTopics.length === 0 && ids(filled) === "failed");
+}
+
 // (8) poolCap: letterSize + a fixed 5 backups, capped at the catalog max.
 check("(8) poolCap(5) = 10 (5 favorites + 5 backups)", poolCap(5) === 10);
 check("(8) poolCap(10) = 15 (add a bundle, still 5 backups)", poolCap(10) === 15);

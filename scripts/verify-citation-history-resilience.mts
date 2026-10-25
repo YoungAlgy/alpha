@@ -166,13 +166,22 @@ function harness(options: {
     if (name === "./editor-note") return { generateEditorNote: async () => "Generic local editor intro." };
     if (name === "./deterministic-fallback") return { buildDeterministicBlurb: fromSignal };
     if (name === "./topic-blurb") return { generateTopicBlurb: async (_id: string, _period: string, signal: Signal) => { writerCalls.push(signal.topicId); return fromSignal(signal); } };
-    if (name === "./source-resolver") return { resolveTopicSignal: async (topic: string, period: string, opts: { excludeUrls?: Set<string> }) => {
+    if (name === "./source-resolver") {
+      const resolveTopicSignal = async (topic: string, period: string, opts: { excludeUrls?: Set<string> }) => {
       const excluded = [...opts.excludeUrls ?? []];
       sourceCalls.push({ topic, period, excluded });
       const url = options.candidates?.[topic];
       if (!url || opts.excludeUrls?.has(normalizeUrl(url)!)) return undefined;
       return { topicId: topic, weekOf: period, context: "Generic source metadata.", citableUrls: new Set([normalizeUrl(url)!]), sources: [{ title: "Generic source headline", url, excerpt: "Generic source excerpt." }] };
-    } };
+      };
+      return {
+        resolveTopicSignal,
+        resolveTopicSignalResult: async (topic: string, period: string, opts: { excludeUrls?: Set<string> }) => {
+          const signal = await resolveTopicSignal(topic, period, opts);
+          return signal ? { state: "signal", signal } : { state: "healthy-empty" };
+        },
+      };
+    }
     throw new Error(`unexpected assembler VM import: ${name}`);
   });
   return {

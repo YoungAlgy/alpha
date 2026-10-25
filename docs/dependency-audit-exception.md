@@ -38,9 +38,14 @@ Every high finding must traverse entirely to the one exact reviewed advisory.
 The locked development-tool paths, versions and dependency edges must match
 the reviewed graph. Package-name allowlisting alone is insufficient. A second
 advisory on the same package still blocks. Critical findings always block.
-Unknown report shapes, inconsistent counts, dangling/cyclic graphs, process
-errors, understated advisory severity and an unexplained exit status block. Low/moderate findings retain the
-existing threshold behavior.
+An npm report may label a parent package moderate while a referenced child has
+a high advisory. The policy checks each package's direct advisories against
+that package's own severity, then uses the highest reachable advisory severity
+for blocking. A moderate parent with a high descendant does not gain a new
+exception. Unknown report shapes, inconsistent counts, dangling or cyclic
+graphs, direct advisory severity above its own package label, process errors
+and an unexplained exit status block. Low and moderate findings with no high
+or critical descendant retain the existing threshold behavior.
 
 The audit still reports the high advisory. A local patch does not change the
 published package identity. The wrapper's successful exit means only that the
@@ -60,6 +65,23 @@ remain enabled and never fix or upgrade dependencies automatically.
 Focused offline checks: `node scripts/verify-dependency-audit-policy.mjs` and
 the existing `verify-wrangler-guard-schedule-scope.mts` using installed local tsx.
 The network-bearing runner is separate from the offline policy tests.
+
+## October 25 local security candidate
+
+The local candidate raises reviewed floors to Next and eslint-config-next
+16.4.3, DOMPurify 3.4.17, Zod 4.6.6, Undici 7.30.1 and body-parser 2.4.0.
+The new lock retains Wrangler 4.131.0, Miniflare 5.20260910.0-alpha,
+sharp 0.35.5, and the existing tokenizer and braces patch guards. The
+reviewed lint path now begins with eslint-config-next 16.4.3 and
+@next/eslint-plugin-next 16.4.3. Its edge to fast-glob remains exactly 3.3.1.
+
+The saved public npm v2 report listed three high, two critical and three
+moderate package findings. It included a moderate OpenNext to Wrangler to
+Miniflare chain ending in a high Undici advisory. The earlier policy rejected
+that valid parent/child severity shape before classifying risk. The revised
+policy accepts the shape and blocks the high leaf. It adds no advisory waiver.
+This section describes local source and lock evidence. A fresh audit and
+installed mitigation check still determine release readiness.
 
 Official context: [GitHub advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
 and [npm audit documentation](https://docs.npmjs.com/cli/v11/commands/npm-audit/).

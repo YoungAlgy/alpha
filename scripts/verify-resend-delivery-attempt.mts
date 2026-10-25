@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import {
+import type { Issue } from "../lib/types";
+
+// Establish generic local-only configuration and deny fetch before importing
+// renderer/runtime definitions. No existing environment value is read here.
+let blockedFetchAttempts = 0;
+globalThis.fetch = async () => {
+  blockedFetchAttempts++;
+  throw new Error("Offline Resend attempt verifier blocks network access");
+};
+process.env.UNSUBSCRIBE_SECRET = "offline-resend-delivery-attempt-verifier-secret-2026";
+process.env.RESEND_API_KEY = "re_offline_attempt_fixture_never_sent";
+process.env.RESEND_FROM = '"alpha fixture" <fixture@everyday.report>';
+process.env.NEXT_PUBLIC_APP_URL = "https://alpha.everyday.report";
+const {
   ResendDeliveryAttemptError,
   sendWithResendDeliveryAttempt,
-} from "../lib/resend-delivery-attempt";
-import { prepareLetterNotification } from "../lib/email";
-import type { Issue } from "../lib/types";
+} = await import("../lib/resend-delivery-attempt");
+const { prepareLetterNotification } = await import("../lib/email");
 
 let assertions = 0;
 function check(value: unknown, label: string): void {
@@ -517,6 +529,40 @@ check(
   check(fake.calls.length === 2, "expired finalization is never retried or reported successful");
 }
 
+// Generic error-channel fixtures. No RPC or provider transport is real.
+const privacyMarker = "PRIVATE_LEGACY_ATTEMPT_FIXTURE";
+const privacyClaim = () => ({ data: [{ delivery_status: "claimed", stored_recipient: base.recipient,
+  stored_lease_expires_at: liveLease(), stored_retry_deadline_at: liveRetryDeadline() }], error: null });
+for (const channel of ["returned-error", "throw-error", "throw-string", "unknown-status"] as const) {
+  for (const stage of ["claim", "finalize"] as const) {
+    let rpcCalls = 0, sends = 0;
+    const fake = { async rpc() {
+      rpcCalls++;
+      if (stage === "finalize" && rpcCalls === 1) return privacyClaim();
+      if (channel === "throw-error") throw new Error(privacyMarker);
+      if (channel === "throw-string") throw privacyMarker;
+      if (channel === "returned-error") return { data: null, error: { message: privacyMarker } };
+      return { data: [{ delivery_status: privacyMarker }], error: null };
+    } };
+    const code = channel === "unknown-status" ? (stage === "claim" ? "invalid_claim_state" : "invalid_finalize_state") : "rpc_failed";
+    await assert.rejects(sendWithResendDeliveryAttempt({ ...base, sb: fake as never,
+      send: async () => { sends++; return { id: "generic-private-channel-id" }; },
+    }), (error: unknown) => error instanceof ResendDeliveryAttemptError && error.stage === stage &&
+      error.code === code && !String(error).includes(privacyMarker));
+    assert.equal(rpcCalls, stage === "claim" ? 1 : 2);
+    assert.equal(sends, stage === "claim" ? 0 : 1);
+    assertions++;
+  }
+}
+for (const thrown of [new Error(privacyMarker), privacyMarker]) {
+  const fake = fakeClient([privacyClaim()]);
+  await assert.rejects(sendWithResendDeliveryAttempt({ ...base, sb: fake.client as never,
+    send: async () => { throw thrown; },
+  }), (error: unknown) => error instanceof ResendDeliveryAttemptError && error.stage === "send" &&
+    error.code === "provider_failed" && !String(error).includes(privacyMarker));
+  assert.equal(fake.calls.length, 1); assertions++;
+}
 console.log(
   `PASS verify-resend-delivery-attempt (offline, ${assertions} assertions)`
 );
+assert.equal(blockedFetchAttempts, 0, "no network transport attempted");

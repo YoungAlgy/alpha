@@ -62,14 +62,14 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Optional personalization:</strong> your birthday and gender, if
-          you choose to share them. Both are optional and only tune the letter
-          (which topics unlock, how it&apos;s voiced). Your birthday unlocks the
-          daily Zodiac topic. It also shapes tone, but only as a broad
-          generation label like &quot;Millennial&quot; (never the exact date).
+          you choose to share them. Both are optional. Your birthday can unlock
+          the daily Zodiac topic. In a model-backed letter, a broad generation
+          label like &quot;Millennial&quot; can help shape tone. The writer never
+          gets your exact birth date.
         </li>
         <li>
-          <strong>Your interests:</strong> the topics you picked (5-25 depending on
-          your plan tier), your chosen theme, and any optional context you shared
+          <strong>Your interests:</strong> the topics you picked, your chosen theme,
+          and any optional context you shared
           (what you do, what you&apos;re working on, a non-work interest).
         </li>
         <li>
@@ -103,12 +103,11 @@ export default function PrivacyPage() {
       same page elsewhere say a letter is "written." Also drops the em
       dash (house style: never in reader-facing text). */}
       <p>
-        We use your data only to write and deliver your letters, bill your
-        subscription, and improve alpha. We don&apos;t share it with
-        advertisers. Our primary AI provider, Anthropic, runs on a paid
-        tier that doesn&apos;t use your data to train their models. Google&apos;s
-        free Gemini tier, one of our backups, doesn&apos;t carry that same
-        guarantee. See below for what that means in practice.
+        We use your data to write and deliver your letters, manage your account,
+        handle any older paid subscription, and improve alpha. We don&apos;t share
+        it with advertisers. The scheduled-send workflow is configured to format
+        sources locally without calling writing models or paid AI. The model-backed modes and
+        their provider data rules are described below.
       </p>
 
       <H2>Third-party processors</H2>
@@ -119,17 +118,17 @@ export default function PrivacyPage() {
       <p>We use a handful of outside services:</p>
       <ul>
         <li>
-          <strong>Stripe</strong> handles all payment information. We never see your
-          card number.
+          <strong>Stripe</strong> handled payment information for older paid
+          accounts. We never see your card number.
         </li>
         <li>
-          Stripe receives your email address and payment details at checkout.
-          Current Alpha checkouts do not copy your profile&apos;s first name, city,
-          topic choices, or profile answers into Stripe. Alpha sends Stripe an
-          opaque checkout reference so a successful payment can be matched to
-          the right profile. Older Alpha checkout sessions created before this
-          change may still contain a first name and city in Stripe metadata.
-          New checkouts stopped sending those fields at the cutover. Older
+          For older paid checkouts, Stripe received your email address and
+          payment details. Alpha&apos;s later checkout flow did not copy your
+          profile&apos;s first name, city, topic choices, or profile answers into
+          Stripe. It sent an opaque checkout reference so a successful payment
+          could be matched to the right profile. Earlier Alpha checkout sessions
+          may still contain a first name and city in Stripe metadata. Later
+          checkouts stopped sending those fields at the cutover. Older
           session metadata may remain under Stripe&apos;s own retention rules.
         </li>
         {/* alpha-drift-r36-05 (2026-08-14): both bullets were marathon
@@ -139,12 +138,12 @@ export default function PrivacyPage() {
         slash-speak and "derived from" (developer vocabulary) in favor of
         plain phrasing. */}
         <li>
-          <strong>Anthropic (Claude)</strong> writes the short editor&apos;s note at
-          the top of your letter. That note is the one part built from your
+          <strong>Anthropic (Claude)</strong> can write the short editor&apos;s note
+          in a model-backed letter. That note is the one part built from your
           profile: your name, city, topic prefs, gender, a generation label
           from your birthday (like &quot;Millennial,&quot; never the exact
           date), and any optional job, project, or fun context you shared.
-          That&apos;s what makes it feel written for you. Anthropic runs on
+          That can make it feel written for you. Anthropic runs on
           a paid tier that does not retain that data for training. Anthropic
           can also write a topic section itself, as the last resort if the
           writers below all come up short. In that role it never sees your
@@ -152,24 +151,25 @@ export default function PrivacyPage() {
           writers below.
         </li>
         <li>
-          <strong>Google (Gemini), Groq, and DeepSeek</strong> write each day&apos;s
-          topic sections first, cheapest tier first. Anthropic steps in only
-          if all three come up short. None of the four ever see your
+          <strong>Google (Gemini), Groq, and DeepSeek</strong> can write topic
+          sections in model-backed mode, cheapest tier first. Anthropic steps in
+          only if all three come up short. None of the four ever see your
           profile when writing a topic section. They see only the topic
-          itself and that day&apos;s research. Gemini, Groq, and DeepSeek also
+          itself and that day&apos;s research. Gemini, Groq, and DeepSeek can also
           back up the editor&apos;s note if Anthropic is briefly down. In that
           specific role, whichever one steps in sees the same profile
-          fields Anthropic&apos;s own editor&apos;s note does. We use Google&apos;s
-          free Gemini API tier for this, and Google&apos;s own terms for that
+          fields Anthropic&apos;s own editor&apos;s note does. In that mode, the backup
+          uses Google&apos;s free Gemini API tier, and Google&apos;s own terms for that
           free tier allow them to use what we send to improve their
           products. Unlike Anthropic&apos;s paid-tier guarantee above, we
           can&apos;t promise Google won&apos;t.
         </li>
         <li>
-          <strong>Brave Search</strong>, with <strong>Google (Gemini)</strong> and{" "}
-          <strong>You.com</strong> as backups, finds the sources your letter links
-          to. Your topic picks go out as search queries, and nothing else
-          about you does. The one exception is the Zodiac topic, whose
+          When keyed search is enabled, <strong>Brave Search</strong>, with{" "}
+          <strong>Google (Gemini)</strong> and <strong>You.com</strong> as backups,
+          can find sources your letter links to. In that mode, your topic picks
+          go out as search queries, and nothing else about you does. The one
+          exception is the Zodiac topic, whose
           query is built from the sun sign your birthday puts you in (never
           the date itself).
           When enabled, Google News RSS and GDELT provide public-source backups.
@@ -199,7 +199,9 @@ export default function PrivacyPage() {
           music or images, and does not retain or use upload descriptions.
         </li>
         <li>
-          <strong>Resend</strong> delivers letters and account emails.
+          <strong>Resend</strong> or <strong>Brevo</strong> can deliver Alpha emails
+          when configured as an email provider. The selected service receives
+          the recipient address and email content for delivery.
         </li>
         <li>
           <strong>Supabase</strong> stores your account and letter history.
@@ -211,10 +213,10 @@ export default function PrivacyPage() {
 
       <H2>Checkout matching</H2>
       <p>
-        Alpha saves the validated profile you submit directly to your confirmed
-        account before Stripe checkout starts. The separate service-only
-        checkout reservation does not contain your name, city, topics, or
-        profile answers. It keeps a keyed one-way email binding, a random
+        For older paid checkouts, Alpha saved the validated profile you submitted
+        directly to your confirmed account before Stripe checkout started. The
+        separate service-only checkout reservation does not contain your name,
+        city, topics, or profile answers. It keeps a keyed one-way email binding, a random
         browser binding, and exact Stripe references so Alpha can match the
         payment and stop duplicate subscriptions. During an interrupted Session
         creation, the exact checkout email is held in authenticated encryption

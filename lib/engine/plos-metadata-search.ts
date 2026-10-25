@@ -17,6 +17,10 @@ type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
+export function plosMetadataTopicSupported(topicId: string): boolean {
+  return TOPICS.includes(topicId as Topic);
+}
+
 export function plosMetadataFallbackEnabled(): boolean {
   return noModelModeEnabled() &&
     /^(1|true|yes)$/i.test(process.env.ALPHA_PLOS_METADATA_FALLBACK?.trim() ?? "") &&
@@ -110,7 +114,7 @@ export function createPlosMetadataSearch(deps: {
   const attempt = deps.attempt ?? runPublicSourceAttempt;
   const cached = createPublicSourceCache(now);
   return async function plosMetadataSearch(topicId: string, opts: BraveSearchOptions = {}): Promise<BraveResult[]> {
-    if (!TOPICS.includes(topicId as Topic)) return [];
+    if (!plosMetadataTopicSupported(topicId)) return [];
     const window = publicSourceWindow(opts.freshness, now());
     if (!window) return [];
     const start = new Date(window.start).toISOString().slice(0, 10);

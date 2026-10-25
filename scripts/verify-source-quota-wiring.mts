@@ -50,7 +50,7 @@ const assemble = parse("../lib/engine/assemble.ts");
 const generate = namedFunction(assemble, "generateIssue");
 assert.equal(generate.parameters[8].name.getText(), "quotaState");
 assertFreshState(generate.parameters[8].initializer, "standalone generation state");
-const searches = calls(generate, "resolveTopicSignal");
+const searches = calls(generate, "resolveTopicSignalResult");
 assert.equal(searches.length, 2, "narrow and wider search windows are covered");
 for (const call of searches) {
   const options = call.arguments[2];
