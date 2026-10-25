@@ -2,16 +2,16 @@ import { NextResponse } from "next/server";
 import { supabaseServerClient, supabaseServiceClient } from "@/lib/supabase/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { BREVO_DELIVERY_SCHEMA_ENABLED } from "@/lib/brevo-delivery-policy";
+import { SUBSCRIBER_LETTERS_ENABLED } from "@/lib/subscriber-delivery-policy";
+import { getResumeLetterStatus } from "@/lib/resume-letter-status";
 
 export const runtime = "nodejs";
 
 // Self-serve "resume my letters" — the counterpart to one-click unsubscribe.
-// Clears unsubscribed_at for the SIGNED-IN user so the weekly cron starts
-// sending again. A reader who hit unsubscribe (often the inbox-provider's
-// one-click button) while still paying could otherwise only get letters back by
-// emailing support — a paying customer stuck receiving nothing. Auth'd to the
-// session so a caller can only ever resume THEIR OWN account; the actual write
-// goes through the service role.
+// Clears only unsubscribed_at for the signed-in user. Access, owner-controlled
+// enrollment and provider blocks remain separate. The returned current row
+// determines the confirmation; clearing this preference alone cannot promise
+// delivery. The sender still rechecks eligibility before each attempt.
 //
 // alpha-drift-r51-02 (2026-08-20, rls-migration-drift-audit): this used to
 // say "public.users has no self-UPDATE RLS policy" -- wrong. The "users self
@@ -33,9 +33,10 @@ export const runtime = "nodejs";
 // deliverability.sql's `create or replace function`, which added
 // bounced_at/complained_at to the same locked set (the identical gap
 // scripts/verify-rls-privileged-columns.mts's own r40-08 comment already
-// documented for that file). The CURRENT trigger locks all 10:
+// documented for that file). At that migration the trigger locked these 10:
 // subscribed_at/cancelled_at/unsubscribed_at/topic_quota/bounced_at/
 // complained_at/stripe_customer_id/email/id/created_at.
+// Later migrations also protect invite, enrollment and suppression state.
 // Idempotent: clearing an already-null unsubscribed_at is a harmless no-op,
 // and clearing it for a non-subscribed user does nothing (the cron still
 // gates on active access).
@@ -60,32 +61,49 @@ export async function POST() {
   }
 
   const svc = await supabaseServiceClient();
+  const columns = "id, email, subscribed_at, cancelled_at, access_granted_at, delivery_enrolled, unsubscribed_at, bounced_at, complained_at, suppression_cleanup_pending_at" +
+    (BREVO_DELIVERY_SCHEMA_ENABLED ? ", brevo_unsubscribed_at" : "");
+  let update = svc.from("users")
+    .update({ unsubscribed_at: null })
+    .eq("id", user.id);
   if (BREVO_DELIVERY_SCHEMA_ENABLED) {
     // Only Alpha's own pause can be cleared here. A provider opt-out needs
     // reviewed provider-side recovery before this screen can promise mail.
-    const { data: resumed, error: resumeError } = await svc.from("users")
-      .update({ unsubscribed_at: null })
-      .eq("id", user.id)
-      .is("brevo_unsubscribed_at", null)
-      .select("id");
-    if (resumeError) {
-      return NextResponse.json({ error: "Couldn't resume. Try again." }, { status: 503 });
-    }
-    if (!resumed || resumed.length !== 1) {
-      return NextResponse.json({
-        error: "Your email provider has an unsubscribe block. Contact support to review it before resuming letters.",
-      }, { status: 409 });
-    }
-    return NextResponse.json({ ok: true });
+    update = update.is("brevo_unsubscribed_at", null);
   }
-  const { error } = await svc
-    .from("users")
-    .update({ unsubscribed_at: null })
-    .eq("id", user.id);
-  if (error) {
-    console.error("[resume] update failed:", error.message);
-    return NextResponse.json({ error: "Couldn't resume. Try again." }, { status: 500 });
+  const { data: resumed, error: resumeError } = await update.select(columns);
+  if (resumeError) {
+    return NextResponse.json({ error: "Couldn't verify your letter settings. Try again." }, { status: 503 });
   }
-
-  return NextResponse.json({ ok: true });
+  if (!Array.isArray(resumed) || resumed.length !== 1) {
+    if (BREVO_DELIVERY_SCHEMA_ENABLED) {
+      // A zero-row update could also mean a missing account. Name a provider
+      // block only after an exact current-row read confirms it.
+      const { data: current, error: currentError } = await svc.from("users")
+        .select("id, brevo_unsubscribed_at")
+        .eq("id", user.id)
+        .maybeSingle();
+      const profile: unknown = current;
+      if (!currentError && profile && typeof profile === "object" &&
+          "id" in profile && profile.id === user.id &&
+          "brevo_unsubscribed_at" in profile &&
+          typeof profile.brevo_unsubscribed_at === "string" &&
+          Number.isFinite(Date.parse(profile.brevo_unsubscribed_at))) {
+        return NextResponse.json({
+          error: "Your email provider has an unsubscribe block. Contact support to review it before resuming letters.",
+        }, { status: 409 });
+      }
+    }
+    return NextResponse.json({ error: "Couldn't verify your letter settings. Try again." }, { status: 503 });
+  }
+  const resumedProfile: unknown = resumed[0];
+  const status = resumedProfile && typeof resumedProfile === "object" &&
+    "id" in resumedProfile && resumedProfile.id === user.id ? getResumeLetterStatus(resumedProfile, {
+    brevoSchemaEnabled: BREVO_DELIVERY_SCHEMA_ENABLED,
+    lettersEnabled: SUBSCRIBER_LETTERS_ENABLED,
+  }) : "unverified";
+  if (status === "unverified") {
+    return NextResponse.json({ error: "Your pause preference may have been cleared, but delivery status could not be verified. Refresh your settings before trying again." }, { status: 503 });
+  }
+  return NextResponse.json({ ok: true, status });
 }

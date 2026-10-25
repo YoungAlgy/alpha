@@ -12,6 +12,7 @@ import { isInviteOnly } from "@/lib/access-mode";
 import { readOnboardingAccount } from "@/lib/onboarding-account";
 import { incompleteSignupPath } from "@/lib/signup-progress";
 import { authOwnsAccessRequestEmail } from "@/lib/access-request-ownership";
+import { parseAccessRequestAcknowledgement } from "@/lib/access-request-response";
 import { supabaseClient, supabaseConfigured } from "@/lib/supabase/client";
 import { isAuthRateLimitError, isInvalidOrExpiredOtpError } from "@/lib/gotrue-errors";
 
@@ -255,9 +256,9 @@ export default function CheckoutPage() {
           theme: state.theme,
         }),
       });
-      const data = await res
-        .json()
-        .catch(() => ({} as { error?: string; message?: string; repaired?: boolean }));
+      const responseBody: unknown = await res.json().catch(() => null);
+      const data = responseBody && typeof responseBody === "object" && !Array.isArray(responseBody)
+        ? responseBody as Record<string, unknown> : {};
       if (cancelledRef.current) return;
       if (res.status === 401 && data.error === "identity_verification_required") {
         setSubscribing(false);
@@ -274,10 +275,15 @@ export default function CheckoutPage() {
       }
       if (!res.ok) {
         throw new Error(
-          data.message || data.error || "Couldn't send your request. Try again."
+          (typeof data.message === "string" && data.message) ||
+          (typeof data.error === "string" && data.error) || "Couldn't send your request. Try again."
         );
       }
-      if (data.repaired) {
+      const acknowledgement = parseAccessRequestAcknowledgement(responseBody);
+      if (!acknowledgement) {
+        throw new Error("We couldn't confirm your request was saved. Your answers are still here. Try again.");
+      }
+      if (acknowledgement === "repaired") {
         router.replace("/inbox" as never);
         return;
       }

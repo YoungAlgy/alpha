@@ -16,6 +16,7 @@ import { hasActiveAccess, hasReaderAccess, ADMIN_EMAIL } from "@/lib/access";
 import { isInviteOnly } from "@/lib/access-mode";
 import { clampQuota, TOPICS_PER_BUNDLE, PRICE_PER_BUNDLE_CENTS } from "@/lib/types";
 import { poolCap } from "@/lib/engine/select-sections";
+import { parseResumeLetterResponse, RESUME_LETTER_MESSAGES, type ResumeLetterStatus } from "@/lib/resume-letter-status";
 
 export default function SettingsPage() {
   const { state, reset } = useOnboarding();
@@ -127,12 +128,11 @@ export default function SettingsPage() {
   // through the funnel on this device — admin-granted / fresh-device sign-ins
   // have none, which showed a bare "—" here.
   const [authEmail, setAuthEmail] = useState<string | null>(null);
-  // Letters are PAUSED (unsubscribed_at set) but the reader still has live
-  // access — i.e. they're paying (or comped) and getting nothing, usually from
-  // hitting the inbox provider's one-click unsubscribe. Drives a self-serve
-  // "Resume my letters" control so they don't have to email support.
+  // A reader can clear their own Alpha unsubscribe preference. The server
+  // separately reports any access, owner-enrollment or delivery hold.
   const [showResume, setShowResume] = useState(false);
-  const [resumed, setResumed] = useState(false);
+  const [resumeStatus, setResumeStatus] = useState<ResumeLetterStatus | null>(null);
+  const resumed = resumeStatus !== null;
   const [resumeBusy, setResumeBusy] = useState(false);
   const [resumeErr, setResumeErr] = useState<string | null>(null);
   // alpha-drift-r39-05 (2026-08-19): a third unmount-without-focus-restore
@@ -210,10 +210,8 @@ export default function SettingsPage() {
           setHasPaidSub(true);
           if (row.cancelled_at) setRenewalEndsAt(row.cancelled_at);
         }
-        // Show "Resume my letters" only when they're paused AND would actually
-        // get letters back if they resumed (subscribed + live access — covers
-        // comped accounts too, which have no stripe_customer_id). For a reader
-        // with no access, resuming wouldn't send anything, so don't offer it.
+        // Show the preference control to paused readers with current access.
+        // The fresh server response determines whether daily delivery can resume.
         if (
           row?.unsubscribed_at &&
           hasReaderAccess(
@@ -252,7 +250,9 @@ export default function SettingsPage() {
         return;
       }
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setResumed(true);
+      const status = parseResumeLetterResponse(data);
+      if (!status) throw new Error("Couldn't verify the resume result. Refresh your settings before trying again.");
+      setResumeStatus(status);
     } catch (e) {
       setResumeErr(e instanceof Error ? e.message : "Couldn't resume. Try again.");
     } finally {
@@ -485,14 +485,13 @@ export default function SettingsPage() {
                 role="status"
                 style={{ color: "var(--ink-soft)", outline: "none" }}
               >
-                You&apos;re back on. Your daily letters start up again from here.
+                {resumeStatus && RESUME_LETTER_MESSAGES[resumeStatus]}
               </p>
             ) : (
               <>
                 <p className="alpha-ui text-sm mb-3" style={{ color: "var(--ink-soft)" }}>
-                  Your letters are paused. You unsubscribed, so the daily
-                  letters aren&apos;t being sent. Your
-                  billing is separate and unaffected.
+                  You unsubscribed from Alpha letters. Clearing this preference
+                  keeps any account or delivery holds in place.
                 </p>
                 <button
                   type="button"

@@ -58,11 +58,13 @@ same(router.indexOf("!prepared.payload.html.includes(unsubscribeLink)") <
 
 contains(resume, "if (BREVO_DELIVERY_SCHEMA_ENABLED) {");
 contains(resume, '.is("brevo_unsubscribed_at", null)');
-contains(resume, "if (!resumed || resumed.length !== 1)");
+contains(resume, "if (!Array.isArray(resumed) || resumed.length !== 1)");
 contains(resume, "provider has an unsubscribe block");
 contains(resume, ".update({ unsubscribed_at: null })");
-same(resume.indexOf("if (BREVO_DELIVERY_SCHEMA_ENABLED) {") <
-  resume.indexOf("const { error } = await svc"), true);
+same(resume.indexOf('update = update.is("brevo_unsubscribed_at", null)') <
+  resume.indexOf("await update.select(columns)"), true);
+contains(resume, "getResumeLetterStatus(resumedProfile");
+contains(resume, 'return NextResponse.json({ ok: true, status })');
 
 contains(accountExport, "if (BREVO_DELIVERY_SCHEMA_ENABLED) {");
 contains(accountExport, '.from("brevo_suppression_events")');

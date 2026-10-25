@@ -9,6 +9,7 @@ import { getSignupAccountState, incompleteSignupPath, signInDestination } from "
 import { isProfileComplete } from "../lib/checkout-guards.ts";
 import { TOPICS, isValidTopicId } from "../lib/topics.ts";
 import { authOwnsAccessRequestEmail } from "../lib/access-request-ownership.ts";
+import { parseAccessRequestAcknowledgement } from "../lib/access-request-response.ts";
 import { hasUsableReaderProfile } from "../lib/reader-profile-state.ts";
 import { issueIsReaderVisible } from "../lib/issue-visibility.ts";
 import { latestVisibleIssue } from "../lib/latest-visible-issue.ts";
@@ -296,6 +297,7 @@ function checkoutRuntime(accountRead: () => Promise<string>, profile: Record<str
 }, emailDraft = profile.email, overrides: { imports?: Record<string, unknown>; globals?: Record<string, unknown> } = {}) {
   const routes: string[] = [];
   const router = { replace: (path: string) => routes.push(path), push: (path: string) => routes.push(path) };
+  const draftUpdates: unknown[] = [];
   // Mirrors lib/onboarding-account.ts: an owner grant without a saved profile
   // reads as "incomplete" so the normal signup steps stay open.
   const readOnboardingAccount = async () => {
@@ -306,7 +308,7 @@ function checkoutRuntime(accountRead: () => Promise<string>, profile: Record<str
   const app = pageRuntime("app/checkout/page.tsx", {
     "next/navigation": { useRouter: () => router },
     "@/components/onboarding/StepShell": { StepShell: dummy },
-    "@/lib/onboarding-state": { useOnboarding: () => ({ state: profile, emailDraft, loaded: true, update: dummy }) },
+    "@/lib/onboarding-state": { useOnboarding: () => ({ state: profile, emailDraft, loaded: true, update: (patch: unknown) => { draftUpdates.push(patch); } }) },
     "@/lib/topics": { topicLabel: dummy, topicEmoji: dummy, isValidTopicId },
     "@/lib/themes": { THEMES: [], SWATCHES: { forest: { paper: "", ink: "", accent: "" } }, coerceThemeId: () => "forest" },
     "@/lib/analytics": { track: dummy },
@@ -315,11 +317,12 @@ function checkoutRuntime(accountRead: () => Promise<string>, profile: Record<str
     "@/lib/onboarding-account": { readOnboardingAccount },
     "@/lib/signup-progress": { incompleteSignupPath },
     "@/lib/access-request-ownership": { authOwnsAccessRequestEmail },
+    "@/lib/access-request-response": { parseAccessRequestAcknowledgement },
     "@/lib/supabase/client": { supabaseConfigured: () => true, supabaseClient: () => { throw Error("unexpected sign-in call"); } },
     "@/lib/gotrue-errors": { isAuthRateLimitError: () => false, isInvalidOrExpiredOtpError: () => false },
     ...overrides.imports,
   }, false, undefined, overrides.globals);
-  return { ...app, routes };
+  return { ...app, routes, draftUpdates };
 }
 
 const pendingCheckout = checkoutRuntime(async () => "pending", {});
@@ -396,7 +399,7 @@ equal(accountAttempts, 2, "retry reruns saved account read");
   const fetchStub = async () => {
     requests++;
     return signedIn
-      ? { status: 200, ok: true, json: async () => ({ ok: true }) }
+      ? { status: 200, ok: true, json: async () => ({ ok: true, requestedAt: date }) }
       : { status: 401, ok: false, json: async () => ({ error: "identity_verification_required" }) };
   };
   const run = checkoutRuntime(async () => "incomplete", complete, undefined, complete.email, {
@@ -435,6 +438,80 @@ equal(accountAttempts, 2, "retry reruns saved account read");
   checks++;
   equal(requests, 2, "the right code sends the request without another click");
   equal(authCalls.filter((c) => c.startsWith("send:")).length, 1, "only one code email for the whole flow");
+}
+
+// A 2xx status with an unreadable or incomplete body cannot claim the request
+// was saved. Exercise the actual page, keep its draft and allow a later retry.
+equal(parseAccessRequestAcknowledgement({ ok: true, requestedAt: date }), "requested", "valid normal acknowledgement");
+equal(parseAccessRequestAcknowledgement({ ok: true, repaired: true }), "repaired", "valid approved-profile repair");
+const badAcknowledgements = [
+  null, {}, [], "ok", { ok: true }, { ok: false, requestedAt: date },
+  { ok: 1, requestedAt: date }, { ok: true, requestedAt: "invalid" },
+  { ok: true, requestedAt: "2026-02-30T00:00:00.000Z" },
+  { ok: true, requestedAt: "2026-09-01" }, { ok: true, repaired: "true" },
+  { ok: true, repaired: false, requestedAt: date },
+  { ok: true, repaired: true, requestedAt: date },
+  Object.create({ ok: true, requestedAt: date }),
+];
+for (const payload of badAcknowledgements) {
+  equal(parseAccessRequestAcknowledgement(payload), null, "malformed acknowledgement rejected");
+}
+for (const test of [
+  ...badAcknowledgements.map((payload) => ({ payload, invalidJson: false })),
+  { payload: null, invalidJson: true },
+  { payload: { ok: true, requestedAt: date }, invalidJson: false },
+  { payload: { ok: true, repaired: true }, invalidJson: false },
+]) {
+  let requests = 0;
+  const draft = { ...complete, topics: [...complete.topics] };
+  const before = JSON.stringify(draft);
+  const run = checkoutRuntime(async () => "incomplete", draft, undefined, draft.email, {
+    globals: { fetch: async () => {
+      requests++;
+      return { status: 200, ok: true, json: async () => {
+        if (test.invalidJson) throw Error("test-only invalid JSON");
+        return test.payload;
+      } };
+    } },
+  });
+  let tree = await run.settle();
+  const request = findElement(tree, (el) => el.type === "button" && treeText(el).includes("Request access"));
+  assert.ok(request, "request action remains available"); checks++;
+  const writesBeforeRequest = run.draftUpdates.length;
+  await request.props.onClick();
+  tree = await run.settle();
+  const acknowledgement = test.invalidJson ? null : parseAccessRequestAcknowledgement(test.payload);
+  if (acknowledgement === "requested") {
+    assert.match(treeText(tree), /Your request is saved/); checks++;
+    equal(run.routes.length, 0, "saved request stays on waiting screen");
+  } else if (acknowledgement === "repaired") {
+    equal(run.routes.includes("/inbox"), true, "verified repair opens inbox");
+  } else {
+    assert.doesNotMatch(treeText(tree), /Your request is saved/); checks++;
+    assert.match(treeText(tree), /Your answers are still here/); checks++;
+    equal(run.routes.length, 0, "unknown result never navigates");
+    const retry = findElement(tree, (el) => el.type === "button" && treeText(el).includes("Request access"));
+    assert.ok(retry && !retry.props.disabled, "uncertain request can be retried explicitly"); checks++;
+  }
+  equal(requests, 1, "no automatic request retry");
+  equal(JSON.stringify(draft), before, "uncertain response preserves signup draft");
+  equal(run.draftUpdates.length, writesBeforeRequest, "response handling never clears or rewrites saved answers");
+  run.unmount();
+}
+
+for (const body of [null, "unavailable", { message: {} }, { error: {} }]) {
+  const run = checkoutRuntime(async () => "incomplete", complete, undefined, complete.email, {
+    globals: { fetch: async () => ({ status: 503, ok: false, json: async () => body }) },
+  });
+  let tree = await run.settle();
+  const request = findElement(tree, (el) => el.type === "button" && treeText(el).includes("Request access"));
+  assert.ok(request); checks++;
+  await request.props.onClick();
+  tree = await run.settle();
+  assert.match(treeText(tree), /Couldn't send your request. Try again/); checks++;
+  assert.doesNotMatch(treeText(tree), /Cannot read|\[object Object\]|Your request is saved/); checks++;
+  equal(run.routes.length, 0, "malformed service error does not navigate");
+  run.unmount();
 }
 
 type InboxRow = Record<string, string | null> | null;
